@@ -4,4 +4,5 @@ export const CASDOOR_CONFIG = {
     organizationName: "astrobox_test",
     appName: "astrobox_test",
     redirectPath: "/callback",
+    signinPath: "/auth/login",
 };
