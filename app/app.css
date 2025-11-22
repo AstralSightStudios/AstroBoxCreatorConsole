@@ -12,10 +12,13 @@
     --color-btn-hover: rgba(255, 255, 255, 0.05);
     --color-btn-text-unselected: rgba(255, 255, 255, 0.9);
     --fill-icon-primary: rgba(255, 255, 255, 0.4);
+    --text-size-small: 12px;
+    --text-size-medium: 14px;
+    --text-size-large: 16px;
 }
 
 .corner-rounded {
-    corner-shape: superellipse(1.5);
+    corner-shape: superellipse(1.75);
 }
 
 html,
