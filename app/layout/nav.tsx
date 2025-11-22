@@ -148,7 +148,7 @@ function NavSection({ title, items }: NavSectionConfig) {
     <section className="flex flex-col gap-1.5">
       {title && (
         <div className="px-2 py-3 pb-0">
-          <p className="text-nav-item-title font-[450]">{title}</p>
+          <p className="text-nav-item-title font-[450] select-none">{title}</p>
         </div>
       )}
       {items.map(({ id, ...item }) => (

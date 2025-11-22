@@ -12,6 +12,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@react-router/node": "^7.9.2",
     "@react-router/serve": "^7.9.2",
+    "casdoor-js-sdk": "^0.16.0",
     "isbot": "^5.1.31",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
