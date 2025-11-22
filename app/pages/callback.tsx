@@ -11,9 +11,9 @@ interface CasdoorUserProfile {
     email?: string;
 }
 
-type TokenResponse = Partial<ITokenResponse> & {
+type TokenResponse = {
     error?: string;
-    error_description?: string;
+    token?: string;
 };
 
 export default function LoginCallback() {
@@ -35,9 +35,9 @@ export default function LoginCallback() {
 
                 console.log(tokenResponse);
 
-                if (!tokenResponse?.access_token) {
+                if (!tokenResponse?.token) {
                     const errMsg =
-                        tokenResponse?.error_description || "拿不到token。";
+                        tokenResponse?.error || "拿不到token。";
                     throw new Error(errMsg);
                 }
 
@@ -53,7 +53,7 @@ export default function LoginCallback() {
                         "",
                     plan: profile?.tag ?? "",
                     email: profile?.email ?? "",
-                    token: tokenResponse.access_token,
+                    token: tokenResponse.token,
                 };
 
                 saveAccount(account);
