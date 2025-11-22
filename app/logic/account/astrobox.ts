@@ -43,5 +43,5 @@ export function clearAccount() {
 export const ACCOUNT_INFO = loadAccount();
 
 export function login() {
-    SDK.signin_redirect();
+    window.location.href = SDK.getSigninUrl()
 }
