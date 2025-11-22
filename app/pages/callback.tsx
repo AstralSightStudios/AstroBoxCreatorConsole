@@ -53,7 +53,7 @@ export default function LoginCallback() {
                         "",
                     plan: profile?.tag ?? "",
                     email: profile?.email ?? "",
-                    token: tokenResponse.access_token,
+                    token: tokenResponse.token,
                 };
 
                 saveAccount(account);
