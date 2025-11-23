@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type ITokenResponse from "js-pkce/dist/ITokenResponse";
 import { SDK, saveAccount, type AccountInfo } from "~/logic/account/astrobox";
-
-interface CasdoorUserProfile {
-    avatar?: string;
-    displayName?: string;
-    preferred_username?: string;
-    name?: string;
-    tag?: string;
-    email?: string;
-}
+import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
+import { getSelfUserInfo } from "~/api/astrobox/auth";
 
 type TokenResponse = {
     error?: string;
@@ -28,21 +20,22 @@ export default function LoginCallback() {
 
         async function handleCallback() {
             try {
-                setMessage("拿token...");
+                setMessage("Requesting for token...");
                 const tokenResponse = (await SDK.signin(
-                    "http://localhost:3000",
+                    ASTROBOX_SERVER_CONFIG.serverUrl,
                 )) as TokenResponse;
 
                 console.log(tokenResponse);
 
                 if (!tokenResponse?.token) {
-                    const errMsg =
-                        tokenResponse?.error || "拿不到token。";
+                    const errMsg = tokenResponse?.error || "拿不到token。";
                     throw new Error(errMsg);
                 }
 
-                setMessage("加载账号信息...");
-                const profile: any = null;
+                setMessage("Loading account information...");
+                const profile: any = await getSelfUserInfo(tokenResponse.token);
+
+                console.log(profile);
 
                 const account: AccountInfo = {
                     avatar: profile?.avatar ?? "",
@@ -57,7 +50,7 @@ export default function LoginCallback() {
                 };
 
                 saveAccount(account);
-                setMessage("完成！");
+                setMessage("Success!");
                 window.location.replace("/");
             } catch (error) {
                 console.error(error);
@@ -74,5 +67,10 @@ export default function LoginCallback() {
         }
     }, []);
 
-    return <p>{message}</p>;
+    return (
+        <div className="w-full h-screen flex flex-col justify-center items-center">
+            <p className="text-size-large font-bold text-center">正在登录...</p>
+            <p className="text-size-medium text-gray-500">{message}</p>
+        </div>
+    );
 }
