@@ -43,7 +43,7 @@ export default function Header() {
                         <Slash />
                         <Link
                             to={to}
-                            className={`font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded px-1 py-0.5 cursor-pointer transition-colors hover:bg-gray-100 dark:hover:bg-neutral-800`}
+                            className={`font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded px-1 py-0.5 cursor-pointer transition-colors hover:bg-neutral-800`}
                         >
                             {label}
                         </Link>
