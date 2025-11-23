@@ -1,9 +1,9 @@
 import Page from "~/layout/page";
 
-export default function Home() {
+export default function ResourcePublish() {
     return (
         <Page>
-            <p>Hello, World!</p>
+            <p>。</p>
         </Page>
     );
 }

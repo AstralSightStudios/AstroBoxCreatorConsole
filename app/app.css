@@ -12,6 +12,7 @@
     --color-nav-item-title: rgba(255, 255, 255, 0.4);
     --color-btn-hover: rgba(255, 255, 255, 0.05);
     --color-btn-text-unselected: rgba(255, 255, 255, 0.9);
+    --color-header-text-is-not-last: rgba(255, 255, 255, 0.6);
     --fill-icon-primary: rgba(255, 255, 255, 0.4);
     --text-size-small: 12px;
     --text-size-medium: 14px;

@@ -1,9 +1,9 @@
 import Page from "~/layout/page";
 
-export default function Home() {
+export default function GithubSettings() {
     return (
         <Page>
-            <p>Hello, World!</p>
+            <p>b</p>
         </Page>
     );
 }
