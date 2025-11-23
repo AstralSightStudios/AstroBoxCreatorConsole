@@ -1,6 +1,5 @@
-import { Outlet } from "react-router";
-
 import "./app.css";
+import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
 
 export default function RootLayout() {
@@ -11,7 +10,7 @@ export default function RootLayout() {
             </div>
 
             <main className="flex-1">
-                <Outlet />
+                <PageTransition />
             </main>
         </div>
     );

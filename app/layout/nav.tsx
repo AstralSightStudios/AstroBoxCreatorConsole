@@ -1,97 +1,18 @@
 import type { Icon } from "@phosphor-icons/react";
-import {
-    BoxArrowUpIcon,
-    ChartBarIcon,
-    ChartPieSliceIcon,
-    DotsNineIcon,
-    FingerprintSimpleIcon,
-    GearFineIcon,
-    IdentificationBadgeIcon,
-    ListStarIcon,
-    UserCircleDashedIcon,
-} from "@phosphor-icons/react";
+import { DotsNineIcon, UserCircleDashedIcon } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
-import NavItem, { type NavItemProps } from "~/components/nav/navitem";
+import NavItem from "~/components/nav/navitem";
 import {
     ACCOUNT_INFO,
     clearAccount,
     login,
     type AccountInfo as AccountInfoData,
 } from "~/logic/account/astrobox";
-
-type NavLinkConfig = {
-    id: string;
-    path: string;
-} & Omit<NavItemProps, "selected" | "onClick">;
-
-interface NavSectionConfig {
-    id: string;
-    title?: string;
-    items: NavLinkConfig[];
-}
-
-const NAV_SECTIONS: NavSectionConfig[] = [
-    {
-        id: "dashboard",
-        items: [
-            {
-                id: "overview",
-                icon: ChartBarIcon,
-                label: "概览",
-                path: "/",
-            },
-            {
-                id: "analysis",
-                icon: ChartPieSliceIcon,
-                label: "数据分析",
-                isPlus: true,
-                path: "/analysis",
-            },
-        ],
-    },
-    {
-        id: "resource",
-        title: "资源",
-        items: [
-            {
-                id: "resource-publish",
-                icon: BoxArrowUpIcon,
-                label: "资源发布",
-                path: "/publish",
-            },
-            {
-                id: "resource-manage",
-                icon: ListStarIcon,
-                label: "资源管理",
-                path: "/manage",
-            },
-            {
-                id: "resource-encrypt",
-                icon: FingerprintSimpleIcon,
-                label: "资源加解密与激活",
-                path: "/encrypt",
-            },
-        ],
-    },
-    {
-        id: "management",
-        title: "管理",
-        items: [
-            {
-                id: "profile",
-                icon: IdentificationBadgeIcon,
-                label: "个人主页管理",
-                path: "/profile",
-            },
-            {
-                id: "settings",
-                icon: GearFineIcon,
-                label: "设置",
-                path: "/settings",
-            },
-        ],
-    },
-];
+import {
+    NAV_SECTIONS,
+    type NavSectionConfig,
+    matchesNavPath,
+} from "./nav-config";
 
 export default function Nav() {
     const account = ACCOUNT_INFO;
@@ -230,11 +151,5 @@ function NavSection({ title, items, pathname, onNavigate }: NavSectionProps) {
 }
 
 function isNavItemSelected(currentPath: string, targetPath: string) {
-    if (targetPath === "/") {
-        return currentPath === "/";
-    }
-
-    return (
-        currentPath === targetPath || currentPath.startsWith(`${targetPath}/`)
-    );
+    return matchesNavPath(targetPath, currentPath);
 }
