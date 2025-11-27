@@ -23,6 +23,18 @@
     corner-shape: superellipse(1.75);
 }
 
+.styledbtn {
+    background-color: var(--color-nav-item) !important;
+    border-radius: 10px !important;
+}
+
+@supports (text-autospace: normal) {
+    html,
+    body {
+        text-autospace: normal;
+    }
+}
+
 html,
 body {
     color-scheme: dark;
