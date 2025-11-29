@@ -1,10 +1,13 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
+    BinocularsIcon,
     BoxArrowUpIcon,
     ChartBarIcon,
     ChartPieSliceIcon,
+    CompassRoseIcon,
     FingerprintSimpleIcon,
     GearFineIcon,
+    GitPullRequestIcon,
     IdentificationBadgeIcon,
     ListStarIcon,
 } from "@phosphor-icons/react";
@@ -80,6 +83,30 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
                 icon: GearFineIcon,
                 label: "设置",
                 path: "/settings",
+            },
+        ],
+    },
+    {
+        id: "internal",
+        title: "内部工具",
+        items: [
+            {
+                id: "resreview",
+                icon: GitPullRequestIcon,
+                label: "PR审核",
+                path: "/resreview",
+            },
+            {
+                id: "cloudcontrol",
+                icon: BinocularsIcon,
+                label: "云控与资源推流",
+                path: "/cloudcontrol",
+            },
+            {
+                id: "explorepage",
+                icon: CompassRoseIcon,
+                label: "探索页管理",
+                path: "/explorepage",
             },
         ],
     },

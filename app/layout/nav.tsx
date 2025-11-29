@@ -1,7 +1,7 @@
-import type { Icon } from "@phosphor-icons/react";
-import { DotsNineIcon, UserCircleDashedIcon } from "@phosphor-icons/react";
+import { UserCircleDashedIcon } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
 import NavItem from "~/components/nav/navitem";
+import FunctionButton from "~/components/nav/function-button";
 import {
     ACCOUNT_INFO,
     clearAccount,
@@ -13,11 +13,13 @@ import {
     type NavSectionConfig,
     matchesNavPath,
 } from "./nav-config";
+import { useNavVisibility } from "./nav-visibility-context";
 
 export default function Nav() {
     const account = ACCOUNT_INFO;
     const location = useLocation();
     const navigate = useNavigate();
+    const { isCollapsed, toggleNav } = useNavVisibility();
     const handleNavigate = (path: string) => {
         if (location.pathname === path) {
             return;
@@ -26,28 +28,38 @@ export default function Nav() {
     };
 
     return (
-        <nav className="h-screen w-[315px] p-2 gap-1.5 bg-nav">
-            <NavHeader account={account} />
-            <AccountInfo account={account} />
-            <div className="flex flex-col gap-2.5">
-                {NAV_SECTIONS.map((section) => (
-                    <NavSection
-                        key={section.id}
-                        {...section}
-                        pathname={location.pathname}
-                        onNavigate={handleNavigate}
-                    />
-                ))}
-            </div>
-        </nav>
+        <aside
+            className={`shrink-0 transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-[315px]"}`}
+            aria-hidden={isCollapsed}
+        >
+            {!isCollapsed && (
+                <nav className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2">
+                    <NavHeader account={account} onToggleNav={toggleNav} />
+                    <AccountInfo account={account} />
+                    <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area">
+                        <div className="flex flex-col gap-2.5 pb-2">
+                            {NAV_SECTIONS.map((section) => (
+                                <NavSection
+                                    key={section.id}
+                                    {...section}
+                                    pathname={location.pathname}
+                                    onNavigate={handleNavigate}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </nav>
+            )}
+        </aside>
     );
 }
 
 interface NavHeaderProps {
     account?: AccountInfoData;
+    onToggleNav: () => void;
 }
 
-function NavHeader({ account }: NavHeaderProps) {
+function NavHeader({ account, onToggleNav }: NavHeaderProps) {
     const avatar = account?.avatar?.trim();
     const handleAvatarClick = () => {
         if (!account) {
@@ -64,7 +76,7 @@ function NavHeader({ account }: NavHeaderProps) {
 
     return (
         <div className="p-1.5 flex flex-row justify-between items-center self-stretch">
-            <IconButton icon={DotsNineIcon} />
+            <FunctionButton onClick={onToggleNav} />
             {avatar ? (
                 <img
                     src={avatar}
@@ -79,25 +91,6 @@ function NavHeader({ account }: NavHeaderProps) {
                 />
             )}
         </div>
-    );
-}
-
-interface IconButtonProps {
-    icon: Icon;
-}
-
-function IconButton({ icon: IconComponent }: IconButtonProps) {
-    return (
-        <button
-            type="button"
-            className="flex gap-2.5 rounded-xl corner-rounded justify-center items-center w-[30px] h-[30px] hover:bg-btn-hover active:scale-95 active:opacity-75 transition-all duration-150 ease-in-out"
-        >
-            <IconComponent
-                className="fill-icon-primary"
-                size={20}
-                weight="bold"
-            />
-        </button>
     );
 }
 

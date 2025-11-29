@@ -1,3 +1,4 @@
+@config "../tailwind.config.js";
 @import "tailwindcss";
 
 @theme {
@@ -23,9 +24,34 @@
     corner-shape: superellipse(1.75);
 }
 
+.card-num {
+    font-size: 32px;
+    font-weight: 500;
+    line-height: 34px;
+    letter-spacing: 0.4px;
+}
+
 .styledbtn {
     background-color: var(--color-nav-item) !important;
     border-radius: 10px !important;
+}
+
+.nav-scroll-area {
+    scrollbar-width: none;
+}
+
+.nav-scroll-area::-webkit-scrollbar {
+    display: none;
+}
+
+.dashboard-tabs-list {
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.rt-BaseTabList {
+    --accent-indicator: #ffffff !important;
 }
 
 @supports (text-autospace: normal) {
