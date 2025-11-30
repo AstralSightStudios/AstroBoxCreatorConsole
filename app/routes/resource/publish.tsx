@@ -22,7 +22,7 @@ export default function ResourcePublish() {
                             </Table.Row>
                         </Table.Header>
                         <Table.Body>
-                            <Table.Row className="hover:bg-neutral-700 cursor-pointer">
+                            <Table.Row className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer">
                                 <Table.RowHeaderCell>com.raytek.cytusii</Table.RowHeaderCell>
                                 <Table.Cell>Cytus II</Table.Cell>
                                 <Table.Cell>快应用</Table.Cell>
@@ -30,7 +30,7 @@ export default function ResourcePublish() {
                                 <Table.Cell>2025年12月1日</Table.Cell>
                             </Table.Row>
 
-                            <Table.Row className="hover:bg-neutral-700 cursor-pointer">
+                            <Table.Row className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer">
                                 <Table.RowHeaderCell>com.universe.earthonline</Table.RowHeaderCell>
                                 <Table.Cell>地球Online</Table.Cell>
                                 <Table.Cell>快应用</Table.Cell>
@@ -38,7 +38,7 @@ export default function ResourcePublish() {
                                 <Table.Cell>2025年12月2日</Table.Cell>
                             </Table.Row>
 
-                            <Table.Row className="hover:bg-neutral-700 cursor-pointer">
+                            <Table.Row className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer">
                                 <Table.RowHeaderCell>184722849121</Table.RowHeaderCell>
                                 <Table.Cell>户晨风动态表盘</Table.Cell>
                                 <Table.Cell>表盘</Table.Cell>

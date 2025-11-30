@@ -9,9 +9,12 @@ export default function RootLayout() {
     return (
         <Theme appearance="dark">
             <NavVisibilityProvider>
-                <div className="flex flex-row min-h-screen">
+                <div
+                    className="flex flex-row h-screen min-h-screen"
+                    style={{ height: "100dvh", minHeight: "100dvh" }}
+                >
                     <Nav />
-                    <main className="flex-1">
+                    <main className="flex-1 h-full">
                         <PageTransition />
                     </main>
                 </div>

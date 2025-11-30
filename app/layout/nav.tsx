@@ -132,7 +132,10 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
             aria-hidden={isCollapsed}
         >
             {!isCollapsed && (
-                <nav className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2">
+                <nav
+                    className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2"
+                    style={{ height: "100dvh" }}
+                >
                     <NavContent {...contentProps} />
                 </nav>
             )}

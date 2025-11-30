@@ -68,7 +68,10 @@ export default function LoginCallback() {
     }, []);
 
     return (
-        <div className="w-full h-screen flex flex-col justify-center items-center">
+        <div
+            className="w-full h-screen flex flex-col justify-center items-center"
+            style={{ height: "100dvh", minHeight: "100dvh" }}
+        >
             <p className="text-size-large font-bold text-center">正在登录...</p>
             <p className="text-size-medium text-gray-500">{message}</p>
         </div>

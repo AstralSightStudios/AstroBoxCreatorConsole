@@ -149,7 +149,10 @@ export default function PageTransition() {
     ]);
 
     return (
-        <div className="relative h-full min-h-screen overflow-hidden">
+        <div
+            className="relative h-full min-h-screen overflow-hidden"
+            style={{ minHeight: "100dvh" }}
+        >
             <AnimatePresence
                 initial={false}
                 mode="wait"
