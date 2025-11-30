@@ -1,6 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useRef } from "react";
-import { Outlet, useLocation } from "react-router";
+import { useContext, useMemo, useRef } from "react";
+import {
+    UNSAFE_DataRouterContext,
+    UNSAFE_DataRouterStateContext,
+    UNSAFE_LocationContext,
+    UNSAFE_NavigationContext,
+    UNSAFE_RouteContext,
+    useLocation,
+    useOutlet,
+} from "react-router";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
 
 type Axis = "x" | "y";
@@ -87,6 +95,13 @@ function getExitOffset(meta: TransitionMeta) {
 
 export default function PageTransition() {
     const location = useLocation();
+    const outlet = useOutlet();
+    const dataRouterContext = useContext(UNSAFE_DataRouterContext);
+    const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
+    const locationContext = useContext(UNSAFE_LocationContext);
+    const navigationContext = useContext(UNSAFE_NavigationContext);
+    const routeContext = useContext(UNSAFE_RouteContext);
+
     const normalizedPath = normalizePath(location.pathname);
     const transitionSnapshotRef = useRef<{
         path: string;
@@ -98,16 +113,40 @@ export default function PageTransition() {
 
     if (normalizedPath !== transitionSnapshotRef.current.path) {
         const previousPath = transitionSnapshotRef.current.path;
+        const meta = determineTransition(previousPath, normalizedPath);
         transitionSnapshotRef.current = {
             path: normalizedPath,
-            meta: determineTransition(
-                previousPath,
-                normalizedPath,
-            ),
+            meta,
         };
     }
 
     const { meta: transitionMeta, path: motionKey } = transitionSnapshotRef.current;
+    const frozenOutlet = useMemo(() => {
+        if (!outlet) {
+            return outlet;
+        }
+
+        return (
+            <UNSAFE_DataRouterContext.Provider value={dataRouterContext}>
+                <UNSAFE_DataRouterStateContext.Provider value={dataRouterState}>
+                    <UNSAFE_LocationContext.Provider value={locationContext}>
+                        <UNSAFE_NavigationContext.Provider value={navigationContext}>
+                            <UNSAFE_RouteContext.Provider value={routeContext}>
+                                {outlet}
+                            </UNSAFE_RouteContext.Provider>
+                        </UNSAFE_NavigationContext.Provider>
+                    </UNSAFE_LocationContext.Provider>
+                </UNSAFE_DataRouterStateContext.Provider>
+            </UNSAFE_DataRouterContext.Provider>
+        );
+    }, [
+        outlet,
+        dataRouterContext,
+        dataRouterState,
+        locationContext,
+        navigationContext,
+        routeContext,
+    ]);
 
     return (
         <div className="relative h-full min-h-screen overflow-hidden">
@@ -150,7 +189,7 @@ export default function PageTransition() {
                     exit="exit"
                 >
                     <div className="min-h-full">
-                        <Outlet />
+                        {frozenOutlet}
                     </div>
                 </motion.div>
             </AnimatePresence>
