@@ -16,8 +16,9 @@ const PAGE_NAME_MAP: Record<string, string> = {
 
 export default function Header() {
     const location = useLocation();
-    const { isCollapsed, toggleNav } = useNavVisibility();
+    const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
     const pathname = location.pathname;
+    const isMobile = !isDesktop;
 
     const segments = pathname.replace(/^\//, "").split("/").filter(Boolean);
 
@@ -35,7 +36,7 @@ export default function Header() {
 
     return (
         <header
-            className={`flex flex-row flex-wrap gap-2.5 px-${isCollapsed ? "2" : "3.5"} py-2 items-center`}
+            className={`flex flex-row flex-wrap gap-2.5 px-${isCollapsed ? "2" : "3.5"} py-2 items-center transition-all`}
         >
             {isCollapsed && (
                 <FunctionButton
@@ -44,7 +45,7 @@ export default function Header() {
                     title="展开导航"
                 />
             )}
-            {isCollapsed ? <CreatorConsoleLogoIcon /> : <CreatorConsoleLogo />}
+            {isMobile ? <CreatorConsoleLogoIcon /> : <CreatorConsoleLogo />}
 
             {breadcrumbKeys.map((key, index) => {
                 const label = PAGE_NAME_MAP[key] ?? key;

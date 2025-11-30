@@ -87,20 +87,27 @@ function getExitOffset(meta: TransitionMeta) {
 
 export default function PageTransition() {
     const location = useLocation();
-    const lastPathRef = useRef(normalizePath(location.pathname));
-    const transitionRef = useRef<TransitionMeta>(DEFAULT_TRANSITION);
     const normalizedPath = normalizePath(location.pathname);
+    const transitionSnapshotRef = useRef<{
+        path: string;
+        meta: TransitionMeta;
+    }>({
+        path: normalizedPath,
+        meta: DEFAULT_TRANSITION,
+    });
 
-    if (normalizedPath !== lastPathRef.current) {
-        transitionRef.current = determineTransition(
-            lastPathRef.current,
-            normalizedPath,
-        );
-        lastPathRef.current = normalizedPath;
+    if (normalizedPath !== transitionSnapshotRef.current.path) {
+        const previousPath = transitionSnapshotRef.current.path;
+        transitionSnapshotRef.current = {
+            path: normalizedPath,
+            meta: determineTransition(
+                previousPath,
+                normalizedPath,
+            ),
+        };
     }
 
-    const transitionMeta = transitionRef.current;
-    const motionKey = `${location.key}:${location.pathname}`;
+    const { meta: transitionMeta, path: motionKey } = transitionSnapshotRef.current;
 
     return (
         <div className="relative h-full min-h-screen overflow-hidden">

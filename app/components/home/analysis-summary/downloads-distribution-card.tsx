@@ -56,7 +56,7 @@ export default function DownloadsDistributionCard() {
                 style={{ cornerShape: "superellipse(1.75)" }}
                 className="pb-4 px-3.5 bg-nav-item rounded-2xl w-full h-full flex flex-col"
             >
-                <Tabs.Root className="dashboard-tabs w-full h-full">
+                <Tabs.Root className="dashboard-tabs w-full h-full" defaultValue="resdown">
                     <Tabs.List className="dashboard-tabs-list">
                         <Tabs.Trigger value="resdown">资源下载量</Tabs.Trigger>
                         <Tabs.Trigger value="devicedown">
