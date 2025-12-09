@@ -16,8 +16,8 @@
     "casdoor-js-sdk": "^0.16.0",
     "framer-motion": "^12.23.24",
     "isbot": "^5.1.31",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "react-progressive-blur": "^1.0.6",
     "react-router": "^7.9.2",
     "recharts": "^3.5.1"
