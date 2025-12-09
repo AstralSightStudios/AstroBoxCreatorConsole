@@ -34,8 +34,8 @@ jobs:
           node-version: 20
           cache: 'bun'
 
-      - name: Enable corepack (for pnpm / yarn)
-        run: corepack enable
+      - name: Install bun
+        run: npm install -g bun
 
       - name: Install frontend dependencies
         run: bun i
