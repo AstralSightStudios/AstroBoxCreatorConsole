@@ -1,24 +1,43 @@
-import { useEffect, useRef } from "react";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { UserCircleDashedIcon } from "@phosphor-icons/react";
+import {
+    GithubLogoIcon,
+    RocketLaunchIcon,
+    SignOutIcon,
+    UserCircleDashedIcon,
+} from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
 import NavItem from "~/components/nav/navitem";
 import FunctionButton from "~/components/nav/function-button";
+import { startAstroboxLogin } from "~/logic/account/astrobox";
 import {
-    ACCOUNT_INFO,
-    clearAccount,
-    login,
-    type AccountInfo as AccountInfoData,
-} from "~/logic/account/astrobox";
+    finalizeGithubLogin,
+    pollGithubDeviceSession,
+    startGithubDeviceSession,
+    type GithubDeviceSession,
+} from "~/logic/account/github";
+import {
+    getDisplayAccount,
+    logoutAccount,
+    useAccountState,
+    type AccountProvider,
+    type AccountState,
+    type DisplayAccount,
+} from "~/logic/account/store";
 import {
     NAV_SECTIONS,
     type NavSectionConfig,
     matchesNavPath,
 } from "./nav-config";
 import { useNavVisibility } from "./nav-visibility-context";
+import { AstroBoxLogo } from "~/components/svgs";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export default function Nav() {
-    const account = ACCOUNT_INFO;
+    const accountState = useAccountState();
+    const account = getDisplayAccount(accountState);
     const location = useLocation();
     const navigate = useNavigate();
     const {
@@ -65,6 +84,7 @@ export default function Nav() {
 
     const sharedProps = {
         account,
+        accountState,
         pathname: location.pathname,
         onNavigate: handleNavigate,
     };
@@ -94,16 +114,27 @@ export default function Nav() {
 }
 
 interface NavContentProps {
-    account?: AccountInfoData;
+    account: DisplayAccount;
+    accountState: AccountState;
     pathname: string;
     onNavigate: (path: string) => void;
     onToggleNav: () => void;
 }
 
-function NavContent({ account, onToggleNav, pathname, onNavigate }: NavContentProps) {
+function NavContent({
+    account,
+    accountState,
+    onToggleNav,
+    pathname,
+    onNavigate,
+}: NavContentProps) {
     return (
         <>
-            <NavHeader account={account} onToggleNav={onToggleNav} />
+            <NavHeader
+                account={account}
+                accountState={accountState}
+                onToggleNav={onToggleNav}
+            />
             <AccountInfo account={account} />
             <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area">
                 <div className="flex flex-col gap-2.5 pb-2">
@@ -123,6 +154,7 @@ function NavContent({ account, onToggleNav, pathname, onNavigate }: NavContentPr
 
 interface DesktopNavProps extends NavContentProps {
     isCollapsed: boolean;
+    onToggleNav: () => void;
 }
 
 function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
@@ -145,6 +177,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
 
 interface MobileNavProps extends NavContentProps {
     onDismiss: () => void;
+    onToggleNav: () => void;
 }
 
 function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
@@ -179,54 +212,436 @@ function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
 }
 
 interface NavHeaderProps {
-    account?: AccountInfoData;
+    account: DisplayAccount;
+    accountState: AccountState;
     onToggleNav: () => void;
 }
 
-function NavHeader({ account, onToggleNav }: NavHeaderProps) {
-    const avatar = account?.avatar?.trim();
-    const handleAvatarClick = () => {
-        if (!account) {
-            login();
-            return;
-        }
+function NavHeader({ account, accountState, onToggleNav }: NavHeaderProps) {
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [githubSession, setGithubSession] = useState<GithubDeviceSession>();
+    const [githubStatus, setGithubStatus] = useState("");
+    const [isGithubBusy, setIsGithubBusy] = useState(false);
+    const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number }>();
+    const abortRef = useRef<AbortController | null>(null);
 
-        const confirmed = window.confirm("是否退出登录？");
-        if (confirmed) {
-            clearAccount();
+    const updateAnchor = (event: React.MouseEvent<Element>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || 360;
+        const menuWidth = 320;
+        const gutter = 12;
+        const left = Math.min(
+            Math.max(rect.left, gutter),
+            viewportWidth - menuWidth - gutter,
+        );
+        const top = rect.bottom + 8;
+        setMenuAnchor({ x: left, y: top });
+    };
+
+    const handleAstroLogin = () => {
+        setIsMenuOpen(false);
+        startAstroboxLogin();
+    };
+
+    const handleGithubLogin = async () => {
+        try {
+            setIsGithubBusy(true);
+            setGithubStatus("Getting Activation Code...");
+            const session = await startGithubDeviceSession();
+            setGithubSession(session);
+            setIsMenuOpen(true);
+
+            const linkToOpen =
+                session.verificationUriComplete || session.verificationUri;
+            if (linkToOpen) {
+                window.open(linkToOpen, "_blank", "noopener,noreferrer");
+            }
+
+            abortRef.current?.abort();
+            abortRef.current = new AbortController();
+
+            const token = await pollGithubDeviceSession(session, {
+                signal: abortRef.current.signal,
+                onStatusChange: setGithubStatus,
+            });
+
+            setGithubStatus("Loading GitHub Account Info...");
+            await finalizeGithubLogin(token);
+            setGithubStatus("Login Successful");
             window.location.reload();
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "GitHub登录失败";
+            setGithubStatus(message);
+        } finally {
+            setIsGithubBusy(false);
+        }
+    };
+
+    const handleAstroLogout = async() => {
+        if (!accountState.astrobox) return;
+        const confirmed = await confirm("确认退出 AstroBox 账号？");
+        if (!confirmed) return;
+        abortRef.current?.abort();
+        logoutAccount("astrobox");
+        window.location.reload();
+    };
+
+    const handleGithubLogout = async() => {
+        if (!accountState.github) return;
+        const confirmed = await confirm("确认退出 GitHub 账号？");
+        if (!confirmed) return;
+        abortRef.current?.abort();
+        logoutAccount("github");
+        window.location.reload();
+    };
+
+    const hasAccount = account.hasAstrobox || account.hasGithub;
+
+    return (
+        <div className="relative">
+            <div className="p-1.5 flex flex-row justify-between items-center self-stretch">
+                <FunctionButton onClick={onToggleNav} />
+                <AccountAvatar
+                    account={account}
+                    isActive={hasAccount}
+                    onClick={(event) => {
+                        updateAnchor(event);
+                        setIsMenuOpen((open) => !open);
+                    }}
+                />
+            </div>
+            <AccountMenu
+                open={isMenuOpen}
+                accountState={accountState}
+                githubSession={githubSession}
+                githubStatus={githubStatus}
+                isGithubBusy={isGithubBusy}
+                onAstroLogin={handleAstroLogin}
+                onGithubLogin={handleGithubLogin}
+                onAstroLogout={handleAstroLogout}
+                onGithubLogout={handleGithubLogout}
+                anchor={menuAnchor}
+            />
+        </div>
+    );
+}
+
+interface AccountAvatarProps {
+    account: DisplayAccount;
+    isActive: boolean;
+    onClick: (event: React.MouseEvent<Element>) => void;
+}
+
+function AccountAvatar({ account, isActive, onClick }: AccountAvatarProps) {
+    const [useFallback, setUseFallback] = useState(false);
+    const [hideImage, setHideImage] = useState(false);
+
+    useEffect(() => {
+        setUseFallback(false);
+        setHideImage(false);
+    }, [account.avatar, account.avatarFallback]);
+
+    const src = !useFallback ? account.avatar : account.avatarFallback;
+
+    if (!src || hideImage) {
+        return (
+            <UserCircleDashedIcon
+                className={`cursor-pointer transition-colors ${isActive ? "text-white" : "text-white/80"}`}
+                size={28}
+                onClick={(event) => onClick(event)}
+            />
+        );
+    }
+
+    const handleError = () => {
+        if (!useFallback && account.avatarFallback) {
+            setUseFallback(true);
+        } else {
+            setHideImage(true);
         }
     };
 
     return (
-        <div className="p-1.5 flex flex-row justify-between items-center self-stretch">
-            <FunctionButton onClick={onToggleNav} />
-            {avatar ? (
+        <img
+            src={src}
+            className={`w-8 h-8 rounded-full object-cover cursor-pointer border border-white/10 ${isActive ? "ring-2 ring-white/20" : ""}`}
+            onClick={(event) => onClick(event)}
+            onError={handleError}
+        />
+    );
+}
+
+interface AccountMenuProps {
+    open: boolean;
+    anchor?: { x: number; y: number };
+    accountState: AccountState;
+    githubSession?: GithubDeviceSession;
+    githubStatus: string;
+    isGithubBusy: boolean;
+    onAstroLogin: () => void;
+    onGithubLogin: () => void;
+    onAstroLogout: () => void;
+    onGithubLogout: () => void;
+}
+
+function AccountMenu({
+    open,
+    anchor,
+    accountState,
+    githubSession,
+    githubStatus,
+    isGithubBusy,
+    onAstroLogin,
+    onGithubLogin,
+    onAstroLogout,
+    onGithubLogout,
+}: AccountMenuProps) {
+    const hasAstrobox = Boolean(accountState.astrobox);
+    const hasGithub = Boolean(accountState.github);
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: 0.16 }}
+                    className="fixed z-30 w-[min(400px,calc(100vw-24px))]"
+                    style={{
+                        left: anchor?.x ?? 12,
+                        top: anchor?.y ?? 56,
+                    }}
+                >
+                    <div className="rounded-2xl corner-rounded border border-white/10 bg-nav shadow-2xl backdrop-blur-xl p-3 space-y-3">
+                        {(hasAstrobox || hasGithub) && (
+                            <div className="flex flex-col gap-2 rounded-xl corner-rounded border border-white/10 bg-nav-item p-2.5">
+                                <p className="text-xs uppercase tracking-wide text-white/60">
+                                    已登录账号
+                                </p>
+                                {hasAstrobox && (
+                                    <ConnectedAccountRow
+                                        provider="astrobox"
+                                        name={
+                                            accountState.astrobox?.name ||
+                                            "AstroBox"
+                                        }
+                                        detail={
+                                            accountState.astrobox?.email ||
+                                            accountState.astrobox?.plan ||
+                                            ""
+                                        }
+                                        avatar={accountState.astrobox?.avatar}
+                                        onLogout={onAstroLogout}
+                                    />
+                                )}
+                                {hasGithub && (
+                                    <ConnectedAccountRow
+                                        provider="github"
+                                        name={
+                                            accountState.github?.name ||
+                                            accountState.github?.username ||
+                                            "GitHub"
+                                        }
+                                        detail={
+                                            accountState.github?.email ||
+                                            accountState.github?.username ||
+                                            ""
+                                        }
+                                        avatar={accountState.github?.avatar}
+                                        onLogout={onGithubLogout}
+                                    />
+                                )}
+                            </div>
+                        )}
+
+                        {(!hasAstrobox || !hasGithub) && (
+                            <div className="flex flex-col gap-1.5">
+                                {!hasAstrobox && (
+                                    <MenuButton
+                                        icon={
+                                            <AstroBoxLogo
+                                                size={18}
+                                            />
+                                        }
+                                        label="AstroBox登录"
+                                        description="登录到AstroBox账号以使用数据分析等功能"
+                                        onClick={onAstroLogin}
+                                    />
+                                )}
+                                {!hasGithub && (
+                                    <MenuButton
+                                        icon={<GithubLogoIcon size={18} />}
+                                        label="GitHub登录"
+                                        description="登录到GitHub账号以提交资源"
+                                        onClick={onGithubLogin}
+                                        loading={isGithubBusy}
+                                    />
+                                )}
+                            </div>
+                        )}
+
+                        {githubSession && (
+                            <GithubDeviceCard
+                                session={githubSession}
+                                status={githubStatus}
+                            />
+                        )}
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+interface MenuButtonProps {
+    icon: React.ReactNode;
+    label: string;
+    description?: string;
+    onClick: () => void;
+    loading?: boolean;
+}
+
+function MenuButton({
+    icon,
+    label,
+    description,
+    onClick,
+    loading,
+}: MenuButtonProps) {
+    return (
+        <button
+            className="flex items-center gap-3 rounded-xl border border-white/10 bg-nav-item px-3 py-2 text-left transition hover:border-white/20 hover:bg-nav-item-hover text-white"
+            onClick={onClick}
+            disabled={loading}
+        >
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/5">
+                {icon}
+            </span>
+            <span className="flex flex-col text-sm">
+                <span className="font-semibold leading-tight">{label}</span>
+                {description && (
+                    <span className="text-[11px] text-white/60 leading-tight">
+                        {loading ? "Requesting..." : description}
+                    </span>
+                )}
+            </span>
+        </button>
+    );
+}
+
+interface ConnectedAccountRowProps {
+    provider: AccountProvider;
+    name: string;
+    detail?: string;
+    avatar?: string;
+    onLogout: () => void;
+}
+
+function ConnectedAccountRow({
+    provider,
+    name,
+    detail,
+    avatar,
+    onLogout,
+}: ConnectedAccountRowProps) {
+    const [avatarError, setAvatarError] = useState(false);
+    const initials = provider === "github" ? "GH" : "AB";
+    const showAvatar = Boolean(avatar && !avatarError);
+
+    return (
+        <div className="flex items-center gap-2 rounded-lg corner-rounded bg-nav px-2.5 py-2">
+            {showAvatar ? (
                 <img
                     src={avatar}
-                    className="w-7 h-7 rounded-full object-cover cursor-pointer"
-                    onClick={handleAvatarClick}
+                    onError={() => setAvatarError(true)}
+                    className="h-8 w-8 rounded-full object-cover border border-white/10"
                 />
             ) : (
-                <UserCircleDashedIcon
-                    className="cursor-pointer"
-                    size={28}
-                    onClick={handleAvatarClick}
-                />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-semibold text-white/80">
+                    {initials}
+                </div>
+            )}
+            <div className="flex flex-1 flex-col">
+                <span className="text-sm font-semibold">{name} ({formatProvider(provider)})</span>
+                <span className="text-[11px] text-white/60">
+                    {detail || formatProvider(provider)}
+                </span>
+            </div>
+            <button
+                className="flex items-center gap-1 rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/80 hover:border-white/40"
+                onClick={onLogout}
+            >
+                <SignOutIcon size={14} />
+                退出
+            </button>
+        </div>
+    );
+}
+
+interface GithubDeviceCardProps {
+    session: GithubDeviceSession;
+    status?: string;
+}
+
+function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
+    const deepLink =
+        session.verificationUriComplete || session.verificationUri || "";
+
+    const handleOpen = () => {
+        if (deepLink) {
+            openUrl(deepLink);
+        }
+    };
+
+    return (
+        <div className="rounded-xl corner-rounded border border-white/10 bg-nav-item p-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+                <div>
+                    <p className="text-sm font-semibold">GitHub 授权中</p>
+                    <p className="text-[11px] text-white/60">
+                        在浏览器中输入下方代码完成登录
+                    </p>
+                </div>
+                <button
+                    className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/80 hover:border-white/40"
+                    onClick={handleOpen}
+                >
+                    打开链接
+                </button>
+            </div>
+            <p className="text-lg font-mono tracking-wide">
+                {session.userCode}
+            </p>
+            <p className="text-xs text-white/60 break-all">
+                {session.verificationUri}
+            </p>
+            {status && (
+                <p className="text-xs text-white/70 pt-1">Status: {status}</p>
             )}
         </div>
     );
 }
 
+function formatProvider(provider?: AccountProvider) {
+    if (provider === "astrobox") return "AstroBox";
+    if (provider === "github") return "GitHub";
+    return undefined;
+}
+
 interface AccountInfoProps {
-    account?: AccountInfoData;
+    account: DisplayAccount;
 }
 
 function AccountInfo({ account }: AccountInfoProps) {
-    const name = account?.name || "未登录";
-    const plan = account?.plan?.trim();
-    const email = account?.email?.trim();
-    const meta = [plan, email].filter(Boolean).join(" · ");
+    const name = account.name || "未登录";
+    const metaParts = [
+        account.plan?.trim(),
+        account.email?.trim(),
+        formatProvider(account.provider),
+    ].filter(Boolean);
+    const meta = metaParts.join(" · ");
 
     return (
         <div className="flex flex-col px-3 py-3.5">

@@ -54,7 +54,7 @@ export default function DownloadsDistributionCard() {
             <div
                 //@ts-ignore
                 style={{ cornerShape: "superellipse(1.75)" }}
-                className="pb-4 px-3.5 bg-nav-item rounded-2xl w-full h-full flex flex-col"
+                className="pb-4 px-3.5 bg-nav-item rounded-2xl corner-rounded w-full h-full flex flex-col"
             >
                 <Tabs.Root className="dashboard-tabs w-full h-full" defaultValue="resdown">
                     <Tabs.List className="dashboard-tabs-list">

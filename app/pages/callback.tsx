@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SDK, saveAccount, type AccountInfo } from "~/logic/account/astrobox";
+import { SDK, persistAstroboxAccount } from "~/logic/account/astrobox";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 
@@ -36,20 +36,7 @@ export default function LoginCallback() {
                 const profile: any = await getSelfUserInfo(tokenResponse.token);
 
                 console.log(profile);
-
-                const account: AccountInfo = {
-                    avatar: profile?.avatar ?? "",
-                    name:
-                        profile?.displayName ||
-                        profile?.preferred_username ||
-                        profile?.name ||
-                        "",
-                    plan: profile?.tag ?? "",
-                    email: profile?.email ?? "",
-                    token: tokenResponse.token,
-                };
-
-                saveAccount(account);
+                persistAstroboxAccount(profile, tokenResponse.token);
                 setMessage("Success!");
                 window.location.replace("/");
             } catch (error) {

@@ -12,6 +12,9 @@
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/themes": "^3.2.1",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "~2.4.2",
+    "@tauri-apps/plugin-opener": "~2",
     "axios": "^1.13.2",
     "casdoor-js-sdk": "^0.16.0",
     "framer-motion": "^12.23.24",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
+    "@tauri-apps/cli": "^2.9.6",
     "@types/node": "^22",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",

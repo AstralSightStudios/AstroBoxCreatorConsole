@@ -80,7 +80,7 @@ function Slash() {
             <path
                 d="M7.9992 0L1.9008 11.916H0L6.0984 0H7.9992Z"
                 fill="white"
-                fill-opacity="0.3"
+                fillOpacity="0.3"
             />
         </svg>
     );

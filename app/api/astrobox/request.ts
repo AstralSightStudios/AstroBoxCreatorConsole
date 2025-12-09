@@ -1,6 +1,6 @@
 import axios from "axios";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
-import { ACCOUNT_INFO } from "~/logic/account/astrobox";
+import { getAstroboxToken } from "~/logic/account/store";
 
 export async function sendApiRequest<T>(
     url: string,
@@ -8,13 +8,18 @@ export async function sendApiRequest<T>(
     token?: string,
     data?: any,
 ): Promise<T> {
+    const authToken = token || getAstroboxToken();
+    const headers: Record<string, string> = {};
+
+    if (authToken) {
+        headers["X-ASTROBOX-TOKEN"] = authToken;
+    }
+
     const response = await axios.request<T>({
         url: `${ASTROBOX_SERVER_CONFIG.serverUrl}${url}`,
         method,
         data,
-        headers: {
-            "X-ASTROBOX-TOKEN": ACCOUNT_INFO?.token || token,
-        },
+        headers,
     });
 
     return response.data;
