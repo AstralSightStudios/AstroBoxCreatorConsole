@@ -414,7 +414,7 @@ function AccountMenu({
                         top: anchor?.y ?? 56,
                     }}
                 >
-                    <div className="rounded-2xl corner-rounded border border-white/10 bg-nav shadow-2xl backdrop-blur-xl p-3 space-y-3">
+                    <div className="rounded-2xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-3 space-y-3">
                         {(hasAstrobox || hasGithub) && (
                             <div className="flex flex-col gap-2 rounded-xl corner-rounded border border-white/10 bg-nav-item p-2.5">
                                 <p className="text-xs uppercase tracking-wide text-white/60">
