@@ -11,7 +11,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
     encrypt: "资源加解密与激活",
     manage: "资源管理",
     publish: "资源发布",
-    "settings/github": "GitHub 选项",
+    "publish/new": "发布新资源",
 };
 
 export default function Header() {

@@ -11,6 +11,7 @@ import ResourceManage from "~/routes/resource/manage";
 import ResourcePublish from "~/routes/resource/publish";
 import Settings from "~/routes/settings";
 import LoginCallback from "./pages/callback";
+import { NewResourcePublishPage } from "./routes/resource/publish/new";
 
 const router = createBrowserRouter([
     {
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
             { path: "encrypt", element: <ResourceEncrypt /> },
             { path: "profile", element: <Profile /> },
             { path: "settings", element: <Settings /> },
+            { path: "publish/new", element: <NewResourcePublishPage /> },
         ],
     },
     {

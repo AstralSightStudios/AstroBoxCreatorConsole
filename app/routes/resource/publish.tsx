@@ -1,12 +1,15 @@
 import { ClockIcon, FileArrowUpIcon, PencilSimpleIcon } from "@phosphor-icons/react";
 import { Button, Table } from "@radix-ui/themes";
+import { useNavigate } from "react-router";
 import Page from "~/layout/page";
 
 export default function ResourcePublish() {
+    const navigate = useNavigate();
+
     return (
         <Page>
             <div className="flex flex-row px-2 pt-1.5 pb-3 gap-2.5">
-                <Button className="styledbtn"><FileArrowUpIcon size={16} weight="fill" /> 发布资源</Button>
+                <Button className="styledbtn" onClick={() => {navigate("/publish/new")}}><FileArrowUpIcon size={16} weight="fill" /> 发布资源</Button>
             </div>
             <div className="pt-1.5 px-3.5">
                 <p className="font-[520] text-size-large">申请列表</p>
