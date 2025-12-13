@@ -122,13 +122,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             try {
                 setIsDeviceLoading(true);
                 setDeviceError("");
-                const response = await fetch(DEVICES_URL, {
-                    cache: "no-store",
-                    headers: {
-                        "Cache-Control": "no-cache",
-                        Pragma: "no-cache",
-                    },
-                });
+                const response = await fetch(DEVICES_URL);
                 if (!response.ok) {
                     throw new Error(`请求失败: ${response.status}`);
                 }
