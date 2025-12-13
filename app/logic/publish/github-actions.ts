@@ -52,9 +52,12 @@ export function resolveRepoNameFromId(itemId: string, fallbackName: string) {
 
 export async function githubFetch<T>(url: string, init: RequestInit): Promise<T> {
     const response = await fetch(url, {
+        cache: "no-store",
         ...init,
         headers: {
             Accept: "application/vnd.github+json",
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
             ...(init.headers || {}),
         },
     });
