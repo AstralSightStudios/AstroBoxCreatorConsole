@@ -25,9 +25,10 @@ const DEFAULT_TRANSITION: TransitionMeta = {
     reason: "fallback",
 };
 
-const MOTION_EASE: [number, number, number, number] = [0.19, 1, 0.22, 1];
-const ENTER_DURATION = 0.26;
-const EXIT_DURATION = 0.22;
+const ENTER_EASE: [number, number, number, number] = [0.22, 0.82, 0.3, 1];
+const EXIT_EASE: [number, number, number, number] = [0.65, 0, 0.35, 1];
+const ENTER_DURATION = 0.3;
+const EXIT_DURATION = 0.2;
 
 function isPrefixOf(base: string[], target: string[]) {
     if (base.length === 0) {
@@ -155,7 +156,7 @@ export default function PageTransition() {
         >
             <AnimatePresence
                 initial={false}
-                mode="wait"
+                mode="sync"
                 custom={transitionMeta}
             >
                 <motion.div
@@ -166,7 +167,7 @@ export default function PageTransition() {
                         initial: (meta: TransitionMeta) => ({
                             x: meta.axis === "x" ? getInitialOffset(meta) : 0,
                             y: meta.axis === "y" ? getInitialOffset(meta) : 0,
-                            opacity: 0.85,
+                            opacity: 0,
                         }),
                         animate: {
                             x: 0,
@@ -174,16 +175,16 @@ export default function PageTransition() {
                             opacity: 1,
                             transition: {
                                 duration: ENTER_DURATION,
-                                ease: MOTION_EASE,
+                                ease: ENTER_EASE,
                             },
                         },
                         exit: (meta: TransitionMeta) => ({
                             x: meta.axis === "x" ? getExitOffset(meta) : 0,
                             y: meta.axis === "y" ? getExitOffset(meta) : 0,
-                            opacity: 0.5,
+                            opacity: 0,
                             transition: {
                                 duration: EXIT_DURATION,
-                                ease: MOTION_EASE,
+                                ease: EXIT_EASE,
                             },
                         }),
                     }}
