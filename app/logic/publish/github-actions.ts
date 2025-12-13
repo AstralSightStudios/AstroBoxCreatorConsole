@@ -15,6 +15,8 @@ interface UploadParams {
     path: string;
     content: string;
     message: string;
+    sha?: string;
+    branch?: string;
 }
 
 export interface PullRequestPayload {
@@ -121,8 +123,27 @@ export function ensureBase64(content: ArrayBuffer | string) {
     return btoa(binary);
 }
 
+export async function getRepoFile(params: {
+    repo: RepoInfo;
+    path: string;
+    tokenOverride?: string;
+    ref?: string;
+}) {
+    const { repo, path, tokenOverride, ref } = params;
+    const token = tokenOverride ?? getGithubTokenOrThrow();
+    return githubFetch<any>(
+        `https://api.github.com/repos/${repo.owner}/${repo.name}/contents/${encodeURIComponent(path)}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+            },
+        },
+    );
+}
+
 export async function uploadFileToRepo(params: UploadParams) {
-    const { token, repo, path, content, message } = params;
+    const { token, repo, path, content, message, sha, branch } = params;
     return githubFetch<any>(
         `https://api.github.com/repos/${repo.owner}/${repo.name}/contents/${encodeURIComponent(path)}`,
         {
@@ -130,7 +151,8 @@ export async function uploadFileToRepo(params: UploadParams) {
             body: JSON.stringify({
                 message,
                 content,
-                branch: repo.branch,
+                branch: branch || repo.branch,
+                sha,
             }),
             headers: {
                 Authorization: `Bearer ${token}`,
@@ -146,6 +168,7 @@ export async function uploadBinaryFile(
     file: File,
     message: string,
     tokenOverride?: string,
+    options?: { sha?: string; branch?: string },
 ) {
     const token = tokenOverride ?? getGithubTokenOrThrow();
     const buffer = await file.arrayBuffer();
@@ -156,6 +179,8 @@ export async function uploadBinaryFile(
         path,
         content,
         message,
+        sha: options?.sha,
+        branch: options?.branch,
     });
 }
 
@@ -165,6 +190,7 @@ export async function uploadTextFile(
     text: string,
     message: string,
     tokenOverride?: string,
+    options?: { sha?: string; branch?: string },
 ) {
     const token = tokenOverride ?? getGithubTokenOrThrow();
     const content = ensureBase64(text);
@@ -174,6 +200,8 @@ export async function uploadTextFile(
         path,
         content,
         message,
+        sha: options?.sha,
+        branch: options?.branch,
     });
 }
 

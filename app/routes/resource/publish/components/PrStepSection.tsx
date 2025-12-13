@@ -9,6 +9,7 @@ interface PrStepSectionProps {
     onPrBodyChange: (value: string) => void;
     onSubmit: () => void;
     onBack: () => void;
+    mode?: "new" | "update";
 }
 
 export function PrStepSection({
@@ -18,11 +19,17 @@ export function PrStepSection({
     onPrBodyChange,
     onSubmit,
     onBack,
+    mode = "new",
 }: PrStepSectionProps) {
+    const isUpdate = mode === "update";
     return (
         <SectionCard
-            title="步骤 3 · 提交 Pull Request"
-            description={`将当前仓库的 ${PUBLISH_CONFIG.defaultBranch} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`}
+            title={isUpdate ? "步骤 3 · 更新 Pull Request" : "步骤 3 · 提交 Pull Request"}
+            description={
+                isUpdate
+                    ? `向 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName} 的现有 PR 推送最新提交。`
+                    : `将当前仓库的 ${PUBLISH_CONFIG.defaultBranch} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`
+            }
         >
             <div className="flex flex-col gap-2">
                 <TextArea
@@ -37,7 +44,13 @@ export function PrStepSection({
                         onClick={onSubmit}
                         disabled={prStatus === "loading"}
                     >
-                        {prStatus === "loading" ? "创建中..." : "提交 PR"}
+                        {prStatus === "loading"
+                            ? isUpdate
+                                ? "更新中..."
+                                : "创建中..."
+                            : isUpdate
+                              ? "更新 PR"
+                              : "提交 PR"}
                     </Button>
                     {prMessage && (
                         <p

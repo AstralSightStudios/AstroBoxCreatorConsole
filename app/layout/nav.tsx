@@ -165,7 +165,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
         >
             {!isCollapsed && (
                 <nav
-                    className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2"
+                    className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0"
                     style={{ height: "100dvh" }}
                 >
                     <NavContent {...contentProps} />
@@ -198,10 +198,10 @@ function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
                 transition={{ duration: 0.3 }}
             />
             <motion.nav
-                className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2"
-                initial={{ y: 36, scale: 0.97, opacity: 0.8 }}
+                className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0"
+                initial={{ y: -10, scale: 0.97, opacity: 0.8 }}
                 animate={{ y: 0, scale: 1, opacity: 1 }}
-                exit={{ y: 36, scale: 0.97, opacity: 0.8 }}
+                exit={{ y: -10, scale: 0.97, opacity: 0.8 }}
                 transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
                 onClick={(event) => event.stopPropagation()}
             >

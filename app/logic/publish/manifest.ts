@@ -15,12 +15,16 @@ export interface UploadAssetInput {
     id?: string;
     name: string;
     file: File;
+    pathOverride?: string;
+    skipUpload?: boolean;
 }
 
 export interface DownloadUploadInput {
     platformId: string;
     version: string;
     file: UploadAssetInput | null;
+    pathOverride?: string;
+    skipUpload?: boolean;
 }
 
 export interface ManifestBuildInput {
@@ -42,6 +46,7 @@ export interface ManifestBuildInput {
 export interface AssetDescriptor {
     path: string;
     file: File;
+    skipUpload?: boolean;
 }
 
 export interface DownloadAssetDescriptor extends AssetDescriptor {
@@ -65,27 +70,33 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     const downloadsDir = PUBLISH_CONFIG.downloadsDirectory.replace(/\/+$/, "");
 
     const previewAssets: AssetDescriptor[] = input.previews.map((item) => ({
-        path: `${mediaDir}/${item.name}`,
+        path: item.pathOverride || `${mediaDir}/${item.name}`,
         file: item.file,
+        skipUpload: item.skipUpload,
     }));
     const previewPathMap = new Map<string | undefined, string>();
     input.previews.forEach((item) => {
-        previewPathMap.set(item.id ?? item.name, `${mediaDir}/${item.name}`);
+        previewPathMap.set(
+            item.id ?? item.name,
+            item.pathOverride || `${mediaDir}/${item.name}`,
+        );
     });
     const previewPaths = previewAssets.map((asset) => asset.path);
 
     const iconAsset = input.icon
         ? {
-              path: `${mediaDir}/${input.icon.name}`,
+              path: input.icon.pathOverride || `${mediaDir}/${input.icon.name}`,
               file: input.icon.file,
+              skipUpload: input.icon.skipUpload,
           }
         : undefined;
 
     const coverAsset =
         !input.usePreviewAsCover && input.cover
             ? {
-                  path: `${mediaDir}/${input.cover.name}`,
+                  path: input.cover.pathOverride || `${mediaDir}/${input.cover.name}`,
                   file: input.cover.file,
+                  skipUpload: input.cover.skipUpload,
               }
             : undefined;
 
@@ -98,8 +109,9 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         .map((d) => ({
             platformId: d.platformId.trim(),
             version: d.version.trim(),
-            path: `${downloadsDir}/${d.file!.name}`,
+            path: d.file?.pathOverride || d.pathOverride || `${downloadsDir}/${d.file!.name}`,
             file: d.file!.file,
+            skipUpload: d.file?.skipUpload ?? d.skipUpload,
         }));
 
     const downloadsObject = downloadAssets.reduce((acc, current) => {

@@ -12,6 +12,8 @@ const PAGE_NAME_MAP: Record<string, string> = {
     manage: "资源管理",
     publish: "资源发布",
     "publish/new": "发布新资源",
+    "publish/edit": "编辑资源",
+    "manage/edit": "编辑资源",
 };
 
 export default function Header() {

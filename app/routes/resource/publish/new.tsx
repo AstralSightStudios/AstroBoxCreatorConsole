@@ -1,13 +1,26 @@
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import { buildManifest, type ManifestBuildResult } from "~/logic/publish/manifest";
-import { uploadManifestAndAssets, type RepoInfo } from "~/logic/publish/submission";
+import {
+    upsertManifestAndAssets,
+    uploadManifestAndAssets,
+    type RepoInfo,
+} from "~/logic/publish/submission";
 import { loadAccountState } from "~/logic/account/store";
-import { createCatalogPullRequest, updateCatalogCsv } from "~/logic/publish/catalog";
+import {
+    createCatalogPullRequest,
+    updateCatalogCsv,
+    updateCatalogEntryOnBranch,
+} from "~/logic/publish/catalog";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
-import { createUploadItem, revokeUrl } from "./components/uploadUtils";
+import {
+    createExistingUploadItem,
+    createUploadItem,
+    revokeUrl,
+} from "./components/uploadUtils";
 import {
     type AuthorInput,
     type DeviceOption,
@@ -21,13 +34,21 @@ import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection } from "./components/RepoStepSection";
 import { PrStepSection } from "./components/PrStepSection";
+import { type ResourceEditContext } from "~/logic/publish/resources";
+import {
+    buildRawFileUrl,
+    fetchManifestForCatalogEntry,
+} from "~/logic/publish/manifest-loader";
+import { syncBranchWithUpstream } from "~/logic/publish/fork";
 
 const DEVICES_URL =
     "https://raw.githubusercontent.com/AstralSightStudios/AstroBox-Repo/refs/heads/main/devices_v2.json";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
-export function NewResourcePublishPage() {
+function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
+    const location = useLocation();
+    const isEditMode = mode === "edit";
     const [itemId, setItemId] = useState("");
     const [resourceType, setResourceType] = useState<"quick_app" | "watchface">(
         "quick_app",
@@ -73,6 +94,27 @@ export function NewResourcePublishPage() {
     const [activeStepIndex, setActiveStepIndex] = useState(0);
     const [repoNameInput, setRepoNameInput] = useState("");
     const [uploadLogs, setUploadLogs] = useState<string[]>([]);
+    const [editContext, setEditContext] = useState<ResourceEditContext | null>(() => {
+        if (!isEditMode) {
+            return null;
+        }
+        const state =
+            (location.state as { editContext?: ResourceEditContext } | null) || null;
+        return state?.editContext ?? null;
+    });
+    const [editLoading, setEditLoading] = useState(false);
+    const [editError, setEditError] = useState("");
+    const [lastManifest, setLastManifest] = useState<ManifestBuildResult | null>(null);
+
+    useEffect(() => {
+        if (!isEditMode) return;
+        const state =
+            (location.state as { editContext?: ResourceEditContext } | null) || null;
+        setEditContext(state?.editContext ?? null);
+    }, [isEditMode, location.state]);
+
+    const isEditing = isEditMode || Boolean(editContext);
+    const missingEditContext = isEditMode && !editContext;
 
     useEffect(() => {
         let cancelled = false;
@@ -151,6 +193,141 @@ export function NewResourcePublishPage() {
             return changed ? next : prev;
         });
     }, [deviceOptions]);
+
+    useEffect(() => {
+        if (!isEditMode || !editContext) return;
+        let active = true;
+        const load = async () => {
+            setEditLoading(true);
+            setEditError("");
+            setUploadLogs([]);
+            setRepoStatus("idle");
+            setPrStatus("idle");
+            setLastManifest(null);
+            try {
+                const token = loadAccountState().github?.token;
+                if (!token) {
+                    throw new Error("GitHub 未登录，无法加载资源。");
+                }
+                const catalogEntry = editContext.catalog.entry;
+                const ref =
+                    catalogEntry.repo_commit_hash ||
+                    editContext.catalog.ref ||
+                    PUBLISH_CONFIG.defaultBranch;
+                const { manifest, repo } = await fetchManifestForCatalogEntry({
+                    entry: catalogEntry,
+                    token,
+                    ref,
+                });
+                if (!active) return;
+
+                setItemId(manifest.item.id || catalogEntry.id || "");
+                setItemName(manifest.item.name || catalogEntry.name || "");
+                setDescription(manifest.item.description || "");
+                setResourceType(
+                    (manifest.item.restype as "quick_app" | "watchface") || "quick_app",
+                );
+                setTagsInput(catalogEntry.tags || "");
+                setPaidType(catalogEntry.paid_type || "");
+                setAuthors(
+                    manifest.item.author?.map((a) => ({
+                        name: a.name || "",
+                        bindABAccount: Boolean(a.bindABAccount),
+                    })) || [{ name: "", bindABAccount: true }],
+                );
+                setLinks(
+                    manifest.links?.map((link) => ({
+                        title: link.title || "",
+                        url: link.url || "",
+                        icon: link.icon || "",
+                    })) || [],
+                );
+
+                const previewItems: UploadItem[] =
+                    manifest.item.preview?.map((path, index) =>
+                        createExistingUploadItem(
+                            path.split("/").pop() || `preview-${index + 1}`,
+                            buildRawFileUrl(repo.owner, repo.name, ref, path),
+                            path,
+                        ),
+                    ) || [];
+                setPreviews(previewItems);
+
+                const iconPath = manifest.item.icon;
+                setIcon(
+                    iconPath
+                        ? createExistingUploadItem(
+                              iconPath.split("/").pop() || "icon",
+                              buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
+                              iconPath,
+                          )
+                        : null,
+                );
+
+                const coverPath = manifest.item.cover;
+                const matchedCover = previewItems.find(
+                    (item) => (item.pathOverride || item.name) === coverPath,
+                );
+                if (matchedCover) {
+                    setUsePreviewAsCover(true);
+                    setCoverPreviewId(matchedCover.id);
+                    setCover(null);
+                } else if (coverPath) {
+                    setUsePreviewAsCover(false);
+                    setCover(
+                        createExistingUploadItem(
+                            coverPath.split("/").pop() || "cover",
+                            buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
+                            coverPath,
+                        ),
+                    );
+                } else {
+                    setUsePreviewAsCover(true);
+                    setCoverPreviewId(previewItems[0]?.id ?? null);
+                    setCover(null);
+                }
+
+                const downloadsFromManifest = manifest.downloads || {};
+                const downloadInputs: DownloadInput[] = Object.entries(
+                    downloadsFromManifest,
+                ).map(([platformId, info]) => {
+                    const fileName = info?.file_name || "";
+                    return {
+                        uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+                        platformId,
+                        version: info?.version || "",
+                        file: fileName
+                            ? createExistingUploadItem(
+                                  fileName.split("/").pop() || fileName,
+                                  buildRawFileUrl(repo.owner, repo.name, ref, fileName),
+                                  fileName,
+                              )
+                            : null,
+                        existingFileName: fileName,
+                    };
+                });
+                setDownloads(downloadInputs);
+
+                setExtRaw(
+                    manifest.ext !== undefined
+                        ? JSON.stringify(manifest.ext, null, 2)
+                        : "{}",
+                );
+                setRepoInfo({ ...repo });
+                setRepoNameInput(repo.name);
+                setActiveStepIndex(0);
+            } catch (error) {
+                if (!active) return;
+                setEditError((error as Error).message);
+            } finally {
+                if (active) setEditLoading(false);
+            }
+        };
+        load();
+        return () => {
+            active = false;
+        };
+    }, [editContext, isEditMode]);
 
     const { parsedExt, extError } = useMemo(() => {
         try {
@@ -293,8 +470,16 @@ export function NewResourcePublishPage() {
     };
 
     const handleUploadToRepo = async () => {
+        if (missingEditContext) {
+            setRepoStatus("error");
+            setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
+            return;
+        }
+        const mode = editContext?.mode ?? "new";
         setRepoStatus("loading");
-        setRepoMessage("正在创建仓库并上传文件...");
+        setRepoMessage(
+            mode === "new" ? "正在创建仓库并上传文件..." : "正在更新仓库文件...",
+        );
         setUploadLogs([]);
         try {
             if (extError) {
@@ -302,12 +487,15 @@ export function NewResourcePublishPage() {
             }
 
             const expectedDownloads = downloads.filter((d) => d.platformId.trim()).length;
+            const missingDownload = downloads.some(
+                (d) => d.platformId.trim() && !d.file && !d.existingFileName,
+            );
 
-            if (manifestResult.downloadAssets.length !== expectedDownloads) {
+            if (missingDownload) {
                 throw new Error("所有下载配置必须上传包体文件。");
             }
 
-            if (manifestResult.previewAssets.length === 0) {
+            if (manifestResult.previewPaths.length === 0) {
                 throw new Error("请至少上传一张预览图。");
             }
 
@@ -320,19 +508,47 @@ export function NewResourcePublishPage() {
                 throw new Error("GitHub 未登录，无法上传文件。");
             }
 
-            const repo = await uploadManifestAndAssets({
+            if (mode === "new") {
+                const repo = await uploadManifestAndAssets({
+                    manifest: manifestResult,
+                    itemId,
+                    itemName,
+                    description,
+                    token,
+                    repoNameOverride: repoNameInput.trim() || undefined,
+                    onProgress: addLog,
+                });
+                setRepoInfo(repo);
+                setLastManifest(manifestResult);
+                setRepoStatus("success");
+                setRepoMessage("仓库与文件已就绪，下一步可提交 PR。");
+                setActiveStepIndex(2);
+                return;
+            }
+
+            const targetRepo: RepoInfo | null =
+                repoInfo ||
+                (editContext
+                    ? {
+                          owner: editContext.catalog.entry.repo_owner,
+                          name: editContext.catalog.entry.repo_name,
+                          branch: PUBLISH_CONFIG.defaultBranch,
+                      }
+                    : null);
+            if (!targetRepo) {
+                throw new Error("未找到可更新的仓库信息。");
+            }
+
+            const repo = await upsertManifestAndAssets({
                 manifest: manifestResult,
-                itemId,
-                itemName,
-                description,
+                repo: targetRepo,
                 token,
-                repoNameOverride: repoNameInput.trim() || undefined,
                 onProgress: addLog,
             });
             setRepoInfo(repo);
-
+            setLastManifest(manifestResult);
             setRepoStatus("success");
-            setRepoMessage("仓库与文件已就绪，下一步可提交 PR。");
+            setRepoMessage("仓库更新完成，准备提交目录更新。");
             setActiveStepIndex(2);
         } catch (error) {
             setRepoStatus("error");
@@ -341,6 +557,12 @@ export function NewResourcePublishPage() {
     };
 
     const handleCreatePR = async () => {
+        if (missingEditContext) {
+            setPrStatus("error");
+            setPrMessage("缺少编辑上下文，请从资源列表重新进入。");
+            return;
+        }
+        const mode = editContext?.mode ?? "new";
         if (!repoInfo) {
             setPrStatus("error");
             setPrMessage("请先完成仓库创建与文件上传。");
@@ -352,7 +574,9 @@ export function NewResourcePublishPage() {
             return;
         }
         setPrStatus("loading");
-        setPrMessage("正在创建 Pull Request...");
+        setPrMessage(
+            mode === "in_progress" ? "正在更新已有 PR..." : "正在创建 Pull Request...",
+        );
         try {
             const token = loadAccountState().github?.token;
             if (!token) throw new Error("GitHub 未登录，无法提交 PR。");
@@ -373,10 +597,54 @@ export function NewResourcePublishPage() {
                     vendor: deviceMap.get(d.platformId)?.vendor,
                 }));
 
+            const manifestForCatalog = lastManifest ?? manifestResult;
+
+            if (mode === "in_progress") {
+                if (!editContext?.prHead) {
+                    throw new Error("缺少 PR 分支信息，无法更新。");
+                }
+
+                await syncBranchWithUpstream({
+                    token,
+                    forkOwner: editContext.prHead.owner,
+                    forkRepo: editContext.prHead.repo,
+                    targetBranch: editContext.prHead.ref,
+                });
+
+                await updateCatalogEntryOnBranch({
+                    token,
+                    owner: editContext.prHead.owner,
+                    repo: editContext.prHead.repo,
+                    branch: editContext.prHead.ref,
+                    entry: {
+                        id: itemId.trim(),
+                        name: itemName.trim(),
+                        restype: resourceType,
+                        repo_owner: repoInfo.owner,
+                        repo_name: repoInfo.name,
+                        repo_commit_hash: repoInfo.commitSha,
+                        icon: manifestForCatalog.iconPath,
+                        cover: manifestForCatalog.coverPath,
+                        tags: tags.join(";"),
+                        device_vendors: Array.from(
+                            new Set(selectedDevices.map((d) => d.vendor).filter(Boolean)),
+                        ).join(";"),
+                        devices: Array.from(
+                            new Set(selectedDevices.map((d) => d.id)),
+                        ).join(";"),
+                        paid_type: paidType?.trim() ?? "",
+                    },
+                });
+
+                setPrStatus("success");
+                setPrMessage("已更新现有 PR。");
+                return;
+            }
+
             const branchInfo = await updateCatalogCsv({
                 repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
-                iconPath: manifestResult.iconPath,
-                coverPath: manifestResult.coverPath,
+                iconPath: manifestForCatalog.iconPath,
+                coverPath: manifestForCatalog.coverPath,
                 tags,
                 devices: selectedDevices,
                 itemId,
@@ -435,6 +703,11 @@ export function NewResourcePublishPage() {
         setActiveStepIndex(Math.max(0, Math.min(2, index)));
     };
 
+    const repoStepMode: "new" | "edit" =
+        isEditMode || Boolean(editContext) ? "edit" : "new";
+    const prStepMode: "new" | "update" =
+        editContext?.mode === "in_progress" ? "update" : "new";
+
     const stepsCard = (
         <div className="flex flex-wrap flex-col items-end gap-3">
             <StepList
@@ -455,13 +728,45 @@ export function NewResourcePublishPage() {
             <div className="flex flex-col gap-3.5 px-3.5 pt-1.5 pb-6">
                 <div className="flex flex-wrap items-start gap-3">
                     <div className="flex flex-col gap-1">
-                        <p className="text-lg font-semibold">发布新资源</p>
+                        <p className="text-lg font-semibold">
+                            {isEditing ? "编辑资源" : "发布新资源"}
+                        </p>
                         <p className="text-sm text-white/70">
-                            向AstroBox资源社区提交新资源
+                            {isEditing
+                                ? "更新已提交的资源内容"
+                                : "向AstroBox资源社区提交新资源"}
                         </p>
                     </div>
                     <div className="ml-auto">{stepsCard}</div>
                 </div>
+
+                {missingEditContext && (
+                    <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                        缺少编辑上下文，请从资源列表或发布申请列表重新进入。
+                    </div>
+                )}
+                {editContext && (
+                    <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-white/90">
+                        <p>
+                            正在编辑：
+                            {editContext.catalog.entry.name || editContext.catalog.entry.id}
+                            {editContext.mode === "in_progress" && editContext.prNumber
+                                ? `（PR #${editContext.prNumber}）`
+                                : ""}
+                        </p>
+                        {editLoading && (
+                            <p className="text-xs text-white/70">正在载入远端数据...</p>
+                        )}
+                        {editError && (
+                            <p className="text-xs text-amber-200">
+                                加载失败：{editError}
+                            </p>
+                        )}
+                    </div>
+                )}
+                {!editContext && editError && isEditMode && (
+                    <p className="text-sm text-amber-400">加载失败：{editError}</p>
+                )}
 
                 {activeStepIndex === 0 && (
                     <>
@@ -533,6 +838,7 @@ export function NewResourcePublishPage() {
                         onUpload={handleUploadToRepo}
                         onPrev={() => goToStep(0)}
                         onNext={() => goToStep(2)}
+                        mode={repoStepMode}
                     />
                 )}
 
@@ -544,9 +850,18 @@ export function NewResourcePublishPage() {
                         onPrBodyChange={setPrBody}
                         onSubmit={handleCreatePR}
                         onBack={() => goToStep(1)}
+                        mode={prStepMode}
                     />
                 )}
             </div>
         </Page>
     );
+}
+
+export function NewResourcePublishPage() {
+    return <ResourceComposerPage mode="new" />;
+}
+
+export function ResourceEditPage() {
+    return <ResourceComposerPage mode="edit" />;
 }

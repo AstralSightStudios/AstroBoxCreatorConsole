@@ -50,6 +50,9 @@ export interface UploadItem {
     name: string;
     url: string;
     file: File;
+    pathOverride?: string;
+    skipUpload?: boolean;
+    source?: "upload" | "existing";
 }
 
 export function UploadSlot({

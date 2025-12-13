@@ -3,7 +3,7 @@ import { loadAccountState } from "../account/store";
 import type { RepoInfo } from "./github-actions";
 import { ensureBase64, githubFetch, createPullRequest } from "./github-actions";
 
-interface CsvEntry {
+export interface CatalogEntry {
     id: string;
     name: string;
     restype: string;
@@ -28,6 +28,42 @@ export interface CatalogUpdateRequest {
     itemName: string;
     restype: string;
     paidType?: string;
+}
+
+export function decodeCatalogContent(encoded?: string) {
+    if (!encoded) return "";
+    return new TextDecoder().decode(
+        Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0)),
+    );
+}
+
+export function parseCatalogCsv(csv: string): CatalogEntry[] {
+    const rows = csv
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (rows.length === 0) return [];
+    const dataRows = rows.slice(1);
+    const entries: CatalogEntry[] = [];
+    for (const row of dataRows) {
+        const cols = row.split(",");
+        if (cols.length < 12) continue;
+        entries.push({
+            id: cols[0],
+            name: cols[1],
+            restype: cols[2],
+            repo_owner: cols[3],
+            repo_name: cols[4],
+            repo_commit_hash: cols[5],
+            icon: cols[6],
+            cover: cols[7],
+            tags: cols[8],
+            device_vendors: cols[9],
+            devices: cols[10],
+            paid_type: cols[11] ?? "",
+        });
+    }
+    return entries;
 }
 
 function getGithubTokenOrThrow() {
@@ -89,7 +125,7 @@ async function createBranch(
     });
 }
 
-async function getFileContent(
+export async function getFileContent(
     token: string,
     owner: string,
     repo: string,
@@ -105,6 +141,31 @@ async function getFileContent(
             },
         },
     );
+}
+
+export async function fetchCatalogEntries(options?: {
+    token?: string;
+    owner?: string;
+    repo?: string;
+    ref?: string;
+    path?: string;
+}) {
+    const token = options?.token ?? getGithubTokenOrThrow();
+    const owner = options?.owner ?? PUBLISH_CONFIG.upstreamRepoOwner;
+    const repo = options?.repo ?? PUBLISH_CONFIG.upstreamRepoName;
+    const ref = options?.ref ?? PUBLISH_CONFIG.defaultBranch;
+    const path = options?.path ?? PUBLISH_CONFIG.catalogFilePath;
+
+    const fileData = await getFileContent(token, owner, repo, path, ref);
+    const csvContent = decodeCatalogContent(fileData.content);
+    return {
+        entries: parseCatalogCsv(csvContent),
+        csvContent,
+        sha: fileData.sha as string | undefined,
+        owner,
+        repo,
+        ref,
+    };
 }
 
 async function updateFile(
@@ -135,7 +196,7 @@ async function updateFile(
     );
 }
 
-function appendOrReplaceCsvRow(existingCsv: string, entry: CsvEntry) {
+function appendOrReplaceCsvRow(existingCsv: string, entry: CatalogEntry) {
     const rows = existingCsv.split(/\r?\n/).filter((line) => line.trim().length > 0);
     const header = rows[0] || "";
     const dataRows = rows.slice(1);
@@ -185,18 +246,14 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
         PUBLISH_CONFIG.catalogFilePath,
         branchName,
     );
-    const csvContent = fileData.content
-        ? new TextDecoder().decode(
-              Uint8Array.from(atob(fileData.content), (c) => c.charCodeAt(0)),
-          )
-        : "";
+    const csvContent = decodeCatalogContent(fileData.content);
 
     const vendors = Array.from(
         new Set(payload.devices.map((d) => d.vendor).filter(Boolean)),
     ).join(";");
     const deviceIds = Array.from(new Set(payload.devices.map((d) => d.id))).join(";");
 
-    const entry: CsvEntry = {
+    const entry: CatalogEntry = {
         id: payload.itemId.trim(),
         name: payload.itemName.trim(),
         restype: payload.restype,
@@ -258,4 +315,35 @@ export async function createCatalogPullRequest({
         title,
         body,
     });
+}
+
+export async function updateCatalogEntryOnBranch(params: {
+    token: string;
+    owner: string;
+    repo: string;
+    branch: string;
+    entry: CatalogEntry;
+}) {
+    const { token, owner, repo, branch, entry } = params;
+    const fileData = await getFileContent(
+        token,
+        owner,
+        repo,
+        PUBLISH_CONFIG.catalogFilePath,
+        branch,
+    );
+    const csvContent = decodeCatalogContent(fileData.content);
+    const updatedCsv = appendOrReplaceCsvRow(csvContent, entry);
+    const encoded = ensureBase64(updatedCsv);
+
+    await updateFile(
+        token,
+        owner,
+        repo,
+        PUBLISH_CONFIG.catalogFilePath,
+        branch,
+        encoded,
+        fileData.sha,
+        `Update ${entry.id} in catalog`,
+    );
 }

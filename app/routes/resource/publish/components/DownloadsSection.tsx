@@ -126,6 +126,7 @@ export function DownloadsSection({
                                         onUpdateRow(item.uid, (row) => ({
                                             ...row,
                                             file: uploadItem,
+                                            existingFileName: undefined,
                                         }));
                                         e.target.value = "";
                                     }}
@@ -139,6 +140,10 @@ export function DownloadsSection({
                                 {item.file ? (
                                     <span className="rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs text-white/80">
                                         {item.file.name}
+                                    </span>
+                                ) : item.existingFileName ? (
+                                    <span className="rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">
+                                        当前: {item.existingFileName}
                                     </span>
                                 ) : (
                                     <span className="text-xs text-white/60">未选择文件</span>

@@ -9,6 +9,7 @@ export type DownloadInput = {
     platformId: string;
     version: string;
     file: UploadItem | null;
+    existingFileName?: string;
 };
 
 export type DeviceOption = { id: string; name: string; vendor?: string };

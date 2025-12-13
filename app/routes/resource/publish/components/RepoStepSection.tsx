@@ -12,6 +12,7 @@ interface RepoStepSectionProps {
     onUpload: () => void;
     onPrev: () => void;
     onNext: () => void;
+    mode?: "new" | "edit";
 }
 
 export function RepoStepSection({
@@ -24,11 +25,17 @@ export function RepoStepSection({
     onUpload,
     onPrev,
     onNext,
+    mode = "new",
 }: RepoStepSectionProps) {
+    const isEdit = mode === "edit";
     return (
         <SectionCard
-            title="步骤 2 · 创建发布仓库并上传"
-            description="会在你的 GitHub 账号下创建仓库，上传 manifest_v2.json 与所有依赖文件。"
+            title={isEdit ? "步骤 2 · 更新发布仓库" : "步骤 2 · 创建发布仓库并上传"}
+            description={
+                isEdit
+                    ? "更新已有仓库中的 manifest_v2.json 与资源文件。"
+                    : "会在你的 GitHub 账号下创建仓库，上传 manifest_v2.json 与所有依赖文件。"
+            }
         >
             <div className="flex flex-col gap-2">
                 <Field label="仓库名称">
@@ -44,7 +51,11 @@ export function RepoStepSection({
                         onClick={onUpload}
                         disabled={repoStatus === "loading"}
                     >
-                        {repoStatus === "loading" ? "处理中..." : "创建并上传"}
+                        {repoStatus === "loading"
+                            ? "处理中..."
+                            : isEdit
+                              ? "更新并上传"
+                              : "创建并上传"}
                     </Button>
                     {repoStatus === "success" && repoInfo?.htmlUrl && (
                         <a
