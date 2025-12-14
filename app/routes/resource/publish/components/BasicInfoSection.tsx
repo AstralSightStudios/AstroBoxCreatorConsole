@@ -139,7 +139,7 @@ export function BasicInfoSection({
           >
             <Select.Trigger placeholder="免费" radius="large" />
 
-            <Select.Content>
+            <Select.Content position="popper">
               <Select.Item value="free">免费</Select.Item>
               <Select.Item value="paid">付费</Select.Item>
               <Select.Item value="force_paid">强制付费</Select.Item>

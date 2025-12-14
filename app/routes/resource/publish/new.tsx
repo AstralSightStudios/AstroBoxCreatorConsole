@@ -162,7 +162,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       } catch (error) {
         console.error(error);
         if (!cancelled) {
-          setDeviceError("设备列表拉取失败，请稍后重试。");
+          setDeviceError("设备列表获取失败，请稍后再试。");
           setDeviceOptions([]);
         }
       } finally {
@@ -743,7 +743,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   return (
     <Page>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-5xl px-1 lg:px-3.5 lg:pt-8 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-5xl px-1 lg:px-3.5 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit">
           <div className="flex flex-col px-3 py-3.5">
             <p className="text-lg font-semibold">

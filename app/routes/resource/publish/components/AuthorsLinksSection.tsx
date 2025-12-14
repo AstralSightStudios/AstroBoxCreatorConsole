@@ -1,4 +1,9 @@
-import { PlusIcon, MinusIcon, BinocularsIcon } from "@phosphor-icons/react";
+import {
+  PlusIcon,
+  MinusIcon,
+  BinocularsIcon,
+  InfoIcon,
+} from "@phosphor-icons/react";
 import { Switch, TextField, Table } from "@radix-ui/themes";
 import { type Dispatch, type SetStateAction } from "react";
 import { type AuthorInput, type LinkInput } from "./types";
@@ -28,15 +33,15 @@ export function AuthorsLinksSection({
             资源作者列表
           </p>
         </div>*/}
-        <div className="flex flex-col gap-3">
-          <Table.Root>
+        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
+          <Table.Root className="table-fixed w-full min-w-lg">
             <Table.Header>
               <Table.Row>
                 <Table.ColumnHeaderCell
                   width="40px"
                   justify="center"
                   p="0"
-                  className="h-full flex justify-center items-center"
+                  className="h-full flex justify-center items-center shrink-0"
                 >
                   <button
                     className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px]"
@@ -53,7 +58,7 @@ export function AuthorsLinksSection({
                 <Table.ColumnHeaderCell>作者名称</Table.ColumnHeaderCell>
 
                 <Table.ColumnHeaderCell>
-                  是否关联 AstroBox 账号
+                  关联 AstroBox 账号
                 </Table.ColumnHeaderCell>
               </Table.Row>
             </Table.Header>
@@ -121,8 +126,8 @@ export function AuthorsLinksSection({
             外部链接列表
           </p>
         </div>*/}
-        <div className="flex flex-col gap-3">
-          <Table.Root>
+        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
+          <Table.Root className="table-fixed w-full min-w-lg">
             <Table.Header>
               <Table.Row>
                 <Table.ColumnHeaderCell
@@ -230,7 +235,7 @@ export function AuthorsLinksSection({
                     px="0"
                   ></Table.RowHeaderCell>
                   <Table.RowHeaderCell>
-                    <span className="text-white/60">还没添加外部链接</span>
+                    <span className="text-white/60">还未添加外部链接</span>
                   </Table.RowHeaderCell>
                   <Table.RowHeaderCell />
                   <Table.RowHeaderCell />
@@ -239,17 +244,18 @@ export function AuthorsLinksSection({
             </Table.Body>
           </Table.Root>
         </div>
-        <div className="flex flex-col px-1.5 pt-1.5 w-full">
-          <p className="text-sm text-white/70">
+        <div className="flex justify-between gap-1.5 px-1.5 pt-1.5 w-full flex-wrap">
+          <p className="text-sm text-white/70 flex gap-1 items-center leading-4.5">
+            <InfoIcon size={18} className="shrink-0" />
             你可以使用 PhosphorIcon 作为外部链接图标。
           </p>
           <a
             href="https://phosphoricons.com/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-size-medium rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-1 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            className="w-fit text-size-medium rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-1 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
-            <BinocularsIcon name="PhosphorIcon" size={18} />
+            <BinocularsIcon size={18} className="shrink-0" />
             浏览全部图标
           </a>
         </div>

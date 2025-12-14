@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useContext, useMemo, useRef } from "react";
 import {
-    UNSAFE_DataRouterContext,
-    UNSAFE_DataRouterStateContext,
-    UNSAFE_LocationContext,
-    UNSAFE_NavigationContext,
-    UNSAFE_RouteContext,
-    useLocation,
-    useOutlet,
+  UNSAFE_DataRouterContext,
+  UNSAFE_DataRouterStateContext,
+  UNSAFE_LocationContext,
+  UNSAFE_NavigationContext,
+  UNSAFE_RouteContext,
+  useLocation,
+  useOutlet,
 } from "react-router";
 import Header from "~/components/header";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
@@ -15,15 +15,15 @@ import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
 type Axis = "x" | "y";
 
 interface TransitionMeta {
-    axis: Axis;
-    direction: 1 | -1;
-    reason: "hierarchy" | "nav" | "fallback";
+  axis: Axis;
+  direction: 1 | -1;
+  reason: "hierarchy" | "nav" | "fallback";
 }
 
 const DEFAULT_TRANSITION: TransitionMeta = {
-    axis: "x",
-    direction: 1,
-    reason: "fallback",
+  axis: "x",
+  direction: 1,
+  reason: "fallback",
 };
 
 const ENTER_EASE: [number, number, number, number] = [0.22, 0.82, 0.3, 1];
@@ -32,177 +32,172 @@ const ENTER_DURATION = 0.3;
 const EXIT_DURATION = 0.2;
 
 function isPrefixOf(base: string[], target: string[]) {
-    if (base.length === 0) {
-        return false;
-    }
-    if (base.length >= target.length) {
-        return false;
-    }
+  if (base.length === 0) {
+    return false;
+  }
+  if (base.length >= target.length) {
+    return false;
+  }
 
-    return base.every((segment, index) => segment === target[index]);
+  return base.every((segment, index) => segment === target[index]);
 }
 
 function determineTransition(
-    prevPath: string,
-    nextPath: string,
+  prevPath: string,
+  nextPath: string,
 ): TransitionMeta {
-    if (!prevPath) {
-        return DEFAULT_TRANSITION;
-    }
-
-    const prevSegments = getSegments(prevPath);
-    const nextSegments = getSegments(nextPath);
-
-    if (isPrefixOf(prevSegments, nextSegments)) {
-        return {
-            axis: "x",
-            direction: 1,
-            reason: "hierarchy",
-        };
-    }
-    if (isPrefixOf(nextSegments, prevSegments)) {
-        return {
-            axis: "x",
-            direction: -1,
-            reason: "hierarchy",
-        };
-    }
-
-    const prevNavIndex = findNavIndex(prevPath);
-    const nextNavIndex = findNavIndex(nextPath);
-    if (
-        prevNavIndex !== null &&
-        nextNavIndex !== null &&
-        prevNavIndex !== nextNavIndex
-    ) {
-        return {
-            axis: "y",
-            direction: nextNavIndex > prevNavIndex ? 1 : -1,
-            reason: "nav",
-        };
-    }
-
+  if (!prevPath) {
     return DEFAULT_TRANSITION;
+  }
+
+  const prevSegments = getSegments(prevPath);
+  const nextSegments = getSegments(nextPath);
+
+  if (isPrefixOf(prevSegments, nextSegments)) {
+    return {
+      axis: "x",
+      direction: 1,
+      reason: "hierarchy",
+    };
+  }
+  if (isPrefixOf(nextSegments, prevSegments)) {
+    return {
+      axis: "x",
+      direction: -1,
+      reason: "hierarchy",
+    };
+  }
+
+  const prevNavIndex = findNavIndex(prevPath);
+  const nextNavIndex = findNavIndex(nextPath);
+  if (
+    prevNavIndex !== null &&
+    nextNavIndex !== null &&
+    prevNavIndex !== nextNavIndex
+  ) {
+    return {
+      axis: "y",
+      direction: nextNavIndex > prevNavIndex ? 1 : -1,
+      reason: "nav",
+    };
+  }
+
+  return DEFAULT_TRANSITION;
 }
 
 function getInitialOffset(meta: TransitionMeta) {
-    const distance = meta.axis === "x" ? "100%" : "85%";
-    return meta.direction > 0 ? distance : `-${distance}`;
+  const distance = meta.axis === "x" ? "100%" : "85%";
+  return meta.direction > 0 ? distance : `-${distance}`;
 }
 
 function getExitOffset(meta: TransitionMeta) {
-    const distance = meta.axis === "x" ? "30%" : "25%";
-    return meta.direction > 0 ? `-${distance}` : distance;
+  const distance = meta.axis === "x" ? "30%" : "25%";
+  return meta.direction > 0 ? `-${distance}` : distance;
 }
 
 export default function PageTransition() {
-    const location = useLocation();
-    const outlet = useOutlet();
-    const dataRouterContext = useContext(UNSAFE_DataRouterContext);
-    const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
-    const locationContext = useContext(UNSAFE_LocationContext);
-    const navigationContext = useContext(UNSAFE_NavigationContext);
-    const routeContext = useContext(UNSAFE_RouteContext);
+  const location = useLocation();
+  const outlet = useOutlet();
+  const dataRouterContext = useContext(UNSAFE_DataRouterContext);
+  const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
+  const locationContext = useContext(UNSAFE_LocationContext);
+  const navigationContext = useContext(UNSAFE_NavigationContext);
+  const routeContext = useContext(UNSAFE_RouteContext);
 
-    const normalizedPath = normalizePath(location.pathname);
-    const transitionSnapshotRef = useRef<{
-        path: string;
-        meta: TransitionMeta;
-    }>({
-        path: normalizedPath,
-        meta: DEFAULT_TRANSITION,
-    });
+  const normalizedPath = normalizePath(location.pathname);
+  const transitionSnapshotRef = useRef<{
+    path: string;
+    meta: TransitionMeta;
+  }>({
+    path: normalizedPath,
+    meta: DEFAULT_TRANSITION,
+  });
 
-    if (normalizedPath !== transitionSnapshotRef.current.path) {
-        const previousPath = transitionSnapshotRef.current.path;
-        const meta = determineTransition(previousPath, normalizedPath);
-        transitionSnapshotRef.current = {
-            path: normalizedPath,
-            meta,
-        };
+  if (normalizedPath !== transitionSnapshotRef.current.path) {
+    const previousPath = transitionSnapshotRef.current.path;
+    const meta = determineTransition(previousPath, normalizedPath);
+    transitionSnapshotRef.current = {
+      path: normalizedPath,
+      meta,
+    };
+  }
+
+  const { meta: transitionMeta, path: motionKey } =
+    transitionSnapshotRef.current;
+  const frozenOutlet = useMemo(() => {
+    if (!outlet) {
+      return outlet;
     }
 
-    const { meta: transitionMeta, path: motionKey } = transitionSnapshotRef.current;
-    const frozenOutlet = useMemo(() => {
-        if (!outlet) {
-            return outlet;
-        }
-
-        return (
-            <UNSAFE_DataRouterContext.Provider value={dataRouterContext}>
-                <UNSAFE_DataRouterStateContext.Provider value={dataRouterState}>
-                    <UNSAFE_LocationContext.Provider value={locationContext}>
-                        <UNSAFE_NavigationContext.Provider value={navigationContext}>
-                            <UNSAFE_RouteContext.Provider value={routeContext}>
-                                {outlet}
-                            </UNSAFE_RouteContext.Provider>
-                        </UNSAFE_NavigationContext.Provider>
-                    </UNSAFE_LocationContext.Provider>
-                </UNSAFE_DataRouterStateContext.Provider>
-            </UNSAFE_DataRouterContext.Provider>
-        );
-    }, [
-        outlet,
-        dataRouterContext,
-        dataRouterState,
-        locationContext,
-        navigationContext,
-        routeContext,
-    ]);
-
     return (
-        <div
-            className="relative h-full min-h-screen overflow-hidden"
-            style={{ minHeight: "100dvh" }}
-        >
-            <div className="flex h-full flex-col p-2">
-                <Header />
-                <div className="relative flex-1 min-h-0 overflow-hidden">
-                    <AnimatePresence
-                        initial={false}
-                        mode="sync"
-                        custom={transitionMeta}
-                    >
-                        <motion.div
-                            key={motionKey}
-                            className="absolute inset-0 w-full h-full overflow-y-auto"
-                            custom={transitionMeta}
-                            variants={{
-                                initial: (meta: TransitionMeta) => ({
-                                    x: meta.axis === "x" ? getInitialOffset(meta) : 0,
-                                    y: meta.axis === "y" ? getInitialOffset(meta) : 0,
-                                    opacity: 0,
-                                }),
-                                animate: {
-                                    x: 0,
-                                    y: 0,
-                                    opacity: 1,
-                                    transition: {
-                                        duration: ENTER_DURATION,
-                                        ease: ENTER_EASE,
-                                    },
-                                },
-                                exit: (meta: TransitionMeta) => ({
-                                    x: meta.axis === "x" ? getExitOffset(meta) : 0,
-                                    y: meta.axis === "y" ? getExitOffset(meta) : 0,
-                                    opacity: 0,
-                                    transition: {
-                                        duration: EXIT_DURATION,
-                                        ease: EXIT_EASE,
-                                    },
-                                }),
-                            }}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                        >
-                            <div className="min-h-full">
-                                {frozenOutlet}
-                            </div>
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-            </div>
-        </div>
+      <UNSAFE_DataRouterContext.Provider value={dataRouterContext}>
+        <UNSAFE_DataRouterStateContext.Provider value={dataRouterState}>
+          <UNSAFE_LocationContext.Provider value={locationContext}>
+            <UNSAFE_NavigationContext.Provider value={navigationContext}>
+              <UNSAFE_RouteContext.Provider value={routeContext}>
+                {outlet}
+              </UNSAFE_RouteContext.Provider>
+            </UNSAFE_NavigationContext.Provider>
+          </UNSAFE_LocationContext.Provider>
+        </UNSAFE_DataRouterStateContext.Provider>
+      </UNSAFE_DataRouterContext.Provider>
     );
+  }, [
+    outlet,
+    dataRouterContext,
+    dataRouterState,
+    locationContext,
+    navigationContext,
+    routeContext,
+  ]);
+
+  return (
+    <div
+      className="relative h-full min-h-screen overflow-hidden"
+      style={{ minHeight: "100dvh" }}
+    >
+      <div className="flex h-full flex-col p-2 pb-0 gap-2">
+        <Header />
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
+            <motion.div
+              key={motionKey}
+              className="absolute inset-0 w-full h-full overflow-y-auto"
+              custom={transitionMeta}
+              variants={{
+                initial: (meta: TransitionMeta) => ({
+                  x: meta.axis === "x" ? getInitialOffset(meta) : 0,
+                  y: meta.axis === "y" ? getInitialOffset(meta) : 0,
+                  opacity: 0,
+                }),
+                animate: {
+                  x: 0,
+                  y: 0,
+                  opacity: 1,
+                  transition: {
+                    duration: ENTER_DURATION,
+                    ease: ENTER_EASE,
+                  },
+                },
+                exit: (meta: TransitionMeta) => ({
+                  x: meta.axis === "x" ? getExitOffset(meta) : 0,
+                  y: meta.axis === "y" ? getExitOffset(meta) : 0,
+                  opacity: 0,
+                  transition: {
+                    duration: EXIT_DURATION,
+                    ease: EXIT_EASE,
+                  },
+                }),
+              }}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="min-h-full">{frozenOutlet}</div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
 }
