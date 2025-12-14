@@ -5,15 +5,25 @@ export function SectionCard({
   title,
   description,
   children,
+  className,
+  padding = true,
+  headerBg = false,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  className?: string;
+  padding?: boolean;
+  headerBg?: boolean;
 }) {
   return (
-    <div className="rounded-[14px] border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] w-full">
-      <div className="flex flex-col gap-2.5 p-2 w-full">
-        <div className="flex flex-col px-1.5 pt-1.5 w-full">
+    <div
+      className={`rounded-[14px] border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] w-full ${className}`}
+    >
+      <div className={`flex flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
+        <div
+          className={`flex flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"} ${headerBg ? "bg-linear-to-t from-transparent from-40% to-black/30" : ""}`}
+        >
           <p className="text-[15px] font-semibold text-white">{title}</p>
           {description && (
             <p className="text-sm text-white/70">{description}</p>
@@ -126,7 +136,7 @@ export function StepList({
   onSelect?: (index: number) => void;
 }) {
   return (
-    <div className="flex flex-col flex-wrap gap-0.5">
+    <div className="flex flex-col flex-wrap gap-0.5 select-none">
       {steps.map((step, index) => {
         const isActive = index === activeIndex;
         const base =

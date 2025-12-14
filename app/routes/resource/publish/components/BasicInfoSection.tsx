@@ -41,6 +41,7 @@ export function BasicInfoSection({
     <SectionCard
       title="基本信息"
       description="用于标识与展示的核心信息，务必认真填写。"
+      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
     >
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2 px-1.5 pt-1.5">

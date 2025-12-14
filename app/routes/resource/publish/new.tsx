@@ -744,7 +744,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   return (
     <Page>
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-5xl px-1 lg:px-3.5 w-full lg:gap-4 gap-6">
-        <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit">
+        <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
             <p className="text-lg font-semibold">
               {isEditing ? "编辑资源" : "发布新资源"}
@@ -785,7 +785,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           )}
 
           {activeStepIndex === 0 && (
-            <>
+            <div className="border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] rounded-[14px]">
               <BasicInfoSection
                 itemId={itemId}
                 itemName={itemName}
@@ -835,12 +835,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 extError={extError}
                 onChange={setExtRaw}
               />
-              <div className="flex flex-row justify-end gap-2">
-                <Button className="styledbtn" onClick={() => goToStep(1)}>
-                  下一步：创建发布仓库
+              <div className="flex flex-row justify-end gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
+                <Button
+                  className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
+                  radius="large"
+                  size="2"
+                  variant="soft"
+                  onClick={() => goToStep(1)}
+                >
+                  下一步
                 </Button>
               </div>
-            </>
+            </div>
           )}
 
           {activeStepIndex === 1 && (

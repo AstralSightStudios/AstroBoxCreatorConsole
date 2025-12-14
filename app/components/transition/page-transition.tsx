@@ -153,7 +153,7 @@ export default function PageTransition() {
 
   return (
     <div
-      className="relative h-full min-h-screen overflow-hidden"
+      className="relative h-full min-h-screen overflow-hidden select-none"
       style={{ minHeight: "100dvh" }}
     >
       <div className="flex h-full flex-col p-2 pb-0 gap-2">

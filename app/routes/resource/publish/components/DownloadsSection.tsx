@@ -47,6 +47,8 @@ export function DownloadsSection({
     <SectionCard
       title="资源下载配置"
       description="为不同设备提供不同的资源包体"
+      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
+      headerBg
     >
       {deviceError && (
         <Callout.Root color="amber">

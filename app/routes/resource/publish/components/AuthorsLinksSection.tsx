@@ -26,6 +26,8 @@ export function AuthorsLinksSection({
     <SectionCard
       title="作者与外链"
       description="可以添加多个作者以及外部链接（官网、文档、社区等）。"
+      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
+      headerBg
     >
       <div className="flex flex-col gap-1">
         {/*<div className="flex items-center gap-2">
@@ -247,7 +249,7 @@ export function AuthorsLinksSection({
         <div className="flex justify-between gap-1.5 px-1.5 pt-1.5 w-full flex-wrap">
           <p className="text-sm text-white/70 flex gap-1 items-center leading-4.5">
             <InfoIcon size={18} className="shrink-0" />
-            你可以使用 PhosphorIcon 作为外部链接图标。
+            你可以使用 Phosphor Icon 作为外部链接图标。
           </p>
           <a
             href="https://phosphoricons.com/"
