@@ -13,7 +13,7 @@ export function ExtSection({ extRaw, extError, onChange }: ExtSectionProps) {
       title="扩展字段 (ext)"
       description="如需附加额外信息，可在此填写合法 JSON。默认输出空对象。"
       className="border-0! bg-transparent! rounded-none! shadow-none!"
-      headerBg
+      
     >
       <TextArea
         rows={4}

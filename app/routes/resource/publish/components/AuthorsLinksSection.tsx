@@ -27,7 +27,6 @@ export function AuthorsLinksSection({
       title="作者与外链"
       description="可以添加多个作者以及外部链接（官网、文档、社区等）。"
       className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
-      headerBg
     >
       <div className="flex flex-col gap-1">
         {/*<div className="flex items-center gap-2">

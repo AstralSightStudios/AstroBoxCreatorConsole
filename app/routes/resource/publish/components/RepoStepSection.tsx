@@ -65,7 +65,7 @@ export function RepoStepSection({
           </Button>
           {repoStatus === "success" && repoInfo?.htmlUrl && (
             <a
-              className="rt-reset rt-BaseButton rt-r-size-2 rt-variant-soft rt-Button text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
+              className="rt-reset rt-BaseButton rt-r-size-2 rt-variant-soft rt-Button text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full! rounded-md!"
               href={repoInfo.htmlUrl}
               target="_blank"
               rel="noreferrer"

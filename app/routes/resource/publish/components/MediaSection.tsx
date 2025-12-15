@@ -49,7 +49,6 @@ export function MediaSection({
       title="媒体素材"
       description="上传或导入预览图组、应用图标与封面。封面可以直接选择已有的预览图。"
       className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
-      headerBg
     >
       <input
         ref={previewInputRef}

@@ -1,4 +1,10 @@
-import { Badge, Button } from "@radix-ui/themes";
+import { Badge, Button, Callout, Spinner } from "@radix-ui/themes";
+import {
+  FileXIcon,
+  UploadIcon,
+  PencilSimpleLineIcon,
+  GitBranchIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
 import { PUBLISH_CONFIG } from "~/config/publish";
@@ -727,17 +733,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     editContext?.mode === "in_progress" ? "update" : "new";
 
   const stepsCard = (
-    <div className="flex flex-wrap flex-col items-end gap-3">
+    <div className="flex flex-wrap flex-col gap-6">
+      {repoStatus === "success" && repoInfo?.htmlUrl && (
+        <div className="flex text-sm gap-1 items-center px-3 font-medium">
+          <GitBranchIcon size={16} weight="bold" />
+          当前仓库: {repoInfo.name}
+        </div>
+      )}
       <StepList
         steps={steps.map((s) => ({ ...s, status: s.status }))}
         activeIndex={activeStepIndex}
         onSelect={goToStep}
       />
-      {repoStatus === "success" && repoInfo?.htmlUrl && (
-        <Badge color="green" variant="soft">
-          仓库: {repoInfo.name}
-        </Badge>
-      )}
     </div>
   );
 
@@ -746,6 +753,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-5xl px-1 lg:px-3.5 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
+            {!isEditing ? (
+              <UploadIcon size={24} className="mb-2 text-blue-500" />
+            ) : (
+              <PencilSimpleLineIcon size={24} className="mb-2 text-blue-500" />
+            )}
             <p className="text-lg font-semibold">
               {isEditing ? "编辑资源" : "发布新资源"}
             </p>
@@ -764,8 +776,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             </div>
           )}
           {editContext && (
-            <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-white/90">
-              <p>
+            <div className="flex flex-col gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-white/90">
+              <p className="flex items-center gap-2">
+                <PencilSimpleLineIcon size={16} />
                 正在编辑：
                 {editContext.catalog.entry.name || editContext.catalog.entry.id}
                 {editContext.mode === "in_progress" && editContext.prNumber
@@ -773,15 +786,20 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   : ""}
               </p>
               {editLoading && (
-                <p className="text-xs text-white/70">正在载入远端数据...</p>
-              )}
-              {editError && (
-                <p className="text-xs text-amber-200">加载失败：{editError}</p>
+                <div className="flex items-center gap-2 font-semibold text-white/45">
+                  <Spinner size="2" />
+                  <p>正在载入远端数据</p>
+                </div>
               )}
             </div>
           )}
           {!editContext && editError && isEditMode && (
-            <p className="text-sm text-amber-400">加载失败：{editError}</p>
+            <Callout.Root color="red">
+              <Callout.Icon>
+                <FileXIcon size={18} weight="fill" />
+              </Callout.Icon>
+              <Callout.Text>加载失败：{editError}</Callout.Text>
+            </Callout.Root>
           )}
 
           {activeStepIndex === 0 && (

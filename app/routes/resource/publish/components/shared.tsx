@@ -7,14 +7,12 @@ export function SectionCard({
   children,
   className,
   padding = true,
-  headerBg = false,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   className?: string;
   padding?: boolean;
-  headerBg?: boolean;
 }) {
   return (
     <div
@@ -22,9 +20,9 @@ export function SectionCard({
     >
       <div className={`flex flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
         <div
-          className={`flex flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"} ${headerBg ? "bg-linear-to-t from-transparent from-40% to-black/30" : ""}`}
+          className={`flex flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
         >
-          <p className="text-[15px] font-semibold text-white">{title}</p>
+          <p className="text-[18px] font-medium text-white">{title}</p>
           {description && (
             <p className="text-sm text-white/70">{description}</p>
           )}
@@ -141,10 +139,16 @@ export function StepList({
         const isActive = index === activeIndex;
         const base =
           step.status === "done"
-            ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-100"
+            ? "text-emerald-300 hover:bg-emerald-500/10"
             : step.status === "active" || isActive
               ? "hover:bg-white/10 text-white"
               : "hover:bg-white/5 text-white/70";
+        const dot =
+          step.status === "done"
+            ? "w-1.5 bg-emerald-500!"
+            : step.status === "active" || isActive
+              ? "w-2.5 bg-white/70!"
+              : "w-0.5 bg-white/20!";
         return (
           <button
             key={step.label}
@@ -152,12 +156,10 @@ export function StepList({
             onClick={() => onSelect?.(index)}
             type="button"
           >
-            <span className="text-[14px] lining-nums opacity-70">
-              0{index + 1}
-            </span>
+            <span className="text-sm lining-nums opacity-70">0{index + 1}</span>
             <span className="w-3 h-1">
               <span
-                className={`transition-all mt-[1px] h-0.5 ${isActive ? "w-2.5" : "w-0.5"} block m-auto rounded-full shrink-0 bg-white/60 ${isActive ? "bg-white/70" : "bg-white/20"}`}
+                className={`${dot} transition-all mt-px h-0.5 block m-auto rounded-full shrink-0 bg-white/60`}
               />
             </span>
             <span className="shrink-0">{step.label}</span>
