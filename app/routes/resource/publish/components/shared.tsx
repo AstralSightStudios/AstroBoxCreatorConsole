@@ -16,7 +16,7 @@ export function SectionCard({
 }) {
   return (
     <div
-      className={`rounded-[14px] border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] w-full ${className}`}
+      className={`rounded-[14px] border border-white/10 bg-nav-item w-full ${className}`}
     >
       <div className={`flex flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
         <div

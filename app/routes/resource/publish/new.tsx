@@ -776,22 +776,37 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             </div>
           )}
           {editContext && (
-            <div className="flex flex-col gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-white/90">
-              <p className="flex items-center gap-2">
-                <PencilSimpleLineIcon size={16} />
-                正在编辑：
-                {editContext.catalog.entry.name || editContext.catalog.entry.id}
-                {editContext.mode === "in_progress" && editContext.prNumber
-                  ? `（PR #${editContext.prNumber}）`
-                  : ""}
-              </p>
+            <Callout.Root
+              color="gray"
+              variant="soft"
+              highContrast
+              className="rounded-[14px]! border border-white/10 bg-nav-item! p-3!"
+            >
+              <div className="flex items-center gap-2">
+                <Callout.Icon>
+                  <PencilSimpleLineIcon size={16} />
+                </Callout.Icon>
+                <Callout.Text>
+                  正在编辑：
+                  {editContext.catalog.entry.name ||
+                    editContext.catalog.entry.id}
+                  {editContext.mode === "in_progress" && editContext.prNumber
+                    ? `（PR #${editContext.prNumber}）`
+                    : ""}
+                </Callout.Text>
+              </div>
+
               {editLoading && (
-                <div className="flex items-center gap-2 font-semibold text-white/45">
-                  <Spinner size="2" />
-                  <p>正在载入远端数据</p>
+                <div className="flex items-center gap-2">
+                  <Callout.Icon>
+                    <Spinner size="2" />
+                  </Callout.Icon>
+                  <Callout.Text className="font-semibold text-white/45">
+                    <p>正在载入远端数据</p>
+                  </Callout.Text>
                 </div>
               )}
-            </div>
+            </Callout.Root>
           )}
           {!editContext && editError && isEditMode && (
             <Callout.Root color="red">
