@@ -171,8 +171,8 @@ export default function ResourcePublish() {
   return (
     <Page>
       <SectionCard
-        title="发布资源"
-        description="发布新资源或查看你已上传资源的审核状态"
+        title="审核列表"
+        description="查看你已上传资源的审核状态"
         padding={false}
       >
         <div className="p-0.5">{content}</div>

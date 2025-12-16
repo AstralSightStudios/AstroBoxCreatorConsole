@@ -5,8 +5,8 @@ import {
   ArrowUpRightIcon,
   CheckCircleIcon,
   GithubLogoIcon,
-  RocketLaunchIcon,
   SignOutIcon,
+  UploadIcon,
   UserCircleDashedIcon,
 } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
@@ -134,7 +134,7 @@ function NavContent({
         onToggleNav={onToggleNav}
       />
       <AccountInfo account={account} />
-      <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area">
+      <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area pb-[70px]">
         <div className="flex flex-col gap-2.5 pb-2">
           {NAV_SECTIONS.map((section) => (
             <NavSection
@@ -144,6 +144,18 @@ function NavContent({
               onNavigate={onNavigate}
             />
           ))}
+        </div>
+      </div>
+
+      <div className="absolute max-w-[299px] max-[1024px]:max-w-[calc(100vw-16px)] box-border w-full bottom-0 bg-linear-to-b from-0% from-nav/0 to-20% to-nav pt-4">
+        <div className="flex flex-col gap-2.5 p-2 pt-0 -mx-2 backdrop-blur-md">
+          <NavItem
+            key="publish"
+            icon={UploadIcon}
+            label="发布新资源"
+            selected={isNavItemSelected(pathname, "/publish")}
+            onClick={() => onNavigate("/publish")}
+          />
         </div>
       </div>
     </>
@@ -156,6 +168,7 @@ interface DesktopNavProps extends NavContentProps {
 }
 
 function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
+  const { isDesktop } = useNavVisibility();
   return (
     <aside
       className={`shrink-0 transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-[315px]"}`}
@@ -163,7 +176,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
     >
       {!isCollapsed && (
         <nav
-          className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0"
+          className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0 z-10 relative"
           style={{ height: "100dvh" }}
         >
           <NavContent {...contentProps} />
