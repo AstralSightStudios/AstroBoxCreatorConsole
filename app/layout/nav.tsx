@@ -150,7 +150,7 @@ function NavContent({
         </div>
       </div>
 
-      <div className="absolute max-w-[299px] max-[1024px]:max-w-[calc(100vw-16px)] box-border w-full bottom-0 bg-linear-to-b from-0% from-nav/0 to-20% to-nav pt-4">
+      <div className="absolute max-w-[299px] max-[1024px]:max-w-[calc(100vw-20px)] box-border w-full bottom-0 bg-linear-to-b from-0% from-nav/0 to-20% to-nav pt-4">
         <div className="flex flex-col gap-2.5 p-2 pt-0 -mx-2 backdrop-blur-md">
           <NavItem
             key="publish"

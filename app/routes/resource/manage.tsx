@@ -1,7 +1,8 @@
 import {
   ArchiveIcon,
-  FileArrowUpIcon,
+  WarningOctagonIcon,
   ListMagnifyingGlassIcon,
+  TrayIcon,
 } from "@phosphor-icons/react";
 import { Button, Table, Callout, Spinner, Tabs } from "@radix-ui/themes";
 import { useNavigate } from "react-router";
@@ -156,7 +157,19 @@ export default function ResourceManage() {
               padding={false}
             >
               {selectError && (
-                <p className="mt-1 text-sm text-amber-400">{selectError}</p>
+                <Callout.Root
+                  color="yellow"
+                  variant="soft"
+                  highContrast
+                  className="-mb-2 bg-transparent! p-3!"
+                >
+                  <Callout.Icon>
+                    <WarningOctagonIcon size={16} weight="fill" />
+                  </Callout.Icon>
+                  <Callout.Text className="font-semibold text-white/45">
+                    {selectError}
+                  </Callout.Text>
+                </Callout.Root>
               )}
               {loading && (
                 <Callout.Root
@@ -174,10 +187,31 @@ export default function ResourceManage() {
                 </Callout.Root>
               )}
               {error && (
-                <p className="text-sm text-amber-400">加载失败：{error}</p>
+                <Callout.Root
+                  color="red"
+                  variant="soft"
+                  className="-mb-2.5 bg-transparent! p-3!"
+                >
+                  <Callout.Icon>
+                    <WarningOctagonIcon size={16} weight="fill" />
+                  </Callout.Icon>
+                  <Callout.Text className="font-semibold">
+                    <p>加载失败：{error}</p>
+                  </Callout.Text>
+                </Callout.Root>
               )}
               {!loading && !error && items.length === 0 && (
-                <p className="text-sm text-white/70">暂无已发布的资源。</p>
+                <Callout.Root
+                  variant="soft"
+                  className="-mb-2.5 bg-transparent! p-3!"
+                >
+                  <Callout.Icon>
+                    <TrayIcon size={16} weight="fill" />
+                  </Callout.Icon>
+                  <Callout.Text className="font-semibold">
+                    <p>暂无已发布的资源</p>
+                  </Callout.Text>
+                </Callout.Root>
               )}
               {!loading && !error && items.length > 0 && (
                 <div className="p-0.5 w-full overflow-x-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">

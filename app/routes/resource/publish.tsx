@@ -112,12 +112,12 @@ export default function ResourcePublish() {
         <Callout.Root
           color="red"
           variant="soft"
-          className="rounded-[14px]! border border-white/10 p-3!"
+          className="-mb-2.5 bg-transparent! p-3!"
         >
           <Callout.Icon>
             <WarningOctagonIcon size={16} weight="fill" />
           </Callout.Icon>
-          <Callout.Text className="font-semibold text-white/45">
+          <Callout.Text className="font-semibold">
             <p>加载失败：{error}</p>
           </Callout.Text>
         </Callout.Root>
