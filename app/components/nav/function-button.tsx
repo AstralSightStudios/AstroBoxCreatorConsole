@@ -13,7 +13,7 @@ export default function FunctionButton({
   const { isDesktop } = useNavVisibility();
 
   const mergedClassName = [
-    "flex gap-2.5 rounded-xl corner-rounded justify-center items-center w-[34px] h-[34px] hover:bg-btn-hover active:scale-95 active:opacity-75 transition-all duration-150 ease-in-out",
+    "z-50 flex gap-2.5 rounded-xl corner-rounded justify-center items-center w-[34px] h-[34px] hover:bg-btn-hover active:scale-95 active:opacity-75 transition-all duration-150 ease-in-out",
     className,
   ]
     .filter(Boolean)
@@ -24,7 +24,7 @@ export default function FunctionButton({
       <button
         type="button"
         className={mergedClassName}
-        title={title ?? "Creator Console"}
+        title={title ?? "CreatorConsole"}
         style={{ pointerEvents: "none" }}
       >
         <CreatorConsoleLogoIcon />

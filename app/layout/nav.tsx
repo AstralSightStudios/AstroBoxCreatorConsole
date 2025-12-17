@@ -117,6 +117,7 @@ interface NavContentProps {
   pathname: string;
   onNavigate: (path: string) => void;
   onToggleNav: () => void;
+  hideFunctionButton?: boolean;
 }
 
 function NavContent({
@@ -125,6 +126,7 @@ function NavContent({
   onToggleNav,
   pathname,
   onNavigate,
+  hideFunctionButton,
 }: NavContentProps) {
   return (
     <>
@@ -132,6 +134,7 @@ function NavContent({
         account={account}
         accountState={accountState}
         onToggleNav={onToggleNav}
+        hideFunctionButton={hideFunctionButton}
       />
       <AccountInfo account={account} />
       <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area pb-[70px]">
@@ -209,14 +212,14 @@ function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
         transition={{ duration: 0.3 }}
       />
       <motion.nav
-        className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0"
-        initial={{ y: -10, scale: 0.97, opacity: 0.8 }}
+        className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2.5 pb-0"
+        initial={{ y: 10, scale: 0.97, opacity: 0.8 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
-        exit={{ y: -10, scale: 0.97, opacity: 0.8 }}
+        exit={{ y: 10, scale: 0.97, opacity: 0.8 }}
         transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
         onClick={(event) => event.stopPropagation()}
       >
-        <NavContent {...contentProps} />
+        <NavContent hideFunctionButton={true} {...contentProps} />
       </motion.nav>
     </motion.div>
   );
@@ -226,9 +229,15 @@ interface NavHeaderProps {
   account: DisplayAccount;
   accountState: AccountState;
   onToggleNav: () => void;
+  hideFunctionButton?: boolean;
 }
 
-function NavHeader({ account, accountState, onToggleNav }: NavHeaderProps) {
+function NavHeader({
+  account,
+  accountState,
+  onToggleNav,
+  hideFunctionButton,
+}: NavHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [githubSession, setGithubSession] = useState<GithubDeviceSession>();
   const [githubStatus, setGithubStatus] = useState("");
@@ -310,8 +319,10 @@ function NavHeader({ account, accountState, onToggleNav }: NavHeaderProps) {
 
   return (
     <div className="relative">
-      <div className="p-1.5 flex flex-row justify-between items-center self-stretch">
-        <FunctionButton onClick={onToggleNav} />
+      <div
+        className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
+      >
+        {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
         <AccountAvatar
           account={account}
           isActive={hasAccount}
