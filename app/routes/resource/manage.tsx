@@ -88,11 +88,11 @@ export default function ResourceManage() {
 
   return (
     <Page>
-      <div className="z-1 bg-linear-to-b from-0% from-bg/0 to-65% to-[rgba(17,17,19,0.75)] fixed bottom-0 inset-x-0 h-16" />
+      <div className="z-1 min-[1024px]:bg-linear-to-t max-[1024px]:bg-linear-to-b min-[1024px]:top-[calc(44px+16px)] max-[1024px]:bottom-0 from-0% from-bg/0 to-65% min-[1024px]:to-[rgb(17,17,19)] max-[1024px]:to-[rgba(17,17,19,0.75)] fixed inset-x-0 min-[1024px]:h-14 max-[1024px]:h-16" />
       <Tabs.Root defaultValue="manage">
         <div
-          className="z-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] fixed bottom-0 flex justify-center"
           style={width ? { width: width } : { width: "100vw" }}
+          className={`z-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] fixed bottom-0 flex justify-center min-[1024px]:top-0 min-[1024px]:sticky min-[1024px]:w-full!`}
         >
           <Tabs.List
             className={`rounded-full flex gap-0.5 space-x-2 p-1 shadow-[0px_2px_4px_#111113]! justify-center w-fit! mx-auto bg-[rgba(17,17,19,0.5)] border border-white/10 backdrop-blur-xl`}
@@ -109,6 +109,7 @@ export default function ResourceManage() {
                       data-[state=active]:hover:bg-nav-item-selected!
                       before:content-none!
                       h-fit!
+                      active:scale-95!
                       *:hover:bg-transparent!
                       *:active:bg-transparent!
                       *:focus:bg-transparent!
@@ -131,6 +132,7 @@ export default function ResourceManage() {
                       data-[state=active]:hover:bg-nav-item-selected!
                       before:content-none!
                       h-fit!
+                      active:scale-95!
                       *:hover:bg-transparent!
                       *:active:bg-transparent!
                       *:focus:bg-transparent!
