@@ -1,4 +1,5 @@
 import DataCard from "~/components/cards/datacard";
+import type { DashboardTopDownloadsData } from "~/api/astrobox/dashboard";
 
 interface TopDownloadEntry {
     label: string;
@@ -8,51 +9,77 @@ interface TopDownloadEntry {
     imageSrc?: string;
 }
 
-const TOP_DOWNLOADS: TopDownloadEntry[] = [
-    {
-        label: "累计下载最多资源",
-        secondaryLabel: "下载量",
-        name: "澎湃哔哩",
-        value: "32906",
-        imageSrc:
-            "https://github.com/Searchstars/Hyperbilibili_AstroBox_Release/blob/main/icon.png?raw=true",
-    },
-    {
-        label: "累计下载最多设备",
-        secondaryLabel: "下载量",
-        name: "Xiaomi Watch S4",
-        value: "25643",
-    },
-];
+interface TopDownloadsProps {
+    data?: DashboardTopDownloadsData;
+    loading?: boolean;
+    error?: string;
+}
 
-export default function TopDownloads() {
+function formatInteger(value?: number | null) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+        return "--";
+    }
+    return value.toString();
+}
+
+function buildEntries(
+    data?: DashboardTopDownloadsData,
+    loading?: boolean,
+): TopDownloadEntry[] {
+    return [
+        {
+            label: "累计下载最多资源",
+            secondaryLabel: "下载量",
+            name: loading ? "加载中..." : data?.topResource?.name || "--",
+            value: loading ? "..." : formatInteger(data?.topResource?.downloads),
+            imageSrc: data?.topResource?.imageUrl,
+        },
+        {
+            label: "累计下载最多设备",
+            secondaryLabel: "下载量",
+            name: loading ? "加载中..." : data?.topDevice?.name || "--",
+            value: loading ? "..." : formatInteger(data?.topDevice?.downloads),
+        },
+    ];
+}
+
+export default function TopDownloads({ data, loading, error }: TopDownloadsProps) {
+    const entries = buildEntries(data, loading);
+
     return (
-        <div className="p-1.5 gap-2.5 flex flex-col">
-            {TOP_DOWNLOADS.map(
-                ({ label, secondaryLabel, name, value, imageSrc }) => (
-                    <DataCard
-                        key={label}
-                        label={label}
-                        secondaryLabel={secondaryLabel}
-                    >
-                        <div className="flex flex-row w-full items-center">
-                            <div className="flex flex-row gap-2.5 items-center">
-                                {imageSrc && (
-                                    <img
-                                        width={40}
-                                        height={40}
-                                        style={{ objectFit: "scale-down" }}
-                                        src={imageSrc}
-                                        alt={name}
-                                    />
-                                )}
-                                <p className="card-num">{name}</p>
+        <>
+            <div className="p-1.5 gap-2.5 flex flex-col">
+                {entries.map(
+                    ({ label, secondaryLabel, name, value, imageSrc }) => (
+                        <DataCard
+                            key={label}
+                            label={label}
+                            secondaryLabel={secondaryLabel}
+                        >
+                            <div className="flex flex-row w-full items-center">
+                                <div className="flex flex-row gap-2.5 items-center">
+                                    {imageSrc && (
+                                        <img
+                                            width={40}
+                                            height={40}
+                                            style={{ objectFit: "scale-down" }}
+                                            src={imageSrc}
+                                            alt={name}
+                                        />
+                                    )}
+                                    <p className="card-num">{name}</p>
+                                </div>
+                                <p className="card-num ml-auto">{value}</p>
                             </div>
-                            <p className="card-num ml-auto">{value}</p>
-                        </div>
-                    </DataCard>
-                ),
+                        </DataCard>
+                    ),
+                )}
+            </div>
+            {error && (
+                <p className="px-3.5 text-size-small text-white/45">
+                    下载排行数据暂不可用，已显示占位信息。
+                </p>
             )}
-        </div>
+        </>
     );
 }

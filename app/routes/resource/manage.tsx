@@ -89,7 +89,7 @@ export default function ResourceManage() {
 
   return (
     <Page>
-      <div className="z-1 min-[1024px]:bg-linear-to-t max-[1024px]:bg-linear-to-b min-[1024px]:top-[calc(44px+16px)] max-[1024px]:bottom-0 from-0% from-bg/0 to-65% min-[1024px]:to-[rgb(17,17,19)] max-[1024px]:to-[rgba(17,17,19,0.75)] fixed inset-x-0 min-[1024px]:h-14 max-[1024px]:h-16" />
+      <div className="z-1 max-[1024px]:bg-linear-to-b max-[1024px]:bottom-0 from-0% from-bg/0 to-65% max-[1024px]:to-[rgba(17,17,19,0.75)] fixed inset-x-0 max-[1024px]:h-16" />
       <Tabs.Root defaultValue="manage">
         <div
           style={width ? { width: width } : { width: "100vw" }}

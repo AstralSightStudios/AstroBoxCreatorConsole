@@ -36,6 +36,7 @@ import {
   type DownloadInput,
   type LinkInput,
 } from "./components/types";
+import { loadDeviceOptions } from "~/logic/devices/catalog";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import { MediaSection } from "./components/MediaSection";
 import { AuthorsLinksSection } from "./components/AuthorsLinksSection";
@@ -49,9 +50,6 @@ import {
   fetchManifestForCatalogEntry,
 } from "~/logic/publish/manifest-loader";
 import { syncBranchWithUpstream } from "~/logic/publish/fork";
-
-const DEVICES_URL =
-  "https://raw.githubusercontent.com/AstralSightStudios/AstroBox-Repo/refs/heads/main/devices_v2.json";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
@@ -137,32 +135,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       try {
         setIsDeviceLoading(true);
         setDeviceError("");
-        const response = await fetch(DEVICES_URL);
-        if (!response.ok) {
-          throw new Error(`请求失败: ${response.status}`);
-        }
-        const payload = (await response.json()) as Record<
-          string,
-          Record<string, { id: string; name: string }>
-        >;
-        const map = new Map<string, DeviceOption>();
-        Object.entries(payload).forEach(([vendor, devices]) => {
-          Object.values(devices).forEach((device) => {
-            if (!map.has(device.id)) {
-              map.set(device.id, {
-                id: device.id,
-                name: device.name || device.id,
-                vendor,
-              });
-            }
-          });
-        });
-
-        const options = Array.from(map.values());
+        const options = await loadDeviceOptions();
         if (!cancelled) {
-          if (options.length === 0) {
-            throw new Error("设备列表为空");
-          }
           setDeviceOptions(options);
         }
       } catch (error) {
