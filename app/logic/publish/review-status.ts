@@ -16,6 +16,7 @@ const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED)_([^\]]+)\]\s*(.*)$/i;
 export function deriveReviewStatus(comments: Array<{ body?: string }>): ReviewStatusResult {
     const needFixes = new Map<string, string>();
     const fixed = new Set<string>();
+    const fixedMessages = new Map<string, string>();
 
     for (const comment of comments) {
         const body = comment.body?.trim();
@@ -28,8 +29,17 @@ export function deriveReviewStatus(comments: Array<{ body?: string }>): ReviewSt
 
         if (kind === "NEEDFIX") {
             needFixes.set(id, message);
+            fixed.delete(id);
+            fixedMessages.delete(id);
         } else if (kind === "FIXED") {
-            fixed.add(id);
+            if (needFixes.has(id)) {
+                fixed.add(id);
+                if (message) {
+                    fixedMessages.set(id, message);
+                } else {
+                    fixedMessages.delete(id);
+                }
+            }
         }
     }
 
@@ -40,7 +50,9 @@ export function deriveReviewStatus(comments: Array<{ body?: string }>): ReviewSt
     const items: NeedFixItem[] = Array.from(needFixes.entries()).map(
         ([id, message]) => ({
             id,
-            message,
+            message: fixedMessages.get(id)
+                ? `${message}（${fixedMessages.get(id)}）`
+                : message,
             fixed: fixed.has(id),
         }),
     );

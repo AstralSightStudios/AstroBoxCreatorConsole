@@ -3,6 +3,7 @@ import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
 import {
     fetchCatalogEntries,
+    parseCatalogCsv,
     type CatalogEntry,
 } from "./catalog";
 import {
@@ -38,6 +39,8 @@ export interface ResourceEditContext {
     catalog: ResourceCatalogContext;
     prNumber?: number;
     prHead?: { owner: string; repo: string; ref: string };
+    reviewState?: ReviewState;
+    needs?: NeedFixItem[];
 }
 
 function requireGithubAccount() {
@@ -80,8 +83,74 @@ async function fetchIssueComments(
     );
 }
 
-function isSameUser(user?: { login?: string }, username?: string) {
-    return Boolean(user?.login && username && user.login === username);
+async function fetchPullFiles(
+    repoOwner: string,
+    repoName: string,
+    pullNumber: number,
+    token: string,
+) {
+    return githubFetch<
+        Array<{
+            filename?: string;
+            patch?: string;
+        }>
+    >(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${pullNumber}/files?per_page=100`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+}
+
+const CATALOG_CSV_HEADER =
+    "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
+
+function parseCatalogEntryRow(row: string) {
+    return parseCatalogCsv(`${CATALOG_CSV_HEADER}\n${row}`)[0];
+}
+
+function isCatalogFile(filename?: string) {
+    if (!filename) return false;
+    return (
+        filename === PUBLISH_CONFIG.catalogFilePath ||
+        filename.endsWith(`/${PUBLISH_CONFIG.catalogFilePath}`)
+    );
+}
+
+function extractCatalogEntriesFromPatch(patch?: string) {
+    if (!patch) return [];
+
+    const byId = new Map<string, CatalogEntry>();
+    const lines = patch.split(/\r?\n/);
+    for (const line of lines) {
+        if (!line.startsWith("+") || line.startsWith("+++")) continue;
+
+        const row = line.slice(1).trim();
+        if (!row || row === CATALOG_CSV_HEADER) continue;
+
+        const parsed = parseCatalogEntryRow(row);
+        if (!parsed) continue;
+        byId.set(parsed.id, parsed);
+    }
+
+    return Array.from(byId.values());
+}
+
+function extractCatalogEntriesFromPullFiles(
+    files: Array<{ filename?: string; patch?: string }>,
+) {
+    const byId = new Map<string, CatalogEntry>();
+
+    for (const file of files) {
+        if (!isCatalogFile(file.filename)) continue;
+
+        const entries = extractCatalogEntriesFromPatch(file.patch);
+        for (const entry of entries) {
+            byId.set(entry.id, entry);
+        }
+    }
+
+    return Array.from(byId.values());
 }
 
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
@@ -100,31 +169,26 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
         const headRepo = pr.head?.repo;
         if (!headRepo) continue;
 
-        const isAuthor =
-            isSameUser(pr.user, username) || isSameUser(headRepo.owner, username);
+        const isAuthor = Boolean(pr.user?.login && pr.user.login === username);
         if (!isAuthor) continue;
 
         try {
-            const comments = await fetchIssueComments(
-                PUBLISH_CONFIG.targetPrRepoOwner,
-                PUBLISH_CONFIG.targetPrRepoName,
-                pr.number,
-                token,
-            );
+            const [comments, files] = await Promise.all([
+                fetchIssueComments(
+                    PUBLISH_CONFIG.targetPrRepoOwner,
+                    PUBLISH_CONFIG.targetPrRepoName,
+                    pr.number,
+                    token,
+                ),
+                fetchPullFiles(
+                    PUBLISH_CONFIG.targetPrRepoOwner,
+                    PUBLISH_CONFIG.targetPrRepoName,
+                    pr.number,
+                    token,
+                ),
+            ]);
             const review = deriveReviewStatus(comments);
-
-            const catalog = await fetchCatalogEntries({
-                token,
-                owner: headRepo.owner?.login,
-                repo: headRepo.name,
-                ref: pr.head.ref,
-            });
-
-            const relatedEntries = catalog.entries.filter(
-                (entry) =>
-                    entry.repo_owner === username ||
-                    entry.repo_owner === headRepo.owner?.login,
-            );
+            const relatedEntries = extractCatalogEntriesFromPullFiles(files);
 
             for (const entry of relatedEntries) {
                 resources.push({
@@ -144,10 +208,10 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
                     },
                     catalog: {
                         entry,
-                        owner: catalog.owner,
-                        repo: catalog.repo,
+                        owner: headRepo.owner?.login || "",
+                        repo: headRepo.name,
                         ref: pr.head.ref,
-                        sha: catalog.sha,
+                        sha: pr.head.sha,
                     },
                 });
             }

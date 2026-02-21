@@ -4,6 +4,7 @@ import {
   UploadIcon,
   PencilSimpleLineIcon,
   GitBranchIcon,
+  WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
@@ -705,6 +706,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     isEditMode || Boolean(editContext) ? "edit" : "new";
   const prStepMode: "new" | "update" =
     editContext?.mode === "in_progress" ? "update" : "new";
+  const needFixItems = useMemo(
+    () =>
+      editContext?.mode === "in_progress" ? (editContext.needs ?? []) : [],
+    [editContext],
+  );
+  const needFixProgressText = useMemo(() => {
+    if (needFixItems.length === 0) return "";
+    const finished = needFixItems.filter((item) => item.fixed).length;
+    return `（已完成 ${finished}/${needFixItems.length}）`;
+  }, [needFixItems]);
 
   const stepsCard = (
     <div className="flex flex-wrap flex-col gap-6">
@@ -780,6 +791,40 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   </Callout.Text>
                 </div>
               )}
+              {editContext.mode === "in_progress" &&
+                editContext.reviewState === "changes_requested" &&
+                needFixItems.length > 0 && (
+                  <div className="mt-2.5 rounded-md border border-amber-400/30 bg-amber-400/5 p-2.5">
+                    <div className="mb-2 flex items-center gap-2">
+                      <WarningOctagonIcon
+                        size={16}
+                        weight="fill"
+                        className="text-amber-300"
+                      />
+                      <p className="text-sm font-semibold text-amber-200">
+                        需要修改项{needFixProgressText}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {needFixItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-2 text-sm text-white/85"
+                        >
+                          <Badge
+                            color={item.fixed ? "green" : "yellow"}
+                            variant="soft"
+                          >
+                            {item.id}
+                          </Badge>
+                          <span className="text-white/85">
+                            {item.message || "（无附加说明）"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </Callout.Root>
           )}
           {!editContext && editError && isEditMode && (

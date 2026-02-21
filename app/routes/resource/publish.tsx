@@ -85,6 +85,8 @@ export default function ResourcePublish() {
       catalog: resource.catalog,
       prNumber: resource.prNumber,
       prHead: resource.prHead,
+      reviewState: resource.status,
+      needs: resource.needs,
     };
     navigate("/publish/edit", { state: { editContext } });
   };

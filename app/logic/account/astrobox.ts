@@ -23,7 +23,7 @@ export function persistAstroboxAccount(profile: any, token: string) {
             profile?.preferred_username ||
             profile?.name ||
             "",
-        plan: profile?.tag ?? "",
+        plan: profile?.vip || profile?.tag || "",
         email: profile?.email ?? "",
         token,
     };

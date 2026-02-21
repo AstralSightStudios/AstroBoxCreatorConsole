@@ -37,6 +37,7 @@ import { AstroBoxLogo } from "~/components/svgs";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Spinner } from "@radix-ui/themes";
+import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 
 export default function Nav() {
   const accountState = useAccountState();
@@ -143,6 +144,7 @@ function NavContent({
             <NavSection
               key={section.id}
               {...section}
+              accountState={accountState}
               pathname={pathname}
               onNavigate={onNavigate}
             />
@@ -671,11 +673,20 @@ function AccountInfo({ account }: AccountInfoProps) {
 }
 
 interface NavSectionProps extends NavSectionConfig {
+  accountState: AccountState;
   pathname: string;
   onNavigate: (path: string) => void;
 }
 
-function NavSection({ title, items, pathname, onNavigate }: NavSectionProps) {
+function NavSection({
+  title,
+  items,
+  accountState,
+  pathname,
+  onNavigate,
+}: NavSectionProps) {
+  const hasAnalysisAccess = canAccessAnalysisByPlan(accountState.astrobox?.plan);
+
   return (
     <section className="flex flex-col gap-1.5">
       {title && (
@@ -685,14 +696,18 @@ function NavSection({ title, items, pathname, onNavigate }: NavSectionProps) {
           </p>
         </div>
       )}
-      {items.map(({ id, path, ...item }) => (
+      {items.map(({ id, path, ...item }) => {
+        const disabled = path === "/analysis" && !hasAnalysisAccess;
+        return (
         <NavItem
           key={id}
           {...item}
+          disabled={disabled}
           selected={isNavItemSelected(pathname, path)}
-          onClick={() => onNavigate(path)}
+          onClick={disabled ? undefined : () => onNavigate(path)}
         />
-      ))}
+      );
+      })}
     </section>
   );
 }
