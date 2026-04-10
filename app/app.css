@@ -65,3 +65,30 @@ html,
 body {
     color-scheme: dark;
 }
+
+@layer base {
+    [data-sonner-toast][data-styled="true"] {
+        padding: 16px;
+    }
+
+    [data-sonner-toast][data-styled="true"] [data-button] {
+        padding-left: 8px;
+        padding-right: 8px;
+        margin-left: var(--toast-button-margin-start);
+        margin-right: var(--toast-button-margin-end);
+    }
+
+    [data-sonner-toast][data-styled="true"] [data-button]:first-of-type {
+        margin-left: var(--toast-button-margin-start);
+        margin-right: var(--toast-button-margin-end);
+    }
+
+    [data-sonner-toast][data-styled="true"] [data-close-button] {
+        padding: 0;
+    }
+
+    [data-sonner-toast][data-styled="true"] [data-icon] {
+        margin-left: var(--toast-icon-margin-start);
+        margin-right: var(--toast-icon-margin-end);
+    }
+}

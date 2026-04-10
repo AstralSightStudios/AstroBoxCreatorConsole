@@ -7,6 +7,7 @@ import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
+import { Toaster } from "sonner";
 
 function AstroboxAccountRefresher() {
     const hasRefreshedRef = useRef(false);
@@ -35,6 +36,7 @@ export default function RootLayout() {
                     </main>
                 </div>
             </NavVisibilityProvider>
+            <Toaster richColors position="top-right" />
         </Theme>
     );
 }
