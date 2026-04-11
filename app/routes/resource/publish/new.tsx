@@ -18,7 +18,9 @@ import {
   uploadManifestAndAssets,
   type RepoInfo,
 } from "~/logic/publish/submission";
-import { loadAccountState } from "~/logic/account/store";
+import { loadAccountState, useDisplayAccount } from "~/logic/account/store";
+import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
+import { listSellerResourceFileKeys } from "~/api/astrobox/order";
 import {
   createCatalogPullRequest,
   updateCatalogCsv,
@@ -56,6 +58,8 @@ const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
+  const displayAccount = useDisplayAccount();
+  const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
   const [itemId, setItemId] = useState("");
   const [resourceType, setResourceType] = useState<"quick_app" | "watchface">(
@@ -78,6 +82,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [tagsInput, setTagsInput] = useState("");
   const [paidType, setPaidType] = useState("");
+  const hasEncryptedUpload = useMemo(
+    () => downloads.some((d) => Boolean(d.encryptOnUpload)),
+    [downloads],
+  );
+  const effectivePaidType = hasEncryptedUpload ? "force_paid" : paidType;
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
@@ -209,6 +218,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           token,
           ref,
         });
+
+        const resourceIdForCrypto = manifest.item.id || catalogEntry.id || "";
+        const fileKeys = resourceIdForCrypto
+          ? await listSellerResourceFileKeys({
+              resourceId: resourceIdForCrypto,
+              limit: 500,
+            }).catch(() => [])
+          : [];
+        const encryptedDeviceSet = new Set(fileKeys.map((item) => item.deviceId));
         if (!active) return;
 
         setItemId(manifest.item.id || catalogEntry.id || "");
@@ -286,6 +304,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             uid: crypto.randomUUID?.() ?? Math.random().toString(36),
             platformId,
             version: info?.version || "",
+            encryptOnUpload: encryptedDeviceSet.has(platformId),
             file: fileName
               ? createExistingUploadItem(
                   fileName.split("/").pop() || fileName,
@@ -629,7 +648,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             devices: Array.from(new Set(selectedDevices.map((d) => d.id))).join(
               ";",
             ),
-            paid_type: paidType?.trim() ?? "",
+            paid_type: effectivePaidType?.trim() ?? "",
           },
         });
 
@@ -647,7 +666,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         itemId,
         itemName,
         restype: resourceType,
-        paidType,
+        paidType: effectivePaidType,
       });
 
       await createCatalogPullRequest({
@@ -680,6 +699,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           platformId: next?.id ?? "",
           version: "",
           file: null,
+          encryptOnUpload: false,
         },
       ];
     });
@@ -843,7 +863,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 itemName={itemName}
                 description={description}
                 tagsInput={tagsInput}
-                paidType={paidType}
+                paidType={effectivePaidType}
+                paidTypeDisabled={hasEncryptedUpload}
                 resourceType={resourceType}
                 onItemIdChange={setItemId}
                 onItemNameChange={setItemName}
@@ -878,6 +899,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 sortedDeviceOptions={sortedDeviceOptions}
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
+                isVip={isVip}
+                resourceId={itemId}
                 onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}

@@ -42,6 +42,27 @@ export interface SellerResourceConfigListResponse {
     skus: SellerResourceSku[];
 }
 
+export interface UpsertResourceProductBody {
+    resourceId: string;
+    platform: CommercePlatform;
+    externalProductId: string;
+    title?: string;
+    buyUrl?: string;
+    enabled?: boolean;
+}
+
+export interface UpsertResourceSkuBody {
+    resourceId: string;
+    platform: CommercePlatform;
+    externalProductId: string;
+    externalSkuId: string;
+    deviceId: string;
+    title?: string;
+    buyUrl?: string;
+    isPaid?: boolean;
+    enabled?: boolean;
+}
+
 export interface SellerOverviewCounts {
     platformConfigs: { total: number; enabled: number };
     products: { total: number; enabled: number };
@@ -132,6 +153,51 @@ export function getSellerOverview(body: SellerOverviewBody = {}) {
 export function listSellerResourceFileKeys(body: { resourceId: string; deviceId?: string; limit?: number }) {
     return sendApiRequest<SellerResourceFileKey[]>(
         "/order/seller/resource-file-key/list",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function deleteSellerResourceFileKey(body: { resourceId: string; encryptedFileHash: string }) {
+    return sendApiRequest<{ deleted: boolean }>(
+        "/order/seller/resource-file-key/delete",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function upsertResourceProduct(body: UpsertResourceProductBody) {
+    return sendApiRequest<SellerResourceProduct>(
+        "/order/seller/resource-product/upsert",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function deleteResourceProduct(body: { resourceId: string; platform: CommercePlatform; externalProductId: string }) {
+    return sendApiRequest<{ deleted: boolean }>(
+        "/order/seller/resource-product/delete",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function upsertResourceSku(body: UpsertResourceSkuBody) {
+    return sendApiRequest<SellerResourceSku>(
+        "/order/seller/resource-sku/upsert",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function deleteResourceSku(body: { resourceId: string; platform: CommercePlatform; externalProductId: string; externalSkuId: string; deviceId: string }) {
+    return sendApiRequest<{ deleted: boolean }>(
+        "/order/seller/resource-sku/delete",
         "POST",
         undefined,
         body,

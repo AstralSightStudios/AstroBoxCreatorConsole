@@ -25,6 +25,7 @@ export interface DownloadUploadInput {
     file: UploadAssetInput | null;
     pathOverride?: string;
     skipUpload?: boolean;
+    encryptOnUpload?: boolean;
 }
 
 export interface ManifestBuildInput {
@@ -52,6 +53,7 @@ export interface AssetDescriptor {
 export interface DownloadAssetDescriptor extends AssetDescriptor {
     platformId: string;
     version: string;
+    encryptOnUpload?: boolean;
 }
 
 export interface ManifestBuildResult {
@@ -112,6 +114,7 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             path: d.file?.pathOverride || d.pathOverride || `${downloadsDir}/${d.file!.name}`,
             file: d.file!.file,
             skipUpload: d.file?.skipUpload ?? d.skipUpload,
+            encryptOnUpload: d.encryptOnUpload,
         }));
 
     const downloadsObject = downloadAssets.reduce((acc, current) => {

@@ -10,6 +10,7 @@ export type DownloadInput = {
     version: string;
     file: UploadItem | null;
     existingFileName?: string;
+    encryptOnUpload?: boolean;
 };
 
 export type DeviceOption = { id: string; name: string; vendor?: string };

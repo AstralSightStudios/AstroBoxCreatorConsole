@@ -14,6 +14,7 @@ interface BasicInfoSectionProps {
   description: string;
   tagsInput: string;
   paidType: string;
+  paidTypeDisabled?: boolean;
   resourceType: ResourceType;
   onItemIdChange: (value: string) => void;
   onItemNameChange: (value: string) => void;
@@ -29,6 +30,7 @@ export function BasicInfoSection({
   description,
   tagsInput,
   paidType,
+  paidTypeDisabled,
   resourceType,
   onItemIdChange,
   onItemNameChange,
@@ -137,6 +139,7 @@ export function BasicInfoSection({
           <Select.Root
             value={paidType || undefined}
             onValueChange={onPaidTypeChange}
+            disabled={paidTypeDisabled}
           >
             <Select.Trigger placeholder="免费" radius="large" />
 

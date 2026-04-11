@@ -12,6 +12,8 @@ import type {
     DownloadAssetDescriptor,
     ManifestBuildResult,
 } from "./manifest";
+import { encryptFileWithAes256Ecb } from "./encryption";
+import { submitResourceCryptoInfo } from "~/api/astrobox/resource";
 
 interface UploadManifestRequest {
     manifest: ManifestBuildResult;
@@ -21,6 +23,35 @@ interface UploadManifestRequest {
     token: string;
     repoNameOverride?: string;
     onProgress?: (message: string) => void;
+}
+
+async function uploadDownloadAsset(params: {
+    repo: RepoInfo;
+    asset: DownloadAssetDescriptor;
+    message: string;
+    token: string;
+    itemId: string;
+    onProgress?: (message: string) => void;
+    sha?: string;
+}) {
+    const { repo, asset, message, token, itemId, onProgress, sha } = params;
+
+    let fileToUpload = asset.file;
+    if (asset.encryptOnUpload) {
+        onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
+        const encrypted = await encryptFileWithAes256Ecb(asset.file);
+        fileToUpload = encrypted.encryptedFile;
+        await submitResourceCryptoInfo({
+            id: itemId,
+            deviceId: asset.platformId,
+            hash: encrypted.encryptedHash,
+            key: encrypted.keyBase64,
+        });
+        onProgress?.(`已保存密钥映射 ${asset.platformId}`);
+    }
+
+    onProgress?.(`上传包体 ${asset.platformId}`);
+    return uploadBinaryFile(repo, asset.path, fileToUpload, message, token, sha ? { sha } : undefined);
 }
 
 export async function uploadManifestAndAssets({
@@ -93,14 +124,14 @@ export async function uploadManifestAndAssets({
     const downloadAssets: DownloadAssetDescriptor[] = manifest.downloadAssets;
     for (const asset of downloadAssets) {
         if (asset.skipUpload) continue;
-        onProgress?.(`上传包体 ${asset.platformId}`);
-        const res = await uploadBinaryFile(
-            normalizedRepo,
-            asset.path,
-            asset.file,
-            `Add package for ${asset.platformId}`,
+        const res = await uploadDownloadAsset({
+            repo: normalizedRepo,
+            asset,
+            message: `Add package for ${asset.platformId}`,
             token,
-        );
+            itemId,
+            onProgress,
+        });
         lastCommitSha = res?.commit?.sha ?? lastCommitSha;
     }
 
@@ -155,6 +186,13 @@ export async function upsertManifestAndAssets({
     token: string;
     onProgress?: (message: string) => void;
 }): Promise<RepoInfo & { commitSha: string }> {
+    const parsedManifest = JSON.parse(manifest.manifestJson) as {
+        item?: { id?: string };
+    };
+    const itemId = parsedManifest.item?.id?.trim() || "";
+    if (!itemId) {
+        throw new Error("缺少资源 ID，无法保存加密文件密钥。");
+    }
     const targetRepo: RepoInfo = {
         ...repo,
         branch: repo.branch || PUBLISH_CONFIG.defaultBranch,
@@ -194,7 +232,22 @@ export async function upsertManifestAndAssets({
     }
 
     for (const asset of manifest.downloadAssets) {
-        await uploadAsset(asset, `Update package for ${asset.platformId}`);
+        if (!asset || asset.skipUpload) continue;
+        const sha = await getExistingFileSha({
+            repo: targetRepo,
+            path: asset.path,
+            token,
+        }).catch(() => undefined);
+        const res = await uploadDownloadAsset({
+            repo: targetRepo,
+            asset,
+            message: `Update package for ${asset.platformId}`,
+            token,
+            itemId,
+            onProgress,
+            sha,
+        });
+        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
     }
 
     const manifestSha = await getExistingFileSha({

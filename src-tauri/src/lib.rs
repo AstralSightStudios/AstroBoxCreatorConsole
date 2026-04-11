@@ -1,3 +1,7 @@
+use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit};
+use aes::Aes256;
+use base64::{engine::general_purpose, Engine as _};
+use ecb::Encryptor;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -56,6 +60,27 @@ async fn github_request(request: GithubProxyRequest) -> Result<Value, String> {
     Ok(body)
 }
 
+#[tauri::command]
+async fn encrypt_aes_256_ecb(data_base64: String, key_base64: String) -> Result<String, String> {
+    let data = general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|err| format!("Invalid data base64: {err}"))?;
+
+    let key = general_purpose::STANDARD
+        .decode(key_base64)
+        .map_err(|err| format!("Invalid key base64: {err}"))?;
+
+    if key.len() != 32 {
+        return Err("AES-256 key must be exactly 32 bytes".to_string());
+    }
+
+    let cipher = Encryptor::<Aes256>::new_from_slice(&key)
+        .map_err(|err| format!("Invalid AES key: {err}"))?;
+    let encrypted = cipher.encrypt_padded_vec_mut::<Pkcs7>(&data);
+
+    Ok(general_purpose::STANDARD.encode(encrypted))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -71,7 +96,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![github_request])
+        .invoke_handler(tauri::generate_handler![github_request, encrypt_aes_256_ecb])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

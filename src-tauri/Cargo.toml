@@ -26,3 +26,6 @@ tauri-plugin-log = "2"
 reqwest = { version = "0.12", features = ["json"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+aes = "0.8"
+ecb = { version = "0.1", features = ["alloc", "block-padding"] }
+base64 = "0.22"

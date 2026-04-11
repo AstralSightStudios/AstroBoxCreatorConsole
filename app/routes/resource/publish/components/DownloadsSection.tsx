@@ -6,17 +6,20 @@ import {
   XCircleIcon,
   WarningDiamondIcon,
 } from "@phosphor-icons/react";
-import { Button, TextField, Table, Select, Callout } from "@radix-ui/themes";
+import { Button, TextField, Table, Select, Callout, Switch } from "@radix-ui/themes";
 import { useRef } from "react";
 import { createUploadItem } from "./uploadUtils";
 import { type DeviceOption, type DownloadInput } from "./types";
 import { SectionCard } from "./shared";
+import { EncryptConfigDialog } from "./EncryptConfigDialog";
 
 interface DownloadsSectionProps {
   downloads: DownloadInput[];
   sortedDeviceOptions: DeviceOption[];
   isDeviceLoading: boolean;
   deviceError: string;
+  isVip: boolean;
+  resourceId: string;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -30,6 +33,8 @@ export function DownloadsSection({
   sortedDeviceOptions,
   isDeviceLoading,
   deviceError,
+  isVip,
+  resourceId,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
@@ -86,6 +91,7 @@ export function DownloadsSection({
               <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>版本号</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>包体</Table.ColumnHeaderCell>
+              {isVip && <Table.ColumnHeaderCell>加密上传</Table.ColumnHeaderCell>}
             </Table.Row>
           </Table.Header>
           <Table.Body>
@@ -205,6 +211,29 @@ export function DownloadsSection({
                     )}
                   </div>
                 </Table.RowHeaderCell>
+                {isVip && (
+                  <Table.RowHeaderCell>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={Boolean(item.encryptOnUpload)}
+                        disabled={Boolean(item.existingFileName)}
+                        onCheckedChange={(checked) =>
+                          onUpdateRow(item.uid, (row) => ({
+                            ...row,
+                            encryptOnUpload: checked,
+                          }))
+                        }
+                      />
+                      {item.encryptOnUpload && (
+                        <EncryptConfigDialog
+                          resourceId={resourceId}
+                          deviceId={item.platformId}
+                          triggerDisabled={!item.encryptOnUpload}
+                        />
+                      )}
+                    </div>
+                  </Table.RowHeaderCell>
+                )}
               </Table.Row>
             ))}
 
@@ -220,6 +249,7 @@ export function DownloadsSection({
                 </Table.RowHeaderCell>
                 <Table.RowHeaderCell />
                 <Table.RowHeaderCell />
+                {isVip && <Table.RowHeaderCell />}
               </Table.Row>
             )}
           </Table.Body>
