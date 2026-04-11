@@ -1,6 +1,7 @@
 import { sendApiRequest } from "./request";
 
 export type DayOverDayDirection = "increase" | "decrease" | "flat";
+export type DashboardPeriod = "7d" | "30d" | "90d" | "all";
 
 export interface DashboardOverviewData {
     todayDownloads: number;
@@ -42,9 +43,24 @@ export interface CreatorConsoleDashboardResponse {
     distributionsAccessible: boolean;
 }
 
-export function getCreatorConsoleDashboard() {
+export function getCreatorConsoleDashboard(params?: {
+    period?: DashboardPeriod;
+    resourceId?: string;
+}) {
+    const query = new URLSearchParams();
+    if (params?.period && params.period !== "all") {
+        query.set("period", params.period);
+    }
+    if (params?.resourceId?.trim()) {
+        query.set("resourceId", params.resourceId.trim());
+    }
+    const queryString = query.toString();
+    const url = queryString
+        ? `/dashboard/api/creator-console/home?${queryString}`
+        : "/dashboard/api/creator-console/home";
+
     return sendApiRequest<CreatorConsoleDashboardResponse>(
-        "/dashboard/api/creator-console/home",
+        url,
         "GET",
     );
 }

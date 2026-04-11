@@ -135,6 +135,19 @@ export async function uploadManifestAndAssets({
         lastCommitSha = res?.commit?.sha ?? lastCommitSha;
     }
 
+    for (const asset of manifest.trialDownloadAssets) {
+        if (asset.skipUpload) continue;
+        onProgress?.(`上传试用包体 ${asset.platformId}`);
+        const res = await uploadBinaryFile(
+            normalizedRepo,
+            asset.path,
+            asset.file,
+            `Add trial package for ${asset.platformId}`,
+            token,
+        );
+        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+    }
+
     onProgress?.("上传 manifest_v2.json");
     const manifestRes = await uploadTextFile(
         normalizedRepo,
@@ -247,6 +260,25 @@ export async function upsertManifestAndAssets({
             onProgress,
             sha,
         });
+        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+    }
+
+    for (const asset of manifest.trialDownloadAssets) {
+        if (!asset || asset.skipUpload) continue;
+        const sha = await getExistingFileSha({
+            repo: targetRepo,
+            path: asset.path,
+            token,
+        }).catch(() => undefined);
+        onProgress?.(`上传试用包体 ${asset.platformId}`);
+        const res = await uploadBinaryFile(
+            targetRepo,
+            asset.path,
+            asset.file,
+            `Update trial package for ${asset.platformId}`,
+            token,
+            { sha },
+        );
         lastCommitSha = res?.commit?.sha ?? lastCommitSha;
     }
 

@@ -1,6 +1,10 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
 import type { CatalogEntry } from "./catalog";
 import { getRepoFile, type RepoInfo } from "./github-actions";
+import type {
+    ManifestDownloadInfo,
+    ManifestExtObject,
+} from "./manifest";
 
 export interface ManifestV2 {
     item: {
@@ -14,8 +18,8 @@ export interface ManifestV2 {
         author?: Array<{ name: string; bindABAccount?: boolean }>;
     };
     links?: Array<{ title: string; url: string; icon?: string }>;
-    downloads?: Record<string, { version?: string; file_name?: string }>;
-    ext?: any;
+    downloads?: Record<string, Partial<ManifestDownloadInfo>>;
+    ext?: ManifestExtObject;
 }
 
 function decodeBase64(content?: string) {

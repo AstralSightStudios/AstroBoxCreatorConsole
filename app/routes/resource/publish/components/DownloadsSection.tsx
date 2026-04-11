@@ -1,9 +1,7 @@
 import {
-  PlusCircleIcon,
   UploadSimpleIcon,
   PlusIcon,
   MinusIcon,
-  XCircleIcon,
   WarningDiamondIcon,
 } from "@phosphor-icons/react";
 import { Button, TextField, Table, Select, Callout, Switch } from "@radix-ui/themes";
@@ -14,12 +12,17 @@ import { SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
 
 interface DownloadsSectionProps {
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+  helperText?: string;
   downloads: DownloadInput[];
   sortedDeviceOptions: DeviceOption[];
   isDeviceLoading: boolean;
   deviceError: string;
   isVip: boolean;
-  resourceId: string;
+  resourceId?: string;
+  allowEncryption?: boolean;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -29,12 +32,17 @@ interface DownloadsSectionProps {
 }
 
 export function DownloadsSection({
+  title = "资源下载配置",
+  description = "为不同设备提供不同的资源包体",
+  emptyMessage = "还未添加任何设备",
+  helperText = "应最少添加一个设备才能发布资源。",
   downloads,
   sortedDeviceOptions,
   isDeviceLoading,
   deviceError,
   isVip,
   resourceId,
+  allowEncryption = true,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
@@ -50,8 +58,8 @@ export function DownloadsSection({
 
   return (
     <SectionCard
-      title="资源下载配置"
-      description="为不同设备提供不同的资源包体"
+      title={title}
+      description={description}
       className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
     >
       {deviceError && (
@@ -91,7 +99,9 @@ export function DownloadsSection({
               <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>版本号</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>包体</Table.ColumnHeaderCell>
-              {isVip && <Table.ColumnHeaderCell>加密上传</Table.ColumnHeaderCell>}
+              {isVip && allowEncryption && (
+                <Table.ColumnHeaderCell>加密上传</Table.ColumnHeaderCell>
+              )}
             </Table.Row>
           </Table.Header>
           <Table.Body>
@@ -211,7 +221,7 @@ export function DownloadsSection({
                     )}
                   </div>
                 </Table.RowHeaderCell>
-                {isVip && (
+                {isVip && allowEncryption && (
                   <Table.RowHeaderCell>
                     <div className="flex items-center gap-2">
                       <Switch
@@ -226,7 +236,7 @@ export function DownloadsSection({
                       />
                       {item.encryptOnUpload && (
                         <EncryptConfigDialog
-                          resourceId={resourceId}
+                          resourceId={resourceId || ""}
                           deviceId={item.platformId}
                           triggerDisabled={!item.encryptOnUpload}
                         />
@@ -245,11 +255,11 @@ export function DownloadsSection({
                   px="0"
                 ></Table.RowHeaderCell>
                 <Table.RowHeaderCell>
-                  <span className="text-white/60">还未添加任何设备</span>
+                  <span className="text-white/60">{emptyMessage}</span>
                 </Table.RowHeaderCell>
                 <Table.RowHeaderCell />
                 <Table.RowHeaderCell />
-                {isVip && <Table.RowHeaderCell />}
+                {isVip && allowEncryption && <Table.RowHeaderCell />}
               </Table.Row>
             )}
           </Table.Body>
@@ -257,9 +267,7 @@ export function DownloadsSection({
       </div>
 
       <div className="flex flex-col px-1.5 py-1 w-full">
-        <p className="text-xs text-white/60">
-          应最少添加一个设备才能发布资源。
-        </p>
+        <p className="text-xs text-white/60">{helperText}</p>
       </div>
     </SectionCard>
   );

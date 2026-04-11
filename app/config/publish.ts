@@ -2,6 +2,7 @@ export const PUBLISH_CONFIG = {
     manifestFileName: "manifest_v2.json",
     mediaDirectory: "media",
     downloadsDirectory: "downloads",
+    trialDownloadsDirectory: "downloads/trial",
     defaultBranch: "main",
     repoNamePrefix: "astrobox-resource-",
     targetPrRepoOwner: "AstralSightStudios",

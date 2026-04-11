@@ -22,6 +22,8 @@ import {
     type AnalysisMapScope,
     type AnalysisOverviewResponse,
     type AnalysisPeriod,
+    type CreatorAnalysisResource,
+    getCreatorAnalysisResources,
 } from "~/api/astrobox/analysis";
 import DataCard from "~/components/cards/datacard";
 import { PlusIcon } from "~/components/svgs";
@@ -29,6 +31,7 @@ import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 import { useDisplayAccount } from "~/logic/account/store";
 import Page from "~/layout/page";
 import { SectionCard } from "./resource/publish/components/shared";
+import { Select } from "@radix-ui/themes";
 
 const HEAT_COLORS = ["#4a67f5", "#3ea8f8", "#2fd67f", "#f5b14a", "#f55d4a"];
 const WORLD_VIEW_STATE = {
@@ -449,10 +452,72 @@ export default function Analysis() {
 
     const [scope, setScope] = useState<AnalysisMapScope>("china");
     const [period] = useState<AnalysisPeriod>("30d");
+    const [selectedResourceId, setSelectedResourceId] = useState("");
+    const [resources, setResources] = useState<CreatorAnalysisResource[]>([]);
+    const [resourcesLoading, setResourcesLoading] = useState(false);
+    const [resourcesError, setResourcesError] = useState("");
     const [overview, setOverview] = useState<AnalysisOverviewResponse | null>(null);
     const [heatmap, setHeatmap] = useState<AnalysisHeatmapResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (!canAccess) {
+            setResources([]);
+            setSelectedResourceId("");
+            setResourcesError("");
+            setResourcesLoading(false);
+            return;
+        }
+
+        let active = true;
+        const run = async () => {
+            setResourcesLoading(true);
+            setResourcesError("");
+            try {
+                const resourceData = await getCreatorAnalysisResources();
+                if (!active) return;
+                setResources(
+                    [...resourceData].sort((a, b) => {
+                        const aTime = Date.parse(a.lastActivityAt || "");
+                        const bTime = Date.parse(b.lastActivityAt || "");
+                        const normalizedATime = Number.isNaN(aTime) ? 0 : aTime;
+                        const normalizedBTime = Number.isNaN(bTime) ? 0 : bTime;
+                        if (normalizedATime !== normalizedBTime) {
+                            return normalizedBTime - normalizedATime;
+                        }
+                        if (b.downloads !== a.downloads) {
+                            return b.downloads - a.downloads;
+                        }
+                        return a.name.localeCompare(b.name, "zh-Hans", {
+                            sensitivity: "base",
+                        });
+                    }),
+                );
+            } catch (err) {
+                if (!active) return;
+                setResources([]);
+                setResourcesError(
+                    err instanceof Error ? err.message : "加载资源列表失败",
+                );
+            } finally {
+                if (active) {
+                    setResourcesLoading(false);
+                }
+            }
+        };
+
+        void run();
+        return () => {
+            active = false;
+        };
+    }, [canAccess]);
+
+    useEffect(() => {
+        if (!selectedResourceId) return;
+        if (resources.some((resource) => resource.id === selectedResourceId)) return;
+        setSelectedResourceId("");
+    }, [resources, selectedResourceId]);
 
     useEffect(() => {
         if (!canAccess) {
@@ -469,8 +534,15 @@ export default function Analysis() {
             setError("");
             try {
                 const [overviewData, heatmapData] = await Promise.all([
-                    getCreatorAnalysisOverview({ period }),
-                    getCreatorAnalysisHeatmap({ scope, period }),
+                    getCreatorAnalysisOverview({
+                        period,
+                        resourceId: selectedResourceId || undefined,
+                    }),
+                    getCreatorAnalysisHeatmap({
+                        scope,
+                        period,
+                        resourceId: selectedResourceId || undefined,
+                    }),
                 ]);
                 if (!active) return;
                 setOverview(overviewData);
@@ -491,7 +563,7 @@ export default function Analysis() {
         return () => {
             active = false;
         };
-    }, [canAccess, period, scope]);
+    }, [canAccess, period, scope, selectedResourceId]);
 
     const ratingRows = useMemo(() => {
         const ratings = overview?.ratings;
@@ -521,7 +593,38 @@ export default function Analysis() {
             </div>
 
             <div className="px-1.5 pt-2.5">
-                <ScopeSwitch scope={scope} onChange={setScope} />
+                <div className="grid w-full grid-cols-1 gap-2 lg:grid-cols-[max-content_minmax(0,360px)] lg:items-center lg:justify-between">
+                    <ScopeSwitch scope={scope} onChange={setScope} />
+                    <div className="justify-self-stretch lg:justify-self-end">
+                        <Select.Root
+                            value={selectedResourceId || "__all_resources__"}
+                            onValueChange={(value) =>
+                                setSelectedResourceId(
+                                    value === "__all_resources__" ? "" : value,
+                                )
+                            }
+                            disabled={!canAccess || resourcesLoading}
+                        >
+                            <Select.Trigger
+                                radius="large"
+                                placeholder="选择资源"
+                                className="w-full"
+                            />
+                            <Select.Content position="popper">
+                                <Select.Item value="__all_resources__">
+                                    全部资源
+                                </Select.Item>
+                                {resources.map((resource) => (
+                                    <Select.Item key={resource.id} value={resource.id}>
+                                        {resource.name
+                                            ? `${resource.name} (${resource.id})`
+                                            : resource.id}
+                                    </Select.Item>
+                                ))}
+                            </Select.Content>
+                        </Select.Root>
+                    </div>
+                </div>
             </div>
 
             {!canAccess && (

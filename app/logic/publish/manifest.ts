@@ -28,6 +28,16 @@ export interface DownloadUploadInput {
     encryptOnUpload?: boolean;
 }
 
+export interface ManifestDownloadInfo {
+    version: string;
+    file_name: string;
+}
+
+export interface ManifestExtObject extends Record<string, unknown> {
+    enableAstroBoxCreatorFeatures?: boolean;
+    trialDownloads?: Record<string, ManifestDownloadInfo>;
+}
+
 export interface ManifestBuildInput {
     itemId: string;
     itemName: string;
@@ -41,7 +51,9 @@ export interface ManifestBuildInput {
     authors: BasicAuthor[];
     links: BasicLink[];
     downloads: DownloadUploadInput[];
-    ext: unknown;
+    trialDownloads: DownloadUploadInput[];
+    ext: ManifestExtObject;
+    enableAstroBoxCreatorFeatures: boolean;
 }
 
 export interface AssetDescriptor {
@@ -62,14 +74,34 @@ export interface ManifestBuildResult {
     iconAsset?: AssetDescriptor;
     coverAsset?: AssetDescriptor;
     downloadAssets: DownloadAssetDescriptor[];
+    trialDownloadAssets: DownloadAssetDescriptor[];
     iconPath: string;
     coverPath: string;
     previewPaths: string[];
 }
 
+function buildDownloadsObject(
+    assets: DownloadAssetDescriptor[],
+): Record<string, ManifestDownloadInfo> {
+    return assets.reduce(
+        (acc, current) => {
+            acc[current.platformId] = {
+                version: current.version,
+                file_name: current.path,
+            };
+            return acc;
+        },
+        {} as Record<string, ManifestDownloadInfo>,
+    );
+}
+
 export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     const mediaDir = PUBLISH_CONFIG.mediaDirectory.replace(/\/+$/, "");
     const downloadsDir = PUBLISH_CONFIG.downloadsDirectory.replace(/\/+$/, "");
+    const trialDownloadsDir = PUBLISH_CONFIG.trialDownloadsDirectory.replace(
+        /\/+$/,
+        "",
+    );
 
     const previewAssets: AssetDescriptor[] = input.previews.map((item) => ({
         path: item.pathOverride || `${mediaDir}/${item.name}`,
@@ -117,13 +149,35 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             encryptOnUpload: d.encryptOnUpload,
         }));
 
-    const downloadsObject = downloadAssets.reduce((acc, current) => {
-        acc[current.platformId] = {
-            version: current.version,
-            file_name: current.path,
-        };
-        return acc;
-    }, {} as Record<string, { version: string; file_name: string }>);
+    const trialDownloadAssets: DownloadAssetDescriptor[] = input.trialDownloads
+        .filter((d) => d.platformId.trim() && d.file)
+        .map((d) => ({
+            platformId: d.platformId.trim(),
+            version: d.version.trim(),
+            path:
+                d.file?.pathOverride ||
+                d.pathOverride ||
+                `${trialDownloadsDir}/${d.file!.name}`,
+            file: d.file!.file,
+            skipUpload: d.file?.skipUpload ?? d.skipUpload,
+            encryptOnUpload: false,
+        }));
+
+    const downloadsObject = buildDownloadsObject(downloadAssets);
+    const trialDownloadsObject = buildDownloadsObject(trialDownloadAssets);
+    const ext: ManifestExtObject = { ...input.ext };
+
+    if (input.enableAstroBoxCreatorFeatures) {
+        ext.enableAstroBoxCreatorFeatures = true;
+    } else {
+        delete ext.enableAstroBoxCreatorFeatures;
+    }
+
+    if (Object.keys(trialDownloadsObject).length > 0) {
+        ext.trialDownloads = trialDownloadsObject;
+    } else {
+        delete ext.trialDownloads;
+    }
 
     const manifest = {
         item: {
@@ -149,7 +203,7 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
                 icon: link.icon.trim(),
             })),
         downloads: downloadsObject,
-        ext: input.ext,
+        ext,
     };
 
     return {
@@ -158,6 +212,7 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         iconAsset,
         coverAsset,
         downloadAssets,
+        trialDownloadAssets,
         iconPath: iconAsset?.path || "",
         coverPath,
         previewPaths,

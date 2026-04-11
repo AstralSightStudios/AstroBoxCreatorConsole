@@ -140,7 +140,7 @@ export default function DownloadsDistributionCard({
                                     占比{formatPercent(percentage)}%
                                 </p>
                                 <p className="font-[450] text-size-medium">
-                                    累计下载{formatInteger(downloads)}次
+                                    下载{formatInteger(downloads)}次
                                 </p>
                             </div>
                         </div>

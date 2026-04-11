@@ -28,14 +28,14 @@ function buildEntries(
 ): TopDownloadEntry[] {
     return [
         {
-            label: "累计下载最多资源",
+            label: "资源下载最多",
             secondaryLabel: "下载量",
             name: loading ? "加载中..." : data?.topResource?.name || "--",
             value: loading ? "..." : formatInteger(data?.topResource?.downloads),
             imageSrc: data?.topResource?.imageUrl,
         },
         {
-            label: "累计下载最多设备",
+            label: "设备下载最多",
             secondaryLabel: "下载量",
             name: loading ? "加载中..." : data?.topDevice?.name || "--",
             value: loading ? "..." : formatInteger(data?.topDevice?.downloads),

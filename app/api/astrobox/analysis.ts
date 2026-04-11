@@ -58,15 +58,31 @@ export interface AnalysisOverviewResponse {
     dailyDownloads: AnalysisDailyDownloads[];
 }
 
+export interface CreatorAnalysisResource {
+    id: string;
+    name: string;
+    restype: string;
+    icon?: string;
+    cover?: string;
+    hasAnalysisData: boolean;
+    views: number;
+    downloads: number;
+    lastActivityAt?: string;
+}
+
 export function getCreatorAnalysisHeatmap(params: {
     scope: AnalysisMapScope;
     period?: AnalysisPeriod;
+    resourceId?: string;
 }) {
     const period = params.period || "30d";
     const query = new URLSearchParams({
         scope: params.scope,
         period,
     });
+    if (params.resourceId?.trim()) {
+        query.set("resourceId", params.resourceId.trim());
+    }
 
     return sendApiRequest<AnalysisHeatmapResponse>(
         `/analysis/api/creator-console/heatmap?${query.toString()}`,
@@ -74,14 +90,27 @@ export function getCreatorAnalysisHeatmap(params: {
     );
 }
 
-export function getCreatorAnalysisOverview(params?: { period?: AnalysisPeriod }) {
+export function getCreatorAnalysisOverview(params?: {
+    period?: AnalysisPeriod;
+    resourceId?: string;
+}) {
     const period = params?.period || "30d";
     const query = new URLSearchParams({
         period,
     });
+    if (params?.resourceId?.trim()) {
+        query.set("resourceId", params.resourceId.trim());
+    }
 
     return sendApiRequest<AnalysisOverviewResponse>(
         `/analysis/api/creator-console/overview?${query.toString()}`,
+        "GET",
+    );
+}
+
+export function getCreatorAnalysisResources() {
+    return sendApiRequest<CreatorAnalysisResource[]>(
+        "/analysis/api/creator-console/resources",
         "GET",
     );
 }

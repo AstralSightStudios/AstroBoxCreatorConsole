@@ -12,6 +12,8 @@ import { PUBLISH_CONFIG } from "~/config/publish";
 import {
   buildManifest,
   type ManifestBuildResult,
+  type ManifestDownloadInfo,
+  type ManifestExtObject,
 } from "~/logic/publish/manifest";
 import {
   upsertManifestAndAssets,
@@ -56,6 +58,45 @@ import { syncBranchWithUpstream } from "~/logic/publish/fork";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
+function isManifestExtObject(value: unknown): value is ManifestExtObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function buildDownloadInputsFromManifest(params: {
+  downloads?: Record<string, Partial<ManifestDownloadInfo>>;
+  owner: string;
+  repo: string;
+  ref: string;
+  encryptedDeviceSet?: Set<string>;
+}): DownloadInput[] {
+  const { downloads, owner, repo, ref, encryptedDeviceSet } = params;
+  return Object.entries(downloads || {}).map(([platformId, info]) => {
+    const fileName = info?.file_name || "";
+    return {
+      uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+      platformId,
+      version: info?.version || "",
+      encryptOnUpload: encryptedDeviceSet?.has(platformId) ?? false,
+      file: fileName
+        ? createExistingUploadItem(
+            fileName.split("/").pop() || fileName,
+            buildRawFileUrl(owner, repo, ref, fileName),
+            fileName,
+          )
+        : null,
+      existingFileName: fileName,
+    };
+  });
+}
+
+function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject {
+  if (!ext) return {};
+  const next: ManifestExtObject = { ...ext };
+  delete next.enableAstroBoxCreatorFeatures;
+  delete next.trialDownloads;
+  return next;
+}
+
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const displayAccount = useDisplayAccount();
@@ -80,8 +121,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [links, setLinks] = useState<LinkInput[]>([]);
   const [downloads, setDownloads] =
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
+  const [trialDownloads, setTrialDownloads] =
+    useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [tagsInput, setTagsInput] = useState("");
   const [paidType, setPaidType] = useState("");
+  const [enableAstroBoxCreatorFeatures, setEnableAstroBoxCreatorFeatures] =
+    useState(false);
   const hasEncryptedUpload = useMemo(
     () => downloads.some((d) => Boolean(d.encryptOnUpload)),
     [downloads],
@@ -295,33 +340,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           setCover(null);
         }
 
-        const downloadsFromManifest = manifest.downloads || {};
-        const downloadInputs: DownloadInput[] = Object.entries(
-          downloadsFromManifest,
-        ).map(([platformId, info]) => {
-          const fileName = info?.file_name || "";
-          return {
-            uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-            platformId,
-            version: info?.version || "",
-            encryptOnUpload: encryptedDeviceSet.has(platformId),
-            file: fileName
-              ? createExistingUploadItem(
-                  fileName.split("/").pop() || fileName,
-                  buildRawFileUrl(repo.owner, repo.name, ref, fileName),
-                  fileName,
-                )
-              : null,
-            existingFileName: fileName,
-          };
-        });
-        setDownloads(downloadInputs);
-
-        setExtRaw(
-          manifest.ext !== undefined
-            ? JSON.stringify(manifest.ext, null, 2)
-            : "{}",
+        const ext = isManifestExtObject(manifest.ext) ? manifest.ext : {};
+        setDownloads(
+          buildDownloadInputsFromManifest({
+            downloads: manifest.downloads,
+            owner: repo.owner,
+            repo: repo.name,
+            ref,
+            encryptedDeviceSet,
+          }),
         );
+        setTrialDownloads(
+          buildDownloadInputsFromManifest({
+            downloads: ext.trialDownloads,
+            owner: repo.owner,
+            repo: repo.name,
+            ref,
+          }),
+        );
+        setEnableAstroBoxCreatorFeatures(
+          Boolean(ext.enableAstroBoxCreatorFeatures),
+        );
+        setExtRaw(JSON.stringify(extractCustomExt(ext), null, 2));
         setRepoInfo({ ...repo });
         setRepoNameInput(repo.name);
         setActiveStepIndex(0);
@@ -341,12 +381,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const { parsedExt, extError } = useMemo(() => {
     try {
       const trimmed = extRaw.trim();
+      if (!trimmed) {
+        return { parsedExt: {}, extError: "" };
+      }
+      const parsed = JSON.parse(trimmed);
+      if (!isManifestExtObject(parsed)) {
+        return {
+          parsedExt: {},
+          extError: "ext 字段需要合法的 JSON 对象",
+        };
+      }
       return {
-        parsedExt: trimmed ? JSON.parse(trimmed) : {},
+        parsedExt: parsed,
         extError: "",
       };
     } catch {
-      return { parsedExt: {}, extError: "ext 字段需要合法的 JSON" };
+      return { parsedExt: {}, extError: "ext 字段需要合法的 JSON 对象" };
     }
   }, [extRaw]);
 
@@ -365,6 +415,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         authors,
         links,
         downloads,
+        trialDownloads,
+        enableAstroBoxCreatorFeatures,
         ext: parsedExt,
       }),
     [
@@ -373,6 +425,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       coverPreviewId,
       description,
       downloads,
+      enableAstroBoxCreatorFeatures,
       icon,
       itemId,
       itemName,
@@ -380,6 +433,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       parsedExt,
       previews,
       resourceType,
+      trialDownloads,
       usePreviewAsCover,
     ],
   );
@@ -498,15 +552,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error(extError);
       }
 
-      const expectedDownloads = downloads.filter((d) =>
-        d.platformId.trim(),
-      ).length;
       const missingDownload = downloads.some(
+        (d) => d.platformId.trim() && !d.file && !d.existingFileName,
+      );
+      const missingTrialDownload = trialDownloads.some(
         (d) => d.platformId.trim() && !d.file && !d.existingFileName,
       );
 
       if (missingDownload) {
         throw new Error("所有下载配置必须上传包体文件。");
+      }
+      if (missingTrialDownload) {
+        throw new Error("所有试用下载配置必须上传包体文件。");
       }
 
       if (manifestResult.previewPaths.length === 0) {
@@ -687,7 +744,38 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const addDownloadRow = () => {
+    const buildRow = (platformId?: string): DownloadInput => ({
+      uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+      platformId: platformId ?? "",
+      version: "",
+      file: null,
+      encryptOnUpload: false,
+    });
+
     setDownloads((prev) => {
+      const used = new Set(prev.map((d) => d.platformId));
+      const next =
+        sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
+        sortedDeviceOptions[0];
+      return [...prev, buildRow(next?.id)];
+    });
+  };
+
+  const removeDownloadRow = (uid: string) => {
+    setDownloads((prev) => prev.filter((d) => d.uid !== uid));
+  };
+
+  const updateDownloadRow = (
+    uid: string,
+    updater: (row: DownloadInput) => DownloadInput,
+  ) => {
+    setDownloads((prev) =>
+      prev.map((row) => (row.uid === uid ? updater(row) : row)),
+    );
+  };
+
+  const addTrialDownloadRow = () => {
+    setTrialDownloads((prev) => {
       const used = new Set(prev.map((d) => d.platformId));
       const next =
         sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
@@ -705,15 +793,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     });
   };
 
-  const removeDownloadRow = (uid: string) => {
-    setDownloads((prev) => prev.filter((d) => d.uid !== uid));
+  const removeTrialDownloadRow = (uid: string) => {
+    setTrialDownloads((prev) => prev.filter((d) => d.uid !== uid));
   };
 
-  const updateDownloadRow = (
+  const updateTrialDownloadRow = (
     uid: string,
     updater: (row: DownloadInput) => DownloadInput,
   ) => {
-    setDownloads((prev) =>
+    setTrialDownloads((prev) =>
       prev.map((row) => (row.uid === uid ? updater(row) : row)),
     );
   };
@@ -905,10 +993,29 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
               />
+              <DownloadsSection
+                title="试用版下载配置"
+                description="可选。结构与下载配置一致，但不允许加密上传。"
+                emptyMessage="还未添加任何试用下载设备"
+                helperText="如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
+                downloads={trialDownloads}
+                sortedDeviceOptions={sortedDeviceOptions}
+                isDeviceLoading={isDeviceLoading}
+                deviceError={deviceError}
+                isVip={isVip}
+                allowEncryption={false}
+                onAddRow={addTrialDownloadRow}
+                onRemoveRow={removeTrialDownloadRow}
+                onUpdateRow={updateTrialDownloadRow}
+              />
               <ExtSection
                 extRaw={extRaw}
                 extError={extError}
+                enableAstroBoxCreatorFeatures={
+                  enableAstroBoxCreatorFeatures
+                }
                 onChange={setExtRaw}
+                onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
               <div className="flex flex-row justify-end gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
                 <Button

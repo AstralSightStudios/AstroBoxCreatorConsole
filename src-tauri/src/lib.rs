@@ -5,6 +5,8 @@ use ecb::Encryptor;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct GithubProxyRequest {
@@ -81,6 +83,17 @@ async fn encrypt_aes_256_ecb(data_base64: String, key_base64: String) -> Result<
     Ok(general_purpose::STANDARD.encode(encrypted))
 }
 
+#[tauri::command]
+async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    let path_buf = PathBuf::from(path);
+
+    if let Some(parent) = path_buf.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    fs::write(path_buf, content).map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -96,7 +109,11 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![github_request, encrypt_aes_256_ecb])
+        .invoke_handler(tauri::generate_handler![
+            github_request,
+            encrypt_aes_256_ecb,
+            write_text_file
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

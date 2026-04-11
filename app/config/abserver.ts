@@ -1,3 +1,3 @@
 export const ASTROBOX_SERVER_CONFIG = {
-    serverUrl: "http://localhost:3000",
+    serverUrl: "https://astrobox-api.astralsight.space",
 };
