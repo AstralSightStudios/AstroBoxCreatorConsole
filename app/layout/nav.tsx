@@ -625,14 +625,14 @@ function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
           <Spinner />
         )}
       </div>
-      <p className="text-[20px] font-mono tracking-wide select-all leading-5">
+      <p className="text-[20px] font-mono-sarasa tracking-wide select-all leading-5">
         {session.userCode}
       </p>
       <p className="text-size-small text-white/60">
         在浏览器中打开页面并输入上方代码以登录
       </p>
       <button
-        className="text-size-medium font-mono rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+        className="text-size-medium font-mono-sarasa rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         onClick={handleOpen}
       >
         {session.verificationUri}
@@ -666,7 +666,7 @@ function AccountInfo({ account }: AccountInfoProps) {
     <div className="flex flex-col px-3 py-3.5">
       <p className="text-[17px] font-semibold">{name}</p>
       {meta && (
-        <p className="font-mono text-[13px] font-medium opacity-75">{meta}</p>
+        <p className="font-mono-sarasa text-[13px] font-medium opacity-75">{meta}</p>
       )}
     </div>
   );

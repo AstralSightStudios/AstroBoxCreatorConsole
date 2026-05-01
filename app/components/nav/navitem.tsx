@@ -24,7 +24,7 @@ export default function NavItem({
 
     return (
         <div
-            className={`flex flex-row corner-rounded self-stretch items-center ${selected ? "bg-nav-item-selected" : "bg-nav-item"} ${selected || isDisabled ? "" : "hover:bg-nav-item-hover"} ${isDisabled ? "opacity-45 cursor-not-allowed pointer-events-none" : ""} px-3 py-3.5 gap-2.5 rounded-[20px] ${className}`}
+            className={`flex flex-row corner-rounded self-stretch items-center ${selected ? "bg-nav-item-selected" : "bg-nav-item"} ${selected || isDisabled ? "" : "hover:bg-nav-item-hover"} ${isDisabled ? "opacity-45 cursor-not-allowed pointer-events-none" : ""} px-3 py-3.5 gap-2.5 rounded-[12px] ${className}`}
             onClick={isDisabled ? undefined : onClick}
             aria-disabled={isDisabled}
         >
