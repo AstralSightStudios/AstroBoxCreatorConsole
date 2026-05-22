@@ -14,6 +14,7 @@ import {
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
+import { PUBLISH_CONFIG } from "~/config/publish";
 import { useRepoEnv } from "~/config/repoEnv";
 import {
   deriveReviewStatus,
@@ -21,6 +22,15 @@ import {
 } from "~/logic/publish/review-status";
 import { useAccountState } from "~/logic/account/store";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
+import {
+  parseCatalogCsv,
+  type CatalogEntry,
+} from "~/logic/publish/catalog";
+import {
+  buildRawFileUrl,
+  type ManifestV2,
+} from "~/logic/publish/manifest-loader";
+import { getRepoFile, type RepoInfo } from "~/logic/publish/github-actions";
 
 const STATE_LABELS: Record<ReviewState, string> = {
   waiting_review: "等待审核",
@@ -30,6 +40,27 @@ const STATE_LABELS: Record<ReviewState, string> = {
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+const CATALOG_CSV_HEADER =
+  "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
+
+interface ResourcePackagePreview {
+  kind: "正式包" | "试用包";
+  deviceId: string;
+  version: string;
+  fileName: string;
+  url: string;
+}
+
+interface PrResourcePreview {
+  entry: CatalogEntry;
+  ref: string;
+  manifest?: ManifestV2;
+  manifestError?: string;
+  iconUrl: string;
+  coverUrl: string;
+  previewUrls: string[];
+  packages: ResourcePackagePreview[];
+}
 
 function isImagePath(path: string) {
   return IMAGE_EXT.test(path);
@@ -60,6 +91,159 @@ function formatTime(value?: string) {
   }).format(date);
 }
 
+function decodeBase64(content?: string) {
+  if (!content) return "";
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(content.replace(/\s/g, "")), (c) => c.charCodeAt(0)),
+  );
+}
+
+function isCatalogFile(filename?: string) {
+  if (!filename) return false;
+  return (
+    filename === PUBLISH_CONFIG.catalogFilePath ||
+    filename.endsWith(`/${PUBLISH_CONFIG.catalogFilePath}`)
+  );
+}
+
+function parseCatalogEntryRow(row: string) {
+  return parseCatalogCsv(`${CATALOG_CSV_HEADER}\n${row}`)[0];
+}
+
+function extractCatalogEntriesFromPatch(patch?: string) {
+  if (!patch) return [];
+
+  const byId = new Map<string, CatalogEntry>();
+  for (const line of patch.split(/\r?\n/)) {
+    if (!line.startsWith("+") || line.startsWith("+++")) continue;
+
+    const row = line.slice(1).trim();
+    if (!row || row === CATALOG_CSV_HEADER) continue;
+
+    const parsed = parseCatalogEntryRow(row);
+    if (parsed) byId.set(parsed.id, parsed);
+  }
+
+  return Array.from(byId.values());
+}
+
+function extractCatalogEntriesFromFiles(files: GithubPullFile[]) {
+  const byId = new Map<string, CatalogEntry>();
+  for (const file of files) {
+    if (!isCatalogFile(file.filename)) continue;
+    for (const entry of extractCatalogEntriesFromPatch(file.patch)) {
+      byId.set(entry.id, entry);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+async function fetchManifest(entry: CatalogEntry, token: string) {
+  const ref = entry.repo_commit_hash || PUBLISH_CONFIG.defaultBranch;
+  const repo: RepoInfo = {
+    owner: entry.repo_owner,
+    name: entry.repo_name,
+    branch: PUBLISH_CONFIG.defaultBranch,
+  };
+  const file = await getRepoFile({
+    repo,
+    path: PUBLISH_CONFIG.manifestFileName,
+    tokenOverride: token,
+    ref,
+  });
+  return JSON.parse(decodeBase64(file.content)) as ManifestV2;
+}
+
+function buildResourceRawUrl(entry: CatalogEntry, ref: string, path?: string) {
+  const cleanPath = (path || "").trim();
+  if (!cleanPath) return "";
+  return buildRawFileUrl(entry.repo_owner, entry.repo_name, ref, cleanPath);
+}
+
+function collectPackages(
+  entry: CatalogEntry,
+  ref: string,
+  manifest?: ManifestV2,
+): ResourcePackagePreview[] {
+  if (!manifest) return [];
+
+  const packages: ResourcePackagePreview[] = [];
+  Object.entries(manifest.downloads ?? {}).forEach(([deviceId, info]) => {
+    const fileName = info.file_name || "";
+    if (!fileName) return;
+    packages.push({
+      kind: "正式包",
+      deviceId,
+      version: info.version || "",
+      fileName,
+      url: buildResourceRawUrl(entry, ref, fileName),
+    });
+  });
+
+  const trialDownloads = manifest.ext?.trialDownloads as
+    | Record<string, { version?: string; file_name?: string }>
+    | undefined;
+  Object.entries(trialDownloads ?? {}).forEach(([deviceId, info]) => {
+    const fileName = info.file_name || "";
+    if (!fileName) return;
+    packages.push({
+      kind: "试用包",
+      deviceId,
+      version: info.version || "",
+      fileName,
+      url: buildResourceRawUrl(entry, ref, fileName),
+    });
+  });
+
+  return packages;
+}
+
+async function loadPrResourcePreviews(
+  files: GithubPullFile[],
+  token: string,
+): Promise<PrResourcePreview[]> {
+  const entries = extractCatalogEntriesFromFiles(files);
+  return Promise.all(
+    entries.map(async (entry) => {
+      const ref = entry.repo_commit_hash || PUBLISH_CONFIG.defaultBranch;
+      try {
+        const manifest = await fetchManifest(entry, token);
+        const iconPath = manifest.item?.icon || entry.icon;
+        const coverPath = manifest.item?.cover || entry.cover;
+        return {
+          entry,
+          ref,
+          manifest,
+          iconUrl: buildResourceRawUrl(entry, ref, iconPath),
+          coverUrl: buildResourceRawUrl(entry, ref, coverPath),
+          previewUrls: (manifest.item?.preview ?? [])
+            .map((path) => buildResourceRawUrl(entry, ref, path))
+            .filter(Boolean),
+          packages: collectPackages(entry, ref, manifest),
+        } satisfies PrResourcePreview;
+      } catch (err) {
+        return {
+          entry,
+          ref,
+          manifestError: getErrorMessage(err),
+          iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
+          coverUrl: buildResourceRawUrl(entry, ref, entry.cover),
+          previewUrls: [],
+          packages: [],
+        } satisfies PrResourcePreview;
+      }
+    }),
+  );
+}
+
+async function openAllPackages(packages: ResourcePackagePreview[]) {
+  for (const item of packages) {
+    if (!item.url) continue;
+    await openUrl(item.url);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+}
+
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
@@ -70,6 +254,7 @@ export default function ResourceReviewPage() {
   const [commentsByPr, setCommentsByPr] = useState<Record<number, GithubIssueComment[]>>({});
   const [openNumber, setOpenNumber] = useState<number | null>(null);
   const [files, setFiles] = useState<GithubPullFile[]>([]);
+  const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<ReviewState | "all">("all");
@@ -126,6 +311,9 @@ export default function ResourceReviewPage() {
       ]);
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
+      setResourcePreviews(
+        await loadPrResourcePreviews(nextFiles, accountState.github?.token || ""),
+      );
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -146,8 +334,9 @@ export default function ResourceReviewPage() {
       void loadDetail(openNumber);
     } else {
       setFiles([]);
+      setResourcePreviews([]);
     }
-  }, [openNumber]);
+  }, [openNumber, accountState.github?.token]);
 
   const visiblePulls = useMemo(() => {
     if (stateFilter === "all") return pulls;
@@ -324,13 +513,24 @@ export default function ResourceReviewPage() {
                 </div>
               </div>
 
-              <div className="grid max-h-[72vh] gap-4 overflow-y-auto lg:grid-cols-[1fr_340px]">
-                <div className="flex flex-col gap-4">
+              <div className="grid max-h-[72vh] min-w-0 gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="flex min-w-0 flex-col gap-4">
+                  {(loadingDetail || resourcePreviews.length > 0) && (
+                    <Panel title="资源预览">
+                      {loadingDetail && resourcePreviews.length === 0 ? (
+                        <div className="py-8 text-center text-sm text-white/45">
+                          正在解析资源信息...
+                        </div>
+                      ) : (
+                        <ResourcePreviewList resources={resourcePreviews} />
+                      )}
+                    </Panel>
+                  )}
                   <Panel title="改动文件">
                     {loadingDetail ? (
                       <div className="py-10 text-center text-white/45">加载中...</div>
                     ) : (
-                      <div className="flex flex-col gap-2">
+                      <div className="flex min-w-0 flex-col gap-2">
                         {files.map((file) => (
                           <FileEntry key={file.filename} file={file} />
                         ))}
@@ -356,7 +556,7 @@ export default function ResourceReviewPage() {
                   </Panel>
                 </div>
 
-                <div className="flex flex-col gap-4">
+                <div className="flex min-w-0 flex-col gap-4">
                   <Panel title="ABCC 状态">
                     <div className="flex flex-col gap-2">
                       {openStatus.items.map((item) => (
@@ -421,9 +621,9 @@ function FileEntry({ file }: { file: GithubPullFile }) {
   const showVideo = isVideoPath(file.filename) && file.raw_url;
 
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-mono-sarasa text-white">{file.filename}</span>
+    <div className="min-w-0 overflow-hidden rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+        <span className="min-w-0 break-all font-mono-sarasa text-white">{file.filename}</span>
         <span className="text-emerald-300">+{file.additions}</span>
         <span className="text-red-300">-{file.deletions}</span>
         {file.blob_url && (
@@ -438,21 +638,173 @@ function FileEntry({ file }: { file: GithubPullFile }) {
       {showImage && <ProxiedImage rawUrl={file.raw_url!} filename={file.filename} />}
       {showVideo && <ProxiedVideo rawUrl={file.raw_url!} />}
       {!showImage && !showVideo && file.patch && (
-        <pre className="mt-2 max-h-72 overflow-auto rounded bg-black/30 p-2 text-xs text-white/55">
-          {file.patch}
-        </pre>
+        <DiffBlock patch={file.patch} />
       )}
     </div>
   );
 }
 
-function ProxiedImage({ rawUrl, filename }: { rawUrl: string; filename: string }) {
+function DiffBlock({ patch }: { patch: string }) {
+  return (
+    <div className="mt-2 max-h-96 max-w-full overflow-auto rounded border border-white/10 bg-black/30">
+      <pre className="w-max min-w-full whitespace-pre py-2 font-mono-sarasa text-xs leading-5 text-white/65">
+        {patch.split(/\r?\n/).map((line, index) => {
+          const tone =
+            line.startsWith("+") && !line.startsWith("+++")
+              ? "bg-emerald-500/12 text-emerald-100"
+              : line.startsWith("-") && !line.startsWith("---")
+                ? "bg-red-500/12 text-red-100"
+                : line.startsWith("@@")
+                  ? "bg-blue-500/15 text-blue-100"
+                  : "text-white/55";
+          return (
+            <div key={`${index}-${line.slice(0, 12)}`} className={`px-3 ${tone}`}>
+              {line || " "}
+            </div>
+          );
+        })}
+      </pre>
+    </div>
+  );
+}
+
+function ResourcePreviewList({ resources }: { resources: PrResourcePreview[] }) {
+  if (resources.length === 0) {
+    return <p className="text-sm text-white/45">没有从目录 diff 中识别到资源条目。</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {resources.map((resource) => (
+        <ResourcePreviewCard key={`${resource.entry.id}-${resource.ref}`} resource={resource} />
+      ))}
+    </div>
+  );
+}
+
+function ResourcePreviewCard({ resource }: { resource: PrResourcePreview }) {
+  const manifestItem = resource.manifest?.item;
+  const title = manifestItem?.name || resource.entry.name || resource.entry.id;
+  const description = manifestItem?.description || "";
+  const allPackages = resource.packages.filter((item) => item.url);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+      <div className="grid gap-3 p-3 md:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="min-w-0">
+          {resource.coverUrl ? (
+            <ProxiedImage
+              rawUrl={resource.coverUrl}
+              filename={`${title} cover`}
+              className="mt-0 aspect-[4/3] w-full max-w-none object-cover"
+            />
+          ) : (
+            <div className="grid aspect-[4/3] place-items-center rounded border border-white/10 bg-white/[0.04] text-xs text-white/35">
+              无封面
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-start gap-3">
+            {resource.iconUrl && (
+              <ProxiedImage
+                rawUrl={resource.iconUrl}
+                filename={`${title} icon`}
+                className="mt-0 h-14 w-14 shrink-0 rounded-xl object-cover"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <h4 className="truncate text-base font-semibold text-white">{title}</h4>
+              <p className="mt-1 break-all font-mono-sarasa text-xs text-white/55">
+                {manifestItem?.id || resource.entry.id}
+              </p>
+              <p className="mt-1 text-xs text-white/45">
+                {resource.entry.restype} · {resource.entry.paid_type || "free"} ·{" "}
+                {resource.entry.repo_owner}/{resource.entry.repo_name}@{resource.ref.slice(0, 7)}
+              </p>
+            </div>
+            {allPackages.length > 0 && (
+              <Button
+                size="1"
+                variant="soft"
+                onClick={() => void openAllPackages(allPackages)}
+              >
+                下载全部包体
+              </Button>
+            )}
+          </div>
+
+          {description && (
+            <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-white/70">
+              {description}
+            </p>
+          )}
+
+          {resource.manifestError && (
+            <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              manifest 读取失败：{resource.manifestError}
+            </p>
+          )}
+
+          {resource.previewUrls.length > 0 && (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {resource.previewUrls.map((url, index) => (
+                <ProxiedImage
+                  key={url}
+                  rawUrl={url}
+                  filename={`${title} preview ${index + 1}`}
+                  className="mt-0 h-24 w-36 shrink-0 object-cover"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {resource.packages.length > 0 && (
+        <div className="border-t border-white/10 p-3">
+          <div className="grid gap-2 md:grid-cols-2">
+            {resource.packages.map((pkg) => (
+              <div
+                key={`${pkg.kind}-${pkg.deviceId}-${pkg.fileName}`}
+                className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-xs"
+              >
+                <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/65">
+                  {pkg.kind}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono-sarasa text-white/80">{pkg.deviceId}</p>
+                  <p className="truncate font-mono-sarasa text-white/45">
+                    {pkg.version || "--"} · {pkg.fileName}
+                  </p>
+                </div>
+                <Button size="1" variant="soft" onClick={() => openUrl(pkg.url)}>
+                  下载
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProxiedImage({
+  rawUrl,
+  filename,
+  className = "mt-2 max-h-80 max-w-full object-contain",
+}: {
+  rawUrl: string;
+  filename: string;
+  className?: string;
+}) {
   const url = useProxiedMediaUrl(rawUrl);
   return (
     <img
       src={url}
       alt={filename}
-      className="mt-2 max-h-80 max-w-full rounded border border-white/10 object-contain"
+      className={`rounded border border-white/10 ${className}`}
     />
   );
 }
@@ -510,7 +862,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <section className="min-w-0 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <h3 className="mb-3 text-sm font-semibold text-white">{title}</h3>
       {children}
     </section>

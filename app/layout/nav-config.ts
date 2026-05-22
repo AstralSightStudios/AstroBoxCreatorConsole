@@ -12,6 +12,7 @@ import {
   GitPullRequestIcon,
   IdentificationBadgeIcon,
   ListStarIcon,
+  ReceiptIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 import type { NavItemProps } from "~/components/nav/navitem";
@@ -117,6 +118,13 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         icon: UsersThreeIcon,
         label: "账号管理",
         path: "/admin/accounts",
+        requireRoles: ["admin", "moderator"],
+      },
+      {
+        id: "admin-orders",
+        icon: ReceiptIcon,
+        label: "订单与权益",
+        path: "/admin/orders",
         requireRoles: ["admin", "moderator"],
       },
       {

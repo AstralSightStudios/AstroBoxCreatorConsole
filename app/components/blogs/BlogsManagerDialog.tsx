@@ -85,7 +85,9 @@ export default function BlogsManagerDialog({
   }, [decoratedTree, selected]);
 
   const selectableFolder =
-    selectedNode && selectedNode.type === "dir" ? selectedNode.path : BLOGS_ROOT;
+    selectedNode && selectedNode.type === "dir"
+      ? selectedNode.path
+      : getParentDirectory(selectedNode?.path || selected);
 
   const toggleExpand = (path: string) => {
     setExpanded((current) => {
@@ -546,4 +548,12 @@ function findNode(node: BlogsTreeNode, path: string): BlogsTreeNode | null {
 
 function sanitizeName(name: string) {
   return name.replace(/[\\/]/g, "_").trim();
+}
+
+function getParentDirectory(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  if (!normalized || normalized === BLOGS_ROOT) return BLOGS_ROOT;
+  const index = normalized.lastIndexOf("/");
+  if (index <= 0) return BLOGS_ROOT;
+  return normalized.slice(0, index);
 }

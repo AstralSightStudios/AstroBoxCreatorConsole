@@ -16,6 +16,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   "manage/edit": "编辑资源",
   admin: "管理后台",
   "admin/accounts": "账号管理",
+  "admin/orders": "订单与权益管理",
   "admin/reports": "举报管理",
   "admin/inbox": "信箱管理",
   resreview: "PR审核",

@@ -12,6 +12,14 @@ export type BanKind = "platform" | "social";
 export type VipTier = "None" | "Pro" | "CreatorPlus" | "CreatorPro";
 export type ReportStatus = "pending" | "resolved" | "dismissed";
 export type ReportType = "comment" | "resource";
+export type CommercePlatform = "afd" | "cdk";
+export type PublicOrderStatus =
+  | "pending_binding"
+  | "granted"
+  | "rejected_seller_inactive"
+  | "ignored_unmapped_sku";
+export type EntitlementSourceType = "order" | "cdk";
+export type CdkStatus = "available" | "redeemed";
 
 export interface ActiveBan {
   id: string;
@@ -96,6 +104,99 @@ export interface InboxMessage {
   readAt: string | null;
   deletedByAdminAt?: string | null;
   deletedByUserAt?: string | null;
+}
+
+export interface AdminPublicOrder {
+  id: string;
+  sellerUserId: string;
+  platform: CommercePlatform;
+  externalOrderId: string;
+  externalProductId: string;
+  externalSkuId: string;
+  buyerPlatformUserId: string;
+  buyerUserId: string;
+  resourceId: string;
+  deviceId: string;
+  status: PublicOrderStatus;
+  rawPayload: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminResourceEntitlement {
+  id: string;
+  buyerUserId: string;
+  sellerUserId: string;
+  resourceId: string;
+  deviceId: string;
+  sourceType: EntitlementSourceType;
+  sourcePlatform: CommercePlatform;
+  sourceRef: string;
+  meta: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminResourceCommerceConfigs {
+  platformConfigs: Array<{
+    id: string;
+    sellerUserId: string;
+    platform: CommercePlatform;
+    buyGuideUrl: string;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  products: Array<{
+    id: string;
+    sellerUserId: string;
+    resourceId: string;
+    platform: CommercePlatform;
+    externalProductId: string;
+    title: string;
+    buyUrl: string;
+    enabled: boolean;
+    validationStatus: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  skus: Array<{
+    id: string;
+    sellerUserId: string;
+    resourceId: string;
+    platform: CommercePlatform;
+    externalProductId: string;
+    externalSkuId: string;
+    deviceId: string;
+    title: string;
+    buyUrl: string;
+    isPaid: boolean;
+    enabled: boolean;
+    validationStatus: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  cdkCodes: Array<{
+    id: string;
+    sellerUserId: string;
+    resourceId: string;
+    deviceId: string;
+    code: string;
+    status: CdkStatus;
+    batchId: string;
+    redeemedByUserId: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  fileKeys: Array<{
+    id: string;
+    resourceId: string;
+    deviceId: string;
+    encryptedFileHash: string;
+    firstOwnerId: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
 }
 
 function buildQuery(params: Record<string, unknown>) {
@@ -231,6 +332,137 @@ export const AdminApi = {
     detail: (commentId: string) =>
       sendApiRequest<AdminCommentView>(
         `/admin/comments/${encodeURIComponent(commentId)}`,
+        "GET",
+      ),
+  },
+  orders: {
+    publicOrders: (query: {
+      search?: string;
+      sellerUserId?: string;
+      buyerUserId?: string;
+      buyerPlatformUserId?: string;
+      resourceId?: string;
+      deviceId?: string;
+      platform?: CommercePlatform;
+      status?: PublicOrderStatus;
+      limit?: number;
+      cursor?: string;
+    }) =>
+      sendApiRequest<ListResponse<AdminPublicOrder>>(
+        `/admin/orders/public-orders${buildQuery(query)}`,
+        "GET",
+      ),
+    upsertPublicOrder: (body: {
+      sellerUserId: string;
+      platform: CommercePlatform;
+      externalOrderId: string;
+      externalProductId: string;
+      externalSkuId: string;
+      buyerPlatformUserId: string;
+      buyerUserId?: string;
+      resourceId: string;
+      deviceId: string;
+      status: PublicOrderStatus;
+      rawPayload?: unknown;
+    }) =>
+      sendApiRequest<AdminPublicOrder>(
+        "/admin/orders/public-orders",
+        "POST",
+        undefined,
+        body,
+      ),
+    patchPublicOrder: (
+      id: string,
+      body: Partial<Pick<AdminPublicOrder,
+        | "sellerUserId"
+        | "platform"
+        | "externalOrderId"
+        | "externalProductId"
+        | "externalSkuId"
+        | "buyerPlatformUserId"
+        | "buyerUserId"
+        | "resourceId"
+        | "deviceId"
+        | "status"
+        | "rawPayload"
+      >>,
+    ) =>
+      sendApiRequest<AdminPublicOrder>(
+        `/admin/orders/public-orders/${encodeURIComponent(id)}`,
+        "PATCH",
+        undefined,
+        body,
+      ),
+    deletePublicOrder: (id: string) =>
+      sendApiRequest<{ deleted: true }>(
+        `/admin/orders/public-orders/${encodeURIComponent(id)}`,
+        "DELETE",
+      ),
+    entitlements: (query: {
+      search?: string;
+      sellerUserId?: string;
+      buyerUserId?: string;
+      resourceId?: string;
+      deviceId?: string;
+      sourceType?: EntitlementSourceType;
+      sourcePlatform?: CommercePlatform;
+      limit?: number;
+      cursor?: string;
+    }) =>
+      sendApiRequest<ListResponse<AdminResourceEntitlement>>(
+        `/admin/orders/entitlements${buildQuery(query)}`,
+        "GET",
+      ),
+    upsertEntitlement: (body: {
+      buyerUserId: string;
+      sellerUserId: string;
+      resourceId: string;
+      deviceId: string;
+      sourceType: EntitlementSourceType;
+      sourcePlatform: CommercePlatform;
+      sourceRef: string;
+      meta?: unknown;
+    }) =>
+      sendApiRequest<AdminResourceEntitlement>(
+        "/admin/orders/entitlements",
+        "POST",
+        undefined,
+        body,
+      ),
+    patchEntitlement: (
+      id: string,
+      body: Partial<Pick<AdminResourceEntitlement,
+        | "buyerUserId"
+        | "sellerUserId"
+        | "resourceId"
+        | "deviceId"
+        | "sourceType"
+        | "sourcePlatform"
+        | "sourceRef"
+        | "meta"
+      >>,
+    ) =>
+      sendApiRequest<AdminResourceEntitlement>(
+        `/admin/orders/entitlements/${encodeURIComponent(id)}`,
+        "PATCH",
+        undefined,
+        body,
+      ),
+    deleteEntitlement: (id: string) =>
+      sendApiRequest<{ deleted: true }>(
+        `/admin/orders/entitlements/${encodeURIComponent(id)}`,
+        "DELETE",
+      ),
+    resourceConfigs: (query: {
+      sellerUserId?: string;
+      resourceId?: string;
+      deviceId?: string;
+      platform?: CommercePlatform;
+      cdkStatus?: CdkStatus;
+      limit?: number;
+    }) =>
+      sendApiRequest<AdminResourceCommerceConfigs>(
+        `/admin/orders/resource-configs${buildQuery(query)}`,
         "GET",
       ),
   },

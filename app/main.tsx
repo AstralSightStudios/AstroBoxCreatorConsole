@@ -13,6 +13,7 @@ import ResourcePublish from "~/routes/resource/publish";
 import Settings from "~/routes/settings";
 import AdminAccountsPage from "~/routes/admin/accounts";
 import AdminInboxPage from "~/routes/admin/inbox";
+import AdminOrdersPage from "~/routes/admin/orders";
 import AdminReportsPage from "~/routes/admin/reports";
 import ResourceReviewPage from "~/routes/resreview";
 import ExplorePageManager from "~/routes/explorepage";
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
       { path: "resreview", element: <ResourceReviewPage /> },
       { path: "explorepage", element: <ExplorePageManager /> },
       { path: "admin/accounts", element: <AdminAccountsPage /> },
+      { path: "admin/orders", element: <AdminOrdersPage /> },
       { path: "admin/reports", element: <AdminReportsPage /> },
       { path: "admin/inbox", element: <AdminInboxPage /> },
       { path: "publish/new", element: <NewResourcePublishPage /> },

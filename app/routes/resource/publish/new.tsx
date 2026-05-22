@@ -7,7 +7,7 @@ import {
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import {
   buildManifest,
@@ -99,6 +99,7 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
 
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const displayAccount = useDisplayAccount();
   const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
@@ -711,6 +712,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
+        navigate("/manage", { replace: true });
         return;
       }
 
@@ -737,6 +739,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");
+      navigate("/manage", { replace: true });
     } catch (error) {
       setPrStatus("error");
       setPrMessage((error as Error).message);
