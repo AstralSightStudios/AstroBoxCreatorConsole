@@ -7,6 +7,7 @@ import RootLayout from "~/root";
 import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
 import Profile from "~/routes/profile";
+import CloudControl from "~/routes/cloudcontrol";
 import ResourceEncrypt from "~/routes/resource/encrypt";
 import ResourceManage from "~/routes/resource/manage";
 import ResourcePublish from "~/routes/resource/publish";
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: "publish", element: <NewResourcePublishPage /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },
+      { path: "cloudcontrol", element: <CloudControl /> },
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "resreview", element: <ResourceReviewPage /> },
