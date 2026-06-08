@@ -1,8 +1,8 @@
 [package]
-name = "app"
+name = "astrobox-creator-console"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "把复杂统统留在背后"
+authors = ["AstroSightStudios"]
 license = ""
 repository = ""
 edition = "2021"
