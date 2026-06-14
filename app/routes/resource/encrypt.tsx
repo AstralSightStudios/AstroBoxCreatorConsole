@@ -124,6 +124,7 @@ export default function ResourceEncrypt() {
   const deleteMutation = useMutation({
     mutationFn: (variables: {
       resourceId: string;
+      deviceId: string;
       encryptedFileHash: string;
     }) => deleteSellerResourceFileKey(variables),
     onSuccess: (_, variables) => {
@@ -137,7 +138,10 @@ export default function ResourceEncrypt() {
             .map((group) => ({
               ...group,
               items: group.items.filter(
-                (item) => item.encryptedFileHash !== variables.encryptedFileHash,
+                (item) =>
+                  item.resourceId !== variables.resourceId ||
+                  item.deviceId !== variables.deviceId ||
+                  item.encryptedFileHash !== variables.encryptedFileHash,
               ),
             }))
             .filter((group) => group.items.length > 0);
@@ -301,8 +305,8 @@ export default function ResourceEncrypt() {
     }
   };
 
-  const handleDeleteFileKey = (resourceId: string, encryptedFileHash: string) => {
-    deleteMutation.mutate({ resourceId, encryptedFileHash });
+  const handleDeleteFileKey = (resourceId: string, deviceId: string, encryptedFileHash: string) => {
+    deleteMutation.mutate({ resourceId, deviceId, encryptedFileHash });
   };
 
   return (
@@ -562,7 +566,7 @@ export default function ResourceEncrypt() {
                 <Table.Body>
                   {encryptedResources.flatMap((group) =>
                     group.items.map((item) => (
-                      <Table.Row key={`${item.resourceId}-${item.encryptedFileHash}`}>
+                      <Table.Row key={`${item.resourceId}-${item.deviceId}-${item.encryptedFileHash}`}>
                         <Table.Cell>
                           <span className="text-sm font-medium text-white">
                             {group.resource.entry.name}
@@ -589,9 +593,17 @@ export default function ResourceEncrypt() {
                                 size="2"
                                 variant="soft"
                                 color="red"
-                                disabled={deleteMutation.isPending && deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash}
+                                disabled={
+                                  deleteMutation.isPending &&
+                                  deleteMutation.variables?.resourceId === item.resourceId &&
+                                  deleteMutation.variables?.deviceId === item.deviceId &&
+                                  deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash
+                                }
                               >
-                                {deleteMutation.isPending && deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash ? (
+                                {deleteMutation.isPending &&
+                                deleteMutation.variables?.resourceId === item.resourceId &&
+                                deleteMutation.variables?.deviceId === item.deviceId &&
+                                deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash ? (
                                   <Spinner size="2" />
                                 ) : (
                                   <TrashIcon size={16} />
@@ -615,6 +627,7 @@ export default function ResourceEncrypt() {
                                     onClick={() =>
                                       void handleDeleteFileKey(
                                         item.resourceId,
+                                        item.deviceId,
                                         item.encryptedFileHash,
                                       )
                                     }

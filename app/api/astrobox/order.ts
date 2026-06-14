@@ -159,7 +159,7 @@ export function listSellerResourceFileKeys(body: { resourceId: string; deviceId?
     );
 }
 
-export function deleteSellerResourceFileKey(body: { resourceId: string; encryptedFileHash: string }) {
+export function deleteSellerResourceFileKey(body: { resourceId: string; deviceId?: string; encryptedFileHash: string }) {
     return sendApiRequest<{ deleted: boolean }>(
         "/order/seller/resource-file-key/delete",
         "POST",
