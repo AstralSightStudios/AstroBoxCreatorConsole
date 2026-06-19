@@ -262,7 +262,7 @@ function NavHeader({
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
-    startAstroboxLogin();
+    void startAstroboxLogin();
   };
 
   const handleGithubLogin = async () => {

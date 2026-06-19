@@ -5,5 +5,16 @@
   <dict>
     <key>CFBundleIconName</key>
     <string>CreatorConsole</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLName</key>
+        <string>moe.astralsight.astroboxcc</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>astroboxcc</string>
+        </array>
+      </dict>
+    </array>
   </dict>
 </plist>
