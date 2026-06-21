@@ -1,11 +1,12 @@
 import {
   FingerprintSimpleIcon,
   WarningOctagonIcon,
-  CrownIcon,
+  LockKeyIcon,
   PlusIcon,
   TrashIcon,
   CheckIcon,
 } from "@phosphor-icons/react";
+import CreatorPlusLogo from "~/assets/sponsorIcons/creator-plus-logo.svg?react";
 import {
   Button,
   Callout,
@@ -325,14 +326,14 @@ export default function ResourceEncrypt() {
           description="管理你的资源售卖与激活渠道"
         >
           {!isVip && (
-            <div className="relative rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-6 flex flex-col items-center gap-3 text-center">
-              <CrownIcon size={40} weight="fill" className="text-amber-300" />
-              <p className="text-base font-semibold text-amber-100">
-                CreatorPlus VIP 专属功能
-              </p>
-              <p className="text-sm text-amber-200/80 max-w-md">
-                付费平台设置需要 CreatorPlus
-                或更高级别的会员。升级后即可开启爱发电与 CDK 激活功能。
+            <div className="relative flex flex-col items-center gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-6 py-9 text-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium tracking-wide text-white/55">
+                <LockKeyIcon size={12} weight="fill" />
+                会员专属
+              </span>
+              <CreatorPlusLogo className="h-7 w-auto text-white/90" />
+              <p className="max-w-md text-sm leading-relaxed text-white/55">
+                升级到 CreatorPlus 或更高档位，即可配置爱发电与 CDK 激活渠道。
               </p>
             </div>
           )}

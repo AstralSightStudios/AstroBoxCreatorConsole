@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import react from "@vitejs/plugin-react";
+import svgr from "vite-plugin-svgr";
 import monacoEditorPluginModule from "vite-plugin-monaco-editor-esm";
 
 const monacoEditorPlugin =
@@ -12,6 +13,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     react(),
+    svgr(),
     tsconfigPaths(),
     monacoEditorPlugin({
       languageWorkers: [],
