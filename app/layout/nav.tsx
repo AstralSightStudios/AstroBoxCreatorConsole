@@ -36,7 +36,7 @@ import { useNavVisibility } from "./nav-visibility-context";
 import { AstroBoxLogo } from "~/components/svgs";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Spinner } from "@radix-ui/themes";
+import { Popover, Spinner } from "@radix-ui/themes";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 
 export default function Nav() {
@@ -260,21 +260,7 @@ function NavHeader({
   const [githubSession, setGithubSession] = useState<GithubDeviceSession>();
   const [githubStatus, setGithubStatus] = useState("");
   const [isGithubBusy, setIsGithubBusy] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number }>();
   const abortRef = useRef<AbortController | null>(null);
-
-  const updateAnchor = (event: React.MouseEvent<Element>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const viewportWidth = window.innerWidth || 360;
-    const menuWidth = 320;
-    const gutter = 12;
-    const left = Math.min(
-      Math.max(rect.left, gutter),
-      viewportWidth - menuWidth - gutter,
-    );
-    const top = rect.bottom + 8;
-    setMenuAnchor({ x: left, y: top });
-  };
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
@@ -336,22 +322,22 @@ function NavHeader({
   const hasAccount = account.hasAstrobox || account.hasGithub;
 
   return (
-    <div className="relative">
+    <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <div
         className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
       >
         {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
-        <AccountAvatar
-          account={account}
-          isActive={hasAccount}
-          onClick={(event) => {
-            updateAnchor(event);
-            setIsMenuOpen((open) => !open);
-          }}
-        />
+        <Popover.Trigger>
+          <button
+            type="button"
+            aria-label="账号菜单"
+            className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+          >
+            <AccountAvatar account={account} isActive={hasAccount} />
+          </button>
+        </Popover.Trigger>
       </div>
       <AccountMenu
-        open={isMenuOpen}
         accountState={accountState}
         githubSession={githubSession}
         githubStatus={githubStatus}
@@ -360,19 +346,17 @@ function NavHeader({
         onGithubLogin={handleGithubLogin}
         onAstroLogout={handleAstroLogout}
         onGithubLogout={handleGithubLogout}
-        anchor={menuAnchor}
       />
-    </div>
+    </Popover.Root>
   );
 }
 
 interface AccountAvatarProps {
   account: DisplayAccount;
   isActive: boolean;
-  onClick: (event: React.MouseEvent<Element>) => void;
 }
 
-function AccountAvatar({ account, isActive, onClick }: AccountAvatarProps) {
+function AccountAvatar({ account, isActive }: AccountAvatarProps) {
   const [useFallback, setUseFallback] = useState(false);
   const [hideImage, setHideImage] = useState(false);
 
@@ -386,9 +370,8 @@ function AccountAvatar({ account, isActive, onClick }: AccountAvatarProps) {
   if (!src || hideImage) {
     return (
       <UserCircleDashedIcon
-        className={`cursor-pointer transition-colors ${isActive ? "text-white" : "text-white/80"}`}
+        className={`transition-colors ${isActive ? "text-white" : "text-white/80"}`}
         size={28}
-        onClick={(event) => onClick(event)}
       />
     );
   }
@@ -404,16 +387,13 @@ function AccountAvatar({ account, isActive, onClick }: AccountAvatarProps) {
   return (
     <img
       src={src}
-      className={`w-8 h-8 rounded-full object-cover cursor-pointer border border-white/10 ${isActive ? "ring-2 ring-white/20" : ""}`}
-      onClick={(event) => onClick(event)}
+      className={`w-8 h-8 rounded-full object-cover border border-white/10 ${isActive ? "ring-2 ring-white/20" : ""}`}
       onError={handleError}
     />
   );
 }
 
 interface AccountMenuProps {
-  open: boolean;
-  anchor?: { x: number; y: number };
   accountState: AccountState;
   githubSession?: GithubDeviceSession;
   githubStatus: string;
@@ -425,8 +405,6 @@ interface AccountMenuProps {
 }
 
 function AccountMenu({
-  open,
-  anchor,
   accountState,
   githubSession,
   githubStatus,
@@ -440,90 +418,93 @@ function AccountMenu({
   const hasGithub = Boolean(accountState.github);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0, y: -4, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -6, scale: 0.98 }}
-          transition={{ duration: 0.16 }}
-          className="fixed z-30 w-[min(400px,calc(100vw-24px))]"
-          style={{
-            left: anchor?.x ?? 12,
-            top: anchor?.y ?? 56,
-          }}
-        >
-          <div className="rounded-3xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-1.5 space-y-1.5">
-            {(hasAstrobox || hasGithub) && (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
-                  已登录账号
-                </p>
-                {hasAstrobox && (
-                  <ConnectedAccountRow
-                    provider="astrobox"
-                    name={accountState.astrobox?.name || "AstroBox"}
-                    detail={
-                      accountState.astrobox?.email ||
-                      accountState.astrobox?.plan ||
-                      ""
-                    }
-                    avatar={accountState.astrobox?.avatar}
-                    onLogout={onAstroLogout}
-                  />
-                )}
-                {hasGithub && (
-                  <ConnectedAccountRow
-                    provider="github"
-                    name={
-                      accountState.github?.name ||
-                      accountState.github?.username ||
-                      "GitHub"
-                    }
-                    detail={
-                      accountState.github?.email ||
-                      accountState.github?.username ||
-                      ""
-                    }
-                    avatar={accountState.github?.avatar}
-                    onLogout={onGithubLogout}
-                  />
-                )}
-              </div>
+    <Popover.Content
+      align="end"
+      side="bottom"
+      sideOffset={8}
+      collisionPadding={12}
+      // Radix handles collision/flip and exposes the available space as CSS
+      // vars, so the menu can never overflow the viewport regardless of width.
+      style={{
+        padding: 0,
+        background: "transparent",
+        boxShadow: "none",
+        border: "none",
+        borderRadius: 24,
+        width: "min(400px, var(--radix-popover-content-available-width))",
+        maxHeight: "var(--radix-popover-content-available-height)",
+        overflow: "visible",
+      }}
+    >
+      <div className="rounded-3xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-1.5 space-y-1.5">
+        {(hasAstrobox || hasGithub) && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
+              已登录账号
+            </p>
+            {hasAstrobox && (
+              <ConnectedAccountRow
+                provider="astrobox"
+                name={accountState.astrobox?.name || "AstroBox"}
+                detail={
+                  accountState.astrobox?.email ||
+                  accountState.astrobox?.plan ||
+                  ""
+                }
+                avatar={accountState.astrobox?.avatar}
+                onLogout={onAstroLogout}
+              />
             )}
-
-            {(!hasAstrobox || !hasGithub) && (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
-                  登录新账号
-                </p>
-                {!hasAstrobox && (
-                  <MenuButton
-                    icon={<AstroBoxLogo size={22} />}
-                    label="AstroBox登录"
-                    description="登录到AstroBox账号以使用数据分析等功能"
-                    onClick={onAstroLogin}
-                  />
-                )}
-                {!hasGithub && (
-                  <MenuButton
-                    icon={<GithubLogoIcon size={24} weight="fill" />}
-                    label="GitHub登录"
-                    description="登录到GitHub账号以提交资源"
-                    onClick={onGithubLogin}
-                    loading={isGithubBusy}
-                  />
-                )}
-              </div>
-            )}
-
-            {githubSession && (
-              <GithubDeviceCard session={githubSession} status={githubStatus} />
+            {hasGithub && (
+              <ConnectedAccountRow
+                provider="github"
+                name={
+                  accountState.github?.name ||
+                  accountState.github?.username ||
+                  "GitHub"
+                }
+                detail={
+                  accountState.github?.email ||
+                  accountState.github?.username ||
+                  ""
+                }
+                avatar={accountState.github?.avatar}
+                onLogout={onGithubLogout}
+              />
             )}
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+
+        {(!hasAstrobox || !hasGithub) && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
+              登录新账号
+            </p>
+            {!hasAstrobox && (
+              <MenuButton
+                icon={<AstroBoxLogo size={22} />}
+                label="AstroBox登录"
+                description="登录到AstroBox账号以使用数据分析等功能"
+                onClick={onAstroLogin}
+              />
+            )}
+            {!hasGithub && (
+              <MenuButton
+                icon={<GithubLogoIcon size={24} weight="fill" />}
+                label="GitHub登录"
+                description="登录到GitHub账号以提交资源"
+                onClick={onGithubLogin}
+                loading={isGithubBusy}
+              />
+            )}
+          </div>
+        )}
+
+        {githubSession && (
+          <GithubDeviceCard session={githubSession} status={githubStatus} />
+        )}
+      </div>
+    </Popover.Content>
   );
 }
 
