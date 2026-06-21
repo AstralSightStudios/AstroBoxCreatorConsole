@@ -138,7 +138,7 @@ function NavContent({
         hideFunctionButton={hideFunctionButton}
       />
       <AccountInfo account={account} />
-      <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area pb-[70px]">
+      <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area pb-[calc(70px+env(safe-area-inset-bottom))]">
         <div className="flex flex-col gap-2.5 pb-2">
           {NAV_SECTIONS.map((section) => (
             <NavSection
@@ -153,7 +153,7 @@ function NavContent({
       </div>
 
       <div className="absolute max-w-[299px] max-[1280px]:max-w-[calc(100vw-20px)] box-border w-full bottom-0 bg-linear-to-b from-0% from-nav/0 to-20% to-nav pt-4">
-        <div className="flex flex-col gap-2.5 p-2 pt-0 -mx-2 backdrop-blur-md">
+        <div className="flex flex-col gap-2.5 p-2 pt-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] -mx-2 backdrop-blur-md">
           <NavItem
             key="publish"
             icon={UploadIcon}
@@ -181,7 +181,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
     >
       {!isCollapsed && (
         <nav
-          className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0 z-10 relative"
+          className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] z-10 relative"
           style={{ height: "100dvh" }}
         >
           <NavContent {...contentProps} />
@@ -214,7 +214,7 @@ function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
         transition={{ duration: 0.3 }}
       />
       <motion.nav
-        className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2.5 pb-0"
+        className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2.5 pb-0 pt-[max(0.625rem,env(safe-area-inset-top))] pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))]"
         initial={{ y: 10, scale: 0.97, opacity: 0.8 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 10, scale: 0.97, opacity: 0.8 }}

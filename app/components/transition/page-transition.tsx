@@ -156,13 +156,13 @@ export default function PageTransition() {
       className="relative h-full min-h-screen overflow-hidden select-none"
       style={{ minHeight: "100dvh" }}
     >
-      <div className="flex h-full flex-col p-2 pb-0 gap-2">
+      <div className="flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
         <Header />
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
             <motion.div
               key={motionKey}
-              className="absolute inset-0 w-full h-full overflow-y-auto"
+              className="absolute inset-0 w-full h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]"
               custom={transitionMeta}
               variants={{
                 initial: (meta: TransitionMeta) => ({
