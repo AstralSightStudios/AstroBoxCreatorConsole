@@ -1,0 +1,380 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 63;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0D079FF2CFA242EFECAEE596 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50E9AD3618A5EC6599307371 /* UIKit.framework */; };
+		328D6A53766AC1F4757CBE3C /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 26824870A51CE0E8A3ED2122 /* WebKit.framework */; };
+		451D509017F79F36ED26437A /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */; };
+		645B7ABC712274A289F1C076 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5424C97B716B309BC9BCFB38 /* LaunchScreen.storyboard */; };
+		7C84257E91BEA5BEA5E0D508 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = B07E050B10085C529EC28B27 /* libapp.a */; };
+		93EA50030B50272798BEF894 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 97F1CA5448E936761715D828 /* Security.framework */; };
+		96A35A78FF62F71FBBD0DEA5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0F5C75C89EDA69BA869FB608 /* Assets.xcassets */; };
+		AB042F09407F80CCB785F058 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E5E5E0047F89C8A4701 /* main.mm */; };
+		C50AC43E94DEEC5C80A018FF /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 411A73CCBA748307AD26DE8A /* CoreGraphics.framework */; };
+		CFB4737E5208AB7CFC79C431 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 69FF1D62CD866327A31EB219 /* assets */; };
+		E9D3554249AA39BDDC2833B8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D3AC027C90604B308FDE9BDF /* QuartzCore.framework */; };
+		F1FA22DEB094BC8D686986F3 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0BB436C6BFF346847C6CA2F7 /* Metal.framework */; };
+		F8B85AB52B9592D5C3168E60 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 32A0F3515178259169DC7AA9 /* MetalKit.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0BB436C6BFF346847C6CA2F7 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		0F5C75C89EDA69BA869FB608 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		26824870A51CE0E8A3ED2122 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		32A0F3515178259169DC7AA9 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		411A73CCBA748307AD26DE8A /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		4DD158977FFF056A0EE39FD7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		50E9AD3618A5EC6599307371 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		5424C97B716B309BC9BCFB38 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		5E3B8FA8D6B87D40441BCFD2 /* AstroBox CreatorConsole.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AstroBox CreatorConsole.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		69FF1D62CD866327A31EB219 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		8F2FD60AC07978C80EDD3FCA /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		97F1CA5448E936761715D828 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		B056E3B2642DAFA31B36DE88 /* astrobox-creator-console_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "astrobox-creator-console_iOS.entitlements"; sourceTree = "<group>"; };
+		B07E050B10085C529EC28B27 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		D3ABF08885028EA1E2513C21 /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
+		D3AC027C90604B308FDE9BDF /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		EDD23018BA409A2A44AC15F5 /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
+		FAC26E5E5E0047F89C8A4701 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3892CD14B6FD0E0D03AB20E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				451D509017F79F36ED26437A /* libapp.a in Frameworks */,
+				C50AC43E94DEEC5C80A018FF /* CoreGraphics.framework in Frameworks */,
+				F1FA22DEB094BC8D686986F3 /* Metal.framework in Frameworks */,
+				F8B85AB52B9592D5C3168E60 /* MetalKit.framework in Frameworks */,
+				E9D3554249AA39BDDC2833B8 /* QuartzCore.framework in Frameworks */,
+				93EA50030B50272798BEF894 /* Security.framework in Frameworks */,
+				0D079FF2CFA242EFECAEE596 /* UIKit.framework in Frameworks */,
+				328D6A53766AC1F4757CBE3C /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1E785914E94C6A16D94F2C3D = {
+			isa = PBXGroup;
+			children = (
+				69FF1D62CD866327A31EB219 /* assets */,
+				0F5C75C89EDA69BA869FB608 /* Assets.xcassets */,
+				5424C97B716B309BC9BCFB38 /* LaunchScreen.storyboard */,
+				D02A0F53E9E14B26CB47E9AE /* astrobox-creator-console_iOS */,
+				4C9A2D6E491C68967F231B35 /* Externals */,
+				74BF68DAB191F5E5A1D63496 /* Sources */,
+				EF8AE996A68D296DCBE8976B /* src */,
+				CBA31CDAEE4D5B10493EBD5B /* Frameworks */,
+				C77F78898155DF99EBCCD9A1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4C9A2D6E491C68967F231B35 /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+				68BF904F328D54F42ABFBC2D /* arm64 */,
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		59CEB9D0BC4E0A80F7BFB25C /* astrobox-creator-console */ = {
+			isa = PBXGroup;
+			children = (
+				FAC26E5E5E0047F89C8A4701 /* main.mm */,
+				E30ED8B3A66418A7E7E95259 /* bindings */,
+			);
+			path = "astrobox-creator-console";
+			sourceTree = "<group>";
+		};
+		68BF904F328D54F42ABFBC2D /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				9E7862F9F31591112BE29FCF /* debug */,
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+		74BF68DAB191F5E5A1D63496 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				59CEB9D0BC4E0A80F7BFB25C /* astrobox-creator-console */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		9E7862F9F31591112BE29FCF /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				B07E050B10085C529EC28B27 /* libapp.a */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
+		C77F78898155DF99EBCCD9A1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5E3B8FA8D6B87D40441BCFD2 /* AstroBox CreatorConsole.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CBA31CDAEE4D5B10493EBD5B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				411A73CCBA748307AD26DE8A /* CoreGraphics.framework */,
+				6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */,
+				0BB436C6BFF346847C6CA2F7 /* Metal.framework */,
+				32A0F3515178259169DC7AA9 /* MetalKit.framework */,
+				D3AC027C90604B308FDE9BDF /* QuartzCore.framework */,
+				97F1CA5448E936761715D828 /* Security.framework */,
+				50E9AD3618A5EC6599307371 /* UIKit.framework */,
+				26824870A51CE0E8A3ED2122 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D02A0F53E9E14B26CB47E9AE /* astrobox-creator-console_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				B056E3B2642DAFA31B36DE88 /* astrobox-creator-console_iOS.entitlements */,
+				4DD158977FFF056A0EE39FD7 /* Info.plist */,
+			);
+			path = "astrobox-creator-console_iOS";
+			sourceTree = "<group>";
+		};
+		E30ED8B3A66418A7E7E95259 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				8F2FD60AC07978C80EDD3FCA /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		EF8AE996A68D296DCBE8976B /* src */ = {
+			isa = PBXGroup;
+			children = (
+				EDD23018BA409A2A44AC15F5 /* lib.rs */,
+				D3ABF08885028EA1E2513C21 /* main.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0A49046506ACE12AD23D9AE0 /* astrobox-creator-console_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F25F009E6D8DB558D013EB62 /* Build configuration list for PBXNativeTarget "astrobox-creator-console_iOS" */;
+			buildPhases = (
+				115CA01D45DB034C70FBE083 /* Build Rust Code */,
+				7C2E13FB867E41C07B995DA3 /* Sources */,
+				12E4A7A083679D4839EFED4B /* Resources */,
+				3892CD14B6FD0E0D03AB20E0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "astrobox-creator-console_iOS";
+			packageProductDependencies = (
+			);
+			productName = "astrobox-creator-console_iOS";
+			productReference = 5E3B8FA8D6B87D40441BCFD2 /* AstroBox CreatorConsole.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E19856F882F214D2951F5EE3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+			};
+			buildConfigurationList = 5356ED078C02834AB07087F2 /* Build configuration list for PBXProject "astrobox-creator-console" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 1E785914E94C6A16D94F2C3D;
+			minimizedProjectReferenceProxies = 1;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0A49046506ACE12AD23D9AE0 /* astrobox-creator-console_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		12E4A7A083679D4839EFED4B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96A35A78FF62F71FBBD0DEA5 /* Assets.xcassets in Resources */,
+				645B7ABC712274A289F1C076 /* LaunchScreen.storyboard in Resources */,
+				CFB4737E5208AB7CFC79C431 /* assets in Resources */,
+				7C84257E91BEA5BEA5E0D508 /* libapp.a in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		115CA01D45DB034C70FBE083 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Xcode runs build phases with a minimal environment that does not load\n# the user's shell profile (~/.zshrc etc.), so tools installed there are\n# not on PATH. Add bun, cargo/rustc and Homebrew (node) explicitly.\nexport PATH=\"$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\n[ -s \"$HOME/.cargo/env\" ] && . \"$HOME/.cargo/env\"\nbun tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7C2E13FB867E41C07B995DA3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB042F09407F80CCB785F058 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		06D8BA144E649B29D8B19E23 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = "astrobox-creator-console_iOS/astrobox-creator-console_iOS.entitlements";
+				DEVELOPMENT_TEAM = G72GN8XJKH;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "astrobox-creator-console_iOS/Info.plist";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = moe.astralsight.astroboxcc;
+				PRODUCT_NAME = "AstroBox CreatorConsole";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+		2E35BE5661E49C64AFC7F47B /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = iphoneos;
+			};
+			name = release;
+		};
+		6B6CA70C86700D340A210920 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = "astrobox-creator-console_iOS/astrobox-creator-console_iOS.entitlements";
+				DEVELOPMENT_TEAM = G72GN8XJKH;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "astrobox-creator-console_iOS/Info.plist";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = moe.astralsight.astroboxcc;
+				PRODUCT_NAME = "AstroBox CreatorConsole";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+		ADCA5B9685FA15C82DAE6AAC /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = iphoneos;
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5356ED078C02834AB07087F2 /* Build configuration list for PBXProject "astrobox-creator-console" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ADCA5B9685FA15C82DAE6AAC /* debug */,
+				2E35BE5661E49C64AFC7F47B /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		F25F009E6D8DB558D013EB62 /* Build configuration list for PBXNativeTarget "astrobox-creator-console_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				06D8BA144E649B29D8B19E23 /* debug */,
+				6B6CA70C86700D340A210920 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E19856F882F214D2951F5EE3 /* Project object */;
+}
