@@ -8,10 +8,23 @@ import {
   useRepoEnvId,
   type RepoEnvId,
 } from "~/config/repoEnv";
+import {
+  LOGIN_METHODS,
+  saveLoginMethod,
+  useLoginMethod,
+  type AstroboxLoginMethod,
+} from "~/config/loginMethod";
 
 export default function Settings() {
   const currentEnv = useRepoEnvId();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
+  const currentLoginMethod = useLoginMethod();
+
+  const handleSelectLoginMethod = (id: AstroboxLoginMethod) => {
+    if (id === currentLoginMethod) return;
+    saveLoginMethod(id);
+    toast.success(`已切换到 ${LOGIN_METHODS[id].label}`);
+  };
 
   const handleSelect = (id: RepoEnvId) => {
     if (id === currentEnv) return;
@@ -113,6 +126,45 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-nav-item p-4">
+          <div className="mb-3">
+            <h2 className="text-[16px] font-semibold text-white">AstroBox 登录方式</h2>
+            <p className="text-sm text-white/55">
+              选择桌面客户端登录 AstroBox 账号时打开登录页面的方式。浏览器版本不受此设置影响。
+            </p>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            {(Object.values(LOGIN_METHODS) as Array<typeof LOGIN_METHODS[AstroboxLoginMethod]>).map(
+              (method) => {
+                const isCurrent = method.id === currentLoginMethod;
+                return (
+                  <button
+                    key={method.id}
+                    type="button"
+                    onClick={() => handleSelectLoginMethod(method.id)}
+                    className={`flex flex-col gap-1 rounded-xl border px-4 py-3 text-left transition ${
+                      isCurrent
+                        ? "border-emerald-300/45 bg-emerald-400/10"
+                        : "border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-white">{method.label}</span>
+                      {isCurrent && (
+                        <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[11px] text-emerald-100">
+                          当前
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-white/55">{method.description}</p>
+                  </button>
+                );
+              },
+            )}
+          </div>
         </section>
       </div>
     </div>

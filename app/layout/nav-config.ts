@@ -13,6 +13,7 @@ import {
   IdentificationBadgeIcon,
   ListStarIcon,
   ReceiptIcon,
+  RocketLaunchIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 import type { NavItemProps } from "~/components/nav/navitem";
@@ -140,6 +141,13 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         label: "信箱管理",
         path: "/admin/inbox",
         requireRoles: ["admin", "moderator"],
+      },
+      {
+        id: "admin-hotupdate",
+        icon: RocketLaunchIcon,
+        label: "热更新管理",
+        path: "/admin/hotupdate",
+        requireRoles: ["admin"],
       },
     ],
   },

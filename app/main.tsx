@@ -16,6 +16,7 @@ import AdminAccountsPage from "~/routes/admin/accounts";
 import AdminInboxPage from "~/routes/admin/inbox";
 import AdminOrdersPage from "~/routes/admin/orders";
 import AdminReportsPage from "~/routes/admin/reports";
+import AdminHotUpdatePage from "~/routes/admin/hotupdate";
 import ResourceReviewPage from "~/routes/resreview";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
       { path: "admin/orders", element: <AdminOrdersPage /> },
       { path: "admin/reports", element: <AdminReportsPage /> },
       { path: "admin/inbox", element: <AdminInboxPage /> },
+      { path: "admin/hotupdate", element: <AdminHotUpdatePage /> },
       { path: "publish/new", element: <NewResourcePublishPage /> },
       { path: "publish/edit", element: <ResourceEditPage /> },
       { path: "manage/edit", element: <ResourceEditPage /> },

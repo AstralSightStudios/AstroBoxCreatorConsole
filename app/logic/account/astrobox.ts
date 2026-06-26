@@ -2,6 +2,7 @@ import axios from "axios";
 import Sdk from "casdoor-js-sdk";
 import { CASDOOR_CONFIG } from "~/config/casdoor";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
+import { loadLoginMethod } from "~/config/loginMethod";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 import {
     getAstroboxToken,
@@ -11,6 +12,10 @@ import {
 } from "./store";
 
 export const SDK = new Sdk(CASDOOR_CONFIG);
+
+// SDK used for the in-app "built-in webpage" login: the OAuth callback returns
+// to the in-page /callback route instead of the astroboxcc:// deep link.
+const WEBVIEW_SDK = new Sdk({ ...CASDOOR_CONFIG, redirectPath: "/callback" });
 
 const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -126,23 +131,32 @@ if (isTauri) {
 }
 
 export async function startAstroboxLogin() {
-    const url = SDK.getSigninUrl();
-
-    if (isTauri) {
-        await ensureDeepLinkHandler();
-        emit({ phase: "waiting-browser" });
-        try {
-            const { openUrl } = await import("@tauri-apps/plugin-opener");
-            await openUrl(url);
-        } catch (err) {
-            console.error("Failed to open browser for login", err);
-            emit({ phase: "error", error: "无法打开浏览器进行登录。" });
-        }
+    // In a regular browser build there is no deep link: always do a same-tab
+    // redirect back to /callback, identical to before.
+    if (!isTauri) {
+        location.href = SDK.getSigninUrl();
         return;
     }
 
-    // Browser fallback: same-tab redirect to keep behaviour identical to before.
-    location.href = url;
+    // Built-in webpage login: open the casdoor page inside the app's own
+    // window and let the in-page /callback route finish the exchange.
+    if (loadLoginMethod() === "webview") {
+        emit({ phase: "waiting-browser" });
+        location.href = WEBVIEW_SDK.getSigninUrl();
+        return;
+    }
+
+    // Default: deep-link flow — open the system browser and wait for the
+    // astroboxcc:// callback to come back into the app.
+    await ensureDeepLinkHandler();
+    emit({ phase: "waiting-browser" });
+    try {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(SDK.getSigninUrl());
+    } catch (err) {
+        console.error("Failed to open browser for login", err);
+        emit({ phase: "error", error: "无法打开浏览器进行登录。" });
+    }
 }
 
 export function persistAstroboxAccount(profile: any, token: string) {
