@@ -13,9 +13,9 @@ export const ASTROBOX_DEEP_LINK_REDIRECT = `${ASTROBOX_DEEP_LINK_SCHEME}://${AST
 
 export const CASDOOR_CONFIG = {
     serverUrl: "https://cas.astralsight.space",
-    clientId: "9b1f42dd40c5c08b5fa9",
-    organizationName: "astrobox_test",
-    appName: "astrobox_test",
+    clientId: "0fada617eb3ba5e1c2a3",
+    organizationName: "astrobox",
+    appName: "astrobox",
     redirectPath: isTauri ? ASTROBOX_DEEP_LINK_REDIRECT : "/callback",
     signinPath: "/auth/login",
 };
