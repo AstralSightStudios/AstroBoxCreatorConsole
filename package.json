@@ -6,7 +6,9 @@
     "build": "vite build",
     "dev": "vite dev",
     "start": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "android": "bash ./scripts/build_android.sh",
+    "android:debug": "bash ./scripts/build_android_debug.sh"
   },
   "dependencies": {
     "@antv/l7": "^2.23.2",

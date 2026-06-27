@@ -23,7 +23,7 @@ function AstroboxAccountRefresher() {
 
 export default function RootLayout() {
     return (
-        <Theme appearance="dark">
+        <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
             <AstroboxAccountRefresher />
             <NavVisibilityProvider>
                 <div
