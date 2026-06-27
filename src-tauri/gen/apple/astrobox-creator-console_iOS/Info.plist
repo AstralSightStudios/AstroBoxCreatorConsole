@@ -21,8 +21,8 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>moe.astralsight.astroboxcc</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>astroboxcc</string>
