@@ -14,11 +14,12 @@ import NavItem from "~/components/nav/navitem";
 import FunctionButton from "~/components/nav/function-button";
 import { startAstroboxLogin } from "~/logic/account/astrobox";
 import {
-  finalizeGithubLogin,
-  pollGithubDeviceSession,
-  startGithubDeviceSession,
+  useGithubLoginState,
+  startGithubLogin,
+  cancelGithubLogin,
+  type GithubLoginState,
   type GithubDeviceSession,
-} from "~/logic/account/github";
+} from "~/logic/account/github-login-state";
 import {
   getDisplayAccount,
   logoutAccount,
@@ -257,10 +258,7 @@ function NavHeader({
   hideFunctionButton,
 }: NavHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [githubSession, setGithubSession] = useState<GithubDeviceSession>();
-  const [githubStatus, setGithubStatus] = useState("");
-  const [isGithubBusy, setIsGithubBusy] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const githubLoginState = useGithubLoginState();
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
@@ -268,44 +266,14 @@ function NavHeader({
   };
 
   const handleGithubLogin = async () => {
-    try {
-      setIsGithubBusy(true);
-      setGithubStatus("Getting Activation Code...");
-      const session = await startGithubDeviceSession();
-      setGithubSession(session);
-      setIsMenuOpen(true);
-
-      const linkToOpen =
-        session.verificationUriComplete || session.verificationUri;
-      if (linkToOpen) {
-        window.open(linkToOpen, "_blank", "noopener,noreferrer");
-      }
-
-      abortRef.current?.abort();
-      abortRef.current = new AbortController();
-
-      const token = await pollGithubDeviceSession(session, {
-        signal: abortRef.current.signal,
-        onStatusChange: setGithubStatus,
-      });
-
-      setGithubStatus("Loading GitHub Account Info...");
-      await finalizeGithubLogin(token);
-      setGithubStatus("Login Successful");
-      window.location.reload();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "GitHub登录失败";
-      setGithubStatus(message);
-    } finally {
-      setIsGithubBusy(false);
-    }
+    setIsMenuOpen(true);
+    await startGithubLogin();
   };
 
   const handleAstroLogout = async () => {
     if (!accountState.astrobox) return;
     const confirmed = await confirm("确认退出 AstroBox 账号？");
     if (!confirmed) return;
-    abortRef.current?.abort();
     logoutAccount("astrobox");
     window.location.reload();
   };
@@ -314,12 +282,13 @@ function NavHeader({
     if (!accountState.github) return;
     const confirmed = await confirm("确认退出 GitHub 账号？");
     if (!confirmed) return;
-    abortRef.current?.abort();
+    cancelGithubLogin();
     logoutAccount("github");
     window.location.reload();
   };
 
   const hasAccount = account.hasAstrobox || account.hasGithub;
+  const isGithubBusy = githubLoginState.status === "requesting" || githubLoginState.status === "waiting";
 
   return (
     <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
@@ -339,8 +308,7 @@ function NavHeader({
       </div>
       <AccountMenu
         accountState={accountState}
-        githubSession={githubSession}
-        githubStatus={githubStatus}
+        githubLoginState={githubLoginState}
         isGithubBusy={isGithubBusy}
         onAstroLogin={handleAstroLogin}
         onGithubLogin={handleGithubLogin}
@@ -395,8 +363,7 @@ function AccountAvatar({ account, isActive }: AccountAvatarProps) {
 
 interface AccountMenuProps {
   accountState: AccountState;
-  githubSession?: GithubDeviceSession;
-  githubStatus: string;
+  githubLoginState: GithubLoginState;
   isGithubBusy: boolean;
   onAstroLogin: () => void;
   onGithubLogin: () => void;
@@ -406,8 +373,7 @@ interface AccountMenuProps {
 
 function AccountMenu({
   accountState,
-  githubSession,
-  githubStatus,
+  githubLoginState,
   isGithubBusy,
   onAstroLogin,
   onGithubLogin,
@@ -416,6 +382,7 @@ function AccountMenu({
 }: AccountMenuProps) {
   const hasAstrobox = Boolean(accountState.astrobox);
   const hasGithub = Boolean(accountState.github);
+  const showDeviceCard = githubLoginState.session && githubLoginState.status !== "idle";
 
   return (
     <Popover.Content
@@ -500,8 +467,11 @@ function AccountMenu({
           </div>
         )}
 
-        {githubSession && (
-          <GithubDeviceCard session={githubSession} status={githubStatus} />
+        {showDeviceCard && (
+          <GithubDeviceCard
+            session={githubLoginState.session!}
+            status={githubLoginState.statusMessage}
+          />
         )}
       </div>
     </Popover.Content>

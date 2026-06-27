@@ -9,15 +9,7 @@
     "core:default",
     "dialog:default",
     "opener:default",
-    {
-      "identifier": "opener:allow-open-url",
-      "allow": [
-        {
-          "url": "*",
-          "app": "inAppBrowser"
-        }
-      ]
-    },
+    "opener:allow-open-url",
     "deep-link:default"
   ]
 }
