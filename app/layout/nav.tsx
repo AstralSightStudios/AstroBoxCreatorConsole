@@ -35,9 +35,9 @@ import {
 } from "./nav-config";
 import { useNavVisibility } from "./nav-visibility-context";
 import { AstroBoxLogo } from "~/components/svgs";
-import { confirm } from "@tauri-apps/plugin-dialog";
+
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Popover, Spinner } from "@radix-ui/themes";
+import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 
 export default function Nav() {
@@ -258,6 +258,8 @@ function NavHeader({
   hideFunctionButton,
 }: NavHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showGithubLogoutConfirm, setShowGithubLogoutConfirm] = useState(false);
+  const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
   const githubLoginState = useGithubLoginState();
 
   const handleAstroLogin = () => {
@@ -270,18 +272,22 @@ function NavHeader({
     await startGithubLogin();
   };
 
-  const handleAstroLogout = async () => {
+  const handleAstroLogout = () => {
     if (!accountState.astrobox) return;
-    const confirmed = await confirm("确认退出 AstroBox 账号？");
-    if (!confirmed) return;
+    setShowAstroLogoutConfirm(true);
+  };
+
+  const confirmAstroLogout = () => {
     logoutAccount("astrobox");
     window.location.reload();
   };
 
-  const handleGithubLogout = async () => {
+  const handleGithubLogout = () => {
     if (!accountState.github) return;
-    const confirmed = await confirm("确认退出 GitHub 账号？");
-    if (!confirmed) return;
+    setShowGithubLogoutConfirm(true);
+  };
+
+  const confirmGithubLogout = () => {
     cancelGithubLogin();
     logoutAccount("github");
     window.location.reload();
@@ -291,31 +297,67 @@ function NavHeader({
   const isGithubBusy = githubLoginState.status === "requesting" || githubLoginState.status === "waiting";
 
   return (
-    <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-      <div
-        className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
-      >
-        {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
-        <Popover.Trigger>
-          <button
-            type="button"
-            aria-label="账号菜单"
-            className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-          >
-            <AccountAvatar account={account} isActive={hasAccount} />
-          </button>
-        </Popover.Trigger>
-      </div>
-      <AccountMenu
-        accountState={accountState}
-        githubLoginState={githubLoginState}
-        isGithubBusy={isGithubBusy}
-        onAstroLogin={handleAstroLogin}
-        onGithubLogin={handleGithubLogin}
-        onAstroLogout={handleAstroLogout}
-        onGithubLogout={handleGithubLogout}
-      />
-    </Popover.Root>
+    <>
+      <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+        <div
+          className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
+        >
+          {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
+          <Popover.Trigger>
+            <button
+              type="button"
+              aria-label="账号菜单"
+              className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            >
+              <AccountAvatar account={account} isActive={hasAccount} />
+            </button>
+          </Popover.Trigger>
+        </div>
+        <AccountMenu
+          accountState={accountState}
+          githubLoginState={githubLoginState}
+          isGithubBusy={isGithubBusy}
+          onAstroLogin={handleAstroLogin}
+          onGithubLogin={handleGithubLogin}
+          onAstroLogout={handleAstroLogout}
+          onGithubLogout={handleGithubLogout}
+        />
+      </Popover.Root>
+
+      <Dialog.Root open={showGithubLogoutConfirm} onOpenChange={setShowGithubLogoutConfirm}>
+        <Dialog.Content className="max-w-[520px]">
+          <Dialog.Title>退出 GitHub 账号</Dialog.Title>
+          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
+            确认退出 GitHub 账号？退出后需要重新登录。
+          </Dialog.Description>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="soft" onClick={() => setShowGithubLogoutConfirm(false)}>
+              取消
+            </Button>
+            <Button variant="solid" onClick={confirmGithubLogout}>
+              退出
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root open={showAstroLogoutConfirm} onOpenChange={setShowAstroLogoutConfirm}>
+        <Dialog.Content className="max-w-[520px]">
+          <Dialog.Title>退出 AstroBox 账号</Dialog.Title>
+          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
+            确认退出 AstroBox 账号？退出后需要重新登录。
+          </Dialog.Description>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="soft" onClick={() => setShowAstroLogoutConfirm(false)}>
+              取消
+            </Button>
+            <Button variant="solid" onClick={confirmAstroLogout}>
+              退出
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+    </>
   );
 }
 
