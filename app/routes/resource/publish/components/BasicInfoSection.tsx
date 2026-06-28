@@ -106,16 +106,25 @@ export function BasicInfoSection({
             radius="large"
           />
         </Field>
-        {resourceType === "quick_app" && (
-          <Field label="资源 ID" hint="填写快应用包名">
-            <TextField.Root
-              placeholder="com.example.quickapp"
-              value={itemId}
-              onChange={(e) => onItemIdChange(e.target.value)}
-              radius="large"
-            />
-          </Field>
-        )}
+        <Field
+          label="资源 ID"
+          hint={
+            resourceType === "quick_app"
+              ? "填写快应用包名"
+              : "填写表盘唯一标识符"
+          }
+        >
+          <TextField.Root
+            placeholder={
+              resourceType === "quick_app"
+                ? "com.example.quickapp"
+                : "9798XXXXXXXX"
+            }
+            value={itemId}
+            onChange={(e) => onItemIdChange(e.target.value)}
+            radius="large"
+          />
+        </Field>
       </div>
       <Field label="资源简介">
         <TextArea
