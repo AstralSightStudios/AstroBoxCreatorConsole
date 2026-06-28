@@ -132,7 +132,12 @@ export default function ResourceEncrypt() {
       queryClient.setQueryData(
         ["encryptedResources"],
         (
-          old: { resource: ResourceCatalogContext; items: SellerResourceFileKey[] }[] | undefined,
+          old:
+            | {
+                resource: ResourceCatalogContext;
+                items: SellerResourceFileKey[];
+              }[]
+            | undefined,
         ) => {
           if (!old) return old;
           return old
@@ -306,7 +311,11 @@ export default function ResourceEncrypt() {
     }
   };
 
-  const handleDeleteFileKey = (resourceId: string, deviceId: string, encryptedFileHash: string) => {
+  const handleDeleteFileKey = (
+    resourceId: string,
+    deviceId: string,
+    encryptedFileHash: string,
+  ) => {
     deleteMutation.mutate({ resourceId, deviceId, encryptedFileHash });
   };
 
@@ -326,7 +335,7 @@ export default function ResourceEncrypt() {
           description="管理你的资源售卖与激活渠道"
         >
           {!isVip && (
-            <div className="relative flex flex-col items-center gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-6 py-9 text-center">
+            <div className="relative flex flex-col items-center gap-4 rounded-xl border border-white/10 bg-white/3 px-6 py-9 text-center">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium tracking-wide text-white/55">
                 <LockKeyIcon size={12} weight="fill" />
                 会员专属
@@ -364,19 +373,19 @@ export default function ResourceEncrypt() {
 
               {!loading && configs.length > 0 && (
                 <div className="w-full overflow-x-auto">
-                  <Table.Root className="w-full min-w-[600px]">
+                  <Table.Root className="w-full min-w-150">
                     <Table.Header>
                       <Table.Row>
-                        <Table.ColumnHeaderCell className="w-[140px]">
+                        <Table.ColumnHeaderCell className="w-35">
                           平台
                         </Table.ColumnHeaderCell>
-                        <Table.ColumnHeaderCell className="w-[90px]">
+                        <Table.ColumnHeaderCell className="w-22.5">
                           状态
                         </Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>
                           购买引导链接
                         </Table.ColumnHeaderCell>
-                        <Table.ColumnHeaderCell className="w-[150px]">
+                        <Table.ColumnHeaderCell className="w-37.5">
                           操作
                         </Table.ColumnHeaderCell>
                       </Table.Row>
@@ -546,107 +555,127 @@ export default function ResourceEncrypt() {
             </Callout.Root>
           )}
 
-          {isVip && !encryptedLoading && !encryptedError && encryptedResources.length === 0 && (
-            <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-white/60">
-              还没有已保存密钥映射的加密资源。
-            </div>
-          )}
+          {isVip &&
+            !encryptedLoading &&
+            !encryptedError &&
+            encryptedResources.length === 0 && (
+              <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-white/60">
+                还没有已保存密钥映射的加密资源。
+              </div>
+            )}
 
-          {isVip && !encryptedLoading && !encryptedError && encryptedResources.length > 0 && (
-            <div className="w-full overflow-x-auto">
-              <Table.Root className="w-full min-w-[600px]">
-                <Table.Header>
-                  <Table.Row>
-                    <Table.ColumnHeaderCell>资源名称</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>文件哈希</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>创建时间</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell className="w-[90px]">操作</Table.ColumnHeaderCell>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {encryptedResources.flatMap((group) =>
-                    group.items.map((item) => (
-                      <Table.Row key={`${item.resourceId}-${item.deviceId}-${item.encryptedFileHash}`}>
-                        <Table.Cell>
-                          <span className="text-sm font-medium text-white">
-                            {group.resource.entry.name}
-                          </span>
-                          <span className="ml-2 text-xs text-white/50">
-                            {group.resource.entry.id}
-                          </span>
-                        </Table.Cell>
-                        <Table.Cell>{item.deviceId}</Table.Cell>
-                        <Table.Cell>
-                          <code className="text-xs text-white/80 bg-white/10 px-1.5 py-0.5 rounded">
-                            {item.encryptedFileHash.slice(0, 16)}…
-                          </code>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <span className="text-sm text-white/70">
-                            {new Date(item.createdAt).toLocaleString()}
-                          </span>
-                        </Table.Cell>
-                        <Table.Cell>
-                          <AlertDialog.Root>
-                            <AlertDialog.Trigger>
-                              <Button
-                                size="2"
-                                variant="soft"
-                                color="red"
-                                disabled={
-                                  deleteMutation.isPending &&
-                                  deleteMutation.variables?.resourceId === item.resourceId &&
-                                  deleteMutation.variables?.deviceId === item.deviceId &&
-                                  deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash
-                                }
-                              >
-                                {deleteMutation.isPending &&
-                                deleteMutation.variables?.resourceId === item.resourceId &&
-                                deleteMutation.variables?.deviceId === item.deviceId &&
-                                deleteMutation.variables?.encryptedFileHash === item.encryptedFileHash ? (
-                                  <Spinner size="2" />
-                                ) : (
-                                  <TrashIcon size={16} />
-                                )}
-                              </Button>
-                            </AlertDialog.Trigger>
-                            <AlertDialog.Content maxWidth="420px">
-                              <AlertDialog.Title>删除密钥映射</AlertDialog.Title>
-                              <AlertDialog.Description size="2">
-                                确定要删除该加密文件的密钥映射吗？删除后已购买用户将无法解密该文件。
-                              </AlertDialog.Description>
-                              <div className="mt-4 flex justify-end gap-2">
-                                <AlertDialog.Cancel>
-                                  <Button variant="soft" color="gray">
-                                    取消
-                                  </Button>
-                                </AlertDialog.Cancel>
-                                <AlertDialog.Action>
-                                  <Button
-                                    color="red"
-                                    onClick={() =>
-                                      void handleDeleteFileKey(
-                                        item.resourceId,
-                                        item.deviceId,
-                                        item.encryptedFileHash,
-                                      )
-                                    }
-                                  >
-                                    确认删除
-                                  </Button>
-                                </AlertDialog.Action>
-                              </div>
-                            </AlertDialog.Content>
-                          </AlertDialog.Root>
-                        </Table.Cell>
-                      </Table.Row>
-                    )),
-                  )}
-                </Table.Body>
-              </Table.Root>
-            </div>
-          )}
+          {isVip &&
+            !encryptedLoading &&
+            !encryptedError &&
+            encryptedResources.length > 0 && (
+              <div className="w-full overflow-x-auto">
+                <Table.Root className="w-full min-w-150">
+                  <Table.Header>
+                    <Table.Row>
+                      <Table.ColumnHeaderCell>资源名称</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>文件哈希</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>创建时间</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell className="w-22.5">
+                        操作
+                      </Table.ColumnHeaderCell>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {encryptedResources.flatMap((group) =>
+                      group.items.map((item) => (
+                        <Table.Row
+                          key={`${item.resourceId}-${item.deviceId}-${item.encryptedFileHash}`}
+                        >
+                          <Table.Cell>
+                            <span className="text-sm font-medium text-white">
+                              {group.resource.entry.name}
+                            </span>
+                            <span className="ml-2 text-xs text-white/50">
+                              {group.resource.entry.id}
+                            </span>
+                          </Table.Cell>
+                          <Table.Cell>{item.deviceId}</Table.Cell>
+                          <Table.Cell>
+                            <code className="text-xs text-white/80 bg-white/10 px-1.5 py-0.5 rounded">
+                              {item.encryptedFileHash.slice(0, 16)}…
+                            </code>
+                          </Table.Cell>
+                          <Table.Cell>
+                            <span className="text-sm text-white/70">
+                              {new Date(item.createdAt).toLocaleString()}
+                            </span>
+                          </Table.Cell>
+                          <Table.Cell>
+                            <AlertDialog.Root>
+                              <AlertDialog.Trigger>
+                                <Button
+                                  size="2"
+                                  variant="soft"
+                                  color="red"
+                                  disabled={
+                                    deleteMutation.isPending &&
+                                    deleteMutation.variables?.resourceId ===
+                                      item.resourceId &&
+                                    deleteMutation.variables?.deviceId ===
+                                      item.deviceId &&
+                                    deleteMutation.variables
+                                      ?.encryptedFileHash ===
+                                      item.encryptedFileHash
+                                  }
+                                >
+                                  {deleteMutation.isPending &&
+                                  deleteMutation.variables?.resourceId ===
+                                    item.resourceId &&
+                                  deleteMutation.variables?.deviceId ===
+                                    item.deviceId &&
+                                  deleteMutation.variables
+                                    ?.encryptedFileHash ===
+                                    item.encryptedFileHash ? (
+                                    <Spinner size="2" />
+                                  ) : (
+                                    <TrashIcon size={16} />
+                                  )}
+                                </Button>
+                              </AlertDialog.Trigger>
+                              <AlertDialog.Content maxWidth="420px">
+                                <AlertDialog.Title>
+                                  删除密钥映射
+                                </AlertDialog.Title>
+                                <AlertDialog.Description size="2">
+                                  确定要删除该加密文件的密钥映射吗？删除后已购买用户将无法解密该文件。
+                                </AlertDialog.Description>
+                                <div className="mt-4 flex justify-end gap-2">
+                                  <AlertDialog.Cancel>
+                                    <Button variant="soft" color="gray">
+                                      取消
+                                    </Button>
+                                  </AlertDialog.Cancel>
+                                  <AlertDialog.Action>
+                                    <Button
+                                      color="red"
+                                      onClick={() =>
+                                        void handleDeleteFileKey(
+                                          item.resourceId,
+                                          item.deviceId,
+                                          item.encryptedFileHash,
+                                        )
+                                      }
+                                    >
+                                      确认删除
+                                    </Button>
+                                  </AlertDialog.Action>
+                                </div>
+                              </AlertDialog.Content>
+                            </AlertDialog.Root>
+                          </Table.Cell>
+                        </Table.Row>
+                      )),
+                    )}
+                  </Table.Body>
+                </Table.Root>
+              </div>
+            )}
         </SectionCard>
       </div>
     </Page>
