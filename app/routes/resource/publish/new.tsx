@@ -696,7 +696,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             restype: resourceType,
             repo_owner: repoInfo.owner,
             repo_name: repoInfo.name,
-            repo_commit_hash: repoInfo.commitSha,
+            repo_commit_hash: repoInfo.commitSha.slice(0, 7),
             icon: manifestForCatalog.iconPath,
             cover: manifestForCatalog.coverPath,
             tags: tags.join(";"),

@@ -52,7 +52,7 @@ async function uploadDownloadAsset(params: {
             key: encrypted.keyBase64,
             repoOwner: repo.owner,
             repoName: repo.name,
-            commitSha: manifestCommitSha,
+            commitSha: manifestCommitSha.slice(0, 7),
         });
         onProgress?.(`已保存密钥映射 ${asset.platformId}`);
     }
