@@ -82,12 +82,16 @@ interface EncryptConfigDialogProps {
   resourceId: string;
   deviceId: string;
   triggerDisabled?: boolean;
+  allDeviceIds?: string[];
+  onBatchSaved?: () => void;
 }
 
 export function EncryptConfigDialog({
   resourceId,
   deviceId,
   triggerDisabled,
+  allDeviceIds,
+  onBatchSaved,
 }: EncryptConfigDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,6 +103,8 @@ export function EncryptConfigDialog({
     afd: false,
     cdk: false,
   });
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
 
   const [afdPasteUrl, setAfdPasteUrl] = useState("");
   const [formMap, setFormMap] = useState<Record<CommercePlatform, PlatformFormState>>({
@@ -204,6 +210,57 @@ export function EncryptConfigDialog({
     } finally {
       setSavingMap((prev) => ({ ...prev, [platform]: false }));
     }
+  };
+
+  const handleBatchApply = async () => {
+    if (!allDeviceIds || allDeviceIds.length === 0) return;
+    const targetDeviceIds = allDeviceIds.filter((id) => id !== deviceId);
+    if (targetDeviceIds.length === 0) {
+      toast.info("没有其他设备需要应用");
+      return;
+    }
+
+    setBatchSaving(true);
+    setBatchProgress({ done: 0, total: targetDeviceIds.length });
+
+    let successCount = 0;
+    for (let i = 0; i < targetDeviceIds.length; i++) {
+      const targetDeviceId = targetDeviceIds[i];
+      setBatchProgress({ done: i, total: targetDeviceIds.length });
+      try {
+        for (const platform of ["afd", "cdk"] as CommercePlatform[]) {
+          const form = formMap[platform];
+          if (!form.externalProductId.trim() || !form.externalSkuId.trim()) continue;
+          await upsertResourceProduct({
+            resourceId,
+            platform,
+            externalProductId: form.externalProductId.trim(),
+            title: form.title.trim() || undefined,
+            buyUrl: form.buyUrl.trim() || undefined,
+            enabled: form.enabled,
+          });
+          await upsertResourceSku({
+            resourceId,
+            platform,
+            externalProductId: form.externalProductId.trim(),
+            externalSkuId: form.externalSkuId.trim(),
+            deviceId: targetDeviceId,
+            title: form.title.trim() || undefined,
+            buyUrl: form.buyUrl.trim() || undefined,
+            isPaid: form.isPaid,
+            enabled: form.enabled,
+          });
+        }
+        successCount++;
+      } catch {
+        // continue with other devices
+      }
+    }
+
+    setBatchProgress({ done: targetDeviceIds.length, total: targetDeviceIds.length });
+    setBatchSaving(false);
+    toast.success(`已批量应用配置到 ${successCount}/${targetDeviceIds.length} 个设备`);
+    onBatchSaved?.();
   };
 
   const updateForm = (
@@ -368,7 +425,27 @@ export function EncryptConfigDialog({
             );
           })}
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-between">
+          <div>
+            {allDeviceIds && allDeviceIds.length > 1 && (
+              <Button
+                size="2"
+                variant="soft"
+                color="blue"
+                onClick={handleBatchApply}
+                disabled={batchSaving}
+              >
+                {batchSaving ? (
+                  <>
+                    <Spinner size="2" />
+                    应用中 {batchProgress.done}/{batchProgress.total}
+                  </>
+                ) : (
+                  `应用到全部 ${allDeviceIds.length} 个设备`
+                )}
+              </Button>
+            )}
+          </div>
           <Dialog.Close>
             <Button variant="soft" color="gray">
               关闭
