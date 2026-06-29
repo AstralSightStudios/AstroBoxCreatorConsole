@@ -107,6 +107,26 @@ export interface CreateCdkBatchResponse {
     codes: string[];
 }
 
+export type CdkStatus = "available" | "redeemed";
+
+export interface CdkListItem {
+    code: string;
+    resourceId: string;
+    deviceId: string;
+    status: CdkStatus;
+    batchId: string;
+    redeemedByUserId: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ListSellerCdkBody {
+    resourceId?: string;
+    deviceId?: string;
+    status?: CdkStatus;
+    limit?: number;
+}
+
 export function upsertSellerPlatformConfig(body: UpsertSellerPlatformConfigBody) {
     return sendApiRequest<SellerPlatformConfig>(
         "/order/seller/platform-config/upsert",
@@ -207,6 +227,15 @@ export function deleteResourceSku(body: { resourceId: string; platform: Commerce
 export function createCdkBatch(body: CreateCdkBatchBody) {
     return sendApiRequest<CreateCdkBatchResponse>(
         "/order/seller/cdk/create-batch",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function listSellerCdks(body: ListSellerCdkBody = {}) {
+    return sendApiRequest<CdkListItem[]>(
+        "/order/seller/cdk/list",
         "POST",
         undefined,
         body,

@@ -18,6 +18,29 @@ function AstroboxAccountRefresher() {
         void refreshAstroboxAccount();
     }, []);
 
+    // 用户通常在外部浏览器里完成 Casdoor 绑定（如 GitHub），回到本应用窗口时
+    // 自动重新同步一次，把最新绑定及时回填到服务端 MongoDB。节流避免频繁切窗刷屏。
+    useEffect(() => {
+        const REFRESH_THROTTLE_MS = 30_000;
+
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                void refreshAstroboxAccount({ throttleMs: REFRESH_THROTTLE_MS });
+            }
+        };
+        const handleFocus = () => {
+            void refreshAstroboxAccount({ throttleMs: REFRESH_THROTTLE_MS });
+        };
+
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleFocus);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleFocus);
+        };
+    }, []);
+
     return null;
 }
 

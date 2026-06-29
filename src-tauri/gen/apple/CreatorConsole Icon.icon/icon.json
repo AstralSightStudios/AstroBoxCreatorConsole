@@ -1,0 +1,221 @@
+{
+  "features" : [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.47889,0.77777,1.00000,1.00000",
+      "display-p3:0.24275,0.46193,0.97255,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "blend-mode-specializations" : [
+        {
+          "value" : "plus-lighter"
+        },
+        {
+          "appearance" : "tinted",
+          "value" : "normal"
+        }
+      ],
+      "blur-material-specializations" : [
+        {
+          "value" : 0.08
+        },
+        {
+          "appearance" : "dark",
+          "value" : 0.18
+        }
+      ],
+      "layers" : [
+        {
+          "blend-mode" : "overlay",
+          "fill" : {
+            "solid" : "gray:1.00000,0.79000"
+          },
+          "image-name" : "Frame 427322144.svg",
+          "name" : "Frame 427322144",
+          "opacity-specializations" : [
+            {
+              "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.3
+            }
+          ]
+        },
+        {
+          "glass" : false,
+          "image-name" : "Frame 427322144 2.svg",
+          "name" : "Frame 427322144 2",
+          "opacity-specializations" : [
+            {
+              "value" : 0.58
+            },
+            {
+              "appearance" : "dark",
+              "value" : 1
+            }
+          ]
+        }
+      ],
+      "refractivity" : {
+        "depth" : 0.063,
+        "enabled" : true,
+        "strength" : 0.08
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.84
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    },
+    {
+      "blend-mode-specializations" : [
+        {
+          "value" : "overlay"
+        },
+        {
+          "appearance" : "dark",
+          "value" : "plus-lighter"
+        },
+        {
+          "appearance" : "tinted",
+          "value" : "plus-lighter"
+        }
+      ],
+      "blur-material-specializations" : [
+        {
+          "value" : 0.08
+        },
+        {
+          "appearance" : "dark",
+          "value" : 0.18
+        }
+      ],
+      "layers" : [
+        {
+          "image-name" : "Frame 427321400 2.svg",
+          "name" : "Frame 427321400 2",
+          "opacity-specializations" : [
+            {
+              "value" : 0.22
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0
+            }
+          ]
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "gray:1.00000,0.75000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : "automatic"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "gray:1.00000,0.51000"
+              }
+            }
+          ],
+          "image-name-specializations" : [
+            {
+              "value" : "Frame 427321400.svg"
+            },
+            {
+              "idiom" : "square",
+              "value" : "Frame 427321400.svg"
+            }
+          ],
+          "name" : "Frame 427321400",
+          "opacity-specializations" : [
+            {
+              "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 1
+            }
+          ]
+        }
+      ],
+      "refractivity" : {
+        "depth" : 0.0627734375,
+        "enabled" : true,
+        "strength" : 0.0796875
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.72
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "Rectangle 444.png",
+          "name" : "Rectangle 444",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0.56
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0
+            }
+          ]
+        },
+        {
+          "glass" : false,
+          "image-name" : "CreatorConsole BG.png",
+          "name" : "CreatorConsole BG",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0
+            }
+          ]
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

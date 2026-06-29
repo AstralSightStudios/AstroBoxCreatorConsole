@@ -183,9 +183,21 @@ export function clearAstroboxAccount() {
     logoutAccount("astrobox");
 }
 
-export async function refreshAstroboxAccount() {
+let lastAccountRefreshAt = 0;
+
+// 刷新本地缓存的 AstroBox 账号信息。getSelfUserInfo 会触发服务端
+// SyncUserInfoFromCasdoor，从而把 Casdoor 侧的最新绑定（如 GitHub）回填进
+// 我们的 MongoDB。传 throttleMs 可在短时间内去重（用于 focus/visibility 等
+// 高频触发场景），不传则总是执行（用于首次挂载等明确刷新）。
+export async function refreshAstroboxAccount(options?: { throttleMs?: number }) {
     const token = getAstroboxToken();
     if (!token) return false;
+
+    const throttleMs = options?.throttleMs ?? 0;
+    if (throttleMs > 0 && Date.now() - lastAccountRefreshAt < throttleMs) {
+        return false;
+    }
+    lastAccountRefreshAt = Date.now();
 
     try {
         const profile = await getSelfUserInfo(token);
@@ -200,6 +212,8 @@ export async function refreshAstroboxAccount() {
             clearAstroboxAccount();
         }
 
+        // 失败时放开节流，允许尽快重试
+        lastAccountRefreshAt = 0;
         console.warn("Failed to refresh AstroBox account data", error);
         return false;
     }
