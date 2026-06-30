@@ -3,10 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { GITHUB_OAUTH_CONFIG } from "~/config/github";
 import { setGithubAccount, type GithubAccount } from "./store";
 
-const DEVICE_CODE_URL = "https://github.com/login/device/code";
-const TOKEN_URL = "https://github.com/login/oauth/access_token";
-const PROFILE_URL = "https://api.github.com/user";
-const EMAILS_URL = "https://api.github.com/user/emails";
+const isWeb = typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__;
+
+const DEVICE_CODE_URL = isWeb
+  ? "/github-login/login/device/code"
+  : "https://github.com/login/device/code";
+const TOKEN_URL = isWeb
+  ? "/github-login/login/oauth/access_token"
+  : "https://github.com/login/oauth/access_token";
+const PROFILE_URL = isWeb
+  ? "/github-api/user"
+  : "https://api.github.com/user";
+const EMAILS_URL = isWeb
+  ? "/github-api/user/emails"
+  : "https://api.github.com/user/emails";
 
 function isTauriEnvironment() {
     return (

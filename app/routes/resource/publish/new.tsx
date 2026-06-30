@@ -1,12 +1,16 @@
-import { Badge, Button, Callout, Spinner } from "@radix-ui/themes";
+import { Badge, Button, Callout, Spinner, Popover, Text, AlertDialog } from "@radix-ui/themes";
 import {
   FileXIcon,
   UploadIcon,
   PencilSimpleLineIcon,
   GitBranchIcon,
   WarningOctagonIcon,
+  FloppyDiskIcon,
+  ArchiveIcon,
+  TrashIcon,
+  ClockIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import {
@@ -55,6 +59,16 @@ import {
   fetchManifestForCatalogEntry,
 } from "~/logic/publish/manifest-loader";
 import { syncBranchWithUpstream } from "~/logic/publish/fork";
+import {
+  listDrafts,
+  saveDraft,
+  deleteDraft,
+  autoSaveDraft,
+  loadAutoSavedDraft,
+  clearAutoSavedDraft,
+  type PublishDraft,
+  type PublishDraftFormData,
+} from "~/logic/publish/publish-drafts";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
@@ -696,7 +710,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             restype: resourceType,
             repo_owner: repoInfo.owner,
             repo_name: repoInfo.name,
-            repo_commit_hash: repoInfo.commitSha,
+            repo_commit_hash: repoInfo.commitSha.slice(0, 7),
             icon: manifestForCatalog.iconPath,
             cover: manifestForCatalog.coverPath,
             tags: tags.join(";"),
@@ -777,6 +791,39 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
   };
 
+  const batchSetDownloadDevices = (selectedIds: string[]) => {
+    setDownloads((prev) => {
+      const existingMap = new Map(
+        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
+      );
+      return selectedIds.map((id) => {
+        if (existingMap.has(id)) return existingMap.get(id)!;
+        return {
+          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+          platformId: id,
+          version: "",
+          file: null,
+          encryptOnUpload: false,
+        };
+      });
+    });
+  };
+
+  const fillAllDownloads = (template: {
+    version: string;
+    file: UploadItem | null;
+    encryptOnUpload?: boolean;
+  }) => {
+    setDownloads((prev) =>
+      prev.map((row) => ({
+        ...row,
+        version: template.version,
+        file: template.file,
+        encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
+      })),
+    );
+  };
+
   const addTrialDownloadRow = () => {
     setTrialDownloads((prev) => {
       const used = new Set(prev.map((d) => d.platformId));
@@ -809,8 +856,147 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
   };
 
+  const batchSetTrialDownloadDevices = (selectedIds: string[]) => {
+    setTrialDownloads((prev) => {
+      const existingMap = new Map(
+        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
+      );
+      return selectedIds.map((id) => {
+        if (existingMap.has(id)) return existingMap.get(id)!;
+        return {
+          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+          platformId: id,
+          version: "",
+          file: null,
+          encryptOnUpload: false,
+        };
+      });
+    });
+  };
+
+  const fillAllTrialDownloads = (template: {
+    version: string;
+    file: UploadItem | null;
+    encryptOnUpload?: boolean;
+  }) => {
+    setTrialDownloads((prev) =>
+      prev.map((row) => ({
+        ...row,
+        version: template.version,
+        file: template.file,
+      })),
+    );
+  };
+
   const goToStep = (index: number) => {
     setActiveStepIndex(Math.max(0, Math.min(2, index)));
+  };
+
+  // --- Draft system ---
+  const [draftList, setDraftList] = useState<PublishDraft[]>([]);
+  const [draftPopoverOpen, setDraftPopoverOpen] = useState(false);
+  const [saveDraftOpen, setSaveDraftOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [autoSavePromptOpen, setAutoSavePromptOpen] = useState(false);
+  const [autoSavedData, setAutoSavedData] = useState<{
+    formData: PublishDraftFormData;
+    savedAt: number;
+  } | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const buildFormData = useCallback((): PublishDraftFormData => ({
+    itemId,
+    itemName,
+    description,
+    resourceType,
+    tagsInput,
+    paidType,
+    authors,
+    links,
+    downloads: downloads.map((d) => ({ ...d, file: null })),
+    trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
+    enableAstroBoxCreatorFeatures,
+    extRaw,
+  }), [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw]);
+
+  const restoreFormData = useCallback((data: PublishDraftFormData) => {
+    setItemId(data.itemId);
+    setItemName(data.itemName);
+    setDescription(data.description);
+    setResourceType(data.resourceType);
+    setTagsInput(data.tagsInput);
+    setPaidType(data.paidType);
+    setAuthors(data.authors);
+    setLinks(data.links);
+    setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
+    setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
+    setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
+    setExtRaw(data.extRaw);
+  }, []);
+
+  // Auto-save debounce
+  useEffect(() => {
+    if (isEditMode) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveDraft(buildFormData());
+    }, 3000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [buildFormData, isEditMode]);
+
+  // Check for auto-saved draft on mount
+  useEffect(() => {
+    if (isEditMode) return;
+    const saved = loadAutoSavedDraft();
+    if (saved && saved.formData.itemName) {
+      setAutoSavedData(saved);
+      setAutoSavePromptOpen(true);
+    }
+  }, [isEditMode]);
+
+  const handleSaveDraft = () => {
+    const name = draftName.trim() || itemName || "未命名草稿";
+    saveDraft(name, buildFormData());
+    setDraftName("");
+    setSaveDraftOpen(false);
+    setDraftList(listDrafts());
+  };
+
+  const handleRestoreDraft = (draft: PublishDraft) => {
+    restoreFormData(draft.formData);
+    setDraftPopoverOpen(false);
+  };
+
+  const handleDeleteDraft = (id: string) => {
+    deleteDraft(id);
+    setDraftList(listDrafts());
+  };
+
+  const handleRestoreAutoSave = () => {
+    if (autoSavedData) {
+      restoreFormData(autoSavedData.formData);
+    }
+    setAutoSavePromptOpen(false);
+    clearAutoSavedDraft();
+  };
+
+  const handleDismissAutoSave = () => {
+    setAutoSavePromptOpen(false);
+    clearAutoSavedDraft();
+  };
+
+  const formatDraftTime = (ts: number) => {
+    const d = new Date(ts);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "刚刚";
+    if (diffMin < 60) return `${diffMin} 分钟前`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour} 小时前`;
+    return d.toLocaleDateString("zh-CN");
   };
 
   const repoStepMode: "new" | "edit" =
@@ -844,8 +1030,125 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </div>
   );
 
+  // Auto-save restore prompt
+  const autoSaveDialog = (
+    <AlertDialog.Root open={autoSavePromptOpen}>
+      <AlertDialog.Content maxWidth="420px">
+        <AlertDialog.Title>发现未保存的草稿</AlertDialog.Title>
+        <AlertDialog.Description size="2">
+          检测到上次未保存的内容（{autoSavedData ? formatDraftTime(autoSavedData.savedAt) : ""}），是否恢复？
+        </AlertDialog.Description>
+        <div className="flex justify-end gap-3 mt-4">
+          <AlertDialog.Action>
+            <Button variant="soft" color="gray" onClick={handleDismissAutoSave}>
+              丢弃
+            </Button>
+          </AlertDialog.Action>
+          <AlertDialog.Action>
+            <Button variant="solid" onClick={handleRestoreAutoSave}>
+              恢复内容
+            </Button>
+          </AlertDialog.Action>
+        </div>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+  );
+
+  // Draft action buttons
+  const draftActions = !isEditing ? (
+    <div className="flex flex-col gap-1.5 px-3 w-full">
+      <div className="flex gap-1.5">
+        <AlertDialog.Root open={saveDraftOpen} onOpenChange={setSaveDraftOpen}>
+          <AlertDialog.Trigger>
+            <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
+              <FloppyDiskIcon size={14} />
+              保存草稿
+            </Button>
+          </AlertDialog.Trigger>
+          <AlertDialog.Content maxWidth="380px">
+            <AlertDialog.Title>保存草稿</AlertDialog.Title>
+            <div className="mt-2">
+              <input
+                type="text"
+                placeholder={itemName || "输入草稿名称"}
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-blue-500/50"
+              />
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <AlertDialog.Cancel>
+                <Button variant="soft" color="gray">取消</Button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action>
+                <Button variant="solid" onClick={handleSaveDraft}>保存</Button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Root>
+
+        <Popover.Root open={draftPopoverOpen} onOpenChange={(open) => {
+          setDraftPopoverOpen(open);
+          if (open) setDraftList(listDrafts());
+        }}>
+          <Popover.Trigger>
+            <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
+              <ArchiveIcon size={14} />
+              草稿箱
+            </Button>
+          </Popover.Trigger>
+          <Popover.Content width="300px" className="max-h-[360px] overflow-y-auto">
+            <div className="flex flex-col gap-2">
+              <Text size="2" weight="medium">已保存的草稿</Text>
+              {draftList.length === 0 ? (
+                <Text size="1" color="gray" className="py-4 text-center">
+                  暂无草稿
+                </Text>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {draftList.map((draft) => (
+                    <div
+                      key={draft.id}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 transition group"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <Text size="2" className="truncate block">{draft.name}</Text>
+                        <Text size="1" color="gray" className="flex items-center gap-1">
+                          <ClockIcon size={10} />
+                          {formatDraftTime(draft.savedAt)}
+                        </Text>
+                      </div>
+                      <Button
+                        size="1"
+                        variant="ghost"
+                        onClick={() => handleRestoreDraft(draft)}
+                        className="opacity-0 group-hover:opacity-100 transition"
+                      >
+                        恢复
+                      </Button>
+                      <Button
+                        size="1"
+                        variant="ghost"
+                        color="red"
+                        onClick={() => handleDeleteDraft(draft.id)}
+                        className="opacity-0 group-hover:opacity-100 transition"
+                      >
+                        <TrashIcon size={12} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Popover.Content>
+        </Popover.Root>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Page>
+      {autoSaveDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-5xl px-1 lg:px-3.5 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -864,6 +1167,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             </p>
           </div>
           {stepsCard}
+          {draftActions}
         </div>
         <div className="flex flex-col gap-3.5 w-full lg:grow lg:min-w-0 lg:px-3.5 pt-1.5 pb-6">
           {missingEditContext && (
@@ -995,6 +1299,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
+                onBatchSetDevices={batchSetDownloadDevices}
+                onFillAll={fillAllDownloads}
               />
               <DownloadsSection
                 title="试用版下载配置"
@@ -1010,6 +1316,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
+                onBatchSetDevices={batchSetTrialDownloadDevices}
+                onFillAll={fillAllTrialDownloads}
               />
               <ExtSection
                 extRaw={extRaw}

@@ -1,11 +1,20 @@
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import {
+    createBlob,
+    createCommit,
+    createInitialCommit,
     createPullRequest,
+    createRef,
+    createTree,
     createUserRepo,
-    getRepoFile,
-    uploadBinaryFile,
-    uploadTextFile,
+    getBranchHead,
+    updateRef,
+    uploadFileToRepo,
+    validateRepoName,
+    type GitBlobRef,
     type RepoInfo,
+    ensureBase64,
+    getGithubTokenOrThrow,
 } from "./github-actions";
 import type {
     AssetDescriptor,
@@ -25,40 +34,142 @@ interface UploadManifestRequest {
     onProgress?: (message: string) => void;
 }
 
-async function uploadDownloadAsset(params: {
-    repo: RepoInfo;
-    asset: DownloadAssetDescriptor;
-    message: string;
-    token: string;
-    itemId: string;
-    manifestCommitSha: string;
-    onProgress?: (message: string) => void;
-    sha?: string;
-}) {
-    const { repo, asset, message, token, itemId, manifestCommitSha, onProgress, sha } = params;
+interface PreparedAsset {
+    path: string;
+    base64Content: string;
+}
 
-    let fileToUpload = asset.file;
-    if (asset.encryptOnUpload) {
-        if (!manifestCommitSha) {
-            throw new Error("缺少 manifest commit sha，无法提交加密文件密钥。");
+async function prepareFileAsset(asset: AssetDescriptor): Promise<PreparedAsset | null> {
+    if (asset.skipUpload || !asset.file) return null;
+    const buffer = await asset.file.arrayBuffer();
+    if (buffer.byteLength === 0) {
+        throw new Error(`文件 ${asset.path} 内容为空，拒绝上传空文件。`);
+    }
+    return { path: asset.path, base64Content: ensureBase64(buffer) };
+}
+
+async function prepareTextAsset(path: string, text: string): Promise<PreparedAsset> {
+    return { path, base64Content: ensureBase64(text) };
+}
+
+function isNotFoundError(error: unknown): boolean {
+    return error instanceof Error && /404/.test(error.message);
+}
+
+/**
+ * Resolve all assets to base64, handle encryption pre-processing,
+ * then upload everything in a single Git Data API commit.
+ */
+async function batchUpload(
+    repo: RepoInfo,
+    allAssets: PreparedAsset[],
+    message: string,
+    token: string,
+    onProgress?: (msg: string) => void,
+): Promise<string> {
+    const validAssets = allAssets.filter(Boolean) as PreparedAsset[];
+    if (validAssets.length === 0) return "";
+
+    // 1. Get current branch head — MUST happen before blob creation
+    //    because GitHub Git Data API requires at least one commit to exist.
+    onProgress?.("获取仓库状态...");
+    let parentCommitSha: string;
+    let baseTreeSha: string;
+    let isEmptyRepo = false;
+    try {
+        const head = await getBranchHead(repo, token);
+        parentCommitSha = head.commitSha;
+        baseTreeSha = head.treeSha;
+    } catch (error) {
+        // Empty repo: GitHub returns 404 (branch not found) or 409 ("Git Repository is empty")
+        if (!(isNotFoundError(error) || (error instanceof Error && /409/.test(error.message)))) {
+            throw error;
         }
-        onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
-        const encrypted = await encryptFileWithAes256Ecb(asset.file);
-        fileToUpload = encrypted.encryptedFile;
-        await submitResourceCryptoInfo({
-            id: itemId,
-            deviceId: asset.platformId,
-            hash: encrypted.encryptedHash,
-            key: encrypted.keyBase64,
-            repoOwner: repo.owner,
-            repoName: repo.name,
-            commitSha: manifestCommitSha,
-        });
-        onProgress?.(`已保存密钥映射 ${asset.platformId}`);
+        isEmptyRepo = true;
+        parentCommitSha = "";
+        baseTreeSha = "";
     }
 
-    onProgress?.(`上传包体 ${asset.platformId}`);
-    return uploadBinaryFile(repo, asset.path, fileToUpload, message, token, sha ? { sha } : undefined);
+    // 2. Handle empty repo: use Contents API for the first file to initialize the repo,
+    //    then Git Data API for the rest.
+    if (isEmptyRepo) {
+        onProgress?.("仓库为空，使用 Contents API 初始化...");
+        const firstAsset = validAssets[0];
+        const remainingAssets = validAssets.slice(1);
+
+        // Upload first file via Contents API (creates initial commit automatically)
+        await uploadFileToRepo({
+            token,
+            repo,
+            path: firstAsset.path,
+            content: firstAsset.base64Content,
+            message: `初始化仓库：添加 ${firstAsset.path}`,
+        });
+
+        if (remainingAssets.length === 0) {
+            return ""; // Only one file, done
+        }
+
+        // Now the repo has a commit — proceed with Git Data API for remaining files
+        onProgress?.(`仓库已初始化，批量上传剩余 ${remainingAssets.length} 个文件...`);
+        const head = await getBranchHead(repo, token);
+        parentCommitSha = head.commitSha;
+        baseTreeSha = head.treeSha;
+
+        // Fall through to the normal Git Data API flow below with remaining assets
+        return await batchUploadGitData(repo, remainingAssets, message, token, parentCommitSha, baseTreeSha, onProgress);
+    }
+
+    // 3. Non-empty repo: use Git Data API for all files
+    onProgress?.(`批量上传 ${validAssets.length} 个文件 (Git Data API)...`);
+    return await batchUploadGitData(repo, validAssets, message, token, parentCommitSha, baseTreeSha, onProgress);
+}
+
+/**
+ * Git Data API batch upload (blobs → tree → commit → update ref).
+ * Requires a non-empty repo with at least one existing commit.
+ */
+async function batchUploadGitData(
+    repo: RepoInfo,
+    assets: PreparedAsset[],
+    message: string,
+    token: string,
+    parentCommitSha: string,
+    baseTreeSha: string,
+    onProgress?: (msg: string) => void,
+): Promise<string> {
+    // 1. Create all blobs in parallel (batched in groups of 10 to avoid rate limits)
+    onProgress?.(`创建 ${assets.length} 个文件的 blob...`);
+    const blobRefs: GitBlobRef[] = [];
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < assets.length; i += BATCH_SIZE) {
+        const batch = assets.slice(i, i + BATCH_SIZE);
+        const shas = await Promise.all(
+            batch.map((a) => createBlob(repo, a.base64Content, token)),
+        );
+        for (let j = 0; j < batch.length; j++) {
+            blobRefs.push({
+                sha: shas[j],
+                path: batch[j].path,
+                mode: "100644",
+                type: "blob",
+            });
+        }
+    }
+
+    // 2. Create tree
+    onProgress?.("创建 tree...");
+    const treeSha = await createTree(repo, baseTreeSha, blobRefs, token);
+
+    // 3. Create commit
+    onProgress?.("创建 commit...");
+    const commitSha = await createCommit(repo, message, treeSha, parentCommitSha, token);
+
+    // 4. Update ref
+    onProgress?.("更新分支引用...");
+    await updateRef(repo, commitSha, token);
+
+    return commitSha;
 }
 
 export async function uploadManifestAndAssets({
@@ -72,8 +183,16 @@ export async function uploadManifestAndAssets({
 }: UploadManifestRequest): Promise<RepoInfo & { commitSha: string }> {
     const repoName =
         repoNameOverride || buildRepoName(itemId || itemName || "resource");
+
+    if (repoNameOverride) {
+        const nameError = validateRepoName(repoNameOverride);
+        if (nameError) {
+            throw new Error(`自定义仓库名无效：${nameError}`);
+        }
+    }
+
     onProgress?.(`创建仓库 ${repoName}`);
-    const repo = await createUserRepo(repoName, description || itemName || repoName);
+    const repo = await createUserRepo(repoName, description || itemName || repoName, token);
     const normalizedRepo: RepoInfo = {
         owner: repo.owner,
         name: repo.name,
@@ -81,121 +200,87 @@ export async function uploadManifestAndAssets({
         htmlUrl: repo.htmlUrl,
     };
 
-    const uploadBatch = async (assets: AssetDescriptor[], messagePrefix: string) => {
-        let lastSha = "";
-        for (const asset of assets) {
-            if (asset.skipUpload) continue;
-            onProgress?.(`上传文件 ${asset.path}`);
-            const res = await uploadBinaryFile(
-                normalizedRepo,
-                asset.path,
-                asset.file,
-                `${messagePrefix} ${asset.path}`,
-                token,
-            );
-            lastSha = res?.commit?.sha ?? lastSha;
-        }
-        return lastSha;
-    };
+    // --- Pre-process encryption (must happen before batching) ---
+    // Deep copy download assets to avoid mutating the original manifest
+    const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
+    const encryptionInfoMap = new Map<string, { hash: string; key: string }>();
 
-    let lastCommitSha = await uploadBatch(manifest.previewAssets, "Add preview");
-
-    if (manifest.iconAsset) {
-        if (!manifest.iconAsset.skipUpload) {
-            onProgress?.("上传图标");
-            const res = await uploadBinaryFile(
-                normalizedRepo,
-                manifest.iconAsset.path,
-                manifest.iconAsset.file,
-                "Add icon",
-                token,
-            );
-            lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+    for (const asset of downloadAssets) {
+        if (asset.skipUpload || !asset.encryptOnUpload) continue;
+        onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
+        const originalSize = asset.file.size;
+        const encrypted = await encryptFileWithAes256Ecb(asset.file);
+        // Verify encrypted output is valid
+        if (!encrypted.encryptedFile || encrypted.encryptedFile.size === 0) {
+            throw new Error(`设备 ${asset.platformId} 加密失败：输出文件为空。原始文件不会被上传。`);
         }
+        // Replace file with encrypted version for upload
+        asset.file = encrypted.encryptedFile;
+        encryptionInfoMap.set(asset.platformId, {
+            hash: encrypted.encryptedHash,
+            key: encrypted.keyBase64,
+        });
+        onProgress?.(`已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`);
     }
 
-    if (manifest.coverAsset) {
-        if (!manifest.coverAsset.skipUpload) {
-            onProgress?.("上传封面");
-            const res = await uploadBinaryFile(
-                normalizedRepo,
-                manifest.coverAsset.path,
-                manifest.coverAsset.file,
-                "Add cover",
-                token,
-            );
-            lastCommitSha = res?.commit?.sha ?? lastCommitSha;
-        }
+    // --- Prepare all assets as base64 ---
+    onProgress?.("准备文件...");
+    const allAssets: PreparedAsset[] = [];
+
+    for (const asset of manifest.previewAssets) {
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    // 先上传 manifest_v2.json：服务端需要凭这个 commit 校验加密资源密钥提交的所有权
-    onProgress?.("上传 manifest_v2.json");
-    const manifestRes = await uploadTextFile(
-        normalizedRepo,
-        PUBLISH_CONFIG.manifestFileName,
-        manifest.manifestJson,
-        "Add manifest_v2.json",
-        token,
-    );
-    const manifestCommitSha = manifestRes?.commit?.sha ?? "";
-    lastCommitSha = manifestCommitSha || lastCommitSha;
+    if (manifest.iconAsset && !manifest.iconAsset.skipUpload) {
+        const prepared = await prepareFileAsset(manifest.iconAsset);
+        if (prepared) allAssets.push(prepared);
+    }
 
-    const downloadAssets: DownloadAssetDescriptor[] = manifest.downloadAssets;
+    if (manifest.coverAsset && !manifest.coverAsset.skipUpload) {
+        const prepared = await prepareFileAsset(manifest.coverAsset);
+        if (prepared) allAssets.push(prepared);
+    }
+
+    allAssets.push(await prepareTextAsset(PUBLISH_CONFIG.manifestFileName, manifest.manifestJson));
+
     for (const asset of downloadAssets) {
         if (asset.skipUpload) continue;
-        const res = await uploadDownloadAsset({
-            repo: normalizedRepo,
-            asset,
-            message: `Add package for ${asset.platformId}`,
-            token,
-            itemId,
-            manifestCommitSha,
-            onProgress,
-        });
-        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
     for (const asset of manifest.trialDownloadAssets) {
         if (asset.skipUpload) continue;
-        onProgress?.(`上传试用包体 ${asset.platformId}`);
-        const res = await uploadBinaryFile(
-            normalizedRepo,
-            asset.path,
-            asset.file,
-            `Add trial package for ${asset.platformId}`,
-            token,
-        );
-        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    return { ...normalizedRepo, commitSha: lastCommitSha };
-}
+    // --- Single commit upload ---
+    onProgress?.(`批量上传 ${allAssets.length} 个文件...`);
+    const commitSha = await batchUpload(
+        normalizedRepo,
+        allAssets,
+        `Publish ${itemName || itemId || "resource"}`,
+        token,
+        onProgress,
+    );
 
-function isNotFoundError(error: unknown) {
-    return error instanceof Error && /404/.test(error.message);
-}
-
-async function getExistingFileSha({
-    repo,
-    path,
-    token,
-}: {
-    repo: RepoInfo;
-    path: string;
-    token: string;
-}) {
-    try {
-        const res = await getRepoFile({
-            repo,
-            path,
-            tokenOverride: token,
-            ref: repo.branch,
+    // --- Submit encryption keys (after commit exists) ---
+    for (const [platformId, info] of encryptionInfoMap) {
+        onProgress?.(`提交加密密钥 ${platformId}`);
+        await submitResourceCryptoInfo({
+            id: itemId,
+            deviceId: platformId,
+            hash: info.hash,
+            key: info.key,
+            repoOwner: normalizedRepo.owner,
+            repoName: normalizedRepo.name,
+            commitSha,
         });
-        return res?.sha as string | undefined;
-    } catch (error) {
-        if (isNotFoundError(error)) return undefined;
-        throw error;
     }
+
+    return { ...normalizedRepo, commitSha };
 }
 
 export async function upsertManifestAndAssets({
@@ -210,9 +295,10 @@ export async function upsertManifestAndAssets({
     onProgress?: (message: string) => void;
 }): Promise<RepoInfo & { commitSha: string }> {
     const parsedManifest = JSON.parse(manifest.manifestJson) as {
-        item?: { id?: string };
+        item?: { id?: string; name?: string };
     };
     const itemId = parsedManifest.item?.id?.trim() || "";
+    const itemName = parsedManifest.item?.name?.trim() || "";
     if (!itemId) {
         throw new Error("缺少资源 ID，无法保存加密文件密钥。");
     }
@@ -221,98 +307,84 @@ export async function upsertManifestAndAssets({
         branch: repo.branch || PUBLISH_CONFIG.defaultBranch,
     };
 
-    let lastCommitSha = "";
+    // --- Pre-process encryption ---
+    const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
+    const encryptionInfoMap = new Map<string, { hash: string; key: string }>();
 
-    const uploadAsset = async (asset: AssetDescriptor | DownloadAssetDescriptor, msg: string) => {
-        if (!asset || asset.skipUpload) return;
-        const sha = await getExistingFileSha({
-            repo: targetRepo,
-            path: asset.path,
-            token,
-        }).catch(() => undefined);
-        onProgress?.(`上传文件 ${asset.path}`);
-        const res = await uploadBinaryFile(
-            targetRepo,
-            asset.path,
-            asset.file,
-            msg,
-            token,
-            { sha },
-        );
-        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
-    };
+    for (const asset of downloadAssets) {
+        if (asset.skipUpload || !asset.encryptOnUpload) continue;
+        onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
+        const originalSize = asset.file.size;
+        const encrypted = await encryptFileWithAes256Ecb(asset.file);
+        if (!encrypted.encryptedFile || encrypted.encryptedFile.size === 0) {
+            throw new Error(`设备 ${asset.platformId} 加密失败：输出文件为空。原始文件不会被上传。`);
+        }
+        asset.file = encrypted.encryptedFile;
+        encryptionInfoMap.set(asset.platformId, {
+            hash: encrypted.encryptedHash,
+            key: encrypted.keyBase64,
+        });
+        onProgress?.(`已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`);
+    }
+
+    // --- Prepare all assets ---
+    onProgress?.("准备文件...");
+    const allAssets: PreparedAsset[] = [];
 
     for (const asset of manifest.previewAssets) {
-        await uploadAsset(asset, `Update ${asset.path}`);
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    if (manifest.iconAsset) {
-        await uploadAsset(manifest.iconAsset, "Update icon");
+    if (manifest.iconAsset && !manifest.iconAsset.skipUpload) {
+        const prepared = await prepareFileAsset(manifest.iconAsset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    if (manifest.coverAsset) {
-        await uploadAsset(manifest.coverAsset, "Update cover");
+    if (manifest.coverAsset && !manifest.coverAsset.skipUpload) {
+        const prepared = await prepareFileAsset(manifest.coverAsset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    // 先更新 manifest_v2.json：服务端凭这个 commit 校验加密资源密钥提交的所有权
-    const manifestSha = await getExistingFileSha({
-        repo: targetRepo,
-        path: PUBLISH_CONFIG.manifestFileName,
-        token,
-    }).catch(() => undefined);
+    allAssets.push(await prepareTextAsset(PUBLISH_CONFIG.manifestFileName, manifest.manifestJson));
 
-    onProgress?.("更新 manifest_v2.json");
-    const manifestRes = await uploadTextFile(
-        targetRepo,
-        PUBLISH_CONFIG.manifestFileName,
-        manifest.manifestJson,
-        "Update manifest_v2.json",
-        token,
-        { sha: manifestSha },
-    );
-    const manifestCommitSha = manifestRes?.commit?.sha ?? "";
-    lastCommitSha = manifestCommitSha || lastCommitSha;
-
-    for (const asset of manifest.downloadAssets) {
-        if (!asset || asset.skipUpload) continue;
-        const sha = await getExistingFileSha({
-            repo: targetRepo,
-            path: asset.path,
-            token,
-        }).catch(() => undefined);
-        const res = await uploadDownloadAsset({
-            repo: targetRepo,
-            asset,
-            message: `Update package for ${asset.platformId}`,
-            token,
-            itemId,
-            manifestCommitSha,
-            onProgress,
-            sha,
-        });
-        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+    for (const asset of downloadAssets) {
+        if (asset.skipUpload) continue;
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
     for (const asset of manifest.trialDownloadAssets) {
-        if (!asset || asset.skipUpload) continue;
-        const sha = await getExistingFileSha({
-            repo: targetRepo,
-            path: asset.path,
-            token,
-        }).catch(() => undefined);
-        onProgress?.(`上传试用包体 ${asset.platformId}`);
-        const res = await uploadBinaryFile(
-            targetRepo,
-            asset.path,
-            asset.file,
-            `Update trial package for ${asset.platformId}`,
-            token,
-            { sha },
-        );
-        lastCommitSha = res?.commit?.sha ?? lastCommitSha;
+        if (asset.skipUpload) continue;
+        const prepared = await prepareFileAsset(asset);
+        if (prepared) allAssets.push(prepared);
     }
 
-    return { ...targetRepo, commitSha: lastCommitSha };
+    // --- Single commit upload ---
+    onProgress?.(`批量更新 ${allAssets.length} 个文件...`);
+    const commitSha = await batchUpload(
+        targetRepo,
+        allAssets,
+        `Update ${itemName || itemId || "resource"}`,
+        token,
+        onProgress,
+    );
+
+    // --- Submit encryption keys ---
+    for (const [platformId, info] of encryptionInfoMap) {
+        onProgress?.(`提交加密密钥 ${platformId}`);
+        await submitResourceCryptoInfo({
+            id: itemId,
+            deviceId: platformId,
+            hash: info.hash,
+            key: info.key,
+            repoOwner: targetRepo.owner,
+            repoName: targetRepo.name,
+            commitSha,
+        });
+    }
+
+    return { ...targetRepo, commitSha };
 }
 
 export async function submitPullRequest({

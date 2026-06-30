@@ -259,7 +259,7 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
         restype: payload.restype,
         repo_owner: payload.repoInfo.owner,
         repo_name: payload.repoInfo.name,
-        repo_commit_hash: payload.repoInfo.commitSha,
+        repo_commit_hash: payload.repoInfo.commitSha.slice(0, 7),
         icon: payload.iconPath,
         cover: payload.coverPath,
         tags: payload.tags.join(";"),
