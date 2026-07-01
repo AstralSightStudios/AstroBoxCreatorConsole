@@ -57,6 +57,71 @@ async function prepareTextAsset(
   return { path, base64Content: ensureBase64(text) };
 }
 
+async function encryptDownloadAssets(
+  downloadAssets: DownloadAssetDescriptor[],
+  onProgress?: (message: string) => void,
+): Promise<Map<string, { hash: string; key: string }>> {
+  const encryptionInfoMap = new Map<string, { hash: string; key: string }>();
+  const encryptedByPath = new Map<
+    string,
+    {
+      encryptedFile: File;
+      hash: string;
+      key: string;
+      sizeBefore: number;
+      sizeAfter: number;
+      platformIds: string[];
+    }
+  >();
+
+  for (const asset of downloadAssets) {
+    if (asset.skipUpload || !asset.encryptOnUpload) continue;
+
+    const packageKey = asset.path.trim();
+    const cached = encryptedByPath.get(packageKey);
+    if (cached) {
+      asset.file = cached.encryptedFile;
+      cached.platformIds.push(asset.platformId);
+      encryptionInfoMap.set(asset.platformId, {
+        hash: cached.hash,
+        key: cached.key,
+      });
+      onProgress?.(
+        `复用加密包体 ${asset.platformId}：${packageKey}，hash ${cached.hash.slice(0, 12)}…`,
+      );
+      continue;
+    }
+
+    onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
+    const originalSize = asset.file.size;
+    const encrypted = await encryptFileWithAes256Ecb(asset.file);
+    if (!encrypted.encryptedFile || encrypted.encryptedFile.size === 0) {
+      throw new Error(
+        `设备 ${asset.platformId} 加密失败：输出文件为空。原始文件不会被上传。`,
+      );
+    }
+
+    asset.file = encrypted.encryptedFile;
+    encryptionInfoMap.set(asset.platformId, {
+      hash: encrypted.encryptedHash,
+      key: encrypted.keyBase64,
+    });
+    encryptedByPath.set(packageKey, {
+      encryptedFile: encrypted.encryptedFile,
+      hash: encrypted.encryptedHash,
+      key: encrypted.keyBase64,
+      sizeBefore: originalSize,
+      sizeAfter: encrypted.encryptedFile.size,
+      platformIds: [asset.platformId],
+    });
+    onProgress?.(
+      `已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`,
+    );
+  }
+
+  return encryptionInfoMap;
+}
+
 function isNotFoundError(error: unknown): boolean {
   return error instanceof Error && /404/.test(error.message);
 }
@@ -239,29 +304,7 @@ export async function uploadManifestAndAssets({
   // --- Pre-process encryption (must happen before batching) ---
   // Deep copy download assets to avoid mutating the original manifest
   const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
-  const encryptionInfoMap = new Map<string, { hash: string; key: string }>();
-
-  for (const asset of downloadAssets) {
-    if (asset.skipUpload || !asset.encryptOnUpload) continue;
-    onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
-    const originalSize = asset.file.size;
-    const encrypted = await encryptFileWithAes256Ecb(asset.file);
-    // Verify encrypted output is valid
-    if (!encrypted.encryptedFile || encrypted.encryptedFile.size === 0) {
-      throw new Error(
-        `设备 ${asset.platformId} 加密失败：输出文件为空。原始文件不会被上传。`,
-      );
-    }
-    // Replace file with encrypted version for upload
-    asset.file = encrypted.encryptedFile;
-    encryptionInfoMap.set(asset.platformId, {
-      hash: encrypted.encryptedHash,
-      key: encrypted.keyBase64,
-    });
-    onProgress?.(
-      `已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`,
-    );
-  }
+  const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
   // --- Prepare all assets as base64 ---
   onProgress?.("准备文件...");
@@ -354,27 +397,7 @@ export async function upsertManifestAndAssets({
 
   // --- Pre-process encryption ---
   const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
-  const encryptionInfoMap = new Map<string, { hash: string; key: string }>();
-
-  for (const asset of downloadAssets) {
-    if (asset.skipUpload || !asset.encryptOnUpload) continue;
-    onProgress?.(`加密包体 ${asset.platformId}（AES-256-ECB）`);
-    const originalSize = asset.file.size;
-    const encrypted = await encryptFileWithAes256Ecb(asset.file);
-    if (!encrypted.encryptedFile || encrypted.encryptedFile.size === 0) {
-      throw new Error(
-        `设备 ${asset.platformId} 加密失败：输出文件为空。原始文件不会被上传。`,
-      );
-    }
-    asset.file = encrypted.encryptedFile;
-    encryptionInfoMap.set(asset.platformId, {
-      hash: encrypted.encryptedHash,
-      key: encrypted.keyBase64,
-    });
-    onProgress?.(
-      `已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`,
-    );
-  }
+  const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
   // --- Prepare all assets ---
   onProgress?.("准备文件...");
