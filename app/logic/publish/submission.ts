@@ -14,8 +14,10 @@ import {
   type GitBlobRef,
   type RepoInfo,
   ensureBase64,
+  ensureMainResourceBranch,
   getGithubTokenOrThrow,
 } from "./github-actions";
+import { MAIN_RESOURCE_BRANCH, toMainResourceRepo } from "./branch";
 import type {
   AssetDescriptor,
   DownloadAssetDescriptor,
@@ -294,12 +296,13 @@ export async function uploadManifestAndAssets({
     `AstroBox resource of ${itemName}`,
     token,
   );
-  const normalizedRepo: RepoInfo = {
+  const normalizedRepo: RepoInfo = toMainResourceRepo({
     owner: repo.owner,
     name: repo.name,
-    branch: repo.branch || PUBLISH_CONFIG.defaultBranch,
+    branch: repo.branch,
     htmlUrl: repo.htmlUrl,
-  };
+  });
+  await ensureMainResourceBranch(normalizedRepo, token);
 
   // --- Pre-process encryption (must happen before batching) ---
   // Deep copy download assets to avoid mutating the original manifest
@@ -390,10 +393,11 @@ export async function upsertManifestAndAssets({
   if (!itemId) {
     throw new Error("缺少资源 ID，无法保存加密文件密钥。");
   }
-  const targetRepo: RepoInfo = {
+  const targetRepo: RepoInfo = toMainResourceRepo({
     ...repo,
-    branch: repo.branch || PUBLISH_CONFIG.defaultBranch,
-  };
+    branch: repo.branch || MAIN_RESOURCE_BRANCH,
+  });
+  await ensureMainResourceBranch(targetRepo, token);
 
   // --- Pre-process encryption ---
   const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));

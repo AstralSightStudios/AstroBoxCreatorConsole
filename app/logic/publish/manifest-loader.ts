@@ -1,5 +1,6 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
 import type { CatalogEntry } from "./catalog";
+import { MAIN_RESOURCE_BRANCH } from "./branch";
 import { getRepoFile, type RepoInfo } from "./github-actions";
 import type {
     ManifestDownloadInfo,
@@ -43,7 +44,7 @@ export async function fetchManifestForCatalogEntry(options: {
     ref?: string;
 }): Promise<{ manifest: ManifestV2; raw: string; repo: RepoInfo; sha?: string }> {
     const { entry, token, ref } = options;
-    const branch = PUBLISH_CONFIG.defaultBranch;
+    const branch = MAIN_RESOURCE_BRANCH;
     const repo: RepoInfo = {
         owner: entry.repo_owner,
         name: entry.repo_name,

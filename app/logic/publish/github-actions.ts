@@ -1,10 +1,11 @@
-import { PUBLISH_CONFIG } from "~/config/publish";
+import { MAIN_RESOURCE_BRANCH } from "./branch";
 import { loadAccountState } from "../account/store";
 
 export interface RepoInfo {
     owner: string;
     name: string;
     branch: string;
+    sourceBranch?: string;
     htmlUrl?: string;
     commitSha?: string;
 }
@@ -113,7 +114,7 @@ export async function createUserRepo(
         description,
         private: false,
         auto_init: true,
-        default_branch: PUBLISH_CONFIG.defaultBranch,
+        default_branch: MAIN_RESOURCE_BRANCH,
     };
 
     const state = loadAccountState();
@@ -171,7 +172,7 @@ export async function createUserRepo(
     return {
         owner: data.owner?.login || currentOwner,
         name: data.name,
-        branch: data.default_branch || PUBLISH_CONFIG.defaultBranch,
+        branch: data.default_branch || MAIN_RESOURCE_BRANCH,
         htmlUrl: data.html_url,
     };
 }
@@ -186,6 +187,77 @@ export function ensureBase64(content: ArrayBuffer | string) {
         binary += String.fromCharCode(byte);
     });
     return btoa(binary);
+}
+
+function encodeGitRefName(refName: string) {
+    return refName
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/");
+}
+
+async function getBranchRefSha(repo: RepoInfo, branch: string, token: string) {
+    const data = await githubFetch<{ object?: { sha?: string } }>(
+        `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeGitRefName(branch)}`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+    const sha = data.object?.sha;
+    if (!sha) {
+        throw new Error(`无法读取分支 ${repo.owner}/${repo.name}#${branch} 的提交。`);
+    }
+    return sha;
+}
+
+async function getRepositoryDefaultBranch(repo: RepoInfo, token: string) {
+    const data = await githubFetch<{ default_branch?: string }>(
+        `https://api.github.com/repos/${repo.owner}/${repo.name}`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+    return data.default_branch?.trim() || MAIN_RESOURCE_BRANCH;
+}
+
+export async function ensureMainResourceBranch(repo: RepoInfo, token: string) {
+    if (repo.branch !== MAIN_RESOURCE_BRANCH) return;
+    let sourceBranch = repo.sourceBranch?.trim();
+
+    try {
+        await getBranchRefSha(repo, MAIN_RESOURCE_BRANCH, token);
+        return;
+    } catch (error) {
+        if (!(error instanceof Error) || !/404/.test(error.message)) {
+            throw error;
+        }
+        sourceBranch ||= await getRepositoryDefaultBranch(repo, token);
+        if (sourceBranch === MAIN_RESOURCE_BRANCH) return;
+    }
+
+    const sourceSha = await getBranchRefSha(repo, sourceBranch, token);
+    try {
+        await githubFetch<any>(
+            `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    ref: `refs/heads/${MAIN_RESOURCE_BRANCH}`,
+                    sha: sourceSha,
+                }),
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+    } catch (error) {
+        if (error instanceof Error && /422/.test(error.message)) {
+            await getBranchRefSha(repo, MAIN_RESOURCE_BRANCH, token);
+            return;
+        }
+        throw error;
+    }
 }
 
 export async function getRepoFile(params: {
@@ -318,12 +390,11 @@ export async function getBranchHead(
     repo: RepoInfo,
     token: string,
 ): Promise<{ commitSha: string; treeSha: string }> {
-    const branchRef = `refs/heads/${repo.branch}`;
     try {
         const data = await githubFetch<{
             object: { sha: string };
         }>(
-            `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeURIComponent(repo.branch)}`,
+            `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeGitRefName(repo.branch)}`,
             {
                 headers: { Authorization: `Bearer ${token}` },
             },
@@ -501,7 +572,7 @@ export async function updateRef(
     commitSha: string,
     token: string,
 ): Promise<void> {
-    const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeURIComponent(repo.branch)}`;
+    const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeGitRefName(repo.branch)}`;
     const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",

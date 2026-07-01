@@ -1,5 +1,6 @@
 import { Button, TextArea } from "@radix-ui/themes";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { SectionCard } from "./shared";
 import { GitPullRequestIcon } from "@phosphor-icons/react";
 
@@ -31,7 +32,7 @@ export function PrStepSection({
       description={
         isUpdate
           ? `向 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName} 的现有 PR 推送最新提交。`
-          : `将当前仓库的 ${PUBLISH_CONFIG.defaultBranch} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`
+          : `将当前仓库的 ${MAIN_RESOURCE_BRANCH} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`
       }
       className="gap-0!"
       padding={false}

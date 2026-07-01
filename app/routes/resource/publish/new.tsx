@@ -59,6 +59,7 @@ import {
   fetchManifestForCatalogEntry,
 } from "~/logic/publish/manifest-loader";
 import { syncBranchWithUpstream } from "~/logic/publish/fork";
+import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import {
   listDrafts,
   saveDraft,
@@ -269,10 +270,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           throw new Error("GitHub 未登录，无法加载资源。");
         }
         const catalogEntry = editContext.catalog.entry;
-        const ref =
-          catalogEntry.repo_commit_hash ||
-          editContext.catalog.ref ||
-          PUBLISH_CONFIG.defaultBranch;
+        const ref = catalogEntry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
         const { manifest, repo } = await fetchManifestForCatalogEntry({
           entry: catalogEntry,
           token,
@@ -618,7 +616,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           ? {
               owner: editContext.catalog.entry.repo_owner,
               name: editContext.catalog.entry.repo_name,
-              branch: PUBLISH_CONFIG.defaultBranch,
+              branch: MAIN_RESOURCE_BRANCH,
             }
           : null);
       if (!targetRepo) {

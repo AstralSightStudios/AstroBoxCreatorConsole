@@ -30,6 +30,7 @@ import {
   buildRawFileUrl,
   type ManifestV2,
 } from "~/logic/publish/manifest-loader";
+import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile, type RepoInfo } from "~/logic/publish/github-actions";
 
 const STATE_LABELS: Record<ReviewState, string> = {
@@ -139,11 +140,11 @@ function extractCatalogEntriesFromFiles(files: GithubPullFile[]) {
 }
 
 async function fetchManifest(entry: CatalogEntry, token: string) {
-  const ref = entry.repo_commit_hash || PUBLISH_CONFIG.defaultBranch;
+  const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
   const repo: RepoInfo = {
     owner: entry.repo_owner,
     name: entry.repo_name,
-    branch: PUBLISH_CONFIG.defaultBranch,
+    branch: MAIN_RESOURCE_BRANCH,
   };
   const file = await getRepoFile({
     repo,
@@ -205,7 +206,7 @@ async function loadPrResourcePreviews(
   const entries = extractCatalogEntriesFromFiles(files);
   return Promise.all(
     entries.map(async (entry) => {
-      const ref = entry.repo_commit_hash || PUBLISH_CONFIG.defaultBranch;
+      const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
       try {
         const manifest = await fetchManifest(entry, token);
         const iconPath = manifest.item?.icon || entry.icon;
