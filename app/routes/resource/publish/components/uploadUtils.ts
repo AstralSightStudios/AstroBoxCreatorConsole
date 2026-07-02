@@ -1,7 +1,7 @@
 import imageCompression from "browser-image-compression";
 import type { UploadItem } from "./shared";
 
-const COMPRESS_TARGET_HEIGHT = 400;
+const COMPRESS_TARGET_HEIGHT = 720;
 
 function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
     return new Promise((resolve, reject) => {
