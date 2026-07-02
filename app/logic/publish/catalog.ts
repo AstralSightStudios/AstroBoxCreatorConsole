@@ -30,6 +30,38 @@ export interface CatalogUpdateRequest {
     paidType?: string;
 }
 
+const CATALOG_CSV_COLUMNS = [
+    "id",
+    "name",
+    "restype",
+    "repo_owner",
+    "repo_name",
+    "repo_commit_hash",
+    "icon",
+    "cover",
+    "tags",
+    "device_vendors",
+    "devices",
+    "paid_type",
+] as const satisfies ReadonlyArray<keyof CatalogEntry>;
+
+const CATALOG_CSV_HEADER = CATALOG_CSV_COLUMNS.join(",");
+const CSV_STRUCTURAL_CHAR_PATTERN = /[,\r\n\0]/;
+
+export function validateCatalogEntryForCsv(entry: CatalogEntry) {
+    for (const column of CATALOG_CSV_COLUMNS) {
+        const value = entry[column];
+        if (typeof value !== "string") {
+            throw new Error(`CSV 字段 ${column} 必须是字符串，无法写入目录。`);
+        }
+        if (CSV_STRUCTURAL_CHAR_PATTERN.test(value)) {
+            throw new Error(
+                `CSV 字段 ${column} 不能包含逗号、换行或 NUL 字符，否则会破坏目录结构。请修改后重试。`,
+            );
+        }
+    }
+}
+
 export function decodeCatalogContent(encoded?: string) {
     if (!encoded) return "";
     return new TextDecoder().decode(
@@ -197,36 +229,43 @@ async function updateFile(
 }
 
 function appendOrReplaceCsvRow(existingCsv: string, entry: CatalogEntry) {
+    validateCatalogEntryForCsv(entry);
+
     const rows = existingCsv.split(/\r?\n/).filter((line) => line.trim().length > 0);
     const header = rows[0] || "";
     const dataRows = rows.slice(1);
 
-    const rowString = [
-        entry.id,
-        entry.name,
-        entry.restype,
-        entry.repo_owner,
-        entry.repo_name,
-        entry.repo_commit_hash,
-        entry.icon,
-        entry.cover,
-        entry.tags,
-        entry.device_vendors,
-        entry.devices,
-        entry.paid_type,
-    ].join(",");
+    const rowString = CATALOG_CSV_COLUMNS.map((column) => entry[column]).join(",");
 
     const filtered = dataRows.filter((line) => !line.startsWith(`${entry.id},`));
     filtered.push(rowString);
-    return [header || "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type", ...filtered].join(
-        "\n",
-    );
+    return [header || CATALOG_CSV_HEADER, ...filtered].join("\n");
 }
 
 export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
     const token = getGithubTokenOrThrow();
     const upstreamOwner = PUBLISH_CONFIG.upstreamRepoOwner;
     const upstreamRepo = PUBLISH_CONFIG.upstreamRepoName;
+    const vendors = Array.from(
+        new Set(payload.devices.map((d) => d.vendor).filter(Boolean)),
+    ).join(";");
+    const deviceIds = Array.from(new Set(payload.devices.map((d) => d.id))).join(";");
+
+    const entry: CatalogEntry = {
+        id: payload.itemId.trim(),
+        name: payload.itemName.trim(),
+        restype: payload.restype,
+        repo_owner: payload.repoInfo.owner,
+        repo_name: payload.repoInfo.name,
+        repo_commit_hash: payload.repoInfo.commitSha.slice(0, 7),
+        icon: payload.iconPath,
+        cover: payload.coverPath,
+        tags: payload.tags.join(";"),
+        device_vendors: vendors,
+        devices: deviceIds,
+        paid_type: payload.paidType?.trim() ?? "",
+    };
+    validateCatalogEntryForCsv(entry);
 
     const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
 
@@ -247,26 +286,6 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
         branchName,
     );
     const csvContent = decodeCatalogContent(fileData.content);
-
-    const vendors = Array.from(
-        new Set(payload.devices.map((d) => d.vendor).filter(Boolean)),
-    ).join(";");
-    const deviceIds = Array.from(new Set(payload.devices.map((d) => d.id))).join(";");
-
-    const entry: CatalogEntry = {
-        id: payload.itemId.trim(),
-        name: payload.itemName.trim(),
-        restype: payload.restype,
-        repo_owner: payload.repoInfo.owner,
-        repo_name: payload.repoInfo.name,
-        repo_commit_hash: payload.repoInfo.commitSha.slice(0, 7),
-        icon: payload.iconPath,
-        cover: payload.coverPath,
-        tags: payload.tags.join(";"),
-        device_vendors: vendors,
-        devices: deviceIds,
-        paid_type: payload.paidType?.trim() ?? "",
-    };
 
     const updatedCsv = appendOrReplaceCsvRow(csvContent, entry);
     const encoded = ensureBase64(updatedCsv);
@@ -325,6 +344,8 @@ export async function updateCatalogEntryOnBranch(params: {
     entry: CatalogEntry;
 }) {
     const { token, owner, repo, branch, entry } = params;
+    validateCatalogEntryForCsv(entry);
+
     const fileData = await getFileContent(
         token,
         owner,
