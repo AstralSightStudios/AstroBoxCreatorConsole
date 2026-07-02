@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import {
   buildManifest,
@@ -35,6 +36,7 @@ import {
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
 import {
+  compressImageFile,
   createExistingUploadItem,
   createUploadItem,
   revokeUrl,
@@ -451,30 +453,55 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     ],
   );
 
-  const handlePreviewUpload = (files: FileList | null) => {
+  const handlePreviewUpload = async (files: FileList | null) => {
     if (!files?.length) return;
-    const newItems = Array.from(files).map(createUploadItem);
+    const processed = await Promise.all(
+      Array.from(files).map(async (file) => {
+        try {
+          return await compressImageFile(file);
+        } catch (err) {
+          toast.error(`图片处理失败：${file.name}`);
+          console.error("compress preview failed:", err);
+          return file;
+        }
+      }),
+    );
+    const newItems = processed.map(createUploadItem);
     setPreviews((prev) => [...prev, ...newItems]);
     if (usePreviewAsCover && !coverPreviewId) {
       setCoverPreviewId(newItems[0]?.id ?? null);
     }
   };
 
-  const handleIconUpload = (files: FileList | null) => {
+  const handleIconUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    let processed = file;
+    try {
+      processed = await compressImageFile(file);
+    } catch (err) {
+      toast.error("图标处理失败，将使用原图");
+      console.error("compress icon failed:", err);
+    }
     setIcon((prev) => {
       revokeUrl(prev);
-      return createUploadItem(file);
+      return createUploadItem(processed);
     });
   };
 
-  const handleCoverUpload = (files: FileList | null) => {
+  const handleCoverUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    let processed = file;
+    try {
+      processed = await compressImageFile(file);
+    } catch (err) {
+      toast.error("封面处理失败，将使用原图");
+      console.error("compress cover failed:", err);
+    }
     setCover((prev) => {
       revokeUrl(prev);
-      return createUploadItem(file);
+      return createUploadItem(processed);
     });
   };
 
