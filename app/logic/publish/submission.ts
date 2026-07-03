@@ -2,12 +2,11 @@ import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import {
   createBlob,
   createCommit,
-  createInitialCommit,
   createPullRequest,
-  createRef,
   createTree,
   createUserRepo,
   getBranchHead,
+  isGithubStatus,
   updateRef,
   uploadFileToRepo,
   validateRepoName,
@@ -15,7 +14,6 @@ import {
   type RepoInfo,
   ensureBase64,
   ensureMainResourceBranch,
-  getGithubTokenOrThrow,
 } from "./github-actions";
 import { MAIN_RESOURCE_BRANCH, toMainResourceRepo } from "./branch";
 import type {
@@ -124,8 +122,9 @@ async function encryptDownloadAssets(
   return encryptionInfoMap;
 }
 
-function isNotFoundError(error: unknown): boolean {
-  return error instanceof Error && /404/.test(error.message);
+function isEmptyRepoError(error: unknown): boolean {
+  // Empty repo: GitHub returns 404 (branch not found) or 409 ("Git Repository is empty")
+  return isGithubStatus(error, 404, 409);
 }
 
 /**
@@ -153,11 +152,7 @@ async function batchUpload(
     parentCommitSha = head.commitSha;
     baseTreeSha = head.treeSha;
   } catch (error) {
-    // Empty repo: GitHub returns 404 (branch not found) or 409 ("Git Repository is empty")
-    if (!(
-      isNotFoundError(error) ||
-      (error instanceof Error && /409/.test(error.message))
-    )) {
+    if (!isEmptyRepoError(error)) {
       throw error;
     }
     isEmptyRepo = true;
@@ -231,24 +226,34 @@ async function batchUploadGitData(
   baseTreeSha: string,
   onProgress?: (msg: string) => void,
 ): Promise<string> {
-  // 1. Create all blobs in parallel (batched in groups of 10 to avoid rate limits)
+  // 1. Create blobs with low concurrency. GitHub 明确要求写请求避免并发，
+  //    高并发 POST /git/blobs 会触发二级速率限制（secondary rate limit）。
   onProgress?.(`创建 ${assets.length} 个文件的 blob...`);
-  const blobRefs: GitBlobRef[] = [];
-  const BATCH_SIZE = 10;
-  for (let i = 0; i < assets.length; i += BATCH_SIZE) {
-    const batch = assets.slice(i, i + BATCH_SIZE);
-    const shas = await Promise.all(
-      batch.map((a) => createBlob(repo, a.base64Content, token)),
-    );
-    for (let j = 0; j < batch.length; j++) {
-      blobRefs.push({
-        sha: shas[j],
-        path: batch[j].path,
+  const BLOB_CONCURRENCY = 2;
+  const blobRefs: GitBlobRef[] = new Array(assets.length);
+  let nextIndex = 0;
+  let completed = 0;
+  const worker = async () => {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= assets.length) return;
+      const sha = await createBlob(repo, assets[i].base64Content, token);
+      blobRefs[i] = {
+        sha,
+        path: assets[i].path,
         mode: "100644",
         type: "blob",
-      });
+      };
+      completed++;
+      onProgress?.(`已上传 blob ${completed}/${assets.length}（${assets[i].path}）`);
     }
-  }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(BLOB_CONCURRENCY, assets.length) },
+      () => worker(),
+    ),
+  );
 
   // 2. Create tree
   onProgress?.("创建 tree...");

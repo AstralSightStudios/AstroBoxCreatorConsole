@@ -53,30 +53,182 @@ export function validateRepoName(name: string): string | null {
     return null; // valid
 }
 
-export async function githubFetch<T>(url: string, init: RequestInit): Promise<T> {
-    const response = await fetch(url, {
-        ...init,
-        headers: {
-            Accept: "application/vnd.github+json",
-            ...(init.headers || {}),
-        },
-    });
+// --- GitHub API core: typed errors + timeout + retry with backoff ---
 
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`GitHub API ${response.status}: ${text}`);
+const DEFAULT_TIMEOUT_MS = 60_000;
+// 大文件（blob / Contents API PUT）在慢速网络下可能传很久，放宽超时
+const UPLOAD_TIMEOUT_MS = 300_000;
+const DEFAULT_RETRIES = 3;
+const MAX_RETRY_WAIT_MS = 60_000;
+
+export interface GithubFetchOptions {
+    timeoutMs?: number;
+    retries?: number;
+}
+
+export class GithubApiError extends Error {
+    readonly status: number;
+    readonly url: string;
+    readonly body: string;
+
+    constructor(status: number, url: string, body: string, message?: string) {
+        super(message ?? buildGithubErrorMessage(status, body));
+        this.name = "GithubApiError";
+        this.status = status;
+        this.url = url;
+        this.body = body;
+    }
+}
+
+export function isGithubStatus(error: unknown, ...codes: number[]): boolean {
+    return error instanceof GithubApiError && codes.includes(error.status);
+}
+
+/** Prefix an error with a context message while preserving the HTTP status. */
+export function withGithubContext(error: unknown, context: string): Error {
+    if (error instanceof GithubApiError) {
+        return new GithubApiError(
+            error.status,
+            error.url,
+            error.body,
+            `${context}: ${error.message}`,
+        );
+    }
+    if (error instanceof Error) {
+        return new Error(`${context}: ${error.message}`);
+    }
+    return new Error(`${context}: ${String(error)}`);
+}
+
+function parseGithubErrorDetail(body: string): string {
+    try {
+        const parsed = JSON.parse(body);
+        if (parsed && typeof parsed.message === "string") {
+            const errors = Array.isArray(parsed.errors) && parsed.errors.length
+                ? ` (${JSON.stringify(parsed.errors)})`
+                : "";
+            return `${parsed.message}${errors}`;
+        }
+    } catch {
+        // not JSON — fall through to raw text
+    }
+    return body.slice(0, 300);
+}
+
+function buildGithubErrorMessage(status: number, body: string): string {
+    if (status === 401) {
+        return "GitHub 登录已失效（401），请重新登录 GitHub 后重试。";
+    }
+    const detail = parseGithubErrorDetail(body);
+    if (status === 403 && /rate limit|abuse/i.test(body)) {
+        return `GitHub 触发了速率限制（403），请稍等一分钟后重试。${detail}`;
+    }
+    return `GitHub API ${status}: ${detail}`;
+}
+
+function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimited(status: number, response: Response, body: string): boolean {
+    if (status === 429) return true;
+    if (status !== 403) return false;
+    if (response.headers.get("retry-after")) return true;
+    if (response.headers.get("x-ratelimit-remaining") === "0") return true;
+    return /rate limit|abuse/i.test(body);
+}
+
+function retryDelayMs(attempt: number, response?: Response): number {
+    const retryAfter = Number(response?.headers.get("retry-after"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(retryAfter * 1000, MAX_RETRY_WAIT_MS);
+    }
+    const reset = Number(response?.headers.get("x-ratelimit-reset"));
+    if (Number.isFinite(reset) && reset > 0) {
+        const wait = reset * 1000 - Date.now();
+        if (wait > 0) return Math.min(wait + 1000, MAX_RETRY_WAIT_MS);
+    }
+    return Math.min(800 * 2 ** attempt, 15_000) + Math.random() * 400;
+}
+
+/**
+ * Fetch against the GitHub API with:
+ * - request timeout (AbortController)
+ * - automatic retry with backoff for network errors, 5xx, 429 and
+ *   403 secondary-rate-limit responses (honoring Retry-After)
+ * - typed GithubApiError carrying the HTTP status for callers to branch on
+ */
+export async function githubFetch<T>(
+    url: string,
+    init: RequestInit,
+    options?: GithubFetchOptions,
+): Promise<T> {
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const retries = options?.retries ?? DEFAULT_RETRIES;
+
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                ...init,
+                signal: controller.signal,
+                headers: {
+                    Accept: "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    ...(init.headers || {}),
+                },
+            });
+        } catch (error) {
+            clearTimeout(timer);
+            const aborted = (error as Error)?.name === "AbortError";
+            lastError = new Error(
+                aborted
+                    ? `GitHub 请求超时（${Math.round(timeoutMs / 1000)} 秒无响应）。`
+                    : "GitHub 网络连接失败，请检查网络。",
+            );
+            if (attempt < retries) {
+                await sleep(retryDelayMs(attempt));
+                continue;
+            }
+            throw lastError;
+        }
+        clearTimeout(timer);
+
+        if (response.ok) {
+            if (response.status === 204) {
+                return undefined as T;
+            }
+            const text = await response.text();
+            if (!text) {
+                return undefined as T;
+            }
+            try {
+                return JSON.parse(text) as T;
+            } catch {
+                // 中间代理/网关可能返回非 JSON（如 HTML 错误页）
+                throw new Error(
+                    `GitHub 返回了无法解析的响应（可能被代理或网关篡改）：${text.slice(0, 120)}`,
+                );
+            }
+        }
+
+        const bodyText = await response.text().catch(() => "");
+        const apiError = new GithubApiError(response.status, url, bodyText);
+        const retryable =
+            response.status >= 500 ||
+            isRateLimited(response.status, response, bodyText);
+        if (retryable && attempt < retries) {
+            lastError = apiError;
+            await sleep(retryDelayMs(attempt, response));
+            continue;
+        }
+        throw apiError;
     }
 
-    if (response.status === 204) {
-        return undefined as T;
-    }
-
-    const text = await response.text();
-    if (!text) {
-        return undefined as T;
-    }
-
-    return JSON.parse(text) as T;
+    throw lastError ?? new Error("GitHub 请求失败。");
 }
 
 /**
@@ -94,6 +246,24 @@ function isRepoAlreadyExists422(errorBody: string): boolean {
         // If we can't parse, check common patterns in raw text
         return /already.exists|name.*already/i.test(errorBody);
     }
+}
+
+/**
+ * Repo creation with auto_init lands the initial commit asynchronously.
+ * Poll until the default branch ref resolves so follow-up Git Data API
+ * calls don't hit a transient 404/409 on a half-initialized repo.
+ */
+async function waitForInitialCommit(repo: RepoInfo, token: string) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+            await getBranchRefSha(repo, repo.branch, token);
+            return;
+        } catch (error) {
+            if (!isGithubStatus(error, 404, 409)) throw error;
+        }
+        await sleep(800 * (attempt + 1));
+    }
+    // 初始化提交迟迟未落地也不阻塞：后续上传流程自带空仓库兜底路径
 }
 
 export async function createUserRepo(
@@ -114,7 +284,6 @@ export async function createUserRepo(
         description,
         private: false,
         auto_init: true,
-        default_branch: MAIN_RESOURCE_BRANCH,
     };
 
     const state = loadAccountState();
@@ -123,6 +292,7 @@ export async function createUserRepo(
         throw new Error("无法获取当前 GitHub 用户名，请重新登录。");
     }
 
+    let isFreshRepo = true;
     const data = await githubFetch<any>("https://api.github.com/user/repos", {
         method: "POST",
         body: JSON.stringify(body),
@@ -130,17 +300,15 @@ export async function createUserRepo(
             Authorization: `Bearer ${token}`,
         },
     }).catch(async (error) => {
-        if (!(error instanceof Error) || !/422/.test(error.message)) {
+        if (!isGithubStatus(error, 422)) {
             throw error;
         }
-
-        // Extract the response body from the error message: "GitHub API 422: {body}"
-        const errorBody = error.message.replace(/^GitHub API 422:\s*/, "");
+        const errorBody = (error as GithubApiError).body;
 
         // Only treat as "already exists" if the error body confirms it
         if (!isRepoAlreadyExists422(errorBody)) {
             throw new Error(
-                `仓库创建被 GitHub 拒绝（422）：${errorBody}\n` +
+                `仓库创建被 GitHub 拒绝（422）：${parseGithubErrorDetail(errorBody)}\n` +
                 `请检查仓库名 "${repoName}" 是否合法，或更换仓库名重试。`,
             );
         }
@@ -166,27 +334,40 @@ export async function createUserRepo(
             );
         }
 
+        isFreshRepo = false;
         return existing;
     });
 
-    return {
+    const repo: RepoInfo = {
         owner: data.owner?.login || currentOwner,
         name: data.name,
         branch: data.default_branch || MAIN_RESOURCE_BRANCH,
         htmlUrl: data.html_url,
     };
+
+    if (isFreshRepo) {
+        await waitForInitialCommit(repo, token);
+    }
+
+    return repo;
 }
 
-export function ensureBase64(content: ArrayBuffer | string) {
-    if (typeof content === "string") {
-        return btoa(unescape(encodeURIComponent(content)));
+export function ensureBase64(content: ArrayBuffer | Uint8Array | string) {
+    const bytes =
+        typeof content === "string"
+            ? new TextEncoder().encode(content)
+            : content instanceof Uint8Array
+              ? content
+              : new Uint8Array(content);
+
+    // 分块转换，避免逐字节拼接在大文件上卡死主线程 / 撑爆内存
+    const CHUNK = 0x8000;
+    const parts: string[] = [];
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        const chunk = bytes.subarray(i, i + CHUNK);
+        parts.push(String.fromCharCode(...chunk));
     }
-    const uint8 = new Uint8Array(content);
-    let binary = "";
-    uint8.forEach((byte) => {
-        binary += String.fromCharCode(byte);
-    });
-    return btoa(binary);
+    return btoa(parts.join(""));
 }
 
 function encodeGitRefName(refName: string) {
@@ -228,14 +409,21 @@ export async function ensureMainResourceBranch(repo: RepoInfo, token: string) {
         await getBranchRefSha(repo, MAIN_RESOURCE_BRANCH, token);
         return;
     } catch (error) {
-        if (!(error instanceof Error) || !/404/.test(error.message)) {
+        if (!isGithubStatus(error, 404, 409)) {
             throw error;
         }
         sourceBranch ||= await getRepositoryDefaultBranch(repo, token);
         if (sourceBranch === MAIN_RESOURCE_BRANCH) return;
     }
 
-    const sourceSha = await getBranchRefSha(repo, sourceBranch, token);
+    let sourceSha: string;
+    try {
+        sourceSha = await getBranchRefSha(repo, sourceBranch, token);
+    } catch (error) {
+        // 空仓库（连源分支都没有）：交给上传流程的空仓库兜底路径
+        if (isGithubStatus(error, 404, 409)) return;
+        throw error;
+    }
     try {
         await githubFetch<any>(
             `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs`,
@@ -252,7 +440,7 @@ export async function ensureMainResourceBranch(repo: RepoInfo, token: string) {
             },
         );
     } catch (error) {
-        if (error instanceof Error && /422/.test(error.message)) {
+        if (isGithubStatus(error, 422)) {
             await getBranchRefSha(repo, MAIN_RESOURCE_BRANCH, token);
             return;
         }
@@ -296,6 +484,7 @@ export async function uploadFileToRepo(params: UploadParams) {
                 "Content-Type": "application/json",
             },
         },
+        { timeoutMs: UPLOAD_TIMEOUT_MS },
     );
 }
 
@@ -371,15 +560,14 @@ export async function createBlob(
                     "Content-Type": "application/json",
                 },
             },
+            { timeoutMs: UPLOAD_TIMEOUT_MS },
         );
         return data.sha;
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `创建 Git blob 失败 (size=${base64Content.length}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(
+            error,
+            `创建 Git blob 失败 (size=${base64Content.length})`,
+        );
     }
 }
 
@@ -409,12 +597,10 @@ export async function getBranchHead(
         );
         return { commitSha, treeSha: commit.tree.sha };
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `获取分支 HEAD 失败 (${repo.owner}/${repo.name}#${repo.branch}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(
+            error,
+            `获取分支 HEAD 失败 (${repo.owner}/${repo.name}#${repo.branch})`,
+        );
     }
 }
 
@@ -447,12 +633,10 @@ export async function createTree(
         );
         return data.sha;
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `创建 Git tree 失败 (base_tree=${baseTreeSha || "无"}, entries=${entries.length}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(
+            error,
+            `创建 Git tree 失败 (base_tree=${baseTreeSha || "无"}, entries=${entries.length})`,
+        );
     }
 }
 
@@ -484,12 +668,10 @@ export async function createCommit(
         );
         return data.sha;
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `创建 Git commit 失败 (tree=${treeSha}, parent=${parentCommitSha}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(
+            error,
+            `创建 Git commit 失败 (tree=${treeSha}, parent=${parentCommitSha})`,
+        );
     }
 }
 
@@ -520,12 +702,7 @@ export async function createInitialCommit(
         );
         return data.sha;
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `创建初始 Git commit 失败 (tree=${treeSha}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(error, `创建初始 Git commit 失败 (tree=${treeSha})`);
     }
 }
 
@@ -553,18 +730,16 @@ export async function createRef(
             },
         );
     } catch (error) {
-        if (error instanceof Error) {
-            throw new Error(
-                `创建分支引用失败 (${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha}): ${error.message}`,
-            );
-        }
-        throw error;
+        throw withGithubContext(
+            error,
+            `创建分支引用失败 (${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha})`,
+        );
     }
 }
 
 /**
  * Update a branch ref to point to a new commit.
- * Tries non-force first; falls back to force update on 409 (non-fast-forward).
+ * Tries non-force first; falls back to force update on 409/422 (non-fast-forward).
  * If the ref doesn't exist (404), creates it instead.
  */
 export async function updateRef(
@@ -585,32 +760,31 @@ export async function updateRef(
             headers,
         });
     } catch (error) {
-        if (error instanceof Error) {
-            // 404: ref doesn't exist — create it instead
-            if (/404/.test(error.message)) {
-                await createRef(repo, commitSha, token);
-                return;
-            }
-            // 409/422: non-fast-forward or conflict — retry with force
-            if (/409|422/.test(error.message)) {
-                try {
-                    await githubFetch<any>(url, {
-                        method: "PATCH",
-                        body: JSON.stringify({ sha: commitSha, force: true }),
-                        headers,
-                    });
-                    return;
-                } catch (forceError) {
-                    throw new Error(
-                        `更新分支引用失败 (force=true, commit=${commitSha}): ${(forceError as Error).message}`,
-                    );
-                }
-            }
-            throw new Error(
-                `更新分支引用失败 (${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha}): ${error.message}`,
-            );
+        // 404: ref doesn't exist — create it instead
+        if (isGithubStatus(error, 404)) {
+            await createRef(repo, commitSha, token);
+            return;
         }
-        throw error;
+        // 409/422: non-fast-forward or conflict — retry with force
+        if (isGithubStatus(error, 409, 422)) {
+            try {
+                await githubFetch<any>(url, {
+                    method: "PATCH",
+                    body: JSON.stringify({ sha: commitSha, force: true }),
+                    headers,
+                });
+                return;
+            } catch (forceError) {
+                throw withGithubContext(
+                    forceError,
+                    `更新分支引用失败 (force=true, commit=${commitSha})`,
+                );
+            }
+        }
+        throw withGithubContext(
+            error,
+            `更新分支引用失败 (${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha})`,
+        );
     }
 }
 
