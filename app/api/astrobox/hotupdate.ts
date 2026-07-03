@@ -30,6 +30,7 @@ export interface HotUpdateRelease {
   version: number;
   semver: string;
   minNativeVersion: string;
+  maxNativeVersion: string;
   filesBaseUrl: string;
   files: HotUpdateFile[];
   fileCount: number;
@@ -50,6 +51,7 @@ export interface HotUpdatePatch {
   patchId: string;
   script: string;
   minNativeVersion: string;
+  maxNativeVersion: string;
   enabled: boolean;
   createdBy: string | null;
   createdAt: string;
@@ -88,6 +90,7 @@ export interface CreateReleaseBody {
   version: number;
   semver?: string;
   minNativeVersion?: string;
+  maxNativeVersion?: string;
   filesBaseUrl: string;
   files: HotUpdateFile[];
   rollout?: number;
@@ -99,6 +102,7 @@ export interface CreateReleaseBody {
 export interface UpdateReleaseBody {
   semver?: string;
   minNativeVersion?: string;
+  maxNativeVersion?: string;
   filesBaseUrl?: string;
   files?: HotUpdateFile[];
   rollout?: number;
@@ -113,12 +117,14 @@ export interface CreatePatchBody {
   patchId: string;
   script: string;
   minNativeVersion?: string;
+  maxNativeVersion?: string;
   enabled?: boolean;
 }
 
 export interface UpdatePatchBody {
   script?: string;
   minNativeVersion?: string;
+  maxNativeVersion?: string;
   enabled?: boolean;
 }
 
@@ -134,9 +140,9 @@ function buildQuery(params: Record<string, unknown>) {
 
 export const HotUpdateApi = {
   key: () => sendApiRequest<KeyStatus>("/admin/hotupdate/key", "GET"),
-  preview: (channel: string, platform: string) =>
+  preview: (channel: string, platform: string, native?: string) =>
     sendApiRequest<ManifestPreview>(
-      `/admin/hotupdate/preview${buildQuery({ channel, platform })}`,
+      `/admin/hotupdate/preview${buildQuery({ channel, platform, native })}`,
       "GET",
     ),
   releases: {
@@ -200,6 +206,7 @@ export interface ParsedReleaseJson {
   channel?: string;
   platform?: HotUpdatePlatform;
   minNativeVersion: string;
+  maxNativeVersion: string;
   filesBaseUrl?: string;
   files: HotUpdateFile[];
 }
@@ -236,6 +243,8 @@ export function parseReleaseJson(text: string): ParsedReleaseJson {
         : undefined,
     minNativeVersion:
       typeof raw.minNativeVersion === "string" ? raw.minNativeVersion : "",
+    maxNativeVersion:
+      typeof raw.maxNativeVersion === "string" ? raw.maxNativeVersion : "",
     filesBaseUrl:
       typeof raw.filesBaseUrl === "string" ? raw.filesBaseUrl : undefined,
     files,

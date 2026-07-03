@@ -77,6 +77,7 @@ export default function AdminHotUpdatePage() {
   const [rChannel, setRChannel] = useState("stable");
   const [rPlatform, setRPlatform] = useState<HotUpdatePlatform>("all");
   const [rBaseUrl, setRBaseUrl] = useState("");
+  const [rMaxNative, setRMaxNative] = useState("");
   const [rRollout, setRRollout] = useState("1");
   const [rNotes, setRNotes] = useState("");
   const [creatingRelease, setCreatingRelease] = useState(false);
@@ -106,6 +107,7 @@ export default function AdminHotUpdatePage() {
     if (parsedRelease.channel) setRChannel(parsedRelease.channel);
     if (parsedRelease.platform) setRPlatform(parsedRelease.platform);
     if (parsedRelease.filesBaseUrl) setRBaseUrl(parsedRelease.filesBaseUrl);
+    if (parsedRelease.maxNativeVersion) setRMaxNative(parsedRelease.maxNativeVersion);
   }, [parsedRelease]);
 
   // create-patch form
@@ -113,6 +115,7 @@ export default function AdminHotUpdatePage() {
   const [pPlatform, setPPlatform] = useState<HotUpdatePlatform>("all");
   const [pId, setPId] = useState("");
   const [pMinNative, setPMinNative] = useState("");
+  const [pMaxNative, setPMaxNative] = useState("");
   const [pScript, setPScript] = useState("");
   const [creatingPatch, setCreatingPatch] = useState(false);
 
@@ -122,6 +125,7 @@ export default function AdminHotUpdatePage() {
     filesBaseUrl: string;
     semver: string;
     minNativeVersion: string;
+    maxNativeVersion: string;
     rollout: string;
     notes: string;
   } | null>(null);
@@ -131,6 +135,7 @@ export default function AdminHotUpdatePage() {
   const [previewPlatform, setPreviewPlatform] = useState<HotUpdatePlatform>(
     "all",
   );
+  const [previewNative, setPreviewNative] = useState("");
   const [preview, setPreview] = useState<ManifestPreview | null>(null);
 
   const loadAll = async () => {
@@ -176,6 +181,8 @@ export default function AdminHotUpdatePage() {
         version: parsedRelease.version,
         semver: parsedRelease.semver || undefined,
         minNativeVersion: parsedRelease.minNativeVersion || undefined,
+        maxNativeVersion:
+          rMaxNative.trim() || parsedRelease.maxNativeVersion || undefined,
         filesBaseUrl: rBaseUrl.trim(),
         files: parsedRelease.files,
         rollout,
@@ -225,6 +232,7 @@ export default function AdminHotUpdatePage() {
       filesBaseUrl: r.filesBaseUrl,
       semver: r.semver,
       minNativeVersion: r.minNativeVersion,
+      maxNativeVersion: r.maxNativeVersion,
       rollout: String(r.rollout),
       notes: r.notes,
     });
@@ -240,6 +248,7 @@ export default function AdminHotUpdatePage() {
         filesBaseUrl: editDraft.filesBaseUrl.trim(),
         semver: editDraft.semver.trim(),
         minNativeVersion: editDraft.minNativeVersion.trim(),
+        maxNativeVersion: editDraft.maxNativeVersion.trim(),
         rollout,
         notes: editDraft.notes.trim(),
       });
@@ -264,6 +273,7 @@ export default function AdminHotUpdatePage() {
         patchId: pId.trim(),
         script: pScript,
         minNativeVersion: pMinNative.trim() || undefined,
+        maxNativeVersion: pMaxNative.trim() || undefined,
       });
       toast.success("已创建补丁");
       setPId("");
@@ -299,7 +309,11 @@ export default function AdminHotUpdatePage() {
 
   const runPreview = async () => {
     try {
-      const res = await HotUpdateApi.preview(previewChannel, previewPlatform);
+      const res = await HotUpdateApi.preview(
+        previewChannel,
+        previewPlatform,
+        previewNative.trim() || undefined,
+      );
       setPreview(res);
       if (!res.manifest) toast.info("该渠道/平台当前无可下发的 manifest");
     } catch (err) {
@@ -405,6 +419,9 @@ export default function AdminHotUpdatePage() {
                   {parsedRelease.minNativeVersion
                     ? ` · 最低原生 ${parsedRelease.minNativeVersion}`
                     : ""}
+                  {parsedRelease.maxNativeVersion
+                    ? ` · 最高原生 ${parsedRelease.maxNativeVersion}`
+                    : ""}
                 </div>
               )}
               <Field label="filesBaseUrl（CDN 内容寻址根，文件地址 = base + sha256）">
@@ -437,6 +454,14 @@ export default function AdminHotUpdatePage() {
                     step={0.05}
                     value={rRollout}
                     onChange={(e) => setRRollout(e.target.value)}
+                  />
+                </Field>
+                <Field label="最高原生版本（可选，含端点）">
+                  <input
+                    className={inputClass}
+                    value={rMaxNative}
+                    onChange={(e) => setRMaxNative(e.target.value)}
+                    placeholder="如 2.9.9，超过此版本的原生壳不下发"
                   />
                 </Field>
               </div>
@@ -490,8 +515,11 @@ export default function AdminHotUpdatePage() {
                     <span>
                       {r.fileCount} 个文件 · {formatBytes(r.totalSize)}
                     </span>
-                    {r.minNativeVersion && (
-                      <span>最低原生：{r.minNativeVersion}</span>
+                    {(r.minNativeVersion || r.maxNativeVersion) && (
+                      <span>
+                        原生范围：{r.minNativeVersion || "*"} ~{" "}
+                        {r.maxNativeVersion || "*"}
+                      </span>
                     )}
                   </div>
                   <p className="mt-1 truncate font-mono-sarasa text-xs text-white/40">
@@ -517,7 +545,7 @@ export default function AdminHotUpdatePage() {
                           }
                         />
                       </Field>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-4 gap-2">
                         <Field label="语义版本">
                           <input
                             className={inputClass}
@@ -540,6 +568,19 @@ export default function AdminHotUpdatePage() {
                                 minNativeVersion: e.target.value,
                               })
                             }
+                          />
+                        </Field>
+                        <Field label="最高原生">
+                          <input
+                            className={inputClass}
+                            value={editDraft.maxNativeVersion}
+                            onChange={(e) =>
+                              setEditDraft({
+                                ...editDraft,
+                                maxNativeVersion: e.target.value,
+                              })
+                            }
+                            placeholder="空=无上限"
                           />
                         </Field>
                         <Field label="灰度 0~1">
@@ -683,6 +724,14 @@ export default function AdminHotUpdatePage() {
                     onChange={(e) => setPMinNative(e.target.value)}
                   />
                 </Field>
+                <Field label="最高原生壳版本（可选，含端点）">
+                  <input
+                    className={inputClass}
+                    value={pMaxNative}
+                    onChange={(e) => setPMaxNative(e.target.value)}
+                    placeholder="空=无上限"
+                  />
+                </Field>
               </div>
               <Field label="脚本（前端 global eval 执行，已验签）">
                 <textarea
@@ -717,9 +766,11 @@ export default function AdminHotUpdatePage() {
                     ) : (
                       <Badge color="amber">停用</Badge>
                     )}
-                    {p.minNativeVersion && (
+                    {(p.minNativeVersion || p.maxNativeVersion) && (
                       <span className="text-xs text-white/40">
-                        ≥{p.minNativeVersion}
+                        {p.minNativeVersion ? `≥${p.minNativeVersion}` : ""}
+                        {p.minNativeVersion && p.maxNativeVersion ? " " : ""}
+                        {p.maxNativeVersion ? `≤${p.maxNativeVersion}` : ""}
                       </span>
                     )}
                     <span className="ml-auto text-xs text-white/40">
@@ -772,6 +823,14 @@ export default function AdminHotUpdatePage() {
               <PlatformSelect
                 value={previewPlatform}
                 onChange={setPreviewPlatform}
+              />
+            </Field>
+            <Field label="原生版本（可选，模拟客户端视角）">
+              <input
+                className={inputClass}
+                value={previewNative}
+                onChange={(e) => setPreviewNative(e.target.value)}
+                placeholder="如 2.5.0"
               />
             </Field>
             <div className="flex items-end">
