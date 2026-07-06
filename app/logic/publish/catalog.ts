@@ -53,6 +53,18 @@ const CATALOG_CSV_COLUMNS = [
 const CATALOG_CSV_HEADER = CATALOG_CSV_COLUMNS.join(",");
 const CSV_STRUCTURAL_CHAR_PATTERN = /[,\r\n\0]/;
 
+export function normalizeCatalogPaidType(paidType?: string) {
+    const normalized = paidType?.trim() ?? "";
+    return normalized.toLowerCase() === "free" ? "" : normalized;
+}
+
+function normalizeCatalogEntryForCsv(entry: CatalogEntry): CatalogEntry {
+    return {
+        ...entry,
+        paid_type: normalizeCatalogPaidType(entry.paid_type),
+    };
+}
+
 export function validateCatalogEntryForCsv(entry: CatalogEntry) {
     for (const column of CATALOG_CSV_COLUMNS) {
         const value = entry[column];
@@ -302,15 +314,16 @@ async function updateFile(
 }
 
 function appendOrReplaceCsvRow(existingCsv: string, entry: CatalogEntry) {
-    validateCatalogEntryForCsv(entry);
+    const normalizedEntry = normalizeCatalogEntryForCsv(entry);
+    validateCatalogEntryForCsv(normalizedEntry);
 
     const rows = existingCsv.split(/\r?\n/).filter((line) => line.trim().length > 0);
     const header = rows[0] || "";
     const dataRows = rows.slice(1);
 
-    const rowString = CATALOG_CSV_COLUMNS.map((column) => entry[column]).join(",");
+    const rowString = CATALOG_CSV_COLUMNS.map((column) => normalizedEntry[column]).join(",");
 
-    const filtered = dataRows.filter((line) => !line.startsWith(`${entry.id},`));
+    const filtered = dataRows.filter((line) => !line.startsWith(`${normalizedEntry.id},`));
     filtered.push(rowString);
     return [header || CATALOG_CSV_HEADER, ...filtered].join("\n");
 }
@@ -336,7 +349,7 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
         tags: payload.tags.join(";"),
         device_vendors: vendors,
         devices: deviceIds,
-        paid_type: payload.paidType?.trim() ?? "",
+        paid_type: normalizeCatalogPaidType(payload.paidType),
     };
     validateCatalogEntryForCsv(entry);
 

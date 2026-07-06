@@ -58,6 +58,13 @@ function installCatalogFetchMock() {
   return calls;
 }
 
+function decodePutCatalogContent(calls: Array<{ init?: RequestInit }>) {
+  const putCall = calls.find((call) => call.init?.method === "PUT");
+  expect(putCall).toBeDefined();
+  const body = JSON.parse(String(putCall?.init?.body));
+  return atob(body.content);
+}
+
 describe("catalog csv validation", () => {
   test("rejects every catalog field containing CSV structural characters before network calls", async () => {
     for (const field of CATALOG_FIELDS) {
@@ -78,5 +85,24 @@ describe("catalog csv validation", () => {
         expect(calls, `${String(field)} with ${badCase.label}`).toHaveLength(0);
       }
     }
+  });
+
+  test("serializes free catalog paid type as an empty value", async () => {
+    const calls = installCatalogFetchMock();
+
+    await updateCatalogEntryOnBranch({
+      token: "token-123",
+      owner: "octocat",
+      repo: "astrobox-catalog",
+      branch: "submit-demo",
+      entry: { ...BASE_ENTRY, paid_type: "free" },
+    });
+
+    const updatedCsv = decodePutCatalogContent(calls);
+
+    expect(updatedCsv).toContain(
+      "demo,Demo Resource,quick_app,octocat,astrobox-resource-demo,abcdef1,media/icon.png,media/cover.png,utility;demo,vendor-a;vendor-b,device-a;device-b,",
+    );
+    expect(updatedCsv).not.toContain("device-a;device-b,free");
   });
 });
