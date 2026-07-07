@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import RootLayout from "~/root";
 import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
+import Interactions from "~/routes/interactions";
 import Profile from "~/routes/profile";
 import CloudControl from "~/routes/cloudcontrol";
 import ResourceEncrypt from "~/routes/resource/encrypt";
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: "analysis", element: <Analysis /> },
+      { path: "interactions", element: <Interactions /> },
       { path: "publish", element: <NewResourcePublishPage /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },
