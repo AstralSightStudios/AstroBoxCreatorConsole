@@ -7,6 +7,7 @@ import { getSelfUserInfo } from "~/api/astrobox/auth";
 type TokenResponse = {
     error?: string;
     token?: string;
+    refreshToken?: string;
 };
 
 export default function LoginCallback() {
@@ -39,7 +40,7 @@ export default function LoginCallback() {
                 const profile: any = await getSelfUserInfo(tokenResponse.token);
 
                 console.log(profile);
-                persistAstroboxAccount(profile, tokenResponse.token);
+                persistAstroboxAccount(profile, tokenResponse.token, tokenResponse.refreshToken);
                 setMessage("Success!");
                 window.location.replace("/");
             } catch (error) {

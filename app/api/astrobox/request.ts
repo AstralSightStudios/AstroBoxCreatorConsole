@@ -1,6 +1,11 @@
-import axios from "axios";
+import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
-import { getAstroboxToken } from "~/logic/account/store";
+import {
+    getAstroboxToken,
+    getAstroboxRefreshToken,
+    setAstroboxTokens,
+    logoutAccount,
+} from "~/logic/account/store";
 
 // 统一的接口错误：尽量把服务端返回的真实信息透出来，而不是 axios 默认的
 // "Request failed with status code 4xx"。保留 status/response 兼容历史上读
@@ -22,6 +27,17 @@ export class ApiError extends Error {
     }
 }
 
+export interface AstroboxTokenPair {
+    error: string;
+    token: string;
+    refreshToken: string;
+}
+
+interface RetryableAxiosRequestConfig extends InternalAxiosRequestConfig {
+    _retry?: boolean;
+    _autoRefresh?: boolean;
+}
+
 function extractServerMessage(data: unknown, fallback: string): string {
     if (typeof data === "string" && data.trim()) return data.trim();
 
@@ -36,6 +52,139 @@ function extractServerMessage(data: unknown, fallback: string): string {
     return fallback;
 }
 
+function isUserBannedError(data: unknown): boolean {
+    return (
+        data !== null &&
+        typeof data === "object" &&
+        (data as Record<string, unknown>).error === "user-banned"
+    );
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+let refreshQueue: Array<{
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+    config: RetryableAxiosRequestConfig;
+}> = [];
+
+async function refreshAstroboxToken(refreshToken: string): Promise<AstroboxTokenPair> {
+    const { data } = await axios.post<AstroboxTokenPair>(
+        `${ASTROBOX_SERVER_CONFIG.serverUrl}/auth/refresh_token`,
+        { refreshToken },
+    );
+    return data;
+}
+
+async function performTokenRefresh(): Promise<boolean> {
+    const refreshToken = getAstroboxRefreshToken();
+    if (!refreshToken) {
+        return false;
+    }
+
+    try {
+        const result = await refreshAstroboxToken(refreshToken);
+        if (result.error || !result.token) {
+            return false;
+        }
+        setAstroboxTokens(result.token, result.refreshToken || refreshToken);
+        return true;
+    } catch (error) {
+        console.warn("[astrobox] refresh token failed", error);
+        return false;
+    }
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+    if (!refreshPromise) {
+        refreshPromise = performTokenRefresh().finally(() => {
+            refreshPromise = null;
+        });
+    }
+    return refreshPromise;
+}
+
+function processRefreshQueue(success: boolean) {
+    const queue = refreshQueue;
+    refreshQueue = [];
+
+    if (!success) {
+        logoutAccount("astrobox");
+        queue.forEach(({ reject }) => {
+            reject(
+                new ApiError("登录已过期，请重新登录", {
+                    status: 401,
+                }),
+            );
+        });
+        return;
+    }
+
+    const newToken = getAstroboxToken();
+    queue.forEach(({ resolve, reject, config }) => {
+        if (newToken) {
+            config.headers["X-ASTROBOX-TOKEN"] = newToken;
+        }
+        astroboxApi.request(config).then(resolve).catch(reject);
+    });
+}
+
+const astroboxApi = axios.create({
+    baseURL: ASTROBOX_SERVER_CONFIG.serverUrl,
+});
+
+astroboxApi.interceptors.request.use((config) => {
+    // sendApiRequest 会把显式 token 或当前存储 token 直接放到 headers 里；
+    // 这里只兜底处理那些不走 sendApiRequest 而直接用 astroboxApi 的请求。
+    const storedToken = getAstroboxToken();
+    if (!config.headers["X-ASTROBOX-TOKEN"] && storedToken) {
+        config.headers["X-ASTROBOX-TOKEN"] = storedToken;
+    }
+    return config;
+});
+
+astroboxApi.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+        const originalConfig = error.config as RetryableAxiosRequestConfig | undefined;
+        if (!originalConfig) {
+            return Promise.reject(error);
+        }
+
+        const status = error.response?.status;
+        // 服务端对过期/无效 token 返回 403（并带文字提示），封禁返回 403 JSON。
+        // 401/403 且非封禁时，尝试用 refresh token 续期。
+        if (status !== 401 && status !== 403) {
+            return Promise.reject(error);
+        }
+
+        const responseData = error.response?.data;
+        if (isUserBannedError(responseData)) {
+            return Promise.reject(error);
+        }
+
+        // 只有 sendApiRequest 未显式传入 token 的请求才自动续期；
+        // 显式传入其他 token 的请求（如登录流程）由调用方自己处理。
+        if (!originalConfig._autoRefresh) {
+            return Promise.reject(error);
+        }
+
+        if (originalConfig._retry) {
+            return Promise.reject(error);
+        }
+        originalConfig._retry = true;
+
+        return new Promise((resolve, reject) => {
+            refreshQueue.push({ resolve, reject, config: originalConfig });
+
+            if (!refreshPromise) {
+                refreshAccessToken().then((success) => {
+                    processRefreshQueue(success);
+                });
+            }
+        });
+    },
+);
+
 export async function sendApiRequest<T>(
     url: string,
     method: string,
@@ -44,18 +193,18 @@ export async function sendApiRequest<T>(
 ): Promise<T> {
     const authToken = token || getAstroboxToken();
     const headers: Record<string, string> = {};
-
     if (authToken) {
         headers["X-ASTROBOX-TOKEN"] = authToken;
     }
 
     try {
-        const response = await axios.request<T>({
-            url: `${ASTROBOX_SERVER_CONFIG.serverUrl}${url}`,
+        const response = await astroboxApi.request<T>({
+            url,
             method,
             data,
             headers,
-        });
+            _autoRefresh: !token,
+        } as RetryableAxiosRequestConfig);
 
         return response.data;
     } catch (error) {

@@ -8,6 +8,7 @@ export interface AstroboxAccount {
     plan: string;
     email: string;
     token: string;
+    refreshToken: string;
     roles: string[];
     activeSocialBan?: {
         id: string;
@@ -94,6 +95,7 @@ function normalizeState(state: AccountState | undefined): AccountState {
               plan: state.astrobox.plan?.trim() || "",
               email: state.astrobox.email?.trim() || "",
               token: state.astrobox.token || "",
+              refreshToken: state.astrobox.refreshToken || "",
               roles: Array.isArray(state.astrobox.roles)
                   ? state.astrobox.roles.filter((role): role is string => typeof role === "string")
                   : [],
@@ -229,6 +231,26 @@ export function getDisplayAccount(
 
 export function getAstroboxToken(): string | undefined {
     return loadAccountState().astrobox?.token || undefined;
+}
+
+export function getAstroboxRefreshToken(): string | undefined {
+    return loadAccountState().astrobox?.refreshToken || undefined;
+}
+
+export function setAstroboxTokens(token: string, refreshToken: string): boolean {
+    const state = loadAccountState();
+    if (!state.astrobox) return false;
+
+    const next: AccountState = {
+        ...state,
+        astrobox: {
+            ...state.astrobox,
+            token,
+            refreshToken,
+        },
+    };
+    saveAccountState(next);
+    return true;
 }
 
 export function useAccountState(): AccountState {
