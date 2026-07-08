@@ -11,14 +11,22 @@ export function StatePage({ title, text }: { title: string; text: string }) {
 
 export function PRReviewPageSkeleton() {
   return (
-    <div className="h-full overflow-hidden px-4 pt-5 pb-3 md:px-6">
+    <div className="relative h-full overflow-hidden px-4 pt-5 pb-3 md:px-6">
       <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+        {/* ---- header row (matches real list view header) ---- */}
+        <div className="flex flex-col gap-3">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
-            <div className="mt-2 h-4 w-48 animate-pulse rounded bg-white/10" />
+            <div className="mt-1 h-4 w-44 animate-pulse rounded bg-white/10" />
+          </div>
+          {/* skeleton for the filter + refresh action bar */}
+          <div className="flex flex-row items-center justify-end gap-2">
+            <div className="h-8 w-[135px] animate-pulse rounded-full bg-white/10" />
+            <div className="h-8 w-8 animate-pulse rounded-full bg-white/10" />
           </div>
         </div>
+
+        {/* ---- scrollable grid (exact same wrapper as real list) ---- */}
         <section className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 no-scrollbar">
             <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
