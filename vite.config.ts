@@ -30,6 +30,7 @@ export default defineConfig({
     }),
   ],
   server: {
+    port: 5180,
     proxy: {
       "/github-login": {
         target: "https://github.com",

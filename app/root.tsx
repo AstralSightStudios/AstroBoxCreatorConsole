@@ -1,5 +1,4 @@
 import "./app.css";
-import "@radix-ui/themes/styles.css";
 
 import { useEffect, useRef } from "react";
 import { Theme } from "@radix-ui/themes";
