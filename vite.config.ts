@@ -29,4 +29,18 @@ export default defineConfig({
       ],
     }),
   ],
+  server: {
+    proxy: {
+      "/github-login": {
+        target: "https://github.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/github-login/, ""),
+      },
+      "/github-api": {
+        target: "https://api.github.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/github-api/, ""),
+      },
+    },
+  },
 });

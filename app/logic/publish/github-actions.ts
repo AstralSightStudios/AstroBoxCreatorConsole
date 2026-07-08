@@ -1,6 +1,16 @@
 import { MAIN_RESOURCE_BRANCH } from "./branch";
 import { loadAccountState } from "../account/store";
 
+const isWeb =
+    typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__;
+
+function proxyGithubUrl(url: string): string {
+    if (isWeb && url.startsWith("https://api.github.com/")) {
+        return url.replace("https://api.github.com/", "/github-api/");
+    }
+    return url;
+}
+
 export interface RepoInfo {
     owner: string;
     name: string;
@@ -172,7 +182,7 @@ export async function githubFetch<T>(
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         let response: Response;
         try {
-            response = await fetch(url, {
+            response = await fetch(proxyGithubUrl(url), {
                 ...init,
                 signal: controller.signal,
                 headers: {
