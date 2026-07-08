@@ -1,5 +1,5 @@
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
-import { Button, Dialog, Select, Spinner } from "@radix-ui/themes";
+import { ArrowClockwiseIcon, Check, Clock, UserCircle, X } from "@phosphor-icons/react";
+import { Button, Dialog, Select } from "@radix-ui/themes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "framer-motion";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -273,6 +273,7 @@ export default function ResourceReviewPage() {
   const [refreshTick, setRefreshTick] = useState(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
+  const isInitialLoading = checkingPermission || (loadingPulls && pulls.length === 0);
   const openPull = pulls.find((pull) => pull.number === openNumber) || null;
   const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];
   const openStatus = deriveReviewStatus(openComments);
@@ -449,10 +450,8 @@ export default function ResourceReviewPage() {
     return <StatePage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
   }
 
-  if (checkingPermission) {
-    return (
-      <StatePage title="PR审核" text="正在检查 GitHub 仓库权限..." spinner />
-    );
+  if (isInitialLoading) {
+    return <PRReviewPageSkeleton />;
   }
 
   if (!canReview) {
@@ -481,14 +480,12 @@ export default function ResourceReviewPage() {
           )}
         </div>
 
-        <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/10 bg-nav-item">
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {loadingPulls && visiblePulls.length === 0 ? (
-              <div className="grid h-60 place-items-center"><Spinner /></div>
-            ) : visiblePulls.length === 0 ? (
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 no-scrollbar">
+            {visiblePulls.length === 0 ? (
               <div className="py-16 text-center text-sm text-white/45">暂无 open PR</div>
             ) : (
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {visiblePulls.map((pull) => {
                   const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
                   return (
@@ -496,16 +493,40 @@ export default function ResourceReviewPage() {
                       key={pull.number}
                       type="button"
                       onClick={() => setOpenNumber(pull.number)}
-                      className="flex w-full flex-col gap-2 rounded-xl border border-white/10 bg-black/15 px-3 py-3 text-left transition hover:border-white/25 hover:bg-white/[0.04]"
+                      className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/10 bg-black/15 px-4 py-4 text-left transition hover:border-white/25 hover:bg-white/[0.04]"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/65">#{pull.number}</span>
-                        <StatusBadge state={status.state} />
+                      <div className="min-w-0 flex-1">
+                        <h2 className="line-clamp-2 text-base font-semibold text-white">
+                          {pull.title}
+                          <span className="ml-1.5 text-[12px] font-medium text-white/40">#{pull.number}</span>
+                        </h2>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-white/50">
+                          <PrStatusBadge state="open" />
+                          <span className="inline-flex min-w-0 items-center gap-2">
+                            {pull.user?.avatar_url ? (
+                              <img
+                                src={pull.user.avatar_url}
+                                className="h-5 w-5 shrink-0 rounded-full object-cover"
+                                loading="lazy"
+                                alt={pull.user.login}
+                              />
+                            ) : (
+                              <UserCircle size={14} weight="duotone" className="shrink-0" />
+                            )}
+                            <span className="truncate font-medium text-white">{pull.user?.login}</span>
+                            <span className="shrink-0">· {formatTime(pull.updated_at)}</span>
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-end gap-2">
+                          <ReviewStatusBadge state={status.state} />
+                          {(commentsByPr[pull.number]?.length ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 text-xs text-white/45">
+                              <CommentIcon className="h-3.5 w-3.5 text-white/45" />
+                              {commentsByPr[pull.number].length}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <h2 className="line-clamp-2 text-sm font-semibold text-white">{pull.title}</h2>
-                      <p className="truncate text-xs text-white/45">
-                        {pull.user?.login} · {pull.head.ref} · {formatTime(pull.updated_at)}
-                      </p>
                     </button>
                   );
                 })}
@@ -860,21 +881,133 @@ function ProxiedVideo({ rawUrl }: { rawUrl: string }) {
   );
 }
 
+function PrStatusBadge({ state }: { state: "open" | "closed" | "merged" }) {
+  const config = {
+    open: { icon: PrStatusIcon, label: "Open", color: "bg-[#1f883d]" },
+    closed: { icon: PrStatusIcon, label: "Closed", color: "bg-[#cf222e]" },
+    merged: { icon: PrStatusIcon, label: "Merged", color: "bg-[#8957e5]" },
+  }[state];
+  const Icon = config.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-white ${config.color}`}>
+      <Icon state={state} />
+      {config.label}
+    </span>
+  );
+}
+
+function ReviewStatusBadge({ state }: { state: ReviewState }) {
+  if (state === "changes_requested") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-100">
+        <X size={12} weight="bold" />
+        需修复
+      </span>
+    );
+  }
+  if (state === "fixed_waiting") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-100">
+        <Check size={12} weight="bold" />
+        已修复
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/65">
+      <Clock size={12} weight="fill" />
+      等待审核
+    </span>
+  );
+}
+
+function PrStatusIcon({ state }: { state: "open" | "closed" | "merged" }) {
+  if (state === "merged") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-white">
+        <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (state === "closed") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-white">
+        <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-white">
+      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function CommentIcon({ className }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PRReviewPageSkeleton() {
+  return (
+    <div className="h-full overflow-hidden px-4 pt-5 pb-3 md:px-6">
+      <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
+            <div className="mt-2 h-4 w-48 animate-pulse rounded bg-white/10" />
+          </div>
+        </div>
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 no-scrollbar">
+            <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <PrCardSkeleton key={index} />
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function PrCardSkeleton() {
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/10 bg-black/15 px-4 py-4">
+      <div className="h-5 w-full animate-pulse rounded bg-white/10" />
+      <div className="h-4 w-5/6 animate-pulse rounded bg-white/10" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="h-5 w-16 animate-pulse rounded-full bg-white/10" />
+        <div className="inline-flex items-center gap-2">
+          <div className="h-5 w-5 shrink-0 animate-pulse rounded-full bg-white/10" />
+          <div className="h-3.5 w-20 animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-14 animate-pulse rounded bg-white/10" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="h-5 w-16 animate-pulse rounded-full bg-white/10" />
+        <div className="h-3.5 w-10 animate-pulse rounded bg-white/10" />
+      </div>
+    </div>
+  );
+}
+
 function StatePage({
   title,
   text,
-  spinner,
 }: {
   title: string;
   text: string;
-  spinner?: boolean;
 }) {
   return (
     <div className="grid h-full place-items-center px-6">
       <div className="max-w-lg rounded-2xl border border-white/10 bg-nav-item p-6 text-center">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
         <p className="mt-2 text-sm text-white/60">{text}</p>
-        {spinner && <div className="mt-4"><Spinner /></div>}
       </div>
     </div>
   );

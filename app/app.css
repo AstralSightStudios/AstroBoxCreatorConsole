@@ -60,6 +60,14 @@
     display: none;
 }
 
+.no-scrollbar {
+    scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
 .dashboard-tabs-list {
     width: fit-content;
     max-width: 100%;
