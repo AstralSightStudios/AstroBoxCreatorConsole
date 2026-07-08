@@ -7,6 +7,7 @@ import { ApiError } from "~/api/astrobox/request";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 import {
     getAstroboxToken,
+    getAstroboxRefreshToken,
     logoutAccount,
     setAstroboxAccount,
     type AstroboxAccount,
@@ -207,8 +208,13 @@ export async function refreshAstroboxAccount(options?: { throttleMs?: number }) 
 
     try {
         const profile = await getSelfUserInfo();
-        // getSelfUserInfo 内部可能触发 token 刷新，持久化时取最新的 token
-        persistAstroboxAccount(profile, getAstroboxToken() ?? token);
+        // getSelfUserInfo 内部可能触发 token 刷新，持久化时取最新的 token，
+        // 同时保留已有的 refresh token。
+        persistAstroboxAccount(
+            profile,
+            getAstroboxToken() ?? token,
+            getAstroboxRefreshToken(),
+        );
         return true;
     } catch (error) {
         // sendApiRequest 会把 401/403 包装成 ApiError；拦截器已经处理了自动刷新

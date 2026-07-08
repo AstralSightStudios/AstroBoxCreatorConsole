@@ -28,7 +28,7 @@ export class ApiError extends Error {
 }
 
 export interface AstroboxTokenPair {
-    error: string;
+    error?: string;
     token: string;
     refreshToken: string;
 }
@@ -60,7 +60,9 @@ function isUserBannedError(data: unknown): boolean {
     );
 }
 
-let refreshPromise: Promise<boolean> | null = null;
+type RefreshResult = "success" | "invalid" | "transient";
+
+let refreshPromise: Promise<RefreshResult> | null = null;
 let refreshQueue: Array<{
     resolve: (value: unknown) => void;
     reject: (reason?: unknown) => void;
@@ -71,30 +73,39 @@ async function refreshAstroboxToken(refreshToken: string): Promise<AstroboxToken
     const { data } = await axios.post<AstroboxTokenPair>(
         `${ASTROBOX_SERVER_CONFIG.serverUrl}/auth/refresh_token`,
         { refreshToken },
+        { timeout: 10_000 },
     );
     return data;
 }
 
-async function performTokenRefresh(): Promise<boolean> {
+function classifyRefreshFailure(error: unknown): "invalid" | "transient" {
+    // 没有响应对象说明是网络层错误（超时、断网等），不把用户登出。
+    if (axios.isAxiosError(error) && !error.response) {
+        return "transient";
+    }
+    return "invalid";
+}
+
+async function performTokenRefresh(): Promise<RefreshResult> {
     const refreshToken = getAstroboxRefreshToken();
     if (!refreshToken) {
-        return false;
+        return "invalid";
     }
 
     try {
         const result = await refreshAstroboxToken(refreshToken);
         if (result.error || !result.token) {
-            return false;
+            return "invalid";
         }
         setAstroboxTokens(result.token, result.refreshToken || refreshToken);
-        return true;
+        return "success";
     } catch (error) {
         console.warn("[astrobox] refresh token failed", error);
-        return false;
+        return classifyRefreshFailure(error);
     }
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function refreshAccessToken(): Promise<RefreshResult> {
     if (!refreshPromise) {
         refreshPromise = performTokenRefresh().finally(() => {
             refreshPromise = null;
@@ -103,16 +114,27 @@ async function refreshAccessToken(): Promise<boolean> {
     return refreshPromise;
 }
 
-function processRefreshQueue(success: boolean) {
+function processRefreshQueue(result: RefreshResult) {
     const queue = refreshQueue;
     refreshQueue = [];
 
-    if (!success) {
+    if (result === "invalid") {
         logoutAccount("astrobox");
         queue.forEach(({ reject }) => {
             reject(
                 new ApiError("登录已过期，请重新登录", {
                     status: 401,
+                }),
+            );
+        });
+        return;
+    }
+
+    if (result === "transient") {
+        queue.forEach(({ reject }) => {
+            reject(
+                new ApiError("网络异常，刷新登录状态失败，请稍后重试", {
+                    status: 503,
                 }),
             );
         });
@@ -177,8 +199,8 @@ astroboxApi.interceptors.response.use(
             refreshQueue.push({ resolve, reject, config: originalConfig });
 
             if (!refreshPromise) {
-                refreshAccessToken().then((success) => {
-                    processRefreshQueue(success);
+                refreshAccessToken().then((result) => {
+                    processRefreshQueue(result);
                 });
             }
         });
