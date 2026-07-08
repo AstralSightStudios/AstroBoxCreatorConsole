@@ -1,7 +1,12 @@
-import { Button, Dialog, Spinner } from "@radix-ui/themes";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { Button, Dialog, Select, Spinner } from "@radix-ui/themes";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import NavIconButton, { NavIconButtonGroup } from "~/components/nav-icon-button";
+import { useSetHeaderActions } from "~/layout/header-actions";
+import { useNavVisibility } from "~/layout/nav-visibility-context";
 import {
   approvePullRequest,
   createPullRequestComment,
@@ -248,6 +253,8 @@ async function openAllPackages(packages: ResourcePackagePreview[]) {
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
+  const setHeaderActions = useSetHeaderActions();
+  const { isDesktop } = useNavVisibility();
   const [permission, setPermission] = useState("");
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionError, setPermissionError] = useState("");
@@ -261,6 +268,9 @@ export default function ResourceReviewPage() {
   const [stateFilter, setStateFilter] = useState<ReviewState | "all">("all");
   const [needFixMessage, setNeedFixMessage] = useState("");
   const [generalComment, setGeneralComment] = useState("");
+  const [rotate, setRotate] = useState(0);
+
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
   const openPull = pulls.find((pull) => pull.number === openNumber) || null;
@@ -328,7 +338,7 @@ export default function ResourceReviewPage() {
 
   useEffect(() => {
     if (canReview) void loadPulls();
-  }, [canReview]);
+  }, [canReview, refreshTick]);
 
   useEffect(() => {
     if (openNumber) {
@@ -396,6 +406,45 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const topbarActions = (
+    <>
+      <NavIconButtonGroup>
+        <Select.Root
+          value={stateFilter}
+          onValueChange={(val) => setStateFilter(val as ReviewState | "all")}
+        >
+          <Select.Trigger className="flex h-full! min-w-[135px] flex-row items-center gap-2 rounded-full border-none! bg-transparent! px-3 py-1 shadow-none!" />
+          <Select.Content position="popper" className="rounded-2xl">
+            <Select.Item value="all" className="rounded-lg">全部状态</Select.Item>
+            <Select.Item value="waiting_review" className="rounded-lg">等待审核</Select.Item>
+            <Select.Item value="changes_requested" className="rounded-lg">需要修改</Select.Item>
+            <Select.Item value="fixed_waiting" className="rounded-lg">已修复待复核</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </NavIconButtonGroup>
+      <NavIconButton
+        onClick={() => {
+          setRotate((prev) => prev + 360);
+          setRefreshTick((prev) => prev + 1);
+        }}
+        disabled={loadingPulls}
+      >
+        <motion.div
+          animate={{ rotate }}
+          transition={{ duration: 0.6, ease: "easeInOut" }}
+          style={{ display: "flex" }}
+        >
+          <ArrowClockwiseIcon />
+        </motion.div>
+      </NavIconButton>
+    </>
+  );
+
+  useLayoutEffect(() => {
+    setHeaderActions(isDesktop ? topbarActions : null);
+    return () => setHeaderActions(null);
+  }, [setHeaderActions, isDesktop, stateFilter, loadingPulls, rotate]);
+
   if (!accountState.github?.token) {
     return <StatePage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
   }
@@ -416,33 +465,23 @@ export default function ResourceReviewPage() {
   }
 
   return (
-    <div className="h-full overflow-hidden px-4 py-5 md:px-6">
+    <div className="h-full overflow-hidden px-4 pt-5 pb-3 md:px-6">
       <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0">
             <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
             <p className="text-sm text-white/60">
               {env.owner}/{env.repoName} · {permission}
             </p>
           </div>
-          <Button onClick={loadPulls} disabled={loadingPulls}>
-            刷新
-          </Button>
+          {!isDesktop && (
+            <div className="ml-auto flex flex-row items-center gap-2">
+              {topbarActions}
+            </div>
+          )}
         </div>
 
         <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/10 bg-nav-item">
-          <div className="flex items-center gap-2 border-b border-white/10 p-3">
-            <select
-              value={stateFilter}
-              onChange={(event) => setStateFilter(event.target.value as ReviewState | "all")}
-              className="min-h-10 flex-1 rounded-xl border border-white/10 bg-black/25 px-3 text-sm text-white outline-none"
-            >
-              <option value="all">全部状态</option>
-              <option value="waiting_review">等待审核</option>
-              <option value="changes_requested">需要修改</option>
-              <option value="fixed_waiting">已修复待复核</option>
-            </select>
-          </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {loadingPulls && visiblePulls.length === 0 ? (
               <div className="grid h-60 place-items-center"><Spinner /></div>

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router";
 import FunctionButton from "~/components/nav/function-button";
+import { useHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { CreatorConsoleLogoIcon } from "./svgs";
 
@@ -21,12 +22,14 @@ const PAGE_NAME_MAP: Record<string, string> = {
   "admin/inbox": "信箱管理",
   "admin/account-deletion": "账号注销工单",
   resreview: "PR审核",
+  interactions: "互动管理",
   explorepage: "探索页管理",
 };
 
 export default function Header() {
   const location = useLocation();
   const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
+  const headerActions = useHeaderActions();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
 
@@ -85,6 +88,11 @@ export default function Header() {
           );
         })}
       </div>
+      {isDesktop && headerActions ? (
+        <div className="ml-auto flex flex-row items-center gap-2">
+          {headerActions}
+        </div>
+      ) : null}
     </header>
   );
 }

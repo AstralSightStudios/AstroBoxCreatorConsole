@@ -10,6 +10,7 @@ import {
   useOutlet,
 } from "react-router";
 import Header from "~/components/header";
+import { HeaderActionsProvider } from "~/layout/header-actions";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
 
 type Axis = "x" | "y";
@@ -152,52 +153,54 @@ export default function PageTransition() {
   ]);
 
   return (
-    <div
-      className="relative h-full min-h-screen overflow-hidden select-none"
-      style={{ minHeight: "100dvh" }}
-    >
-      <div className="flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
-        <Header />
-        <div className="relative flex-1 min-h-0 overflow-hidden">
-          <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
-            <motion.div
-              key={motionKey}
-              className="absolute inset-0 w-full h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]"
-              custom={transitionMeta}
-              variants={{
-                initial: (meta: TransitionMeta) => ({
-                  x: meta.axis === "x" ? getInitialOffset(meta) : 0,
-                  y: meta.axis === "y" ? getInitialOffset(meta) : 0,
-                  opacity: 0,
-                }),
-                animate: {
-                  x: 0,
-                  y: 0,
-                  opacity: 1,
-                  transition: {
-                    duration: ENTER_DURATION,
-                    ease: ENTER_EASE,
+    <HeaderActionsProvider>
+      <div
+        className="relative h-full min-h-screen overflow-hidden select-none"
+        style={{ minHeight: "100dvh" }}
+      >
+        <div className="flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
+          <Header />
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
+              <motion.div
+                key={motionKey}
+                className="absolute inset-0 w-full h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+                custom={transitionMeta}
+                variants={{
+                  initial: (meta: TransitionMeta) => ({
+                    x: meta.axis === "x" ? getInitialOffset(meta) : 0,
+                    y: meta.axis === "y" ? getInitialOffset(meta) : 0,
+                    opacity: 0,
+                  }),
+                  animate: {
+                    x: 0,
+                    y: 0,
+                    opacity: 1,
+                    transition: {
+                      duration: ENTER_DURATION,
+                      ease: ENTER_EASE,
+                    },
                   },
-                },
-                exit: (meta: TransitionMeta) => ({
-                  x: meta.axis === "x" ? getExitOffset(meta) : 0,
-                  y: meta.axis === "y" ? getExitOffset(meta) : 0,
-                  opacity: 0,
-                  transition: {
-                    duration: EXIT_DURATION,
-                    ease: EXIT_EASE,
-                  },
-                }),
-              }}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-            >
-              <div className="h-full">{frozenOutlet}</div>
-            </motion.div>
-          </AnimatePresence>
+                  exit: (meta: TransitionMeta) => ({
+                    x: meta.axis === "x" ? getExitOffset(meta) : 0,
+                    y: meta.axis === "y" ? getExitOffset(meta) : 0,
+                    opacity: 0,
+                    transition: {
+                      duration: EXIT_DURATION,
+                      ease: EXIT_EASE,
+                    },
+                  }),
+                }}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                <div className="h-full">{frozenOutlet}</div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
-    </div>
+    </HeaderActionsProvider>
   );
 }
