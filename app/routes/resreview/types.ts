@@ -1,0 +1,39 @@
+import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import type { CatalogEntry } from "~/logic/publish/catalog";
+
+export const STATE_LABELS: Record<ReviewState, string> = {
+  waiting_review: "等待审核",
+  changes_requested: "需要修改",
+  fixed_waiting: "已修复待复核",
+};
+
+export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+export const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+export const CATALOG_CSV_HEADER =
+  "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
+
+export type ReviewState = "waiting_review" | "changes_requested" | "fixed_waiting";
+
+export interface ResourcePackagePreview {
+  kind: "正式包" | "试用包";
+  deviceId: string;
+  version: string;
+  fileName: string;
+  url: string;
+}
+
+export interface PrResourcePreview {
+  entry: CatalogEntry;
+  ref: string;
+  manifest?: ManifestV2;
+  manifestError?: string;
+  iconUrl: string;
+  coverUrl: string;
+  previewUrls: string[];
+  packages: ResourcePackagePreview[];
+}
+
+export interface PullReviewState {
+  state: ReviewState;
+  items: { id: string; message: string; fixed: boolean }[];
+}

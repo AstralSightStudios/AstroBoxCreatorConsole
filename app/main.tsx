@@ -19,7 +19,7 @@ import AdminOrdersPage from "~/routes/admin/orders";
 import AdminReportsPage from "~/routes/admin/reports";
 import AdminHotUpdatePage from "~/routes/admin/hotupdate";
 import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
-import ResourceReviewPage from "~/routes/resreview";
+import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
 import {
