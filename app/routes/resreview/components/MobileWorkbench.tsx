@@ -1,66 +1,66 @@
-import { Button, Dialog } from "@radix-ui/themes";
+import { CaretLeft } from "@phosphor-icons/react";
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
+import NavIconButton from "~/components/nav-icon-button";
+import { useRepoEnv } from "~/config/repoEnv";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { ReviewDetailContent } from "./ReviewDetailContent";
 import type { PrResourcePreview } from "../types";
 
-interface ReviewDetailDialogProps {
-  open: boolean;
-  onClose: () => void;
+interface MobileWorkbenchProps {
   openPull: GithubPullRequest | null;
-  openStatus: ReturnType<typeof deriveReviewStatus>;
   openComments: GithubIssueComment[];
+  openStatus: ReturnType<typeof deriveReviewStatus>;
   files: import("~/api/github/pr-review").GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
   loadingDetail: boolean;
   needFixMessage: string;
   generalComment: string;
+  onClose: () => void;
   onNeedFixChange: (value: string) => void;
   onGeneralCommentChange: (value: string) => void;
   onAddNeedFix: () => void;
   onAddGeneralComment: () => void;
-  onApprove: () => void;
   onMarkFixed: (id: string) => void;
+  onApprove: () => void;
 }
 
-export function ReviewDetailDialog(props: ReviewDetailDialogProps) {
+export function MobileWorkbench(props: MobileWorkbenchProps) {
   const {
-    open,
-    onClose,
     openPull,
-    openStatus,
     openComments,
+    openStatus,
     files,
     resourcePreviews,
     loadingDetail,
     needFixMessage,
     generalComment,
+    onClose,
     onNeedFixChange,
     onGeneralCommentChange,
     onAddNeedFix,
     onAddGeneralComment,
-    onApprove,
     onMarkFixed,
+    onApprove,
   } = props;
 
-  return (
-    <Dialog.Root open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-      <Dialog.Content
-        maxWidth="100vw"
-        className="!w-[min(96vw,1400px)] !max-w-none"
-      >
-        <Dialog.Title>
-          {openPull ? `#${openPull.number} · ${openPull.title}` : "PR 详情"}
-        </Dialog.Title>
-        {openPull && (
-          <Dialog.Description size="2" className="mb-2 text-white/55">
-            {openPull.user?.login} · {" "}
-            {openPull.head.repo?.full_name ?? openPull.head.ref} · {" "}
-            {openPull.head.sha.slice(0, 7)}
-          </Dialog.Description>
-        )}
+  const env = useRepoEnv();
 
-        <div className="grid max-h-[72vh] min-w-0 gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)]">
+  return (
+    <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <NavIconButton onClick={onClose} className="size-10! bg-white/10 hover:bg-white/20 shrink-0">
+          <CaretLeft weight="bold" size={20} />
+        </NavIconButton>
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
+          <p className="text-sm text-white/60">
+            {env.owner}/{env.repoName}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-4 no-scrollbar">
           <ReviewDetailContent
             openPull={openPull}
             openStatus={openStatus}
@@ -76,15 +76,10 @@ export function ReviewDetailDialog(props: ReviewDetailDialogProps) {
             onAddGeneralComment={onAddGeneralComment}
             onMarkFixed={onMarkFixed}
             onApprove={onApprove}
+            onClose={onClose}
           />
         </div>
-
-        <div className="mt-4 flex justify-end">
-          <Dialog.Close>
-            <Button variant="soft">关闭</Button>
-          </Dialog.Close>
-        </div>
-      </Dialog.Content>
-    </Dialog.Root>
+      </div>
+    </div>
   );
 }

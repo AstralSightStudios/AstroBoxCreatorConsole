@@ -25,6 +25,7 @@ export interface ReviewDetailContentProps {
   onAddGeneralComment: () => void;
   onMarkFixed: (id: string) => void;
   onApprove: () => void;
+  onClose?: () => void;
 }
 
 export function ReviewDetailContent(props: ReviewDetailContentProps) {
@@ -43,6 +44,7 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
     onAddGeneralComment,
     onMarkFixed,
     onApprove,
+    onClose,
   } = props;
 
   const accountState = useAccountState();
@@ -53,7 +55,7 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
         openPull={openPull}
         openStatus={openStatus}
         onApprove={onApprove}
-        onClose={() => {}}
+        onClose={onClose ?? (() => {})}
       />
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">

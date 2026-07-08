@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
 import NavIconButton from "~/components/nav-icon-button";
 import { useRepoEnv } from "~/config/repoEnv";
-import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { ReviewDetailContent } from "./ReviewDetailContent";
 import { WorkbenchSidebar } from "./WorkbenchSidebar";
@@ -62,7 +61,6 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
     onApprove,
   } = props;
 
-  const accountState = useAccountState();
   const env = useRepoEnv();
 
   return (
@@ -74,7 +72,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
         <div className="min-w-0">
           <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
           <p className="text-sm text-white/60">
-            {env.owner}/{env.repoName} · {accountState.github?.username ?? "-"}
+            {env.owner}/{env.repoName}
           </p>
         </div>
       </div>
@@ -108,6 +106,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
               onAddGeneralComment={onAddGeneralComment}
               onMarkFixed={onMarkFixed}
               onApprove={onApprove}
+              onClose={onClose}
             />
           </div>
         </div>

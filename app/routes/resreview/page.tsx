@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button, Select } from "@radix-ui/themes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
@@ -21,7 +21,7 @@ import {
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PrGridCard } from "./components/PrGridCard";
 import { DesktopWorkbench } from "./components/DesktopWorkbench";
-import { ReviewDetailDialog } from "./components/ReviewDetailDialog";
+import { MobileWorkbench } from "./components/MobileWorkbench";
 import { loadPrResourcePreviews, getErrorMessage, makeNeedFixId } from "./utils";
 import type { PrResourcePreview } from "./types";
 import { StatePage, PRReviewPageSkeleton } from "./components/StatePage";
@@ -49,6 +49,7 @@ export default function ResourceReviewPage() {
   const [rotate, setRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
   const isInitialLoading = checkingPermission || (loadingPulls && pulls.length === 0);
@@ -93,21 +94,29 @@ export default function ResourceReviewPage() {
   };
 
   const loadDetail = async (number: number) => {
+    const callId = ++loadDetailRef.current;
     setLoadingDetail(true);
+    setFiles([]);
+    setResourcePreviews([]);
     try {
       const [nextComments, nextFiles] = await Promise.all([
         listPullRequestComments(number),
         listPullRequestFiles(number),
       ]);
+      if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(
         await loadPrResourcePreviews(nextFiles, accountState.github?.token || ""),
       );
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      if (callId === loadDetailRef.current) {
+        toast.error(getErrorMessage(err));
+      }
     } finally {
-      setLoadingDetail(false);
+      if (callId === loadDetailRef.current) {
+        setLoadingDetail(false);
+      }
     }
   };
 
@@ -123,8 +132,10 @@ export default function ResourceReviewPage() {
     if (openNumber) {
       void loadDetail(openNumber);
     } else {
+      loadDetailRef.current += 1;
       setFiles([]);
       setResourcePreviews([]);
+      setLoadingDetail(false);
     }
   }, [openNumber, accountState.github?.token]);
 
@@ -252,7 +263,7 @@ export default function ResourceReviewPage() {
     setIsWorkbenchSidebarCollapsed(false);
   };
 
-  const showWorkbench = isDesktop && openNumber !== null;
+  const showWorkbench = openNumber !== null;
   const showList = !showWorkbench;
 
   return (
@@ -268,34 +279,54 @@ export default function ResourceReviewPage() {
             transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
           >
             <LayoutGroup>
-              <DesktopWorkbench
-                pulls={visiblePulls}
-                openNumber={openNumber!}
-                openPull={openPull}
-                openComments={openComments}
-                openStatus={openStatus}
-                files={files}
-                resourcePreviews={resourcePreviews}
-                loadingDetail={loadingDetail}
-                loadingPulls={loadingPulls}
-                commentsByPr={commentsByPr}
-                needFixMessage={needFixMessage}
-                generalComment={generalComment}
-                isSidebarCollapsed={isWorkbenchSidebarCollapsed}
-                onToggleSidebar={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
-                onSelectSidebar={handleSelectSidebar}
-                onClose={handleCloseWorkbench}
-                onRefreshList={() => {
-                  setRotate((prev) => prev + 360);
-                  setRefreshTick((prev) => prev + 1);
-                }}
-                onNeedFixChange={setNeedFixMessage}
-                onGeneralCommentChange={setGeneralComment}
-                onAddNeedFix={addNeedFix}
-                onAddGeneralComment={addGeneralComment}
-                onMarkFixed={markFixed}
-                onApprove={approve}
-              />
+              {isDesktop ? (
+                <DesktopWorkbench
+                  pulls={visiblePulls}
+                  openNumber={openNumber!}
+                  openPull={openPull}
+                  openComments={openComments}
+                  openStatus={openStatus}
+                  files={files}
+                  resourcePreviews={resourcePreviews}
+                  loadingDetail={loadingDetail}
+                  loadingPulls={loadingPulls}
+                  commentsByPr={commentsByPr}
+                  needFixMessage={needFixMessage}
+                  generalComment={generalComment}
+                  isSidebarCollapsed={isWorkbenchSidebarCollapsed}
+                  onToggleSidebar={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
+                  onSelectSidebar={handleSelectSidebar}
+                  onClose={handleCloseWorkbench}
+                  onRefreshList={() => {
+                    setRotate((prev) => prev + 360);
+                    setRefreshTick((prev) => prev + 1);
+                  }}
+                  onNeedFixChange={setNeedFixMessage}
+                  onGeneralCommentChange={setGeneralComment}
+                  onAddNeedFix={addNeedFix}
+                  onAddGeneralComment={addGeneralComment}
+                  onMarkFixed={markFixed}
+                  onApprove={approve}
+                />
+              ) : (
+                <MobileWorkbench
+                  openPull={openPull}
+                  openComments={openComments}
+                  openStatus={openStatus}
+                  files={files}
+                  resourcePreviews={resourcePreviews}
+                  loadingDetail={loadingDetail}
+                  needFixMessage={needFixMessage}
+                  generalComment={generalComment}
+                  onClose={handleCloseWorkbench}
+                  onNeedFixChange={setNeedFixMessage}
+                  onGeneralCommentChange={setGeneralComment}
+                  onAddNeedFix={addNeedFix}
+                  onAddGeneralComment={addGeneralComment}
+                  onMarkFixed={markFixed}
+                  onApprove={approve}
+                />
+              )}
             </LayoutGroup>
           </motion.div>
         ) : (
@@ -312,7 +343,7 @@ export default function ResourceReviewPage() {
                 <div className="min-w-0">
                   <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
                   <p className="text-sm text-white/60">
-                    {env.owner}/{env.repoName} · {permission}
+                    {env.owner}/{env.repoName}
                   </p>
                 </div>
                 {!headerActionsFit && (
@@ -346,25 +377,6 @@ export default function ResourceReviewPage() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <ReviewDetailDialog
-        open={openNumber !== null && !isDesktop}
-        onClose={() => setOpenNumber(null)}
-        openPull={openPull}
-        openStatus={openStatus}
-        openComments={openComments}
-        files={files}
-        resourcePreviews={resourcePreviews}
-        loadingDetail={loadingDetail}
-        needFixMessage={needFixMessage}
-        generalComment={generalComment}
-        onNeedFixChange={setNeedFixMessage}
-        onGeneralCommentChange={setGeneralComment}
-        onAddNeedFix={addNeedFix}
-        onAddGeneralComment={addGeneralComment}
-        onApprove={approve}
-        onMarkFixed={markFixed}
-      />
     </div>
   );
 }

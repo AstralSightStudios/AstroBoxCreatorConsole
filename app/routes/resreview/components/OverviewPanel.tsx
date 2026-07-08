@@ -11,7 +11,7 @@ interface OverviewPanelProps {
   openPull: GithubPullRequest | null;
   openStatus: ReturnType<typeof deriveReviewStatus>;
   onApprove: () => void;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: OverviewPanelProps) {
@@ -24,8 +24,8 @@ export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: Over
       transition={{ duration: 0.25, delay: 0.1, ease: [0.22, 0.61, 0.36, 1] }}
       className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-4">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="min-w-0 text-xl font-semibold text-white">
               <span className="mr-1 text-white/50">#{openPull.number}</span>
@@ -54,10 +54,7 @@ export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: Over
             {openPull.head.repo?.full_name ?? openPull.head.ref} · {openPull.head.sha.slice(0, 7)}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="soft" onClick={onClose}>
-            返回列表
-          </Button>
+        <div className="ml-auto flex items-center gap-2">
           <Button variant="soft" onClick={() => openUrl(openPull.html_url)}>
             在 GitHub 打开
           </Button>
