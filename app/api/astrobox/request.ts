@@ -70,8 +70,12 @@ let refreshQueue: Array<{
 }> = [];
 
 async function refreshAstroboxToken(refreshToken: string): Promise<AstroboxTokenPair> {
+    const url = new URL(
+        "/auth/refresh_token",
+        ASTROBOX_SERVER_CONFIG.serverUrl,
+    ).toString();
     const { data } = await axios.post<AstroboxTokenPair>(
-        `${ASTROBOX_SERVER_CONFIG.serverUrl}/auth/refresh_token`,
+        url,
         { refreshToken },
         { timeout: 10_000 },
     );
@@ -214,9 +218,13 @@ astroboxApi.interceptors.response.use(
             refreshQueue.push({ resolve, reject, config: originalConfig });
 
             if (!refreshPromise) {
-                refreshAccessToken().then((result) => {
-                    processRefreshQueue(result);
-                });
+                refreshAccessToken()
+                    .then((result) => {
+                        processRefreshQueue(result);
+                    })
+                    .catch((err) => {
+                        processRefreshQueue(classifyRefreshFailure(err));
+                    });
             }
         });
     },
@@ -240,7 +248,7 @@ export async function sendApiRequest<T>(
             method,
             data,
             headers,
-            _autoRefresh: !token,
+            _autoRefresh: token === undefined,
         } as RetryableAxiosRequestConfig);
 
         return response.data;

@@ -36,6 +36,12 @@ export default function LoginCallback() {
                     throw new Error(errMsg);
                 }
 
+                if (!tokenResponse.refreshToken) {
+                    console.warn(
+                        "[astrobox] login response missing refreshToken; automatic token refresh will not be available",
+                    );
+                }
+
                 setMessage("Loading account information...");
                 const profile: any = await getSelfUserInfo(tokenResponse.token);
 

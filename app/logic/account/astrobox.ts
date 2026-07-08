@@ -65,6 +65,12 @@ async function handleAuthUrl(rawUrl: string) {
             throw new Error(tokenResponse?.error || "拿不到 token。");
         }
 
+        if (!tokenResponse.refreshToken) {
+            console.warn(
+                "[astrobox] login response missing refreshToken; automatic token refresh will not be available",
+            );
+        }
+
         emit({ phase: "loading-profile" });
         const profile: any = await getSelfUserInfo(tokenResponse.token);
         persistAstroboxAccount(profile, tokenResponse.token, tokenResponse.refreshToken);
@@ -218,8 +224,15 @@ export async function refreshAstroboxAccount(options?: { throttleMs?: number }) 
         return true;
     } catch (error) {
         // sendApiRequest 会把 401/403 包装成 ApiError；拦截器已经处理了自动刷新
-        // 与登出，这里再做一层兜底。
+        // 与登出，这里再做一层兜底。封禁错误保留账号状态，让上层展示封禁原因。
+        const isBanned =
+            error instanceof ApiError &&
+            error.data &&
+            typeof error.data === "object" &&
+            (error.data as Record<string, unknown>).error === "user-banned";
+
         if (
+            !isBanned &&
             error instanceof ApiError &&
             (error.status === 401 || error.status === 403)
         ) {
