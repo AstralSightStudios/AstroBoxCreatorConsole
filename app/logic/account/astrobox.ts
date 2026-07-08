@@ -3,7 +3,7 @@ import Sdk from "casdoor-js-sdk";
 import { CASDOOR_CONFIG } from "~/config/casdoor";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
 import { loadLoginMethod } from "~/config/loginMethod";
-import { ApiError } from "~/api/astrobox/request";
+import { ApiError, isUserBannedError } from "~/api/astrobox/request";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 import {
     getAstroboxToken,
@@ -225,11 +225,7 @@ export async function refreshAstroboxAccount(options?: { throttleMs?: number }) 
     } catch (error) {
         // sendApiRequest 会把 401/403 包装成 ApiError；拦截器已经处理了自动刷新
         // 与登出，这里再做一层兜底。封禁错误保留账号状态，让上层展示封禁原因。
-        const isBanned =
-            error instanceof ApiError &&
-            error.data &&
-            typeof error.data === "object" &&
-            (error.data as Record<string, unknown>).error === "user-banned";
+        const isBanned = error instanceof ApiError && isUserBannedError(error.data);
 
         if (
             !isBanned &&

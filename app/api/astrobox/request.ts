@@ -52,7 +52,7 @@ function extractServerMessage(data: unknown, fallback: string): string {
     return fallback;
 }
 
-function isUserBannedError(data: unknown): boolean {
+export function isUserBannedError(data: unknown): boolean {
     return (
         data !== null &&
         typeof data === "object" &&
@@ -71,7 +71,7 @@ let refreshQueue: Array<{
 
 async function refreshAstroboxToken(refreshToken: string): Promise<AstroboxTokenPair> {
     const url = new URL(
-        "/auth/refresh_token",
+        "auth/refresh_token",
         ASTROBOX_SERVER_CONFIG.serverUrl,
     ).toString();
     const { data } = await axios.post<AstroboxTokenPair>(
