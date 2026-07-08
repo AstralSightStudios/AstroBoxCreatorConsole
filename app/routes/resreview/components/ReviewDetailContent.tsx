@@ -26,6 +26,7 @@ export interface ReviewDetailContentProps {
   onMarkFixed: (id: string) => void;
   onApprove: () => void;
   onClose?: () => void;
+  overviewPanelRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function ReviewDetailContent(props: ReviewDetailContentProps) {
@@ -45,18 +46,27 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
     onMarkFixed,
     onApprove,
     onClose,
+    overviewPanelRef,
   } = props;
 
   const accountState = useAccountState();
 
+  const setRef = (el: HTMLDivElement | null) => {
+    if (overviewPanelRef) {
+      overviewPanelRef.current = el;
+    }
+  };
+
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <OverviewPanel
-        openPull={openPull}
-        openStatus={openStatus}
-        onApprove={onApprove}
-        onClose={onClose ?? (() => {})}
-      />
+    <>
+      <div ref={setRef}>
+        <OverviewPanel
+          openPull={openPull}
+          openStatus={openStatus}
+          onApprove={onApprove}
+          onClose={onClose}
+        />
+      </div>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -163,6 +173,6 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
