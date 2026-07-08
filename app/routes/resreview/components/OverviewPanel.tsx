@@ -5,7 +5,7 @@ import type { GithubPullRequest } from "~/api/github/pr-review";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { PrStatusBadge, StatusBadge } from "./StatusBadges";
 import { formatTime } from "../utils";
-import { UserCircle } from "@phosphor-icons/react";
+import { UserCircle, GithubLogo } from "@phosphor-icons/react";
 
 interface OverviewPanelProps {
   openPull: GithubPullRequest | null;
@@ -27,9 +27,9 @@ export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: Over
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 text-xl font-semibold text-white">
-              <span className="mr-1 text-white/50">#{openPull.number}</span>
+            <h2 className="min-w-0 text-2xl font-semibold text-white">
               <span className="break-words">{openPull.title}</span>
+              <span className="ml-1 text-sm text-white/50">#{openPull.number}</span>
             </h2>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-white/55">
@@ -50,12 +50,20 @@ export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: Over
               <span className="shrink-0">· 更新于 {formatTime(openPull.updated_at)}</span>
             </span>
           </div>
-          <div className="mt-1 text-xs text-white/40">
-            {openPull.head.repo?.full_name ?? openPull.head.ref} · {openPull.head.sha.slice(0, 7)}
-          </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="soft" onClick={() => openUrl(openPull.html_url)}>
+          <Button
+            variant="soft"
+            className="gap-1.5"
+            onClick={async () => {
+              try {
+                await openUrl(openPull.html_url);
+              } catch {
+                window.open(openPull.html_url, "_blank", "noopener,noreferrer");
+              }
+            }}
+          >
+            <GithubLogo size={16} weight="duotone" />
             在 GitHub 打开
           </Button>
           <Button color="green" onClick={onApprove}>

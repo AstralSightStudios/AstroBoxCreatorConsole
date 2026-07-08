@@ -1,5 +1,5 @@
 import { Button } from "@radix-ui/themes";
-import type { GithubIssueComment, GithubPullRequest, GithubPullFile } from "~/api/github/pr-review";
+import type { GithubIssueComment, GithubPullRequest, GithubPullFile, GithubPullReview } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { UserCircle } from "@phosphor-icons/react";
@@ -16,6 +16,7 @@ export interface ReviewDetailContentProps {
   openComments: GithubIssueComment[];
   files: GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
+  reviews: GithubPullReview[];
   loadingDetail: boolean;
   needFixMessage: string;
   generalComment: string;
@@ -36,6 +37,7 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
     openComments,
     files,
     resourcePreviews,
+    reviews,
     loadingDetail,
     needFixMessage,
     generalComment,
@@ -168,6 +170,35 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
                   <UserCircle size={20} weight="duotone" />
                 )}
                 <span>{accountState.github.username}</span>
+              </div>
+              <div className="my-3 h-px bg-white/10" />
+              <h3 className="text-sm font-semibold text-white">已批准人员</h3>
+              <div className="mt-2 flex flex-col gap-2">
+                {loadingDetail ? (
+                  <p className="text-sm text-white/45">加载中...</p>
+                ) : (
+                  <>
+                    {reviews
+                      .filter((review) => review.state === "APPROVED")
+                      .map((review) => (
+                        <div key={review.id} className="flex items-center gap-2 text-sm text-white/70">
+                          {review.user?.avatar_url ? (
+                            <img
+                              src={review.user.avatar_url}
+                              className="h-6 w-6 rounded-full object-cover"
+                              alt={review.user.login}
+                            />
+                          ) : (
+                            <UserCircle size={20} weight="duotone" />
+                          )}
+                          <span>{review.user?.login ?? "-"}</span>
+                        </div>
+                      ))}
+                    {reviews.filter((review) => review.state === "APPROVED").length === 0 && (
+                      <p className="text-sm text-white/45">暂无 approver</p>
+                    )}
+                  </>
+                )}
               </div>
             </Panel>
           )}

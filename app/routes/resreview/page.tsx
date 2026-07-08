@@ -14,9 +14,11 @@ import {
   listOpenPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
+  listPullRequestReviews,
   approvePullRequest,
   createPullRequestComment,
   type GithubPullRequest,
+  type GithubPullReview,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PrGridCard } from "./components/PrGridCard";
@@ -41,12 +43,14 @@ export default function ResourceReviewPage() {
   const [openNumber, setOpenNumber] = useState<number | null>(null);
   const [files, setFiles] = useState<import("~/api/github/pr-review").GithubPullFile[]>([]);
   const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
+  const [reviews, setReviews] = useState<GithubPullReview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
   const [needFixMessage, setNeedFixMessage] = useState("");
   const [generalComment, setGeneralComment] = useState("");
   const [rotate, setRotate] = useState(0);
+  const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const loadDetailRef = useRef<number>(0);
@@ -98,14 +102,17 @@ export default function ResourceReviewPage() {
     setLoadingDetail(true);
     setFiles([]);
     setResourcePreviews([]);
+    setReviews([]);
     try {
-      const [nextComments, nextFiles] = await Promise.all([
+      const [nextComments, nextFiles, nextReviews] = await Promise.all([
         listPullRequestComments(number),
         listPullRequestFiles(number),
+        listPullRequestReviews(number),
       ]);
       if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
+      setReviews(nextReviews);
       setResourcePreviews(
         await loadPrResourcePreviews(nextFiles, accountState.github?.token || ""),
       );
@@ -135,6 +142,7 @@ export default function ResourceReviewPage() {
       loadDetailRef.current += 1;
       setFiles([]);
       setResourcePreviews([]);
+      setReviews([]);
       setLoadingDetail(false);
     }
   }, [openNumber, accountState.github?.token]);
@@ -183,6 +191,12 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const refreshDetail = () => {
+    if (!openNumber) return;
+    setDetailRotate((prev) => prev + 360);
+    void loadDetail(openNumber);
+  };
+
   const approve = async () => {
     if (!openNumber) return;
     try {
@@ -195,42 +209,62 @@ export default function ResourceReviewPage() {
 
   const topbarActions = (
     <>
-      <NavIconButtonGroup>
-        <Select.Root
-          value={stateFilter}
-          onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
+      {openNumber ? (
+        <NavIconButton
+          onClick={() => {
+            setDetailRotate((prev) => prev + 360);
+            void loadDetail(openNumber);
+          }}
+          disabled={loadingDetail}
         >
-          <Select.Trigger className="flex h-full! min-w-[135px] flex-row items-center gap-2 rounded-full border-none! bg-transparent! px-3 py-1 shadow-none!" />
-          <Select.Content position="popper" className="rounded-2xl">
-            <Select.Item value="all" className="rounded-lg">全部状态</Select.Item>
-            <Select.Item value="waiting_review" className="rounded-lg">等待审核</Select.Item>
-            <Select.Item value="changes_requested" className="rounded-lg">需要修改</Select.Item>
-            <Select.Item value="fixed_waiting" className="rounded-lg">已修复待复核</Select.Item>
-          </Select.Content>
-        </Select.Root>
-      </NavIconButtonGroup>
-      <NavIconButton
-        onClick={() => {
-          setRotate((prev) => prev + 360);
-          setRefreshTick((prev) => prev + 1);
-        }}
-        disabled={loadingPulls}
-      >
-        <motion.div
-          animate={{ rotate }}
-          transition={{ duration: 0.6, ease: "easeInOut" }}
-          style={{ display: "flex" }}
-        >
-          <ArrowClockwiseIcon />
-        </motion.div>
-      </NavIconButton>
+          <motion.div
+            animate={{ rotate: detailRotate }}
+            transition={{ duration: 0.6, ease: "easeInOut" }}
+            style={{ display: "flex" }}
+          >
+            <ArrowClockwiseIcon />
+          </motion.div>
+        </NavIconButton>
+      ) : (
+        <>
+          <NavIconButtonGroup>
+            <Select.Root
+              value={stateFilter}
+              onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
+            >
+              <Select.Trigger className="flex h-full! min-w-[135px] flex-row items-center gap-2 rounded-full border-none! bg-transparent! px-3 py-1 shadow-none!" />
+              <Select.Content position="popper" className="rounded-2xl">
+                <Select.Item value="all" className="rounded-lg">全部状态</Select.Item>
+                <Select.Item value="waiting_review" className="rounded-lg">等待审核</Select.Item>
+                <Select.Item value="changes_requested" className="rounded-lg">需要修改</Select.Item>
+                <Select.Item value="fixed_waiting" className="rounded-lg">已修复待复核</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </NavIconButtonGroup>
+          <NavIconButton
+            onClick={() => {
+              setRotate((prev) => prev + 360);
+              setRefreshTick((prev) => prev + 1);
+            }}
+            disabled={loadingPulls}
+          >
+            <motion.div
+              animate={{ rotate }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
+              style={{ display: "flex" }}
+            >
+              <ArrowClockwiseIcon />
+            </motion.div>
+          </NavIconButton>
+        </>
+      )}
     </>
   );
 
   useLayoutEffect(() => {
     setHeaderActions(topbarActions);
     return () => setHeaderActions(null);
-  }, [setHeaderActions, stateFilter, loadingPulls, rotate]);
+  }, [setHeaderActions, stateFilter, loadingPulls, rotate, openNumber, loadingDetail, detailRotate]);
 
   if (!accountState.github?.token) {
     return <StatePage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
@@ -288,6 +322,7 @@ export default function ResourceReviewPage() {
                   openStatus={openStatus}
                   files={files}
                   resourcePreviews={resourcePreviews}
+                  reviews={reviews}
                   loadingDetail={loadingDetail}
                   loadingPulls={loadingPulls}
                   commentsByPr={commentsByPr}
@@ -315,6 +350,7 @@ export default function ResourceReviewPage() {
                   openStatus={openStatus}
                   files={files}
                   resourcePreviews={resourcePreviews}
+                  reviews={reviews}
                   loadingDetail={loadingDetail}
                   needFixMessage={needFixMessage}
                   generalComment={generalComment}

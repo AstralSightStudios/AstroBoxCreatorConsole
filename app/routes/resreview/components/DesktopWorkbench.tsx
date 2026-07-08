@@ -15,6 +15,7 @@ interface DesktopWorkbenchProps {
   openStatus: ReturnType<typeof deriveReviewStatus>;
   files: import("~/api/github/pr-review").GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
+  reviews: import("~/api/github/pr-review").GithubPullReview[];
   loadingDetail: boolean;
   loadingPulls: boolean;
   commentsByPr: Record<number, GithubIssueComment[]>;
@@ -42,6 +43,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
     openStatus,
     files,
     resourcePreviews,
+    reviews,
     loadingDetail,
     loadingPulls,
     commentsByPr,
@@ -89,6 +91,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
             openComments={openComments}
             files={files}
             resourcePreviews={resourcePreviews}
+            reviews={reviews}
             loadingDetail={loadingDetail}
             needFixMessage={needFixMessage}
             generalComment={generalComment}

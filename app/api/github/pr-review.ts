@@ -40,6 +40,17 @@ export interface GithubIssueComment {
   created_at?: string;
 }
 
+export interface GithubPullReview {
+  id: number;
+  state: string;
+  user?: {
+    login: string;
+    avatar_url?: string;
+  };
+  body?: string;
+  submitted_at?: string;
+}
+
 export interface GithubPullFile {
   filename: string;
   status: string;
@@ -100,6 +111,13 @@ export async function listPullRequestComments(prNumber: number) {
 export async function listPullRequestFiles(prNumber: number) {
   return githubFetch<GithubPullFile[]>(
     repoPath(`/pulls/${prNumber}/files?per_page=100`),
+    { headers: headers() },
+  );
+}
+
+export async function listPullRequestReviews(prNumber: number) {
+  return githubFetch<GithubPullReview[]>(
+    repoPath(`/pulls/${prNumber}/reviews?per_page=100`),
     { headers: headers() },
   );
 }

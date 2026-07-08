@@ -11,6 +11,7 @@ interface MobileWorkbenchProps {
   openStatus: ReturnType<typeof deriveReviewStatus>;
   files: import("~/api/github/pr-review").GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
+  reviews: import("~/api/github/pr-review").GithubPullReview[];
   loadingDetail: boolean;
   needFixMessage: string;
   generalComment: string;
@@ -30,6 +31,7 @@ export function MobileWorkbench(props: MobileWorkbenchProps) {
     openStatus,
     files,
     resourcePreviews,
+    reviews,
     loadingDetail,
     needFixMessage,
     generalComment,
@@ -59,6 +61,7 @@ export function MobileWorkbench(props: MobileWorkbenchProps) {
           openComments={openComments}
           files={files}
           resourcePreviews={resourcePreviews}
+          reviews={reviews}
           loadingDetail={loadingDetail}
           needFixMessage={needFixMessage}
           generalComment={generalComment}
