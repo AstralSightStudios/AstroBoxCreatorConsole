@@ -1,6 +1,16 @@
 import { Link, useLocation } from "react-router";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import FunctionButton from "~/components/nav/function-button";
-import { useHeaderActions } from "~/layout/header-actions";
+import {
+  useHeaderActions,
+  useHeaderActionsFit,
+  useSetHeaderActionsFit,
+} from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { CreatorConsoleLogoIcon } from "./svgs";
 
@@ -30,8 +40,14 @@ export default function Header() {
   const location = useLocation();
   const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
   const headerActions = useHeaderActions();
+  const headerActionsFit = useHeaderActionsFit();
+  const setHeaderActionsFit = useSetHeaderActionsFit();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
+
+  const headerRef = useRef<HTMLElement>(null);
+  const breadcrumbRef = useRef<HTMLDivElement>(null);
+  const actionsMeasureRef = useRef<HTMLDivElement>(null);
 
   const segments = pathname.replace(/^\//, "").split("/").filter(Boolean);
 
@@ -47,9 +63,47 @@ export default function Header() {
     });
   }
 
+  const measure = useCallback(() => {
+    if (!headerActions) {
+      setHeaderActionsFit(false);
+      return;
+    }
+    const actionsEl = actionsMeasureRef.current;
+    if (!actionsEl) return;
+    const actionsWidth = actionsEl.getBoundingClientRect().width;
+
+    const headerEl = headerRef.current;
+    const breadcrumbEl = breadcrumbRef.current;
+    if (!headerEl || !breadcrumbEl) return;
+    const headerRight = headerEl.getBoundingClientRect().right;
+    const breadcrumbRight = breadcrumbEl.getBoundingClientRect().right;
+    const free = headerRight - breadcrumbRight;
+    const fits = free - 40 >= actionsWidth;
+    setHeaderActionsFit(fits);
+  }, [headerActions, setHeaderActionsFit]);
+
+  useLayoutEffect(() => {
+    measure();
+  }, [measure]);
+
+  useEffect(() => {
+    const headerEl = headerRef.current;
+    const breadcrumbEl = breadcrumbRef.current;
+    const actionsEl = actionsMeasureRef.current;
+    if (!headerEl || !breadcrumbEl || !actionsEl) return;
+
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(headerEl);
+    ro.observe(breadcrumbEl);
+    ro.observe(actionsEl);
+
+    return () => ro.disconnect();
+  }, [measure]);
+
   return (
     <header
-      className={`flex flex-row flex-wrap gap-2 ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      ref={headerRef}
+      className={`relative flex flex-row flex-wrap gap-2 ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
     >
       {isMobile ? (
         <FunctionButton
@@ -66,7 +120,7 @@ export default function Header() {
         </div>
       ) : null}
 
-      <div className="flex flex-row items-center gap-1 pl-1">
+      <div ref={breadcrumbRef} className="flex flex-row items-center gap-1 pl-1">
         {breadcrumbKeys.map((key, index) => {
           const label = PAGE_NAME_MAP[key] ?? key;
           const isLast = index === breadcrumbKeys.length - 1;
@@ -88,10 +142,23 @@ export default function Header() {
           );
         })}
       </div>
-      {isDesktop && headerActions ? (
-        <div className="ml-auto flex flex-row items-center gap-2">
-          {headerActions}
-        </div>
+      {headerActions ? (
+        <>
+          <div
+            ref={actionsMeasureRef}
+            className="pointer-events-none absolute left-0 top-0 opacity-0 h-0 overflow-hidden"
+            aria-hidden="true"
+          >
+            <div className="flex flex-row items-center gap-2">
+              {headerActions}
+            </div>
+          </div>
+          {headerActionsFit && (
+            <div className="ml-auto flex flex-row items-center gap-2">
+              {headerActions}
+            </div>
+          )}
+        </>
       ) : null}
     </header>
   );

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import NavIconButton, { NavIconButtonGroup } from "~/components/nav-icon-button";
-import { useSetHeaderActions } from "~/layout/header-actions";
+import { useHeaderActionsFit, useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import {
   approvePullRequest,
@@ -254,6 +254,7 @@ export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
   const setHeaderActions = useSetHeaderActions();
+  const headerActionsFit = useHeaderActionsFit();
   const { isDesktop } = useNavVisibility();
   const [permission, setPermission] = useState("");
   const [checkingPermission, setCheckingPermission] = useState(true);
@@ -442,9 +443,9 @@ export default function ResourceReviewPage() {
   );
 
   useLayoutEffect(() => {
-    setHeaderActions(isDesktop ? topbarActions : null);
+    setHeaderActions(topbarActions);
     return () => setHeaderActions(null);
-  }, [setHeaderActions, isDesktop, stateFilter, loadingPulls, rotate]);
+  }, [setHeaderActions, stateFilter, loadingPulls, rotate]);
 
   if (!accountState.github?.token) {
     return <StatePage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
@@ -466,15 +467,15 @@ export default function ResourceReviewPage() {
   return (
     <div className="h-full overflow-hidden px-4 pt-5 pb-3 md:px-6">
       <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-3">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
             <p className="text-sm text-white/60">
               {env.owner}/{env.repoName} · {permission}
             </p>
           </div>
-          {!isDesktop && (
-            <div className="ml-auto flex flex-row items-center gap-2">
+          {!headerActionsFit && (
+            <div className="flex flex-row items-center justify-end gap-2">
               {topbarActions}
             </div>
           )}
