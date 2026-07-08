@@ -1,6 +1,6 @@
 import { sendApiRequest } from "./request";
 
-export function getSelfUserInfo(token: string): Promise<any> {
+export function getSelfUserInfo(token?: string): Promise<any> {
     return sendApiRequest("/auth/api/getUserInfo", "GET", token);
 }
 
@@ -20,6 +20,6 @@ export interface SelfAccountContext {
     } | null;
 }
 
-export function getSelfAccountContext(token: string): Promise<SelfAccountContext> {
+export function getSelfAccountContext(token?: string): Promise<SelfAccountContext> {
     return sendApiRequest("/auth/api/me", "GET", token);
 }

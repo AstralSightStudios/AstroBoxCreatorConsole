@@ -3,9 +3,11 @@ import Sdk from "casdoor-js-sdk";
 import { CASDOOR_CONFIG } from "~/config/casdoor";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
 import { loadLoginMethod } from "~/config/loginMethod";
+import { ApiError, isUserBannedError } from "~/api/astrobox/request";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 import {
     getAstroboxToken,
+    getAstroboxRefreshToken,
     logoutAccount,
     setAstroboxAccount,
     type AstroboxAccount,
@@ -57,15 +59,21 @@ async function handleAuthUrl(rawUrl: string) {
             undefined,
             code,
             state,
-        )) as { token?: string; error?: string };
+        )) as { token?: string; refreshToken?: string; error?: string };
 
         if (!tokenResponse?.token) {
             throw new Error(tokenResponse?.error || "拿不到 token。");
         }
 
+        if (!tokenResponse.refreshToken) {
+            console.warn(
+                "[astrobox] login response missing refreshToken; automatic token refresh will not be available",
+            );
+        }
+
         emit({ phase: "loading-profile" });
         const profile: any = await getSelfUserInfo(tokenResponse.token);
-        persistAstroboxAccount(profile, tokenResponse.token);
+        persistAstroboxAccount(profile, tokenResponse.token, tokenResponse.refreshToken);
         emit({ phase: "success" });
 
         // Bring app back to foreground when login completes via deep link.
@@ -159,7 +167,11 @@ export async function startAstroboxLogin() {
     }
 }
 
-export function persistAstroboxAccount(profile: any, token: string) {
+export function persistAstroboxAccount(
+    profile: any,
+    token: string,
+    refreshToken?: string,
+) {
     const account: AstroboxAccount = {
         avatar: profile?.avatar ?? "",
         name:
@@ -170,6 +182,7 @@ export function persistAstroboxAccount(profile: any, token: string) {
         plan: profile?.vip || profile?.tag || "",
         email: profile?.email ?? "",
         token,
+        refreshToken: refreshToken || "",
         roles: Array.isArray(profile?.roles)
             ? profile.roles.filter((role: unknown): role is string => typeof role === "string")
             : [],
@@ -200,15 +213,25 @@ export async function refreshAstroboxAccount(options?: { throttleMs?: number }) 
     lastAccountRefreshAt = Date.now();
 
     try {
-        const profile = await getSelfUserInfo(token);
-        persistAstroboxAccount(profile, token);
+        const profile = await getSelfUserInfo();
+        // getSelfUserInfo 内部可能触发 token 刷新，持久化时取最新的 token，
+        // 同时保留已有的 refresh token。
+        persistAstroboxAccount(
+            profile,
+            getAstroboxToken() ?? token,
+            getAstroboxRefreshToken(),
+        );
         return true;
     } catch (error) {
-        const status = axios.isAxiosError(error)
-            ? error.response?.status
-            : undefined;
+        // sendApiRequest 会把 401/403 包装成 ApiError；拦截器已经处理了自动刷新
+        // 与登出，这里再做一层兜底。封禁错误保留账号状态，让上层展示封禁原因。
+        const isBanned = error instanceof ApiError && isUserBannedError(error.data);
 
-        if (status === 401 || status === 403) {
+        if (
+            !isBanned &&
+            error instanceof ApiError &&
+            (error.status === 401 || error.status === 403)
+        ) {
             clearAstroboxAccount();
         }
 
