@@ -79,10 +79,25 @@ async function refreshAstroboxToken(refreshToken: string): Promise<AstroboxToken
 }
 
 function classifyRefreshFailure(error: unknown): "invalid" | "transient" {
-    // 没有响应对象说明是网络层错误（超时、断网等），不把用户登出。
-    if (axios.isAxiosError(error) && !error.response) {
+    if (!axios.isAxiosError(error)) {
+        // 非 axios 错误（如异常 JSON）无法确认 refresh token 是否失效，先按 transient 处理。
         return "transient";
     }
+
+    // 没有响应对象说明是网络层错误（超时、断网等），不把用户登出。
+    if (!error.response) {
+        return "transient";
+    }
+
+    // 服务端临时故障（5xx）或限流/超时也不应直接登出用户。
+    const status = error.response.status;
+    if (status >= 500 && status < 600) {
+        return "transient";
+    }
+    if (status === 408 || status === 429) {
+        return "transient";
+    }
+
     return "invalid";
 }
 

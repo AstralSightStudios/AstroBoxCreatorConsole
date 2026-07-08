@@ -75,6 +75,25 @@ describe("astrobox account storage", () => {
         expect(getAstroboxToken()).toBe("access-token");
     });
 
+    test("normalizes legacy account missing refresh token", () => {
+        saveAccountState({
+            activeProvider: "astrobox",
+            astrobox: {
+                avatar: "",
+                name: "Astro",
+                plan: "pro",
+                email: "astro@example.com",
+                token: "legacy-token",
+                roles: [],
+            } as unknown as AstroboxAccount,
+        });
+
+        const state = loadAccountState();
+        expect(state.astrobox?.token).toBe("legacy-token");
+        expect(state.astrobox?.refreshToken).toBe("");
+        expect(getAstroboxRefreshToken()).toBeUndefined();
+    });
+
     test("setAstroboxTokens rotates token pair", () => {
         setAstroboxAccount(makeAccount({ token: "old-access", refreshToken: "old-refresh" }));
 
