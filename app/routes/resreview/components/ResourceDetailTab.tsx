@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
-import { Globe, Link as LinkIcon, YoutubeLogo, GithubLogo, TwitterLogo, DiscordLogo, MapPin, Play, ShoppingCart, File, Cube, Storefront } from "@phosphor-icons/react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Globe, Link as LinkIcon, YoutubeLogo, GithubLogo, TwitterLogo, DiscordLogo, MapPin, Play, ShoppingCart, File, Cube, Storefront, Download, ArrowLineDown } from "@phosphor-icons/react";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
+import { loadDeviceNameMap } from "~/logic/devices/catalog";
 import type { PrResourcePreview } from "../types";
 
 // --- Helpers ---
@@ -106,8 +107,7 @@ function useImageMeta() {
   const formatAspectRatio = (url: string): string => {
     const meta = imageMetaMap[url];
     if (!meta?.width || !meta?.height) return "-";
-    const divisor = gcd(meta.width, meta.height);
-    return `${meta.width / divisor}:${meta.height / divisor}`;
+    return (meta.width / meta.height).toFixed(2);
   };
 
   const getAspectRatioValue = (url: string): number | null => {
@@ -207,6 +207,7 @@ export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[
 
 function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
   const {
+    imageMetaMap,
     handleImageLoad,
     formatImageDimensions,
     formatAspectRatio,
@@ -217,6 +218,35 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
   const manifest = resource.manifest;
   const manifestItem = manifest?.item;
   const entry = resource.entry;
+
+  const [previewActiveIndex, setPreviewActiveIndex] = useState(0);
+  const previewActiveUrl = resource.previewUrls[previewActiveIndex] ?? "";
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+
+  const syncPreviewScroll = useCallback(() => {
+    const el = previewScrollRef.current;
+    if (!el) return;
+    const slides = el.querySelectorAll<HTMLElement>('[data-preview-slide="1"]');
+    if (slides.length === 0) return;
+    const center = el.scrollLeft + el.clientWidth / 2;
+    let minDist = Infinity;
+    let idx = 0;
+    slides.forEach((s, i) => {
+      const d = Math.abs(s.offsetLeft + s.offsetWidth / 2 - center);
+      if (d < minDist) { minDist = d; idx = i; }
+    });
+    setPreviewActiveIndex(idx);
+  }, []);
+
+  const scrollPreviewTo = useCallback((index: number) => {
+    const el = previewScrollRef.current;
+    if (!el) return;
+    const slides = el.querySelectorAll<HTMLElement>('[data-preview-slide="1"]');
+    const target = slides[index];
+    if (!target) return;
+    const scrollTarget = target.offsetLeft + target.offsetWidth / 2 - el.clientWidth / 2;
+    el.scrollTo({ left: scrollTarget, behavior: "smooth" });
+  }, []);
 
   const handleIconLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -241,6 +271,22 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
 
   const groupedDownloads = useMemo(() => groupDownloads(resource.packages), [resource.packages]);
 
+  const [deviceNameMap, setDeviceNameMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    loadDeviceNameMap().then(setDeviceNameMap).catch(() => {});
+  }, []);
+
+  const allDownloadUrls = useMemo(
+    () => groupedDownloads.map((g) => g.raw).filter(Boolean) as string[],
+    [groupedDownloads],
+  );
+
+  const handleDownloadAll = useCallback(() => {
+    for (const url of allDownloadUrls) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }, [allDownloadUrls]);
+
   const links = useMemo(() => {
     const raw = manifest?.links;
     if (!Array.isArray(raw)) return [];
@@ -260,9 +306,26 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
 
       {/* Resource Info Grid (2 columns) */}
       <div className="grid gap-2 sm:grid-cols-2">
-        <InfoCell label="资源仓库" value={`${entry.repo_owner}/${entry.repo_name}`} />
-        <InfoCell label="资源分支" value={resource.ref || "-"} />
-        <InfoCell label="资源 ID" value={entry.id || "-"} />
+        <InfoCell label="资源仓库">
+          <a
+            href={`https://github.com/${entry.repo_owner}/${entry.repo_name}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-300 hover:underline"
+          >
+            {entry.repo_owner}/{entry.repo_name}
+          </a>
+        </InfoCell>
+        <InfoCell label="资源分支">
+          <a
+            href={`https://github.com/${entry.repo_owner}/${entry.repo_name}/tree/${resource.ref}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-blue-300 hover:underline"
+          >
+            {resource.ref || "-"}
+          </a>
+        </InfoCell>
       </div>
 
       {/* Resource Info + Devices (2 columns on xl) */}
@@ -283,28 +346,25 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
             {/* Links */}
             {links.length > 0 && (
               <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                <span className="text-xs text-white/55">链接（manifest_v2.links）</span>
-                <div className="space-y-1 text-sm font-medium text-white">
-                  {links.map((link, i) => (
-                    <a
-                      key={i}
-                      href={link.url || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-blue-400 hover:underline"
-                    >
-                      {(() => {
-                        const IconComp = resolveLinkIcon(link.icon);
-                        return IconComp ? (
-                          <IconComp size={16} className="shrink-0 text-white/55" />
-                        ) : null;
-                      })()}
-                      {link.title && (
-                        <span className="min-w-0 break-all text-white">{link.title}</span>
-                      )}
-                      <span className="min-w-0 break-all text-white/55">{link.url || "-"}</span>
-                    </a>
-                  ))}
+                <span className="text-xs text-white/55">链接</span>
+                <div className="flex flex-col gap-1">
+                  {links.map((link, i) => {
+                    const IconComp = resolveLinkIcon(link.icon);
+                    return (
+                      <a
+                        key={i}
+                        href={link.url || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 hover:bg-white/10 transition"
+                      >
+                        {IconComp ? (
+                          <IconComp size={18} className="shrink-0 text-white/55" />
+                        ) : null}
+                        <span className="min-w-0 break-all text-white">{link.title || link.url}</span>
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -312,30 +372,57 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
         </div>
 
         {/* Supported Devices Section */}
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-          <div className="mb-2 text-xs font-semibold text-white/55">支持设备</div>
+        <div className="relative rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-white/55">支持设备</span>
+            {groupedDownloads.length > 0 && (
+              <button
+                onClick={handleDownloadAll}
+                className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 transition"
+              >
+                <ArrowLineDown size={12} />
+                下载所有包
+              </button>
+            )}
+          </div>
           <div className="space-y-2">
             {groupedDownloads.map((group, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                className="relative rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
               >
                 <div className="text-xs text-white/55">
                   支持设备：
-                  {group.devices.map((d) => d || "unknown").join(" / ") || "-"}
+                  {group.devices.map((d) => {
+                    const name = deviceNameMap.get(d);
+                    return name ? `${d}（${name}）` : d;
+                  }).join(" / ") || "-"}
                 </div>
                 <div className="mt-1 text-xs text-white/55">版本：{group.version || "-"}</div>
-                <div className="mt-1 break-all text-xs text-white/55">文件：{group.file || "-"}</div>
-                {group.raw && (
+                <div className="mt-1 break-all text-xs text-white/55">
+                  文件：
                   <a
-                    href={group.raw}
+                    href={`https://github.com/${entry.repo_owner}/${entry.repo_name}/blob/${resource.ref}/${group.file}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-1 block break-all text-xs text-blue-400 hover:underline"
+                    className="text-blue-300 hover:underline"
                   >
-                    {group.raw}
+                    {group.file || "-"}
                   </a>
-                )}
+                </div>
+                <div className="mt-1 text-right">
+                  {group.raw ? (
+                    <button
+                      onClick={() => window.open(group.raw, "_blank", "noopener,noreferrer")}
+                      className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 transition"
+                    >
+                      <Download size={12} />
+                      下载包
+                    </button>
+                  ) : (
+                    <span className="text-xs text-white/45">下载包</span>
+                  )}
+                </div>
               </div>
             ))}
             {groupedDownloads.length === 0 && (
@@ -351,7 +438,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
         <div className="space-y-3">
           {(resource.iconUrl || resource.coverUrl) && (
             <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-              {/* Icon */}
+{/* Icon */}
               {resource.iconUrl && (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
                   <div className="text-xs text-white/55">
@@ -359,14 +446,8 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                   </div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.iconUrl)} ·
-                    <span
-                      className={
-                        isIconRatioValid(resource.iconUrl)
-                          ? ""
-                          : "font-semibold text-red-400"
-                      }
-                    >
-                      宽高比：{formatAspectRatio(resource.iconUrl)}
+                    <span className={isIconRatioValid(resource.iconUrl) ? "" : "font-semibold text-red-400"}>
+                      {" "}宽高比：{formatAspectRatio(resource.iconUrl)}
                     </span>
                   </div>
                   <a
@@ -385,7 +466,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                 </div>
               )}
 
-              {/* Cover */}
+{/* Cover */}
               {resource.coverUrl && (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
                   <div className="text-xs text-white/55">
@@ -393,14 +474,8 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                   </div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.coverUrl)} ·
-                    <span
-                      className={
-                        isCoverRatioValid(resource.coverUrl)
-                          ? ""
-                          : "font-semibold text-red-400"
-                      }
-                    >
-                      宽高比：{formatAspectRatio(resource.coverUrl)}
+                    <span className={isCoverRatioValid(resource.coverUrl) ? "" : "font-semibold text-red-400"}>
+                      {" "}宽高比：{formatAspectRatio(resource.coverUrl)}
                     </span>
                   </div>
                   <a
@@ -424,21 +499,65 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
           {/* Previews */}
           {resource.previewUrls.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-xs text-white/55">
-                预览图（{resource.previewUrls.length} 张）
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-white/55">
+                  预览图（{resource.previewUrls.length} 张）
+                </div>
+                {resource.previewUrls.length > 1 && (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => scrollPreviewTo(Math.max(0, previewActiveIndex - 1))}
+                      disabled={previewActiveIndex === 0}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-white/60 hover:bg-white/10 disabled:opacity-30 transition"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"></path></svg>
+                    </button>
+                    <button
+                      onClick={() => scrollPreviewTo(Math.min(resource.previewUrls.length - 1, previewActiveIndex + 1))}
+                      disabled={previewActiveIndex === resource.previewUrls.length - 1}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-white/60 hover:bg-white/10 disabled:opacity-30 transition"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 256 256" fill="currentColor"><path d="M101.66,53.66a8,8,0,0,1,11.32-11.32l80,80a8,8,0,0,1,0,11.32l-80,80a8,8,0,0,1-11.32-11.32L164.69,128Z"></path></svg>
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {resource.previewUrls.map((url, i) => (
-                  <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                    <DimensionTrackedImage
-                      rawUrl={url}
-                      alt={`Preview ${i + 1}`}
-                      className="h-24 w-36 rounded-lg border border-white/10 object-cover"
-                      onLoad={handlePreviewLoad(url)}
+              <div
+                ref={previewScrollRef}
+                onScroll={syncPreviewScroll}
+                className="scrollbar-none overflow-x-auto pb-1"
+              >
+                <div className="flex flex-nowrap gap-2 snap-x snap-mandatory sm:gap-3" style={{ minWidth: "min-content", paddingLeft: "calc(50% - 160px)", paddingRight: "calc(50% - 160px)" }}>
+                  {resource.previewUrls.map((url, i) => (
+                    <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 sm:px-3 sm:py-2" style={{ maxWidth: `${(imageMetaMap[url]?.width ?? 0) || 0}px` }}>
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-md border border-white/10 bg-black/40">
+                        <DimensionTrackedImage
+                          rawUrl={url}
+                          alt={`Preview ${i + 1}`}
+                          className="max-h-[40vh] max-w-full object-contain"
+                          onLoad={handlePreviewLoad(url)}
+                        />
+                      </a>
+                      <div className="mt-2 break-all text-xs text-white/45">
+                        {url.split("/").pop() || `预览 ${i + 1}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {resource.previewUrls.length > 1 && (
+                <div className="flex items-center justify-center gap-1.5">
+                  {resource.previewUrls.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => scrollPreviewTo(i)}
+                      className={`h-1.5 rounded-full transition-all ${
+                        i === previewActiveIndex ? "w-5 bg-white/70" : "w-2 bg-white/20 hover:bg-white/35"
+                      }`}
                     />
-                  </a>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             !resource.manifestError && (
@@ -455,24 +574,26 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
 
 // --- Sub-components ---
 
-function InfoCell({ label, value }: { label: string; value: string }) {
+function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
       <span className="text-xs text-white/55">{label}</span>
-      <p className="mt-0.5 break-all text-sm font-medium text-white">{value}</p>
+      <p className="mt-0.5 break-all text-sm font-medium text-white">{children}</p>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  const isUrl = hasUrl(value);
+function InfoRow({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
+  const isUrl = value ? hasUrl(value) : false;
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 md:flex-row md:items-start md:justify-between">
       <span className="text-xs text-white/55">{label}</span>
-      {isUrl ? (
+      {children ? (
+        <div className="min-w-0 flex-1">{children}</div>
+      ) : isUrl ? (
         <span
           className="min-w-0 break-all text-sm font-medium text-white"
-          dangerouslySetInnerHTML={{ __html: renderTextWithLinks(value) }}
+          dangerouslySetInnerHTML={{ __html: renderTextWithLinks(value!) }}
         />
       ) : (
         <span className="min-w-0 break-all text-sm font-medium text-white">{value}</span>

@@ -126,13 +126,14 @@ async function createPullRequest(branch: string) {
 }
 
 export async function fetchExploreJson() {
-  const response = await fetch(
-    `https://raw.githubusercontent.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/refs/heads/${COMMUNITY_REPO_CONFIG.defaultBranch}/${COMMUNITY_REPO_CONFIG.exploreFilePath}`,
+  const { content } = await getContent(
+    COMMUNITY_REPO_CONFIG.exploreFilePath,
+    COMMUNITY_REPO_CONFIG.defaultBranch,
   );
-  if (!response.ok) {
-    throw new Error(`读取 explore_v2.json 失败：HTTP ${response.status}`);
-  }
-  return response.text();
+  const raw = new TextDecoder().decode(
+    Uint8Array.from(atob(content), (c) => c.charCodeAt(0)),
+  );
+  return raw;
 }
 
 export async function submitExplorePr(

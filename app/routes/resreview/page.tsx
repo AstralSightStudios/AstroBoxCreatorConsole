@@ -26,7 +26,9 @@ import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PrGridCard } from "./components/PrGridCard";
 import { DesktopWorkbench } from "./components/DesktopWorkbench";
 import { MobileWorkbench } from "./components/MobileWorkbench";
-import { loadPrResourcePreviews, getErrorMessage } from "./utils";
+import { loadPrResourcePreviews, getErrorMessage, extractOldCatalogEntriesFromFiles } from "./utils";
+import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import type { CatalogEntry } from "~/logic/publish/catalog";
 import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
 import { StatePage, PRReviewPageSkeleton } from "./components/StatePage";
@@ -64,6 +66,28 @@ export default function ResourceReviewPage() {
   const openPull = pulls.find((pull) => pull.number === openNumber) || null;
   const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];
   const openStatus = deriveReviewStatus(openComments);
+
+  const repoFileChanges = useMemo(() => {
+    if (files.length === 0 || resourcePreviews.length === 0) return [];
+    const oldEntries = extractOldCatalogEntriesFromFiles(files);
+    const oldById = new Map<string, CatalogEntry>();
+    for (const entry of oldEntries) oldById.set(entry.id, entry);
+
+    return resourcePreviews.map((preview) => {
+      const oldEntry = oldById.get(preview.entry.id);
+      const isNew = !oldEntry || !oldEntry.repo_commit_hash;
+      return {
+        entryId: preview.entry.id,
+        resourceName: preview.entry.name,
+        isNew,
+        owner: preview.entry.repo_owner,
+        repo: preview.entry.repo_name,
+        commitHash: preview.entry.repo_commit_hash || preview.ref,
+        baseCommitHash: isNew ? undefined : oldEntry!.repo_commit_hash,
+        manifest: preview.manifest,
+      };
+    });
+  }, [files, resourcePreviews]);
 
   const loadPermission = async () => {
     setCheckingPermission(true);
@@ -338,6 +362,7 @@ export default function ResourceReviewPage() {
                   files={files}
                   resourcePreviews={resourcePreviews}
                   reviews={reviews}
+                  repoFileChanges={repoFileChanges}
                   loadingDetail={loadingDetail}
                   loadingPulls={loadingPulls}
                   commentsByPr={commentsByPr}
@@ -370,6 +395,7 @@ export default function ResourceReviewPage() {
                   files={files}
                   resourcePreviews={resourcePreviews}
                   reviews={reviews}
+                  repoFileChanges={repoFileChanges}
                   loadingDetail={loadingDetail}
                   generalComment={generalComment}
                   replyTarget={replyTarget}

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { loadAccountState } from "~/logic/account/store";
 
 interface FetchMediaResponse {
   status: number;
@@ -21,9 +22,13 @@ function inTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function authHeader(): Record<string, string> {
+  const token = loadAccountState().github?.token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function fetchProxiedMediaUrl(url: string): Promise<string> {
   if (!url) return url;
-  if (!inTauri()) return url;
 
   const cached = blobUrlCache.get(url);
   if (cached) return cached;
@@ -31,14 +36,25 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
   const pending = inflight.get(url);
   if (pending) return pending;
 
+  const headers = authHeader();
+
   const job = (async () => {
-    const result = await invoke<FetchMediaResponse>("fetch_media", {
-      request: { url },
-    });
-    const bytes = base64ToBytes(result.body_base64);
-    const blob = new Blob([bytes.buffer as ArrayBuffer], {
-      type: result.content_type || "application/octet-stream",
-    });
+    if (inTauri()) {
+      const result = await invoke<FetchMediaResponse>("fetch_media", {
+        request: { url, headers },
+      });
+      const bytes = base64ToBytes(result.body_base64);
+      const blob = new Blob([bytes.buffer as ArrayBuffer], {
+        type: result.content_type || "application/octet-stream",
+      });
+      const blobUrl = URL.createObjectURL(blob);
+      blobUrlCache.set(url, blobUrl);
+      return blobUrl;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
     blobUrlCache.set(url, blobUrl);
     return blobUrl;

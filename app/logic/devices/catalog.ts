@@ -1,4 +1,6 @@
-import { devicesCatalogUrl } from "~/config/repoEnv";
+import { loadRepoEnv } from "~/config/repoEnv";
+import { getRepoFile } from "~/logic/publish/github-actions";
+import type { RepoInfo } from "~/logic/publish/github-actions";
 
 export interface DeviceOption {
     id: string;
@@ -28,33 +30,48 @@ function parseDeviceOptions(payload: DevicesPayload): DeviceOption[] {
     return Array.from(map.values());
 }
 
+function decodeBase64(content?: string) {
+    if (!content) return "";
+    return new TextDecoder().decode(
+        Uint8Array.from(atob(content), (c) => c.charCodeAt(0)),
+    );
+}
+
 export async function loadDeviceOptions() {
-    const url = devicesCatalogUrl();
-    const cached = cache.get(url);
+    const env = loadRepoEnv();
+    const cacheKey = `devices:${env.id}`;
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
 
-    const pending = inflight.get(url);
+    const pending = inflight.get(cacheKey);
     if (pending) return pending;
 
     const promise = (async () => {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`请求失败: ${response.status}`);
-        }
-        const payload = (await response.json()) as DevicesPayload;
+        const repo: RepoInfo = {
+            owner: env.owner,
+            name: env.repoName,
+            branch: env.defaultBranch,
+        };
+        const response = await getRepoFile({
+            repo,
+            path: "devices_v2.json",
+            ref: env.defaultBranch,
+        });
+        const raw = decodeBase64(response.content);
+        const payload = JSON.parse(raw) as DevicesPayload;
         const options = parseDeviceOptions(payload);
         if (options.length === 0) {
             throw new Error("设备列表为空");
         }
-        cache.set(url, options);
+        cache.set(cacheKey, options);
         return options;
     })();
 
-    inflight.set(url, promise);
+    inflight.set(cacheKey, promise);
     try {
         return await promise;
     } finally {
-        inflight.delete(url);
+        inflight.delete(cacheKey);
     }
 }
 

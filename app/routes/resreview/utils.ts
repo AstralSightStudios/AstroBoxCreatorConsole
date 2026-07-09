@@ -1,11 +1,13 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   approvePullRequest,
+  compareCommits,
   createPullRequestComment,
   getCurrentGithubPermission,
   listOpenPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
+  listRepoFilesAtCommit,
   type GithubIssueComment,
   type GithubPullFile,
   type GithubPullRequest,
@@ -83,6 +85,31 @@ function extractCatalogEntriesFromPatch(patch?: string) {
   return Array.from(byId.values());
 }
 
+function extractOldCatalogEntriesFromPatch(patch?: string) {
+  if (!patch) return [];
+
+  const byId = new Map<string, CatalogEntry>();
+  for (const line of patch.split(/\r?\n/)) {
+    if (!line.startsWith("-") || line.startsWith("---")) continue;
+    const row = line.slice(1).trim();
+    if (!row || row === CATALOG_CSV_HEADER) continue;
+    const parsed = parseCatalogEntryRow(row);
+    if (parsed) byId.set(parsed.id, parsed);
+  }
+  return Array.from(byId.values());
+}
+
+function extractOldCatalogEntriesFromFiles(files: GithubPullFile[]) {
+  const byId = new Map<string, CatalogEntry>();
+  for (const file of files) {
+    if (!isCatalogFile(file.filename)) continue;
+    for (const entry of extractOldCatalogEntriesFromPatch(file.patch)) {
+      byId.set(entry.id, entry);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 function extractCatalogEntriesFromFiles(files: GithubPullFile[]) {
   const byId = new Map<string, CatalogEntry>();
   for (const file of files) {
@@ -98,6 +125,28 @@ export function buildResourceRawUrl(entry: CatalogEntry, ref: string, path?: str
   const cleanPath = (path || "").trim();
   if (!cleanPath) return "";
   return buildRawFileUrl(entry.repo_owner, entry.repo_name, ref, cleanPath);
+}
+
+export function getManifestReferencedFiles(manifest?: ManifestV2): string[] {
+  if (!manifest?.item) return [];
+  const files = new Set<string>();
+  files.add(PUBLISH_CONFIG.manifestFileName);
+  if (manifest.item.icon) files.add(manifest.item.icon);
+  if (manifest.item.cover) files.add(manifest.item.cover);
+  for (const p of manifest.item.preview ?? []) {
+    if (p) files.add(p);
+  }
+  for (const info of Object.values(manifest.downloads ?? {})) {
+    const fileName = (info as { file_name?: string })?.file_name;
+    if (fileName) files.add(fileName);
+  }
+  const trialDownloads = manifest.ext?.trialDownloads as
+    | Record<string, { file_name?: string }>
+    | undefined;
+  for (const info of Object.values(trialDownloads ?? {})) {
+    if (info.file_name) files.add(info.file_name);
+  }
+  return Array.from(files);
 }
 
 function collectPackages(
@@ -202,12 +251,16 @@ export async function openAllPackages(packages: ResourcePackagePreview[]) {
 
 export {
   approvePullRequest,
+  compareCommits,
   createPullRequestComment,
   getCurrentGithubPermission,
   listOpenPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
+  listRepoFilesAtCommit,
   type GithubIssueComment,
   type GithubPullFile,
   type GithubPullRequest,
 };
+
+export { extractOldCatalogEntriesFromFiles };

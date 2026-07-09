@@ -8,6 +8,17 @@ import type { ReplyTarget, EditingTarget } from "./CommentComposer";
 import { useDetailHeader } from "./useDetailHeader";
 import { DetailHeader } from "./DetailHeader";
 
+interface RepoFileChangeInfo {
+  entryId: string;
+  resourceName: string;
+  isNew: boolean;
+  owner: string;
+  repo: string;
+  commitHash: string;
+  baseCommitHash?: string;
+  manifest?: import("~/logic/publish/manifest-loader").ManifestV2;
+}
+
 interface DesktopWorkbenchProps {
   pulls: GithubPullRequest[];
   openNumber: number;
@@ -17,6 +28,7 @@ interface DesktopWorkbenchProps {
   files: import("~/api/github/pr-review").GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
   reviews: import("~/api/github/pr-review").GithubPullReview[];
+  repoFileChanges: RepoFileChangeInfo[];
   loadingDetail: boolean;
   loadingPulls: boolean;
   commentsByPr: Record<number, GithubIssueComment[]>;
@@ -49,6 +61,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
     files,
     resourcePreviews,
     reviews,
+    repoFileChanges,
     loadingDetail,
     loadingPulls,
     commentsByPr,
@@ -101,6 +114,7 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
             files={files}
             resourcePreviews={resourcePreviews}
             reviews={reviews}
+            repoFileChanges={repoFileChanges}
             loadingDetail={loadingDetail}
             generalComment={generalComment}
             replyTarget={replyTarget}

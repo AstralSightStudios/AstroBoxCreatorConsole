@@ -164,3 +164,36 @@ export async function updatePullRequestComment(commentId: number, body: string) 
     },
   );
 }
+
+export async function compareCommits(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+) {
+  return githubFetch<{ files: GithubPullFile[] }>(
+    `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+    { headers: headers() },
+  );
+}
+
+export async function listRepoFilesAtCommit(
+  owner: string,
+  repo: string,
+  commitSha: string,
+) {
+  const auth = getGithubAuth();
+  const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
+    { headers: { Authorization: `Bearer ${auth.token}` } },
+  );
+  const tree = await githubFetch<{
+    tree: Array<{ path: string; type: string; mode: string; sha: string; size?: number }>;
+  }>(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
+    { headers: { Authorization: `Bearer ${auth.token}` } },
+  );
+  return tree.tree
+    .filter((item) => item.type === "blob")
+    .map((item) => item.path);
+}

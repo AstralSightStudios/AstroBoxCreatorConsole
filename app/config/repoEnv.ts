@@ -98,6 +98,4 @@ export function useRepoEnv(): RepoEnvDefinition {
     return REPO_ENVS[useRepoEnvId()];
 }
 
-export function devicesCatalogUrl(env: RepoEnvDefinition = loadRepoEnv()) {
-    return `https://raw.githubusercontent.com/${env.owner}/${env.repoName}/refs/heads/${env.defaultBranch}/devices_v2.json`;
-}
+
