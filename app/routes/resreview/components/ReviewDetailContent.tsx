@@ -1,11 +1,13 @@
 import { Tabs } from "@radix-ui/themes";
 import { useState, useCallback } from "react";
+import { SealCheck } from "@phosphor-icons/react";
 import type { GithubIssueComment, GithubPullRequest, GithubPullFile, GithubPullReview } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { FileEntry } from "./FileEntry";
 import { OverviewPanel } from "./OverviewPanel";
 import { ResourceDetailTab } from "./ResourceDetailTab";
+import { RuleCheckPanel } from "./RuleCheckPanel";
 import { CommentTimeline } from "./CommentTimeline";
 import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
 import { RepoFileChanges } from "./RepoFileChanges";
@@ -113,6 +115,13 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
                 资源信息
               </Tabs.Trigger>
               <Tabs.Trigger
+                value="checks"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+              >
+                <SealCheck size={16} weight="duotone" className="mr-2 inline-block" style={{ verticalAlign: 'text-bottom' }} />
+                自动检查
+              </Tabs.Trigger>
+              <Tabs.Trigger
                 value="files"
                 className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
               >
@@ -138,13 +147,23 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
               )}
             </Tabs.Content>
 
+            <Tabs.Content value="checks" className="pt-3! outline-none!">
+              {loadingDetail && resourcePreviews.length === 0 ? (
+                <div className="py-8 text-center text-sm text-white/45">
+                  正在解析资源信息...
+                </div>
+              ) : (
+                <RuleCheckPanel resources={resourcePreviews} prFiles={files} />
+              )}
+            </Tabs.Content>
+
             <Tabs.Content value="files" className="pt-3! outline-none!">
               {loadingDetail ? (
                 <div className="py-10 text-center text-white/45">加载中...</div>
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
                   {files.map((file) => (
-                    <FileEntryWithComment key={file.filename} file={file} onComment={handleFileComment} />
+                    <FileEntry key={file.filename} file={file} onComment={handleFileComment} />
                   ))}
                   {files.length === 0 && (
                     <p className="text-sm text-white/45">暂无文件信息</p>
@@ -245,19 +264,4 @@ function RepoFileChangesTab({ repoFileChanges, onFileComment }: { repoFileChange
   );
 }
 
-function FileEntryWithComment({ file, onComment }: { file: GithubPullFile; onComment?: (path: string) => void }) {
-  return (
-    <div className="relative">
-      <button
-        className="absolute right-3 top-3 z-10 text-white/40 hover:text-blue-300 transition"
-        onClick={() => onComment?.(file.filename)}
-        title="Comment on this file"
-      >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: 'text-bottom' }}>
-          <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
-        </svg>
-      </button>
-      <FileEntry file={file} />
-    </div>
-  );
-}
+
