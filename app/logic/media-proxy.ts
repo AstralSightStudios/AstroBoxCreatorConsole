@@ -11,6 +11,13 @@ interface FetchMediaResponse {
 const blobUrlCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
+const RAW_ORIGIN = "https://raw.githubusercontent.com";
+
+function toProxiedRawUrl(url: string): string {
+  if (inTauri()) return url;
+  return url.startsWith(RAW_ORIGIN) ? url.replace(RAW_ORIGIN, "/github-raw") : url;
+}
+
 function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -52,7 +59,7 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
       return blobUrl;
     }
 
-    const response = await fetch(url, { headers });
+    const response = await fetch(toProxiedRawUrl(url), { headers });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
@@ -86,14 +93,14 @@ export function useProxiedMediaUrl(url: string | undefined) {
         if (!cancelled) setResolved(next);
       })
       .catch(() => {
-        if (!cancelled) setResolved(url);
+        if (!cancelled) setResolved(toProxiedRawUrl(url));
       });
     return () => {
       cancelled = true;
     };
   }, [url]);
 
-  return resolved || url || "";
+  return resolved || (url ? toProxiedRawUrl(url) : "");
 }
 
 export function clearMediaProxyCache() {
