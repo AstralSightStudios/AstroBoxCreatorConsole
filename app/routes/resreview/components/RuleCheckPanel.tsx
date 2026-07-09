@@ -26,6 +26,7 @@ function useResourceRuleChecks(
   resource: PrResourcePreview,
   prFiles: GithubPullFile[],
   token: string,
+  astroboxToken: string | undefined,
   reloadTick: number,
 ): CheckState {
   const [state, setState] = useState<CheckState>({ loading: true });
@@ -37,7 +38,7 @@ function useResourceRuleChecks(
     }
     let cancelled = false;
     setState((prev) => ({ loading: true, result: prev.result, error: undefined }));
-    runResourceRuleChecks({ preview: resource, prFiles, token })
+    runResourceRuleChecks({ preview: resource, prFiles, token, astroboxToken })
       .then((result) => {
         if (!cancelled) setState({ loading: false, result });
       })
@@ -49,7 +50,7 @@ function useResourceRuleChecks(
     return () => {
       cancelled = true;
     };
-  }, [resource, prFiles, token, reloadTick]);
+  }, [resource, prFiles, token, astroboxToken, reloadTick]);
 
   return state;
 }
@@ -67,6 +68,7 @@ const STATUS_META: Record<
 export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
   const accountState = useAccountState();
   const token = accountState.github?.token || "";
+  const astroboxToken = accountState.astrobox?.token;
   const [activeIdx, setActiveIdx] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -75,6 +77,7 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
     resource,
     prFiles,
     token,
+    astroboxToken,
     reloadTick,
   );
 

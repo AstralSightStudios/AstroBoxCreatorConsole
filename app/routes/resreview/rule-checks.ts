@@ -3,6 +3,12 @@ import { PUBLISH_CONFIG } from "~/config/publish";
 import { listRepoFileSizesAtCommit, type GithubPullFile } from "~/api/github/pr-review";
 import { loadDeviceTokenResolver, type DeviceTokenResolver } from "~/logic/devices/catalog";
 import { PHOSPHOR_ICON_NAMES } from "./phosphor-icons";
+import {
+  resolveAuthorProStatuses,
+  hasCreatorPro,
+  isVipActive,
+  vipTierLabel,
+} from "./owner-pro";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 
@@ -641,8 +647,9 @@ export async function runResourceRuleChecks(options: {
   preview: PrResourcePreview;
   prFiles: GithubPullFile[];
   token: string;
+  astroboxToken?: string;
 }): Promise<ResourceRuleCheckResult> {
-  const { preview, prFiles, token } = options;
+  const { preview, prFiles, token, astroboxToken } = options;
   const checks: RuleCheckItem[] = [];
   const entry = preview.entry;
   const manifest = preview.manifest;
@@ -926,6 +933,60 @@ export async function runResourceRuleChecks(options: {
     status: linkResult.status,
     detail: linkResult.detail,
   });
+
+  // --- check: 作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益 ---
+  const rawAuthors = manifestItem?.author;
+  const authorsList = Array.isArray(rawAuthors) ? rawAuthors : [];
+  const boundNames = authorsList
+    .filter((a) => a && a.bindABAccount && typeof a.name === "string" && a.name.trim())
+    .map((a) => (a as { name: string }).name.trim());
+
+  if (boundNames.length === 0) {
+    checks.push({
+      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
+      status: "pass",
+      detail: "无声明已绑定 AstroBox 的作者",
+    });
+  } else if (!astroboxToken) {
+    checks.push({
+      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
+      status: "warn",
+      detail: `未登录 AstroBox，无法验证：${boundNames.join("、")}`,
+    });
+  } else {
+    const authorStatuses = await resolveAuthorProStatuses(boundNames, astroboxToken);
+    const detailParts = boundNames.map((n) => {
+      const s = authorStatuses[n];
+      if (s?.state === "found") {
+        const active = isVipActive(s.user.vip, s.user.vipExpireMap);
+        const pro = hasCreatorPro(s.user.vip) && active;
+        return `${n}: ${
+          pro
+            ? `有 ${vipTierLabel(s.user.vip)} 权益`
+            : `${vipTierLabel(s.user.vip)}${
+                !active && s.user.vip !== "None" ? "（已过期）" : ""
+              }`
+        }`;
+      }
+      if (s?.state === "not-found") return `${n}: 名称未匹配账户`;
+      if (s?.state === "error") return `${n}: 查询失败`;
+      if (s?.state === "no-auth") return `${n}: 未登录 AstroBox`;
+      return `${n}: 查询中`;
+    });
+    const notFound = boundNames.filter((n) => authorStatuses[n]?.state === "not-found");
+    const noPro = boundNames.filter((n) => {
+      const s = authorStatuses[n];
+      if (s?.state !== "found") return false;
+      return !(hasCreatorPro(s.user.vip) && isVipActive(s.user.vip, s.user.vipExpireMap));
+    });
+    const hasError = boundNames.some((n) => authorStatuses[n]?.state === "error");
+    checks.push({
+      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
+      status:
+        notFound.length > 0 ? "fail" : hasError || noPro.length > 0 ? "warn" : "pass",
+      detail: detailParts.join(" · "),
+    });
+  }
 
   // --- 包体内容校验（类型匹配 + 内嵌 ID） ---
   const uniquePackages = dedupePackages(preview);

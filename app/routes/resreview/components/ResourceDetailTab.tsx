@@ -2,6 +2,14 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Globe, Link as LinkIcon, YoutubeLogo, GithubLogo, TwitterLogo, DiscordLogo, MapPin, Play, ShoppingCart, File, Cube, Storefront, Download, ArrowLineDown } from "@phosphor-icons/react";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import { loadDeviceNameMap } from "~/logic/devices/catalog";
+import { useAccountState } from "~/logic/account/store";
+import {
+  useAuthorsProStatuses,
+  hasCreatorPro,
+  vipTierLabel,
+  isVipActive,
+  type AuthorProStatus,
+} from "../owner-pro";
 import type { PrResourcePreview } from "../types";
 
 // --- Helpers ---
@@ -16,6 +24,14 @@ function escapeHtml(str: string): string {
 
 function hasUrl(value: string): boolean {
   return /https?:\/\/[^\s)]+/.test(value);
+}
+
+function formatPaidType(paidType?: string): string {
+  const normalized = (paidType || "").trim().toLowerCase();
+  if (!normalized || normalized === "free") return "免费";
+  if (normalized === "paid") return "付费";
+  if (normalized === "force_paid") return "强制付费";
+  return normalized;
 }
 
 function renderTextWithLinks(value: string): string {
@@ -384,6 +400,16 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
     );
   }, [manifest?.item?.author]);
 
+  const accountState = useAccountState();
+  const boundAuthorNames = useMemo(
+    () => authors.filter((a) => a.bindABAccount).map((a) => a.name),
+    [authors],
+  );
+  const authorProStatuses = useAuthorsProStatuses(
+    boundAuthorNames,
+    accountState.astrobox?.token,
+  );
+
   return (
     <div className="flex flex-col gap-3">
       {/* Manifest Error Banner */}
@@ -427,6 +453,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
             <InfoRow label="资源 ID" value={manifestItem?.id || entry.id || "-"} />
             <InfoRow label="资源类型" value={manifestItem?.restype || entry.restype || "-"} />
             <InfoRow label="资源描述" value={manifestItem?.description || "-"} />
+            <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
             <InfoRow
               label="AstroBoxCreator 加密功能"
               value={manifest?.ext?.enableAstroBoxCreatorFeatures ? "开启" : "关闭"}
@@ -444,9 +471,9 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                     >
                       <span className="min-w-0 break-all text-white">{author.name}</span>
                       {author.bindABAccount ? (
-                        <span className="ml-auto shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300">
-                          已绑定 AstroBox
-                        </span>
+                        <ProBadge
+                          status={authorProStatuses[author.name] ?? { state: "loading" }}
+                        />
                       ) : (
                         <span className="ml-auto shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">
                           未绑定
@@ -728,4 +755,39 @@ function InfoRow({ label, value, children }: { label: string; value?: string; ch
       )}
     </div>
   );
+}
+
+/** 作者开启绑定 AstroBox 后，通过后端 /admin/users 按名称查询得到的真实权益徽章。 */
+function ProBadge({ status }: { status: AuthorProStatus }) {
+  const base =
+    "ml-auto shrink-0 rounded-full border px-2 py-0.5 text-[11px]";
+  switch (status.state) {
+    case "loading":
+      return <span className={`${base} border-white/10 bg-white/5 text-white/45`}>查询中…</span>;
+    case "no-auth":
+      return <span className={`${base} border-white/10 bg-white/5 text-white/45`}>未登录 AstroBox</span>;
+    case "not-found":
+      return <span className={`${base} border-red-400/30 bg-red-500/10 text-red-300`}>名称未匹配账户</span>;
+    case "error":
+      return <span className={`${base} border-red-400/30 bg-red-500/10 text-red-300`}>查询失败</span>;
+    case "found": {
+      const { user } = status;
+      const active = isVipActive(user.vip, user.vipExpireMap);
+      const pro = hasCreatorPro(user.vip) && active;
+      if (pro) {
+        return (
+          <span className={`${base} border-emerald-500/40 bg-emerald-500/15 text-emerald-300`}>
+            有 {vipTierLabel(user.vip)} 权益
+          </span>
+        );
+      }
+      const expired = !active && user.vip !== "None";
+      return (
+        <span className={`${base} border-white/10 bg-white/5 text-white/45`}>
+          {vipTierLabel(user.vip)}
+          {expired ? "（已过期）" : ""}
+        </span>
+      );
+    }
+  }
 }
