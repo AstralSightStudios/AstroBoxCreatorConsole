@@ -37,3 +37,9 @@ export interface PullReviewState {
   state: ReviewState;
   items: { id: string; message: string; fixed: boolean }[];
 }
+
+export interface RuleCheckItem {
+  title: string;
+  status: "pass" | "fail" | "warn" | "manual";
+  detail: string;
+}

@@ -1,4 +1,4 @@
-import { Button } from "@radix-ui/themes";
+import { Button, Tabs } from "@radix-ui/themes";
 import type { GithubIssueComment, GithubPullRequest, GithubPullFile, GithubPullReview } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
@@ -6,7 +6,7 @@ import { UserCircle } from "@phosphor-icons/react";
 import { FileEntry } from "./FileEntry";
 import { OverviewPanel } from "./OverviewPanel";
 import { Panel } from "./Panel";
-import { ResourcePreviewList } from "./ResourcePreview";
+import { ResourceDetailTab } from "./ResourceDetailTab";
 import { CommentTimeline } from "./CommentTimeline";
 import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
 import type { PrResourcePreview } from "../types";
@@ -82,55 +82,80 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-w-0 flex-col gap-4">
-          {(loadingDetail || resourcePreviews.length > 0) && (
-            <Panel title="资源预览">
+          <Tabs.Root defaultValue="resources">
+            <Tabs.List className="flex gap-0 border-b border-white/10">
+              <Tabs.Trigger
+                value="resources"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+              >
+                资源信息
+              </Tabs.Trigger>
+              <Tabs.Trigger
+                value="files"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+              >
+                改动文件
+              </Tabs.Trigger>
+              <Tabs.Trigger
+                value="comments"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+              >
+                评论
+              </Tabs.Trigger>
+            </Tabs.List>
+
+            <Tabs.Content value="resources" className="pt-3! outline-none!">
               {loadingDetail && resourcePreviews.length === 0 ? (
                 <div className="py-8 text-center text-sm text-white/45">
                   正在解析资源信息...
                 </div>
               ) : (
-                <ResourcePreviewList resources={resourcePreviews} />
+                <ResourceDetailTab resources={resourcePreviews} />
               )}
-            </Panel>
-          )}
-          <Panel title="改动文件">
-            {loadingDetail ? (
-              <div className="py-10 text-center text-white/45">加载中...</div>
-            ) : (
-              <div className="flex min-w-0 flex-col gap-2">
-                {files.map((file) => (
-                  <FileEntry key={file.filename} file={file} />
-                ))}
-                {files.length === 0 && (
-                  <p className="text-sm text-white/45">暂无文件信息</p>
+            </Tabs.Content>
+
+            <Tabs.Content value="files" className="pt-3! outline-none!">
+              {loadingDetail ? (
+                <div className="py-10 text-center text-white/45">加载中...</div>
+              ) : (
+                <div className="flex min-w-0 flex-col gap-2">
+                  {files.map((file) => (
+                    <FileEntry key={file.filename} file={file} />
+                  ))}
+                  {files.length === 0 && (
+                    <p className="text-sm text-white/45">暂无文件信息</p>
+                  )}
+                </div>
+              )}
+            </Tabs.Content>
+
+            <Tabs.Content value="comments" className="pt-3! outline-none!">
+              <div className="flex flex-col gap-4">
+                <CommentComposer
+                  avatarUrl={accountState.github?.avatar}
+                  username={accountState.github?.username}
+                  value={generalComment}
+                  onChange={onGeneralCommentChange}
+                  onSubmit={onSubmitComment}
+                  replyTarget={replyTarget}
+                  onCancelReply={onCancelReply}
+                  editingTarget={editingTarget}
+                  onCancelEdit={onCancelEdit}
+                />
+                {loadingDetail ? (
+                  <div className="py-6 text-center text-sm text-white/45">加载中...</div>
+                ) : (
+                  <CommentTimeline
+                    comments={openComments}
+                    currentUsername={accountState.github?.username}
+                    onReply={onReply}
+                    onEdit={onEditComment}
+                    onDelete={onDeleteComment}
+                  />
                 )}
               </div>
-            )}
-          </Panel>
-          <CommentComposer
-            avatarUrl={accountState.github?.avatar}
-            username={accountState.github?.username}
-            value={generalComment}
-            onChange={onGeneralCommentChange}
-            onSubmit={onSubmitComment}
-            replyTarget={replyTarget}
-            onCancelReply={onCancelReply}
-            editingTarget={editingTarget}
-            onCancelEdit={onCancelEdit}
-          />
-          <Panel title="评论流">
-            {loadingDetail ? (
-              <div className="py-6 text-center text-sm text-white/45">加载中...</div>
-            ) : (
-              <CommentTimeline
-                comments={openComments}
-                currentUsername={accountState.github?.username}
-                onReply={onReply}
-                onEdit={onEditComment}
-                onDelete={onDeleteComment}
-              />
-            )}
-          </Panel>
+            </Tabs.Content>
+          </Tabs.Root>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
