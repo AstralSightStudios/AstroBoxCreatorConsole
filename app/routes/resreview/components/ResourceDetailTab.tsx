@@ -10,6 +10,7 @@ import {
   isVipActive,
   type AuthorProStatus,
 } from "../owner-pro";
+import { usePaidRatioStatus } from "../utils/paid-ratio";
 import type { PrResourcePreview } from "../types";
 
 // --- Helpers ---
@@ -410,6 +411,15 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
     accountState.astrobox?.token,
   );
 
+  const paidRatioStatus = usePaidRatioStatus({
+    boundAuthorNames,
+    authorProStatuses,
+    astroboxToken: accountState.astrobox?.token,
+    githubToken: accountState.github?.token,
+    paidType: entry.paid_type,
+    resourceId: manifestItem?.id || entry.id,
+  });
+
   return (
     <div className="flex flex-col gap-3">
       {/* Manifest Error Banner */}
@@ -454,6 +464,25 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
             <InfoRow label="资源类型" value={manifestItem?.restype || entry.restype || "-"} />
             <InfoRow label="资源描述" value={manifestItem?.description || "-"} />
             <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
+            {(paidRatioStatus.state === "non-compliant" || paidRatioStatus.state === "compliant") && (
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  paidRatioStatus.state === "non-compliant"
+                    ? "border-amber-400/20 bg-amber-500/10 text-amber-100"
+                    : "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"
+                }`}
+              >
+                已发布：免费 {paidRatioStatus.freeCount} / 付费 {paidRatioStatus.paidCount}
+                {paidRatioStatus.state === "non-compliant" && (
+                  <> — 资源比例不合要求：{paidRatioStatus.reason}</>
+                )}
+              </div>
+            )}
+            {paidRatioStatus.state === "error" && (
+              <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/70">
+                比例检查失败：{paidRatioStatus.message}
+              </div>
+            )}
             <InfoRow
               label="AstroBoxCreator 加密功能"
               value={manifest?.ext?.enableAstroBoxCreatorFeatures ? "开启" : "关闭"}

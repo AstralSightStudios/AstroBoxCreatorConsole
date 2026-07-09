@@ -10,6 +10,7 @@ import {
   type ResourceRuleCheckResult,
   type PackageCheckResult,
 } from "../rule-checks";
+import type { PaidRatioResult } from "../utils/paid-ratio";
 
 interface RuleCheckPanelProps {
   resources: PrResourcePreview[];
@@ -141,7 +142,7 @@ function RuleCheckResultView({
   loading: boolean;
   onReload: () => void;
 }) {
-  const { checks, packageChecks, imageSizes, repoTruncated } = result;
+  const { checks, packageChecks, imageSizes, repoTruncated, paidRatioChecks } = result;
 
   const counts = useMemo(() => {
     const c = { pass: 0, fail: 0, warn: 0, manual: 0 };
@@ -201,6 +202,11 @@ function RuleCheckResultView({
       {/* 包体校验详情 */}
       {packageChecks.length > 0 && (
         <PackageChecksBlock packageChecks={packageChecks} />
+      )}
+
+      {/* 付费/免费比例详情 */}
+      {paidRatioChecks && paidRatioChecks.length > 0 && (
+        <PaidRatioBlock results={paidRatioChecks} />
       )}
 
       {/* 图片体积 */}
@@ -345,6 +351,76 @@ function ImageSizesBlock({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function PaidRatioBlock({ results }: { results: PaidRatioResult[] }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+      <div className="mb-2 text-xs font-semibold text-white/55">
+        作者已发布资源及付费/免费比例
+      </div>
+      <div className="flex flex-col gap-3">
+        {results.map((r, i) => (
+          <PaidRatioAuthorRow key={i} result={r} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PaidRatioAuthorRow({ result }: { result: PaidRatioResult }) {
+  const ratio = result.ratio;
+  const compliant = ratio?.compliant;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="font-medium text-white">{result.authorName}</span>
+        {result.hasPro ? (
+          <span className="text-emerald-400">Creator Pro，不受比例限制</span>
+        ) : ratio ? (
+          <>
+            <span className="text-white/60">
+              免费 {ratio.freeCount} / 付费 {ratio.paidCount}
+            </span>
+            <span
+              className={
+                compliant ? "text-emerald-400" : "text-amber-400 font-semibold"
+              }
+            >
+              {compliant ? "合规" : "不合规"}
+            </span>
+          </>
+        ) : (
+          <span className="text-white/45">
+            {result.error || "无法判断"}
+          </span>
+        )}
+      </div>
+      {!compliant && ratio && (
+        <div className="mt-1 text-xs text-amber-300/80">{ratio.reason}</div>
+      )}
+      {result.resources.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1">
+          {result.resources.map((res, j) => (
+            <div key={j} className="flex items-center gap-2 text-xs">
+              <span
+                className={
+                  res.paidKind === "paid"
+                    ? "text-amber-400"
+                    : "text-emerald-400"
+                }
+              >
+                {res.paidKind === "paid" ? "付费" : "免费"}
+              </span>
+              <span className="text-white/70">{res.name}</span>
+              <span className="text-white/35">{res.id}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

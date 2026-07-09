@@ -8,9 +8,14 @@ import {
   hasCreatorPro,
   isVipActive,
   vipTierLabel,
+  type AuthorProStatus,
 } from "./owner-pro";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import {
+  checkPaidFreeRatioForAuthor,
+  type PaidRatioResult,
+} from "./utils/paid-ratio";
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -58,6 +63,7 @@ export interface ResourceRuleCheckResult {
   packageChecks: PackageCheckResult[];
   imageSizes: ImageSizeInfo[];
   repoTruncated?: boolean;
+  paidRatioChecks?: PaidRatioResult[];
 }
 
 // ---------------------------------------------------------------------------
@@ -941,6 +947,9 @@ export async function runResourceRuleChecks(options: {
     .filter((a) => a && a.bindABAccount && typeof a.name === "string" && a.name.trim())
     .map((a) => (a as { name: string }).name.trim());
 
+  let paidRatioResults: PaidRatioResult[] = [];
+  let resolvedAuthorStatuses: Record<string, AuthorProStatus> | null = null;
+
   if (boundNames.length === 0) {
     checks.push({
       title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
@@ -955,6 +964,7 @@ export async function runResourceRuleChecks(options: {
     });
   } else {
     const authorStatuses = await resolveAuthorProStatuses(boundNames, astroboxToken);
+    resolvedAuthorStatuses = authorStatuses;
     const detailParts = boundNames.map((n) => {
       const s = authorStatuses[n];
       if (s?.state === "found") {
@@ -986,6 +996,49 @@ export async function runResourceRuleChecks(options: {
         notFound.length > 0 ? "fail" : hasError || noPro.length > 0 ? "warn" : "pass",
       detail: detailParts.join(" · "),
     });
+  }
+
+  // --- check: 非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费） ---
+  const newPaidType = entry.paid_type;
+  const newResourceId = manifestItem?.id || entry.id;
+
+  if (boundNames.length > 0 && astroboxToken && resolvedAuthorStatuses) {
+    for (const name of boundNames) {
+      const status = resolvedAuthorStatuses[name];
+      if (!status) continue;
+      const result = await checkPaidFreeRatioForAuthor({
+        authorName: name,
+        authorStatus: status,
+        astroboxToken,
+        githubToken: token,
+        newEntryPaidType: newPaidType,
+        newEntryId: newResourceId,
+      });
+      paidRatioResults.push(result);
+    }
+
+    if (paidRatioResults.length > 0) {
+      const ratioDetails = paidRatioResults.map((r) => {
+        if (r.error) return `${r.authorName}: ${r.error}`;
+          if (r.hasPro) return `${r.authorName}: ${r.vipTier ? vipTierLabel(r.vipTier) : "Pro"}，不受比例限制`;
+        if (!r.ratio) return `${r.authorName}: 无法判断`;
+        if (r.ratio.compliant) {
+          return `${r.authorName}: 免费 ${r.ratio.freeCount} / 付费 ${r.ratio.paidCount}，合规`;
+        }
+        return `${r.authorName}: 免费 ${r.ratio.freeCount} / 付费 ${r.ratio.paidCount}，${r.ratio.reason}`;
+      });
+
+      const anyNonCompliant = paidRatioResults.some(
+        (r) => r.ratio && !r.ratio.compliant,
+      );
+      const anyError = paidRatioResults.some((r) => r.error);
+
+      checks.push({
+        title: "非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费）",
+        status: anyNonCompliant ? "fail" : anyError ? "warn" : "pass",
+        detail: ratioDetails.join(" · "),
+      });
+    }
   }
 
   // --- 包体内容校验（类型匹配 + 内嵌 ID） ---
@@ -1121,7 +1174,7 @@ export async function runResourceRuleChecks(options: {
     });
   }
 
-  return { checks, packageChecks, imageSizes, repoTruncated };
+  return { checks, packageChecks, imageSizes, repoTruncated, paidRatioChecks: paidRatioResults };
 }
 
 function csvRestypeOf(entry: PrResourcePreview["entry"]): string {
