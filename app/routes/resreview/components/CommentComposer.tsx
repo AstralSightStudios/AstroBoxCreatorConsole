@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, TextArea, Switch, Tabs } from "@radix-ui/themes";
+import { Button, TextArea, Switch } from "@radix-ui/themes";
+import { SegmentedControl } from "@radix-ui/themes";
 import {
   ArrowSquareOut,
   Code,
@@ -72,6 +73,7 @@ export function CommentComposer({
 }: CommentComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [tagEnabled, setTagEnabled] = useState(false);
+  const [tab, setTab] = useState<"write" | "preview">("write");
   const tagIdRef = useRef(makeNeedFixId());
 
   useEffect(() => {
@@ -219,41 +221,66 @@ export function CommentComposer({
           </div>
         ) : null}
 
-        <Tabs.Root defaultValue="write">
-          <Tabs.List className="border-b border-white/10 bg-white/[0.02] px-2 py-0">
-            <Tabs.Trigger value="write" className="px-2 py-1 text-[11px]">Write</Tabs.Trigger>
-            <Tabs.Trigger value="preview" className="px-2 py-1 text-[11px]">Preview</Tabs.Trigger>
-          </Tabs.List>
+        <div className="border-b border-white/10">
+          <SegmentedControl.Root
+            value={tab}
+            onValueChange={(val: "write" | "preview") => setTab(val)}
+            size="2"
+            radius="large"
+            variant="surface"
+            className="mx-3 my-2"
+          >
+            <SegmentedControl.Item
+              value="write"
+              className={`
+                px-3 py-2 text-sm cursor-pointer
+                ${tab === "write" ? "bg-white/20 font-medium" : ""}
+              `}
+            >
+              编辑
+            </SegmentedControl.Item>
+            <SegmentedControl.Item
+              value="preview"
+              className={`
+                px-3 py-2 text-sm cursor-pointer
+                ${tab === "preview" ? "bg-white/20 font-medium" : ""}
+              `}
+            >
+              预览
+            </SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </div>
 
-          <Tabs.Content value="write">
-            <div className="flex flex-wrap items-center gap-1 border-b border-white/10 bg-white/[0.02] px-3 py-2">
-              <Button variant="ghost" color="gray" size="2" onClick={insertBold} title="粗体" className="h-8 px-2">
-                <TextB size={16} />
-                <span className="hidden sm:inline text-xs">粗体</span>
+        {tab === "write" ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3 border-b border-white/10 bg-white/[0.02] px-3 py-2">
+              <Button variant="ghost" color="gray" size="2" onClick={insertBold} title="粗体" className="h-9 px-2">
+                <TextB size={18} />
+                <span className="hidden sm:inline text-sm">粗体</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertItalic} title="斜体" className="h-8 px-2">
-                <TextItalic size={16} />
-                <span className="hidden sm:inline text-xs">斜体</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertItalic} title="斜体" className="h-9 px-2">
+                <TextItalic size={18} />
+                <span className="hidden sm:inline text-sm">斜体</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertInlineCode} title="代码" className="h-8 px-2">
-                <Code size={16} />
-                <span className="hidden sm:inline text-xs">代码</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertInlineCode} title="代码" className="h-9 px-2">
+                <Code size={18} />
+                <span className="hidden sm:inline text-sm">代码</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertQuote} title="引用" className="h-8 px-2">
-                <Quotes size={16} />
-                <span className="hidden sm:inline text-xs">引用</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertQuote} title="引用" className="h-9 px-2">
+                <Quotes size={18} />
+                <span className="hidden sm:inline text-sm">引用</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertUnorderedList} title="列表" className="h-8 px-2">
-                <ListBullets size={16} />
-                <span className="hidden sm:inline text-xs">列表</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertUnorderedList} title="列表" className="h-9 px-2">
+                <ListBullets size={18} />
+                <span className="hidden sm:inline text-sm">列表</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertOrderedList} title="编号" className="h-8 px-2">
-                <ListNumbers size={16} />
-                <span className="hidden sm:inline text-xs">编号</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertOrderedList} title="编号" className="h-9 px-2">
+                <ListNumbers size={18} />
+                <span className="hidden sm:inline text-sm">编号</span>
               </Button>
-              <Button variant="ghost" color="gray" size="2" onClick={insertLink} title="链接" className="h-8 px-2">
-                <LinkSimple size={16} />
-                <span className="hidden sm:inline text-xs">链接</span>
+              <Button variant="ghost" color="gray" size="2" onClick={insertLink} title="链接" className="h-9 px-2">
+                <LinkSimple size={18} />
+                <span className="hidden sm:inline text-sm">链接</span>
               </Button>
             </div>
             <div className="px-3 py-3">
@@ -266,21 +293,19 @@ export function CommentComposer({
                 onChange={(e) => onChange(e.target.value)}
               />
             </div>
-          </Tabs.Content>
-
-          <Tabs.Content value="preview">
-            <div className="min-h-[120px] px-3 py-3">
-              {value.trim() ? (
-                <div
-                  className="break-words text-sm leading-6 text-white/80"
-                  dangerouslySetInnerHTML={{ __html: renderCommentMarkdownHtml(value) }}
-                />
-              ) : (
-                <p className="text-sm text-white/30">没有可预览的内容</p>
-              )}
-            </div>
-          </Tabs.Content>
-        </Tabs.Root>
+          </>
+        ) : (
+          <div className="min-h-[120px] px-3 py-3">
+            {value.trim() ? (
+              <div
+                className="break-words text-sm leading-6 text-white/80"
+                dangerouslySetInnerHTML={{ __html: renderCommentMarkdownHtml(value) }}
+              />
+            ) : (
+              <p className="text-sm text-white/30">没有可预览的内容</p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-white/10 bg-white/[0.02] px-3 py-2">
           <label className="inline-flex items-center gap-2 text-xs text-white/50">
