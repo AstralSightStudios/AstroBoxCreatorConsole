@@ -488,6 +488,25 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               value={manifest?.ext?.enableAstroBoxCreatorFeatures ? "开启" : "关闭"}
             />
 
+            {/* Tags */}
+            <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <span className="text-xs text-white/55">标签</span>
+              {entry.tags ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {entry.tags.split(";").map((t) => t.trim()).filter(Boolean).map((tag, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/80"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-white/45">未设置标签</span>
+              )}
+            </div>
+
             {/* Authors */}
             <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
               <span className="text-xs text-white/55">作者</span>
