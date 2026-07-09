@@ -7,6 +7,8 @@ import { FileEntry } from "./FileEntry";
 import { OverviewPanel } from "./OverviewPanel";
 import { Panel } from "./Panel";
 import { ResourcePreviewList } from "./ResourcePreview";
+import { CommentTimeline } from "./CommentTimeline";
+import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
 import type { PrResourcePreview } from "../types";
 import { formatTime } from "../utils";
 
@@ -18,12 +20,16 @@ export interface ReviewDetailContentProps {
   resourcePreviews: PrResourcePreview[];
   reviews: GithubPullReview[];
   loadingDetail: boolean;
-  needFixMessage: string;
   generalComment: string;
-  onNeedFixChange: (value: string) => void;
+  replyTarget?: ReplyTarget | null;
+  editingTarget?: EditingTarget | null;
   onGeneralCommentChange: (value: string) => void;
-  onAddNeedFix: () => void;
-  onAddGeneralComment: () => void;
+  onSubmitComment: (body: string) => void;
+  onReply: (comment: GithubIssueComment) => void;
+  onCancelReply: () => void;
+  onCancelEdit: () => void;
+  onDeleteComment: (comment: GithubIssueComment) => void;
+  onEditComment: (comment: GithubIssueComment) => void;
   onMarkFixed: (id: string) => void;
   onApprove: () => void;
   onClose?: () => void;
@@ -39,12 +45,16 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
     resourcePreviews,
     reviews,
     loadingDetail,
-    needFixMessage,
     generalComment,
-    onNeedFixChange,
+    replyTarget,
+    editingTarget,
     onGeneralCommentChange,
-    onAddNeedFix,
-    onAddGeneralComment,
+    onSubmitComment,
+    onReply,
+    onCancelReply,
+    onCancelEdit,
+    onDeleteComment,
+    onEditComment,
     onMarkFixed,
     onApprove,
     onClose,
@@ -97,19 +107,29 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
               </div>
             )}
           </Panel>
+          <CommentComposer
+            avatarUrl={accountState.github?.avatar}
+            username={accountState.github?.username}
+            value={generalComment}
+            onChange={onGeneralCommentChange}
+            onSubmit={onSubmitComment}
+            replyTarget={replyTarget}
+            onCancelReply={onCancelReply}
+            editingTarget={editingTarget}
+            onCancelEdit={onCancelEdit}
+          />
           <Panel title="评论流">
-            <div className="flex flex-col gap-2">
-              {openComments.map((comment) => (
-                <div key={comment.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                  <div className="mb-1 flex items-center gap-2 text-xs text-white/45">
-                    <span>{comment.user?.login}</span>
-                    <span>{formatTime(comment.created_at)}</span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-white/70">{comment.body}</p>
-                </div>
-              ))}
-              {openComments.length === 0 && <p className="text-sm text-white/45">暂无评论</p>}
-            </div>
+            {loadingDetail ? (
+              <div className="py-6 text-center text-sm text-white/45">加载中...</div>
+            ) : (
+              <CommentTimeline
+                comments={openComments}
+                currentUsername={accountState.github?.username}
+                onReply={onReply}
+                onEdit={onEditComment}
+                onDelete={onDeleteComment}
+              />
+            )}
           </Panel>
         </div>
 
@@ -164,26 +184,6 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
                 <p className="text-sm text-white/45">还没有 ABCC needfix。</p>
               )}
             </div>
-          </Panel>
-          <Panel title="添加 Needfix">
-            <textarea
-              value={needFixMessage}
-              onChange={(event) => onNeedFixChange(event.target.value)}
-              className="min-h-28 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none"
-            />
-            <Button className="mt-2 w-full" onClick={onAddNeedFix}>
-              发送 [ABCC_NEEDFIX]
-            </Button>
-          </Panel>
-          <Panel title="普通评论">
-            <textarea
-              value={generalComment}
-              onChange={(event) => onGeneralCommentChange(event.target.value)}
-              className="min-h-28 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none"
-            />
-            <Button className="mt-2 w-full" variant="soft" onClick={onAddGeneralComment}>
-              发送评论
-            </Button>
           </Panel>
           {accountState.github?.username && (
             <Panel title="当前审核者">

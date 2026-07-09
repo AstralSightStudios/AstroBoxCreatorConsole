@@ -103,7 +103,7 @@ export async function listOpenPullRequests() {
 
 export async function listPullRequestComments(prNumber: number) {
   return githubFetch<GithubIssueComment[]>(
-    repoPath(`/issues/${prNumber}/comments?per_page=100`),
+    repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`),
     { headers: headers() },
   );
 }
@@ -140,6 +140,27 @@ export async function approvePullRequest(prNumber: number, body?: string) {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ event: "APPROVE", body: body || "Approved from AstroBox Creator Console." }),
+    },
+  );
+}
+
+export async function deletePullRequestComment(commentId: number) {
+  return githubFetch<unknown>(
+    repoPath(`/issues/comments/${commentId}`),
+    {
+      method: "DELETE",
+      headers: headers(),
+    },
+  );
+}
+
+export async function updatePullRequestComment(commentId: number, body: string) {
+  return githubFetch<GithubIssueComment>(
+    repoPath(`/issues/comments/${commentId}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ body }),
     },
   );
 }

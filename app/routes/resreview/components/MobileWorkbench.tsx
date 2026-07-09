@@ -2,6 +2,7 @@ import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-revi
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { ReviewDetailContent } from "./ReviewDetailContent";
 import type { PrResourcePreview } from "../types";
+import type { ReplyTarget, EditingTarget } from "./CommentComposer";
 import { useDetailHeader } from "./useDetailHeader";
 import { DetailHeader } from "./DetailHeader";
 
@@ -13,13 +14,17 @@ interface MobileWorkbenchProps {
   resourcePreviews: PrResourcePreview[];
   reviews: import("~/api/github/pr-review").GithubPullReview[];
   loadingDetail: boolean;
-  needFixMessage: string;
   generalComment: string;
+  replyTarget?: ReplyTarget | null;
+  editingTarget?: EditingTarget | null;
   onClose: () => void;
-  onNeedFixChange: (value: string) => void;
   onGeneralCommentChange: (value: string) => void;
-  onAddNeedFix: () => void;
-  onAddGeneralComment: () => void;
+  onSubmitComment: (body: string) => void;
+  onReply: (comment: GithubIssueComment) => void;
+  onCancelReply: () => void;
+  onCancelEdit: () => void;
+  onDeleteComment: (comment: GithubIssueComment) => void;
+  onEditComment: (comment: GithubIssueComment) => void;
   onMarkFixed: (id: string) => void;
   onApprove: () => void;
 }
@@ -33,13 +38,17 @@ export function MobileWorkbench(props: MobileWorkbenchProps) {
     resourcePreviews,
     reviews,
     loadingDetail,
-    needFixMessage,
     generalComment,
+    replyTarget,
+    editingTarget,
     onClose,
-    onNeedFixChange,
     onGeneralCommentChange,
-    onAddNeedFix,
-    onAddGeneralComment,
+    onSubmitComment,
+    onReply,
+    onCancelReply,
+    onCancelEdit,
+    onDeleteComment,
+    onEditComment,
     onMarkFixed,
     onApprove,
   } = props;
@@ -63,12 +72,16 @@ export function MobileWorkbench(props: MobileWorkbenchProps) {
           resourcePreviews={resourcePreviews}
           reviews={reviews}
           loadingDetail={loadingDetail}
-          needFixMessage={needFixMessage}
           generalComment={generalComment}
-          onNeedFixChange={onNeedFixChange}
+          replyTarget={replyTarget}
           onGeneralCommentChange={onGeneralCommentChange}
-          onAddNeedFix={onAddNeedFix}
-          onAddGeneralComment={onAddGeneralComment}
+          onSubmitComment={onSubmitComment}
+          onReply={onReply}
+          onCancelReply={onCancelReply}
+          editingTarget={editingTarget}
+          onCancelEdit={onCancelEdit}
+          onDeleteComment={onDeleteComment}
+          onEditComment={onEditComment}
           onMarkFixed={onMarkFixed}
           onApprove={onApprove}
           onClose={onClose}

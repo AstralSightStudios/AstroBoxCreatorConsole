@@ -17,6 +17,8 @@ import {
   listPullRequestReviews,
   approvePullRequest,
   createPullRequestComment,
+  deletePullRequestComment,
+  updatePullRequestComment,
   type GithubPullRequest,
   type GithubPullReview,
 } from "~/api/github/pr-review";
@@ -24,7 +26,8 @@ import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PrGridCard } from "./components/PrGridCard";
 import { DesktopWorkbench } from "./components/DesktopWorkbench";
 import { MobileWorkbench } from "./components/MobileWorkbench";
-import { loadPrResourcePreviews, getErrorMessage, makeNeedFixId } from "./utils";
+import { loadPrResourcePreviews, getErrorMessage } from "./utils";
+import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
 import { StatePage, PRReviewPageSkeleton } from "./components/StatePage";
 
@@ -47,8 +50,9 @@ export default function ResourceReviewPage() {
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
-  const [needFixMessage, setNeedFixMessage] = useState("");
   const [generalComment, setGeneralComment] = useState("");
+  const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
+  const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
   const [rotate, setRotate] = useState(0);
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] = useState(false);
@@ -155,19 +159,6 @@ export default function ResourceReviewPage() {
     });
   }, [commentsByPr, pulls, stateFilter]);
 
-  const addNeedFix = async () => {
-    if (!openNumber || !needFixMessage.trim()) return;
-    try {
-      const id = makeNeedFixId();
-      await createPullRequestComment(openNumber, `[ABCC_NEEDFIX_${id}] ${needFixMessage.trim()}`);
-      setNeedFixMessage("");
-      await loadDetail(openNumber);
-      toast.success("Needfix 已发送");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
-  };
-
   const markFixed = async (id: string) => {
     if (!openNumber) return;
     try {
@@ -179,22 +170,46 @@ export default function ResourceReviewPage() {
     }
   };
 
-  const addGeneralComment = async () => {
-    if (!openNumber || !generalComment.trim()) return;
+  const refreshDetail = () => {
+    if (!openNumber) return;
+    setDetailRotate((prev) => prev + 360);
+    void loadDetail(openNumber);
+  };
+
+  const deleteComment = async (comment: import("~/api/github/pr-review").GithubIssueComment) => {
+    if (!openNumber || !comment.id) return;
     try {
-      await createPullRequestComment(openNumber, generalComment.trim());
-      setGeneralComment("");
+      await deletePullRequestComment(comment.id);
       await loadDetail(openNumber);
-      toast.success("评论已发送");
+      toast.success("评论已删除");
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
-  const refreshDetail = () => {
-    if (!openNumber) return;
-    setDetailRotate((prev) => prev + 360);
-    void loadDetail(openNumber);
+  const editComment = (comment: import("~/api/github/pr-review").GithubIssueComment) => {
+    const parsed = parseReviewCommentBody(comment.body || "");
+    setGeneralComment(parsed.content);
+    setEditingTarget({ comment });
+    setReplyTarget(null);
+  };
+
+  const submitComment = async (body: string) => {
+    if (!openNumber || !body) return;
+    try {
+      if (editingTarget) {
+        await updatePullRequestComment(editingTarget.comment.id, body);
+      } else {
+        await createPullRequestComment(openNumber, body);
+      }
+      setGeneralComment("");
+      setReplyTarget(null);
+      setEditingTarget(null);
+      await loadDetail(openNumber);
+      toast.success(editingTarget ? "评论已更新" : "评论已发送");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
   };
 
   const approve = async () => {
@@ -326,7 +341,6 @@ export default function ResourceReviewPage() {
                   loadingDetail={loadingDetail}
                   loadingPulls={loadingPulls}
                   commentsByPr={commentsByPr}
-                  needFixMessage={needFixMessage}
                   generalComment={generalComment}
                   isSidebarCollapsed={isWorkbenchSidebarCollapsed}
                   onToggleSidebar={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
@@ -336,10 +350,15 @@ export default function ResourceReviewPage() {
                     setRotate((prev) => prev + 360);
                     setRefreshTick((prev) => prev + 1);
                   }}
-                  onNeedFixChange={setNeedFixMessage}
                   onGeneralCommentChange={setGeneralComment}
-                  onAddNeedFix={addNeedFix}
-                  onAddGeneralComment={addGeneralComment}
+                  onSubmitComment={submitComment}
+                  replyTarget={replyTarget}
+                  onCancelReply={() => setReplyTarget(null)}
+                  editingTarget={editingTarget}
+                  onCancelEdit={() => setEditingTarget(null)}
+                  onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
+                  onEditComment={editComment}
+                  onDeleteComment={deleteComment}
                   onMarkFixed={markFixed}
                   onApprove={approve}
                 />
@@ -352,13 +371,17 @@ export default function ResourceReviewPage() {
                   resourcePreviews={resourcePreviews}
                   reviews={reviews}
                   loadingDetail={loadingDetail}
-                  needFixMessage={needFixMessage}
                   generalComment={generalComment}
+                  replyTarget={replyTarget}
                   onClose={handleCloseWorkbench}
-                  onNeedFixChange={setNeedFixMessage}
                   onGeneralCommentChange={setGeneralComment}
-                  onAddNeedFix={addNeedFix}
-                  onAddGeneralComment={addGeneralComment}
+                  onSubmitComment={submitComment}
+                  onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
+                  onCancelReply={() => setReplyTarget(null)}
+                  editingTarget={editingTarget}
+                  onCancelEdit={() => setEditingTarget(null)}
+                  onDeleteComment={deleteComment}
+                  onEditComment={editComment}
                   onMarkFixed={markFixed}
                   onApprove={approve}
                 />

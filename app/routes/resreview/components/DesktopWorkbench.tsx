@@ -4,6 +4,7 @@ import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { ReviewDetailContent } from "./ReviewDetailContent";
 import { WorkbenchSidebar } from "./WorkbenchSidebar";
 import type { PrResourcePreview } from "../types";
+import type { ReplyTarget, EditingTarget } from "./CommentComposer";
 import { useDetailHeader } from "./useDetailHeader";
 import { DetailHeader } from "./DetailHeader";
 
@@ -19,17 +20,21 @@ interface DesktopWorkbenchProps {
   loadingDetail: boolean;
   loadingPulls: boolean;
   commentsByPr: Record<number, GithubIssueComment[]>;
-  needFixMessage: string;
   generalComment: string;
+  replyTarget?: ReplyTarget | null;
+  editingTarget?: EditingTarget | null;
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onSelectSidebar: (pull: GithubPullRequest) => void;
   onClose: () => void;
   onRefreshList: () => void;
-  onNeedFixChange: (value: string) => void;
   onGeneralCommentChange: (value: string) => void;
-  onAddNeedFix: () => void;
-  onAddGeneralComment: () => void;
+  onSubmitComment: (body: string) => void;
+  onReply: (comment: import("~/api/github/pr-review").GithubIssueComment) => void;
+  onCancelReply: () => void;
+  onCancelEdit: () => void;
+  onDeleteComment: (comment: import("~/api/github/pr-review").GithubIssueComment) => void;
+  onEditComment: (comment: import("~/api/github/pr-review").GithubIssueComment) => void;
   onMarkFixed: (id: string) => void;
   onApprove: () => void;
 }
@@ -47,17 +52,21 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
     loadingDetail,
     loadingPulls,
     commentsByPr,
-    needFixMessage,
     generalComment,
+    replyTarget,
+    editingTarget,
     isSidebarCollapsed,
     onToggleSidebar,
     onSelectSidebar,
     onClose,
     onRefreshList,
-    onNeedFixChange,
     onGeneralCommentChange,
-    onAddNeedFix,
-    onAddGeneralComment,
+    onSubmitComment,
+    onReply,
+    onCancelReply,
+    onCancelEdit,
+    onDeleteComment,
+    onEditComment,
     onMarkFixed,
     onApprove,
   } = props;
@@ -93,12 +102,16 @@ export function DesktopWorkbench(props: DesktopWorkbenchProps) {
             resourcePreviews={resourcePreviews}
             reviews={reviews}
             loadingDetail={loadingDetail}
-            needFixMessage={needFixMessage}
             generalComment={generalComment}
-            onNeedFixChange={onNeedFixChange}
+            replyTarget={replyTarget}
             onGeneralCommentChange={onGeneralCommentChange}
-            onAddNeedFix={onAddNeedFix}
-            onAddGeneralComment={onAddGeneralComment}
+            onSubmitComment={onSubmitComment}
+            onReply={onReply}
+            onCancelReply={onCancelReply}
+            editingTarget={editingTarget}
+            onCancelEdit={onCancelEdit}
+            onDeleteComment={onDeleteComment}
+            onEditComment={onEditComment}
             onMarkFixed={onMarkFixed}
             onApprove={onApprove}
             onClose={onClose}
