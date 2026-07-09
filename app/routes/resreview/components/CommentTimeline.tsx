@@ -209,11 +209,9 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                       {comment.html_url ? (
                         <DropdownMenu.Item
                           onSelect={() => {
-                            try {
-                              void openUrl(comment.html_url!);
-                            } catch {
-                              window.open(comment.html_url, "_blank", "noopener,noreferrer");
-                            }
+                            openUrl(comment.html_url!).catch(() => {
+                              window.open(comment.html_url!, "_blank", "noopener,noreferrer");
+                            });
                           }}
                           className="gap-2"
                         >

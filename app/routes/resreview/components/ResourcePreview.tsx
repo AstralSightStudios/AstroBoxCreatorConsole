@@ -122,7 +122,7 @@ function PackageRow({ pkg }: { pkg: ResourcePackagePreview }) {
           {pkg.version || "--"} · {pkg.fileName}
         </p>
       </div>
-      <Button size="1" variant="soft" onClick={() => openUrl(pkg.url)}>
+      <Button size="1" variant="soft" onClick={() => openUrl(pkg.url).catch(() => window.open(pkg.url, "_blank", "noopener,noreferrer"))}>
         下载
       </Button>
     </div>

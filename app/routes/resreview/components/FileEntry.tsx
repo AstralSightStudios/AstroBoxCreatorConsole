@@ -16,7 +16,7 @@ export function FileEntry({ file }: { file: GithubPullFile }) {
         {file.blob_url && (
           <button
             className="ml-auto text-xs text-blue-200 underline"
-            onClick={() => openUrl(file.blob_url!)}
+            onClick={() => openUrl(file.blob_url!).catch(() => window.open(file.blob_url, "_blank", "noopener,noreferrer"))}
           >
             查看文件
           </button>
