@@ -26,6 +26,7 @@
     "browser-image-compression": "^2.0.2",
     "casdoor-js-sdk": "^0.16.0",
     "china-map-geojson": "^1.0.4",
+    "fflate": "^0.8.2",
     "framer-motion": "^12.23.24",
     "geojson-world-map": "^0.0.2",
     "isbot": "^5.1.31",

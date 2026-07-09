@@ -197,3 +197,33 @@ export async function listRepoFilesAtCommit(
     .filter((item) => item.type === "blob")
     .map((item) => item.path);
 }
+
+/**
+ * 与 listRepoFilesAtCommit 相同，但保留每个文件的字节数（size）。
+ * 用于审核时获取图片/包体体积，而无需逐个下载文件。
+ * 返回 truncated=true 时（仓库文件数超过上限）会丢失部分文件。
+ */
+export async function listRepoFileSizesAtCommit(
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<{ files: Array<{ path: string; size: number }>; truncated: boolean }> {
+  const auth = getGithubAuth();
+  const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
+    { headers: { Authorization: `Bearer ${auth.token}` } },
+  );
+  const tree = await githubFetch<{
+    tree: Array<{ path: string; type: string; size?: number }>;
+    truncated?: boolean;
+  }>(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
+    { headers: { Authorization: `Bearer ${auth.token}` } },
+  );
+  return {
+    files: tree.tree
+      .filter((item) => item.type === "blob" && typeof item.size === "number")
+      .map((item) => ({ path: item.path, size: item.size as number })),
+    truncated: Boolean(tree.truncated),
+  };
+}

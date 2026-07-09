@@ -376,6 +376,14 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
     );
   }, [manifest?.links]);
 
+  const authors = useMemo(() => {
+    const raw = manifest?.item?.author;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (a): a is { name: string; bindABAccount?: boolean } => Boolean(a?.name),
+    );
+  }, [manifest?.item?.author]);
+
   return (
     <div className="flex flex-col gap-3">
       {/* Manifest Error Banner */}
@@ -423,6 +431,34 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               label="AstroBoxCreator 加密功能"
               value={manifest?.ext?.enableAstroBoxCreatorFeatures ? "开启" : "关闭"}
             />
+
+            {/* Authors */}
+            <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <span className="text-xs text-white/55">作者</span>
+              <div className="flex flex-col gap-1">
+                {authors.length > 0 ? (
+                  authors.map((author, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                    >
+                      <span className="min-w-0 break-all text-white">{author.name}</span>
+                      {author.bindABAccount ? (
+                        <span className="ml-auto shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300">
+                          已绑定 AstroBox
+                        </span>
+                      ) : (
+                        <span className="ml-auto shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">
+                          未绑定
+                        </span>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-xs text-white/45">未填写作者</span>
+                )}
+              </div>
+            </div>
 
             {/* Links */}
             {links.length > 0 && (
