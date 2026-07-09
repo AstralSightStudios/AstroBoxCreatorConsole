@@ -553,14 +553,15 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               >
                 <div className="flex flex-nowrap gap-2 snap-x snap-mandatory sm:gap-3" style={{ minWidth: "min-content", paddingLeft: previewEdgeWidths.first ? `calc(50% - ${previewEdgeWidths.first / 2}px)` : "calc(50% - 160px)", paddingRight: previewEdgeWidths.last ? `calc(50% - ${previewEdgeWidths.last / 2}px)` : "calc(50% - 160px)" }}>
                   {resource.previewUrls.map((url, i) => {
-                    const metaWidth = imageMetaMap[url]?.width;
+                    const meta = imageMetaMap[url];
+                    const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
                     return (
-                    <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 sm:px-3 sm:py-2" style={metaWidth ? { maxWidth: `${metaWidth}px` } : undefined}>
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-md border border-white/10 bg-black/40">
+                    <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2">
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block overflow-hidden rounded-md border border-white/10 bg-black/40" style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}))` } : undefined}>
                         <DimensionTrackedImage
                           rawUrl={url}
                           alt={`Preview ${i + 1}`}
-                          className="max-h-[40vh] max-w-full object-contain"
+                          className="block h-auto w-full"
                           onLoad={handlePreviewLoad(url)}
                         />
                       </a>
