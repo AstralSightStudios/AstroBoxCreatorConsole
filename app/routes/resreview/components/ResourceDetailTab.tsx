@@ -248,6 +248,30 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
     el.scrollTo({ left: scrollTarget, behavior: "smooth" });
   }, []);
 
+  const [previewEdgeWidths, setPreviewEdgeWidths] = useState<{ first: number; last: number }>({ first: 0, last: 0 });
+
+  const measurePreviewEdges = useCallback(() => {
+    const el = previewScrollRef.current;
+    if (!el) return;
+    const slides = el.querySelectorAll<HTMLElement>('[data-preview-slide="1"]');
+    if (slides.length === 0) return;
+    setPreviewEdgeWidths({
+      first: (slides[0] as HTMLElement).offsetWidth,
+      last: (slides[slides.length - 1] as HTMLElement).offsetWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(measurePreviewEdges);
+    return () => cancelAnimationFrame(id);
+  }, [measurePreviewEdges, imageMetaMap, resource.previewUrls]);
+
+  useEffect(() => {
+    const handler = () => measurePreviewEdges();
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, [measurePreviewEdges]);
+
   const handleIconLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       handleImageLoad(resource.iconUrl, e);
@@ -527,9 +551,11 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                 onScroll={syncPreviewScroll}
                 className="scrollbar-none overflow-x-auto pb-1"
               >
-                <div className="flex flex-nowrap gap-2 snap-x snap-mandatory sm:gap-3" style={{ minWidth: "min-content", paddingLeft: "calc(50% - 160px)", paddingRight: "calc(50% - 160px)" }}>
-                  {resource.previewUrls.map((url, i) => (
-                    <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 sm:px-3 sm:py-2" style={{ maxWidth: `${(imageMetaMap[url]?.width ?? 0) || 0}px` }}>
+                <div className="flex flex-nowrap gap-2 snap-x snap-mandatory sm:gap-3" style={{ minWidth: "min-content", paddingLeft: previewEdgeWidths.first ? `calc(50% - ${previewEdgeWidths.first / 2}px)` : "calc(50% - 160px)", paddingRight: previewEdgeWidths.last ? `calc(50% - ${previewEdgeWidths.last / 2}px)` : "calc(50% - 160px)" }}>
+                  {resource.previewUrls.map((url, i) => {
+                    const metaWidth = imageMetaMap[url]?.width;
+                    return (
+                    <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 sm:px-3 sm:py-2" style={metaWidth ? { maxWidth: `${metaWidth}px` } : undefined}>
                       <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-md border border-white/10 bg-black/40">
                         <DimensionTrackedImage
                           rawUrl={url}
@@ -542,7 +568,8 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                         {url.split("/").pop() || `预览 ${i + 1}`}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               {resource.previewUrls.length > 1 && (
