@@ -188,8 +188,8 @@ export type PaidRatioStatus =
     | { state: "idle" }
     | { state: "loading" }
     | { state: "not-applicable" }
-    | { state: "compliant"; freeCount: number; paidCount: number }
-    | { state: "non-compliant"; freeCount: number; paidCount: number; reason: string }
+    | { state: "compliant" }
+    | { state: "non-compliant"; authors: Array<{ name: string; freeCount: number; paidCount: number; reason: string }> }
     | { state: "error"; message: string };
 
 export function usePaidRatioStatus(options: {
@@ -220,10 +220,20 @@ export function usePaidRatioStatus(options: {
             return;
         }
 
+        const allResolved = boundAuthorNames.every(
+            (n) => authorProStatuses[n]?.state === "found" || authorProStatuses[n]?.state === "not-found",
+        );
+        if (!allResolved) {
+            setStatus({ state: "idle" });
+            return;
+        }
+
         let cancelled = false;
         setStatus({ state: "loading" });
 
         (async () => {
+            const nonCompliantAuthors: Array<{ name: string; freeCount: number; paidCount: number; reason: string }> = [];
+
             for (const name of boundAuthorNames) {
                 const proStatus = authorProStatuses[name];
                 if (!proStatus || proStatus.state !== "found") continue;
@@ -246,27 +256,24 @@ export function usePaidRatioStatus(options: {
                     setStatus({ state: "error", message: result.error });
                     return;
                 }
-                if (result.ratio) {
+                if (result.ratio && !result.ratio.compliant) {
                     const totalFree = result.resources.filter((r) => r.paidKind === "free").length;
                     const totalPaid = result.resources.filter((r) => r.paidKind === "paid").length;
-                    if (!result.ratio.compliant) {
-                        setStatus({
-                            state: "non-compliant",
-                            freeCount: totalFree,
-                            paidCount: totalPaid,
-                            reason: result.ratio.reason,
-                        });
-                        return;
-                    }
-                    setStatus({
-                        state: "compliant",
+                    nonCompliantAuthors.push({
+                        name,
                         freeCount: totalFree,
                         paidCount: totalPaid,
+                        reason: result.ratio.reason,
                     });
-                    return;
                 }
             }
-            setStatus({ state: "not-applicable" });
+
+            if (cancelled) return;
+            setStatus(
+                nonCompliantAuthors.length > 0
+                    ? { state: "non-compliant", authors: nonCompliantAuthors }
+                    : { state: "compliant" },
+            );
         })();
 
         return () => { cancelled = true; };

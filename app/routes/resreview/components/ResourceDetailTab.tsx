@@ -464,18 +464,13 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
             <InfoRow label="资源类型" value={manifestItem?.restype || entry.restype || "-"} />
             <InfoRow label="资源描述" value={manifestItem?.description || "-"} />
             <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
-            {(paidRatioStatus.state === "non-compliant" || paidRatioStatus.state === "compliant") && (
-              <div
-                className={`rounded-lg border px-3 py-2 text-xs ${
-                  paidRatioStatus.state === "non-compliant"
-                    ? "border-amber-400/20 bg-amber-500/10 text-amber-100"
-                    : "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"
-                }`}
-              >
-                已发布：免费 {paidRatioStatus.freeCount} / 付费 {paidRatioStatus.paidCount}
-                {paidRatioStatus.state === "non-compliant" && (
-                  <> — 资源比例不合要求：{paidRatioStatus.reason}</>
-                )}
+            {paidRatioStatus.state === "non-compliant" && (
+              <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                {paidRatioStatus.authors.map((a) => (
+                  <div key={a.name}>
+                    {a.name}：免费 {a.freeCount} / 付费 {a.paidCount} - {a.reason}
+                  </div>
+                ))}
               </div>
             )}
             {paidRatioStatus.state === "error" && (

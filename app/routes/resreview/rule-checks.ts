@@ -1020,7 +1020,7 @@ export async function runResourceRuleChecks(options: {
     if (paidRatioResults.length > 0) {
       const ratioDetails = paidRatioResults.map((r) => {
         if (r.error) return `${r.authorName}: ${r.error}`;
-          if (r.hasPro) return `${r.authorName}: ${r.vipTier ? vipTierLabel(r.vipTier) : "Pro"}，不受比例限制`;
+        if (r.hasPro) return `${r.authorName}: ${r.vipTier ? vipTierLabel(r.vipTier) : "Pro"}，不受比例限制`;
         if (!r.ratio) return `${r.authorName}: 无法判断`;
         if (r.ratio.compliant) {
           return `${r.authorName}: 免费 ${r.ratio.freeCount} / 付费 ${r.ratio.paidCount}，合规`;

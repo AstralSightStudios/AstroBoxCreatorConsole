@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Check, X, Warning, ArrowsClockwise, Spinner } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { useAccountState } from "~/logic/account/store";
@@ -31,22 +31,46 @@ function useResourceRuleChecks(
   reloadTick: number,
 ): CheckState {
   const [state, setState] = useState<CheckState>({ loading: true });
+  const cacheRef = useRef<Map<string, ResourceRuleCheckResult>>(new Map());
+  const lastResourceIdRef = useRef<string>("");
+  const prevPrFilesRef = useRef<GithubPullFile[] | null>(null);
+
+  // PR 数据更新（prFiles 引用变化）时清空整个缓存，
+  // 这样切换到其他资源时会重新请求而非命中过期缓存。
+  if (prevPrFilesRef.current !== prFiles) {
+    cacheRef.current.clear();
+    prevPrFilesRef.current = prFiles;
+  }
 
   useEffect(() => {
     if (!token) {
       setState({ loading: false, error: "未登录 GitHub" });
       return;
     }
+
+    const resourceId = resource.entry.id;
+    const isReload = resourceId === lastResourceIdRef.current;
+    lastResourceIdRef.current = resourceId;
+
+    if (!isReload) {
+      const cached = cacheRef.current.get(resourceId);
+      if (cached) {
+        setState({ loading: false, result: cached });
+        return;
+      }
+    }
+
     let cancelled = false;
     setState((prev) => ({ loading: true, result: prev.result, error: undefined }));
     runResourceRuleChecks({ preview: resource, prFiles, token, astroboxToken })
       .then((result) => {
-        if (!cancelled) setState({ loading: false, result });
+        if (cancelled) return;
+        cacheRef.current.set(resourceId, result);
+        setState({ loading: false, result });
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setState({ loading: false, error: err instanceof Error ? err.message : String(err) });
-        }
+        if (cancelled) return;
+        setState({ loading: false, error: err instanceof Error ? err.message : String(err) });
       });
     return () => {
       cancelled = true;
