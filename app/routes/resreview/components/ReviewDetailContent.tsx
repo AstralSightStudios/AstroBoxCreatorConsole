@@ -117,14 +117,42 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
           <Panel title="ABCC 状态">
             <div className="flex flex-col gap-2">
               {openStatus.items.map((item) => (
-                <div key={item.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="font-mono-sarasa text-xs text-white/45">{item.id}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${item.fixed ? "bg-emerald-500/15 text-emerald-100" : "bg-amber-500/15 text-amber-100"}`}>
-                      {item.fixed ? "fixed" : "needfix"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-white/75">{item.message}</p>
+                <div key={item.id} className="relative rounded-lg border border-white/10 bg-black/20 p-3">
+                  <span className={`absolute right-2 top-2 rounded-md px-2 py-0.5 text-xs ${item.fixed ? "bg-emerald-500/15 text-emerald-100" : "bg-amber-500/15 text-amber-100"}`}>
+                    {item.fixed ? "fixed" : "needfix"}
+                  </span>
+                  {item.author ? (
+                    <div className="mb-1 flex items-center gap-2 text-xs text-white/60">
+                      {item.author.avatar_url ? (
+                        <img src={item.author.avatar_url} className="h-5 w-5 rounded-full object-cover" alt={item.author.login} loading="lazy" />
+                      ) : (
+                        <UserCircle size={16} weight="duotone" />
+                      )}
+                      <span className="font-medium text-white">{item.author.login}</span>
+                    </div>
+                  ) : null}
+                  <p className="ml-7 pr-16 text-sm text-white/75">{item.message || "（无说明）"}</p>
+                  {item.createdAt ? (
+                    <div className="mt-1 text-right text-xs text-white/35">{formatTime(item.createdAt)}</div>
+                  ) : null}
+                  {item.fixed && (
+                    <div className="mt-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-white/70">
+                      {item.fixedAuthor ? (
+                        <div className="mb-1 flex items-center gap-2 text-xs text-white/60">
+                          {item.fixedAuthor.avatar_url ? (
+                            <img src={item.fixedAuthor.avatar_url} className="h-5 w-5 rounded-full object-cover" alt={item.fixedAuthor.login} loading="lazy" />
+                          ) : (
+                            <UserCircle size={16} weight="duotone" />
+                          )}
+                          <span className="font-medium text-white">{item.fixedAuthor.login}</span>
+                        </div>
+                      ) : null}
+                      <div className="ml-7 pr-14">{item.fixedMessage?.trim() || "（无回复）"}</div>
+                      {item.fixedAt ? (
+                        <div className="mt-1 text-right text-xs text-white/35">{formatTime(item.fixedAt)}</div>
+                      ) : null}
+                    </div>
+                  )}
                   {!item.fixed && (
                     <Button className="mt-2" size="1" variant="soft" onClick={() => onMarkFixed(item.id)}>
                       标记 fixed
