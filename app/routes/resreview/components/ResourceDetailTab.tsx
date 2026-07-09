@@ -557,7 +557,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                     const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
                     return (
                     <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2">
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block overflow-hidden rounded-md border border-white/10 bg-black/40" style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}))` } : undefined}>
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block overflow-hidden rounded-md border border-white/10 bg-black/40" style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}), 85vw)` } : undefined}>
                         <DimensionTrackedImage
                           rawUrl={url}
                           alt={`Preview ${i + 1}`}
