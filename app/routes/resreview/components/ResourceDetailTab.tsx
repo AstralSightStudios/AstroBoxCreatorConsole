@@ -77,6 +77,52 @@ function DimensionTrackedImage({
   return <img src={proxiedUrl} alt={alt} className={className} onLoad={onLoad} loading="lazy" />;
 }
 
+// --- PreviewLightbox ---
+
+function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  const proxiedUrl = useProxiedMediaUrl(url);
+  const [actual, setActual] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 overflow-auto bg-black/85 backdrop-blur-sm" onClick={onClose}>
+      <div className="grid min-h-full min-w-full place-items-center p-6">
+        <img
+          src={proxiedUrl}
+          alt="预览大图"
+          onClick={(e) => {
+            e.stopPropagation();
+            setActual((a) => !a);
+          }}
+          className={
+            actual
+              ? "max-h-none max-w-none cursor-zoom-out"
+              : "max-h-[88vh] max-w-[88vw] cursor-zoom-in object-contain"
+          }
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70 hover:bg-white/20 transition"
+        aria-label="关闭"
+      >
+        <svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg>
+      </button>
+    </div>
+  );
+}
+
 // --- useImageMeta hook ---
 
 interface ImageMeta {
@@ -222,6 +268,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
   const [previewActiveIndex, setPreviewActiveIndex] = useState(0);
   const previewActiveUrl = resource.previewUrls[previewActiveIndex] ?? "";
   const previewScrollRef = useRef<HTMLDivElement>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const syncPreviewScroll = useCallback(() => {
     const el = previewScrollRef.current;
@@ -249,6 +296,12 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
   }, []);
 
   const [previewEdgeWidths, setPreviewEdgeWidths] = useState<{ first: number; last: number }>({ first: 0, last: 0 });
+  const [previewAvailWidth, setPreviewAvailWidth] = useState(0);
+
+  const measureAvailWidth = useCallback(() => {
+    const el = previewScrollRef.current;
+    if (el) setPreviewAvailWidth(el.clientWidth);
+  }, []);
 
   const measurePreviewEdges = useCallback(() => {
     const el = previewScrollRef.current;
@@ -262,15 +315,19 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
   }, []);
 
   useEffect(() => {
-    const id = requestAnimationFrame(measurePreviewEdges);
-    return () => cancelAnimationFrame(id);
-  }, [measurePreviewEdges, imageMetaMap, resource.previewUrls]);
+    measureAvailWidth();
+  }, [measureAvailWidth]);
 
   useEffect(() => {
-    const handler = () => measurePreviewEdges();
+    const id = requestAnimationFrame(measurePreviewEdges);
+    return () => cancelAnimationFrame(id);
+  }, [measurePreviewEdges, imageMetaMap, resource.previewUrls, previewAvailWidth]);
+
+  useEffect(() => {
+    const handler = () => measureAvailWidth();
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
-  }, [measurePreviewEdges]);
+  }, [measureAvailWidth]);
 
   const handleIconLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -555,16 +612,22 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                   {resource.previewUrls.map((url, i) => {
                     const meta = imageMetaMap[url];
                     const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
+                    const cap = previewAvailWidth ? `${previewAvailWidth - 32}px` : "calc(100vw - 64px)";
                     return (
                     <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2">
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block overflow-hidden rounded-md border border-white/10 bg-black/40" style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}), 85vw)` } : undefined}>
+                      <button
+                        type="button"
+                        onClick={() => setLightboxUrl(url)}
+                        className="inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0"
+                        style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}), ${cap})` } : undefined}
+                      >
                         <DimensionTrackedImage
                           rawUrl={url}
                           alt={`Preview ${i + 1}`}
                           className="block h-auto w-full"
                           onLoad={handlePreviewLoad(url)}
                         />
-                      </a>
+                      </button>
                       <div className="mt-2 break-all text-xs text-white/45">
                         {url.split("/").pop() || `预览 ${i + 1}`}
                       </div>
@@ -595,6 +658,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
         </div>
       </div>
 
+      {lightboxUrl && <PreviewLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
 
     </div>
   );
