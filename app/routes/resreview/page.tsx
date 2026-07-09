@@ -439,7 +439,7 @@ export default function ResourceReviewPage() {
               </div>
 
               <section className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 no-scrollbar">
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-3 no-scrollbar">
                   {visiblePulls.length === 0 ? (
                     <div className="py-16 text-center text-sm text-white/45">暂无 open PR</div>
                   ) : (

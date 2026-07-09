@@ -28,7 +28,7 @@ export function PRReviewPageSkeleton() {
 
         {/* ---- scrollable grid (exact same wrapper as real list) ---- */}
         <section className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 no-scrollbar">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-3 no-scrollbar">
             <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, index) => (
                 <PrCardSkeleton key={index} />
