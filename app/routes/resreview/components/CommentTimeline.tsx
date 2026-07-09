@@ -74,15 +74,21 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
   const scrollToReplyTarget = async (replyTarget: string): Promise<void> => {
     const id = getReplyTargetId(replyTarget);
     if (!id) return;
-    const selector = `[data-comment-content-id="${id}"]`;
+    const selector = `[data-comment-card-id="${id}"]`;
     for (let i = 0; i < 8; i += 1) {
       const element = document.querySelector(selector);
       if (element instanceof HTMLElement) {
         element.scrollIntoView({ behavior: "smooth", block: "center" });
-        element.classList.add("ring-1", "ring-white/30", "bg-white/[0.06]", "rounded-md", "transition-all");
-        setTimeout(() => {
-          element.classList.remove("ring-1", "ring-white/30", "bg-white/[0.06]", "rounded-md", "transition-all");
-        }, 1500);
+        element.style.transition = "background-color 0.3s ease";
+        let tick = 0;
+        const pulse = setInterval(() => {
+          element.style.backgroundColor = tick % 2 === 0 ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.02)";
+          tick += 1;
+          if (tick >= 6) {
+            clearInterval(pulse);
+            element.style.backgroundColor = "";
+          }
+        }, 400);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -111,7 +117,7 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
   return (
     <>
     <div className="relative space-y-4">
-      <div className="pointer-events-none absolute bottom-5 top-5 w-px bg-white/10" style={{ left: "19px" }} />
+      <div className="pointer-events-none absolute bottom-5 top-5 hidden w-px bg-white/10 sm:block" style={{ left: "19px" }} />
 
       {comments.map((comment) => {
         const parsed = parsedOf(comment);
@@ -122,26 +128,34 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
         return (
           <div
             key={comment.id}
-            className="relative flex items-start gap-3"
+            className="relative flex items-start gap-0 sm:gap-3"
             data-comment-id={String(comment.id)}
           >
             {comment.user?.avatar_url ? (
               <img
                 src={comment.user.avatar_url}
-                className="relative z-10 h-10 w-10 shrink-0 rounded-full object-cover"
+                className="relative z-10 hidden h-10 w-10 shrink-0 rounded-full object-cover sm:block"
                 loading="lazy"
                 alt={comment.user.login}
               />
             ) : (
-              <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs text-white/50">
+              <div className="relative z-10 hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs text-white/50 sm:flex">
                 {comment.user?.login?.[0]?.toUpperCase() ?? "?"}
               </div>
             )}
 
-            <div className="relative z-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm">
+            <div data-comment-card-id={String(comment.id)} className="relative z-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm">
               <div className="mb-2.5 border-b border-white/10 pb-2 text-xs text-white/45">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex min-w-0 items-center gap-2">
+                    {comment.user?.avatar_url ? (
+                      <img
+                        src={comment.user.avatar_url}
+                        className="h-5 w-5 shrink-0 rounded-full object-cover sm:hidden"
+                        loading="lazy"
+                        alt={comment.user.login}
+                      />
+                    ) : null}
                     <span className="truncate font-medium text-white">{comment.user?.login || "unknown"}</span>
                     <span className="hidden shrink-0 sm:inline">{formatRelativeTime(comment.created_at)}</span>
                   </span>
@@ -149,10 +163,10 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                     <DropdownMenu.Trigger>
                       <button
                         type="button"
-                        className="inline-flex h-6 items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 text-[11px] text-white/60 hover:bg-white/10 active:scale-95 transition-transform"
+                        className="inline-flex h-6 items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 text-[11px] leading-none text-white/60 hover:bg-white/10 active:scale-95 transition-transform"
                       >
-                        <DotsThreeVertical size={14} />
-                        详情
+                        <DotsThreeVertical size={14} weight="bold" />
+                        <span>详情</span>
                       </button>
                     </DropdownMenu.Trigger>
                     <DropdownMenu.Content side="bottom" align="end" sideOffset={6} className="min-w-[150px]">
@@ -160,6 +174,15 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                         <DropdownMenu.Item onSelect={() => onReply(comment)} className="gap-2">
                           <ArrowBendUpLeft size={14} />
                           回复
+                        </DropdownMenu.Item>
+                      ) : null}
+                      {hasReplyTarget ? (
+                        <DropdownMenu.Item
+                          onSelect={() => void scrollToReplyTarget(parsed.replyTarget)}
+                          className="gap-2"
+                        >
+                          <ArrowSquareOut size={14} />
+                          定位到原评论
                         </DropdownMenu.Item>
                       ) : null}
                       {onEdit && comment.user?.login === currentUsername ? (
@@ -213,7 +236,7 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                     {hasReplyTarget ? (
                       <button
                         type="button"
-                        className="inline-flex h-5 items-center justify-center gap-1 rounded-full px-1.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white/80 active:scale-95 transition-transform"
+                        className="hidden h-5 items-center justify-center gap-1 whitespace-nowrap rounded-full px-1.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white/80 active:scale-95 transition-transform sm:inline-flex"
                         onClick={() => void scrollToReplyTarget(parsed.replyTarget)}
                       >
                         <ArrowSquareOut size={12} />
@@ -227,6 +250,18 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                       dangerouslySetInnerHTML={{ __html: renderCommentMarkdownHtml(parsed.replyExcerpt) }}
                     />
                   ) : null}
+                  {hasReplyTarget ? (
+                    <div className="mt-1.5 flex justify-end sm:hidden">
+                      <button
+                        type="button"
+                        className="inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-full px-1.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white/80 active:scale-95 transition-transform"
+                        onClick={() => void scrollToReplyTarget(parsed.replyTarget)}
+                      >
+                        <ArrowSquareOut size={12} />
+                        定位
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -236,7 +271,7 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
               >
                 {parsed.tagId ? (
                   <span
-                    className={`mr-1 inline-flex items-center rounded-md px-2 py-0.5 text-[11px] ${getTagBadgeClass(parsed.tagType)}`}
+                    className={`mr-1 inline-flex items-center rounded-md px-2 py-0.5 text-xs ${getTagBadgeClass(parsed.tagType)}`}
                   >
                     {parsed.tagType || "COMMENT"} · {parsed.tagId}
                   </span>

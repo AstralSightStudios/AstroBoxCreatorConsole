@@ -38,15 +38,21 @@ export interface CommentComposerProps {
 }
 
 function scrollToComment(commentId: number) {
-  const selector = `[data-comment-content-id="${commentId}"]`;
+  const selector = `[data-comment-card-id="${commentId}"]`;
   for (let i = 0; i < 8; i += 1) {
     const el = document.querySelector(selector);
     if (el instanceof HTMLElement) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("ring-1", "ring-white/30", "bg-white/[0.06]", "rounded-md", "transition-all");
-      setTimeout(() => {
-        el.classList.remove("ring-1", "ring-white/30", "bg-white/[0.06]", "rounded-md", "transition-all");
-      }, 1500);
+      el.style.transition = "background-color 0.3s ease";
+      let tick = 0;
+      const pulse = setInterval(() => {
+        el.style.backgroundColor = tick % 2 === 0 ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.02)";
+        tick += 1;
+        if (tick >= 6) {
+          clearInterval(pulse);
+          el.style.backgroundColor = "";
+        }
+      }, 400);
       return;
     }
   }
