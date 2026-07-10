@@ -12,7 +12,6 @@
 		429B9ED0300169E20039A41A /* CreatorConsole Icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 429B9ECF300169E20039A41A /* CreatorConsole Icon.icon */; };
 		451D509017F79F36ED26437A /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */; };
 		645B7ABC712274A289F1C076 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5424C97B716B309BC9BCFB38 /* LaunchScreen.storyboard */; };
-		7C84257E91BEA5BEA5E0D508 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = B07E050B10085C529EC28B27 /* libapp.a */; };
 		93EA50030B50272798BEF894 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 97F1CA5448E936761715D828 /* Security.framework */; };
 		96A35A78FF62F71FBBD0DEA5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0F5C75C89EDA69BA869FB608 /* Assets.xcassets */; };
 		AB042F09407F80CCB785F058 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E5E5E0047F89C8A4701 /* main.mm */; };
@@ -231,7 +230,6 @@
 				429B9ED0300169E20039A41A /* CreatorConsole Icon.icon in Resources */,
 				645B7ABC712274A289F1C076 /* LaunchScreen.storyboard in Resources */,
 				CFB4737E5208AB7CFC79C431 /* assets in Resources */,
-				7C84257E91BEA5BEA5E0D508 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,7 +278,7 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "CreatorConsole Icon";
 				CODE_SIGN_ENTITLEMENTS = "astrobox-creator-console_iOS/astrobox-creator-console_iOS.entitlements";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L46FLX269;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -289,7 +287,7 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = "astrobox-creator-console_iOS/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "AstroBox CreatorConsole";
+				INFOPLIST_KEY_CFBundleDisplayName = CConsole;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.5;
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
 					"$(inherited)",
@@ -327,7 +325,7 @@
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "CreatorConsole Icon";
 				CODE_SIGN_ENTITLEMENTS = "astrobox-creator-console_iOS/astrobox-creator-console_iOS.entitlements";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L46FLX269;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -336,7 +334,7 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = "astrobox-creator-console_iOS/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "AstroBox CreatorConsole";
+				INFOPLIST_KEY_CFBundleDisplayName = CConsole;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.5;
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
 					"$(inherited)",
