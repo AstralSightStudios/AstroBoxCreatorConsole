@@ -1,3 +1,29 @@
+[target.aarch64-apple-ios]
+rustflags = [
+    "--cfg=web_sys_unstable_apis",
+    "-C", "link-arg=-miphoneos-version-min=15.0",
+    "-C", "link-arg=-Wl,-U,_data_from_bytes",
+    "-C", "link-arg=-Wl,-U,_init_plugin_btclassic_spp",
+    "-C", "link-arg=-Wl,-U,_init_plugin_clipboard",
+    "-C", "link-arg=-Wl,-U,_init_plugin_dialog",
+    "-C", "link-arg=-Wl,-U,_init_plugin_haptics",
+    "-C", "link-arg=-Wl,-U,_init_plugin_live_activity",
+    "-C", "link-arg=-Wl,-U,_init_plugin_opener",
+    "-C", "link-arg=-Wl,-U,_log_stdout",
+    "-C", "link-arg=-Wl,-U,_on_webview_created",
+    "-C", "link-arg=-Wl,-U,_register_plugin",
+    "-C", "link-arg=-Wl,-U,_release_object",
+    "-C", "link-arg=-Wl,-U,_retain_object",
+    "-C", "link-arg=-Wl,-U,_run_plugin_command",
+    "-C", "link-arg=-Wl,-U,_string_from_bytes",
+    "-C", "link-arg=-Wl,-U,_tauri_log",
+]
+
+[env]
+RUST_LIB_BACKTRACE = "1"
+RUST_BACKTRACE = "1"
+IPHONEOS_DEPLOYMENT_TARGET = { value = "15.0", force = true }
+
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
