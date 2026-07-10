@@ -36,3 +36,4 @@ tauri-plugin-deep-link = "2"
 # iOS builds (Xcode 27). See https://github.com/searchstars/swift-rs
 [patch.crates-io]
 swift-rs = { git = "https://github.com/searchstars/swift-rs" }
+tao = { git = "https://github.com/Searchstars/tao", rev = "112081883beaa648194422d2fb40d16538812549" }
