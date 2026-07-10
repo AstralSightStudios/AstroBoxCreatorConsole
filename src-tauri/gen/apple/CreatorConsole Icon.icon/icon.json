@@ -1,188 +1,52 @@
 {
-  "features" : [
-    "refractivity",
-    "specular-location"
-  ],
   "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.47889,0.77777,1.00000,1.00000",
-      "display-p3:0.24275,0.46193,0.97255,1.00000"
-    ]
+    "solid" : "display-p3:0.00000,0.00000,0.00000,1.00000"
   },
   "groups" : [
     {
-      "blend-mode-specializations" : [
-        {
-          "value" : "plus-lighter"
-        },
-        {
-          "appearance" : "tinted",
-          "value" : "normal"
-        }
-      ],
       "blur-material-specializations" : [
         {
-          "value" : 0.08
+          "value" : 0.5
         },
         {
           "appearance" : "dark",
-          "value" : 0.18
+          "value" : 0.5
         }
       ],
       "layers" : [
-        {
-          "blend-mode" : "overlay",
-          "fill" : {
-            "solid" : "gray:1.00000,0.79000"
-          },
-          "image-name" : "Frame 427322144.svg",
-          "name" : "Frame 427322144",
-          "opacity-specializations" : [
-            {
-              "value" : 1
-            },
-            {
-              "appearance" : "dark",
-              "value" : 0.3
-            }
-          ]
-        },
-        {
-          "glass" : false,
-          "image-name" : "Frame 427322144 2.svg",
-          "name" : "Frame 427322144 2",
-          "opacity-specializations" : [
-            {
-              "value" : 0.58
-            },
-            {
-              "appearance" : "dark",
-              "value" : 1
-            }
-          ]
-        }
-      ],
-      "refractivity" : {
-        "depth" : 0.063,
-        "enabled" : true,
-        "strength" : 0.08
-      },
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.84
-      },
-      "specular" : "inside",
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.2
-      }
-    },
-    {
-      "blend-mode-specializations" : [
-        {
-          "value" : "overlay"
-        },
-        {
-          "appearance" : "dark",
-          "value" : "plus-lighter"
-        },
-        {
-          "appearance" : "tinted",
-          "value" : "plus-lighter"
-        }
-      ],
-      "blur-material-specializations" : [
-        {
-          "value" : 0.08
-        },
-        {
-          "appearance" : "dark",
-          "value" : 0.18
-        }
-      ],
-      "layers" : [
-        {
-          "image-name" : "Frame 427321400 2.svg",
-          "name" : "Frame 427321400 2",
-          "opacity-specializations" : [
-            {
-              "value" : 0.22
-            },
-            {
-              "appearance" : "tinted",
-              "value" : 0
-            }
-          ]
-        },
         {
           "fill-specializations" : [
             {
               "value" : {
-                "solid" : "gray:1.00000,0.75000"
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
               }
             },
             {
               "appearance" : "dark",
-              "value" : "automatic"
-            },
-            {
-              "appearance" : "tinted",
-              "value" : {
-                "solid" : "gray:1.00000,0.51000"
-              }
+              "value" : "none"
             }
           ],
-          "image-name-specializations" : [
-            {
-              "value" : "Frame 427321400.svg"
-            },
-            {
-              "idiom" : "square",
-              "value" : "Frame 427321400.svg"
-            }
-          ],
+          "image-name" : "Frame 427321400.png",
           "name" : "Frame 427321400",
-          "opacity-specializations" : [
-            {
-              "value" : 1
-            },
-            {
-              "appearance" : "dark",
-              "value" : 0
-            },
-            {
-              "appearance" : "tinted",
-              "value" : 1
-            }
-          ]
+          "opacity" : 1
         }
       ],
-      "refractivity" : {
-        "depth" : 0.0627734375,
-        "enabled" : true,
-        "strength" : 0.0796875
-      },
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.72
+        "opacity" : 0.5
       },
-      "specular" : "inside",
       "translucency" : {
         "enabled" : true,
-        "value" : 0.2
+        "value" : 0.5
       }
     },
     {
       "layers" : [
         {
           "glass" : false,
-          "image-name" : "Rectangle 444.png",
-          "name" : "Rectangle 444",
+          "image-name" : "dots.png",
+          "name" : "dots",
           "opacity-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : 0.56
-            },
             {
               "appearance" : "tinted",
               "value" : 0
@@ -190,9 +54,11 @@
           ]
         },
         {
+          "blend-mode" : "darken",
           "glass" : false,
-          "image-name" : "CreatorConsole BG.png",
-          "name" : "CreatorConsole BG",
+          "hidden" : false,
+          "image-name" : "probg.png",
+          "name" : "probg",
           "opacity-specializations" : [
             {
               "appearance" : "dark",
@@ -204,6 +70,19 @@
             }
           ]
         }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+
       ],
       "shadow" : {
         "kind" : "neutral",
