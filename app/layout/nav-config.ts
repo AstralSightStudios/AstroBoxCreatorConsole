@@ -80,12 +80,6 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
     title: "管理",
     items: [
       {
-        id: "profile",
-        icon: IdentificationBadgeIcon,
-        label: "个人主页管理",
-        path: "/profile",
-      },
-      {
         id: "settings",
         icon: GearFineIcon,
         label: "设置",
