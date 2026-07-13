@@ -306,6 +306,7 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.astralsight.astrobox.cc;
 				PRODUCT_NAME = "AstroBox CreatorConsole";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
 			};
 			name = debug;
@@ -353,6 +354,7 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.astralsight.astrobox.cc;
 				PRODUCT_NAME = "AstroBox CreatorConsole";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
 			};
 			name = release;
