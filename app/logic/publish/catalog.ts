@@ -7,6 +7,7 @@ import {
     createPullRequest,
     isGithubStatus,
 } from "./github-actions";
+import { syncForkDefaultBranch } from "./fork";
 
 export interface CatalogEntry {
     id: string;
@@ -149,38 +150,6 @@ async function waitForForkReady(
     throw new Error(
         `Fork ${owner}/${repo} 创建后迟迟未就绪，请稍后重试。`,
     );
-}
-
-/**
- * 把 fork 的分支与上游同步（fast-forward 或合并）。
- * 同步失败（如已发生分叉冲突）不阻塞流程：目录文件稍后从 fork 分支
- * 自身读取，最坏情况是 PR 带上一些落后的历史。
- */
-async function syncForkWithUpstream(
-    token: string,
-    forkOwner: string,
-    forkRepo: string,
-    branch: string,
-) {
-    try {
-        await githubFetch<any>(
-            `https://api.github.com/repos/${forkOwner}/${forkRepo}/merge-upstream`,
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: "application/vnd.github+json",
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ branch }),
-            },
-        );
-    } catch (error) {
-        console.warn(
-            `同步 fork ${forkOwner}/${forkRepo}#${branch} 与上游失败，将使用 fork 当前状态继续`,
-            error,
-        );
-    }
 }
 
 async function getOrCreateFork(token: string, owner: string, repo: string) {
@@ -355,9 +324,17 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
 
     const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
 
-    // 先把 fork 的默认分支与上游同步，再从 fork 自己的 HEAD 建分支。
+    // 先把 fork 的默认分支对齐到上游最新（fast-forward 不成则强制对齐，避免陈旧
+    // 或已分叉的 fork 让新 PR 落后一大截），再从 fork 自己的 HEAD 建分支。
     // 直接用上游 HEAD SHA 在陈旧 fork 上建分支会因对象不存在而 422。
-    await syncForkWithUpstream(token, fork.owner, fork.name, fork.default_branch);
+    await syncForkDefaultBranch({
+        token,
+        forkOwner: fork.owner,
+        forkRepo: fork.name,
+        branch: fork.default_branch,
+        upstreamOwner,
+        upstreamRepo,
+    });
     const forkHeadSha = await getRefSha(
         token,
         fork.owner,
