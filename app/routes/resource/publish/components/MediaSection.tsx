@@ -116,7 +116,7 @@ export function MediaSection({
                 <div
                   key={item.id}
                   draggable
-                  className={`group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition hover:border-white/25 cursor-grab active:cursor-grabbing ${isCover ? "ring-2 ring-emerald-400/70" : ""}`}
+                  className={`group relative overflow-hidden rounded-lg border bg-white/5 transition cursor-grab active:cursor-grabbing ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "border-red-400/70 ring-2 ring-red-400/40" : "border-white/10 hover:border-white/25"} ${isCover ? "ring-2 ring-emerald-400/70" : ""}`}
                   onDragStart={(event) => {
                     draggedPreviewIdRef.current = item.id;
                     event.dataTransfer.effectAllowed = "move";
@@ -143,21 +143,23 @@ export function MediaSection({
                   <img
                     src={item.url}
                     alt={item.name}
-                    className="h-40 w-full object-cover pointer-events-none"
-                    onLoad={(event) => {
-                      const image = event.currentTarget;
-                      if ((!item.width || !item.height) && image.naturalWidth && image.naturalHeight) {
-                        onMediaDimensions("preview", item.id, image.naturalWidth, image.naturalHeight);
-                      }
-                    }}
-                  />
-                  <div className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <span className={`truncate ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "text-red-400" : ""}`}>
-                      {item.name}
-                      {isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02
-                        ? ` · 建议接近 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不影响提交`
-                        : ""}
-                    </span>
+                     className="h-40 w-full object-cover pointer-events-none"
+                     onLoad={(event) => {
+                       const image = event.currentTarget;
+                       if ((!item.width || !item.height) && image.naturalWidth && image.naturalHeight) {
+                         onMediaDimensions("preview", item.id, image.naturalWidth, image.naturalHeight);
+                       }
+                     }}
+                   />
+                   <div className="flex items-center gap-2 px-3 py-2 text-sm">
+                     <span className={`truncate ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "text-red-400" : ""}`}>
+                       {item.name}
+                       {isCover && item.width && item.height
+                         ? Math.abs(item.width / item.height - 1.5) > 0.02
+                           ? ` · 建议接近 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不影响提交`
+                           : ` · ${item.width}×${item.height} · 比例 ${(item.width / item.height).toFixed(2)}`
+                         : ""}
+                     </span>
                     <button
                       type="button"
                       disabled={index === 0}
@@ -268,11 +270,11 @@ export function MediaSection({
                 label="单独上传封面"
                 description="建议 3:2，PNG/JPG"
                 media={cover}
-                onPick={() => coverInputRef.current?.click()}
-                onRemove={onRemoveCover}
-                showRatio
-                onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
-              />
+                 onPick={() => coverInputRef.current?.click()}
+                 onRemove={onRemoveCover}
+                 showRatio
+                 onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
+               />
             )}
           </div>
         </div>

@@ -133,9 +133,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
   const [itemName, setItemName] = useState("");
   const [description, setDescription] = useState("");
+
   const [idError, setIdError] = useState("");
   const [idGenerating, setIdGenerating] = useState(false);
-  const [existingCatalogIds, setExistingCatalogIds] = useState<Map<string, string> | null>(null);
+  const [existingCatalogIds, setExistingCatalogIds] = useState<
+    Map<string, string> | null
+  >(null);
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [icon, setIcon] = useState<UploadItem | null>(null);
@@ -285,7 +288,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, []);
 
   useEffect(() => {
-    if (resourceType === "watchface" && !itemId.trim() && existingCatalogIds) {
+    if (
+      resourceType === "watchface" &&
+      !itemId.trim() &&
+      existingCatalogIds
+    ) {
       setItemId(generateUniqueWatchfaceId(existingCatalogIds));
     }
   }, [resourceType, itemId, existingCatalogIds]);
@@ -300,9 +307,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setIdError(formatError);
       return;
     }
-    const ownedId = editContext?.mode === "catalog" ? editContext.catalog.entry.id.trim() : undefined;
+    const ownedId =
+      editContext?.mode === "catalog"
+        ? editContext.catalog.entry.id.trim()
+        : undefined;
     const existingName = existingCatalogIds?.get(itemId.trim());
-    setIdError(existingName && itemId.trim() !== ownedId ? `该 ID 已被资源「${existingName}」占用，请更换一个` : "");
+    if (existingName && itemId.trim() !== ownedId) {
+      setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
+      return;
+    }
+    setIdError("");
   }, [itemId, resourceType, existingCatalogIds, editContext]);
 
   useEffect(() => {
@@ -698,23 +712,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       mode === "new" ? "正在创建仓库并上传文件..." : "正在更新仓库文件...",
     );
     setUploadLogs([]);
-    try {
-      if (extError) {
-        throw new Error(extError);
-      }
+     try {
+       if (extError) {
+         throw new Error(extError);
+       }
+       if (publishValidation.errors.length) {
+         throw new Error(publishValidation.errors[0]);
+       }
+       if (resourceType === "quick_app") {
+         for (const download of [...downloads, ...trialDownloads]) {
+           if (download.file && !download.file.skipUpload) {
+             await validateRpkPackage(download.file.file, itemId);
+           }
+         }
+       }
 
-      if (publishValidation.errors.length) {
-        throw new Error(publishValidation.errors[0]);
-      }
-      if (resourceType === "quick_app") {
-        for (const download of [...downloads, ...trialDownloads]) {
-          if (download.file && !download.file.skipUpload) {
-            await validateRpkPackage(download.file.file, itemId);
-          }
-        }
-      }
-
-      if (!manifestResult.manifestJson) {
+       if (!manifestResult.manifestJson) {
         throw new Error("缺少 manifest 数据，请先填写必要字段。");
       }
 
@@ -732,9 +745,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         const ownedId = editContext?.mode === "catalog" ? originalId : undefined;
         const existingName = ids.get(itemId.trim());
         if (existingName && itemId.trim() !== ownedId) {
-          throw new Error(`资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`);
+          throw new Error(
+            `资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`,
+          );
         }
-        if (originalId && itemId.trim() !== originalId && [...downloads, ...trialDownloads].some((download) => download.file?.skipUpload || download.existingFileName)) {
+        if (
+          originalId &&
+          itemId.trim() !== originalId &&
+          [...downloads, ...trialDownloads].some(
+            (download) => download.file?.skipUpload || download.existingFileName,
+          )
+        ) {
           throw new Error("表盘 ID 已变更，请重新上传所有表盘包体文件。");
         }
       }
@@ -793,13 +814,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setPrMessage("缺少编辑上下文，请从资源列表重新进入。");
       return;
     }
-    const mode = editContext?.mode ?? "new";
-    if (publishValidation.errors.length) {
-      setPrStatus("error");
-      setPrMessage(publishValidation.errors[0]);
-      return;
-    }
-    if (repoStatus !== "success" || !repoInfo) {
+     const mode = editContext?.mode ?? "new";
+     if (publishValidation.errors.length) {
+       setPrStatus("error");
+       setPrMessage(publishValidation.errors[0]);
+       return;
+     }
+     if (!repoInfo) {
       setPrStatus("error");
       setPrMessage("请先完成仓库创建与文件上传。");
       return;
@@ -823,7 +844,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         const formatError = validateWatchfaceIdFormat(itemId);
         if (formatError) throw new Error(formatError);
       }
-      const uploadedId = JSON.parse((lastManifest ?? manifestResult).manifestJson).item?.id?.trim();
+      const uploadedId = JSON.parse(
+        (lastManifest ?? manifestResult).manifestJson,
+      ).item?.id?.trim();
       if (uploadedId !== itemId.trim()) {
         throw new Error("资源 ID 已变更，请重新上传仓库文件后再提交 PR。");
       }
@@ -863,7 +886,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           owner: editContext.prHead.owner,
           repo: editContext.prHead.repo,
           branch: editContext.prHead.ref,
-          intent: { mode: "edit", originalId: editContext.catalog.entry.id },
+          intent: {
+            mode: "edit",
+            originalId: editContext.catalog.entry.id,
+          },
           entry: {
             id: itemId.trim(),
             name: itemName.trim(),
@@ -1458,10 +1484,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onCoverUpload={handleCoverUpload}
                 onSelectCoverPreview={setCoverPreviewId}
                 onToggleUsePreviewAsCover={handleUsePreviewAsCover}
-                onRemoveIcon={handleRemoveIcon}
-                onRemoveCover={handleRemoveCover}
-                onMediaDimensions={handleMediaDimensions}
-              />
+                 onRemoveIcon={handleRemoveIcon}
+                 onRemoveCover={handleRemoveCover}
+                 onMediaDimensions={handleMediaDimensions}
+               />
               <AuthorsLinksSection
                 authors={authors}
                 setAuthors={setAuthors}
@@ -1474,9 +1500,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
-                resourceId={itemId}
-                validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
-                onAddRow={addDownloadRow}
+                 resourceId={itemId}
+                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
                 onBatchSetDevices={batchSetDownloadDevices}
@@ -1492,9 +1518,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
-                allowEncryption={false}
-                validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
-                onAddRow={addTrialDownloadRow}
+                 allowEncryption={false}
+                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
                 onBatchSetDevices={batchSetTrialDownloadDevices}
