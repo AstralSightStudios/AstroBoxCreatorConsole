@@ -600,6 +600,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
+  const handleReorderPreview = (fromId: string, toId: string) => {
+    setPreviews((prev) => {
+      const fromIndex = prev.findIndex((item) => item.id === fromId);
+      const toIndex = prev.findIndex((item) => item.id === toId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
   const handleRemoveIcon = () => {
     revokeUrl(icon);
     setIcon(null);
@@ -1441,6 +1453,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 coverPreviewId={coverPreviewId}
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}
+                onReorderPreview={handleReorderPreview}
                 onIconUpload={handleIconUpload}
                 onCoverUpload={handleCoverUpload}
                 onSelectCoverPreview={setCoverPreviewId}

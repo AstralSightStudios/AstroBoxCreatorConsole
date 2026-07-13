@@ -1,10 +1,12 @@
 import {
+  ArrowLeftIcon,
   ArrowLineDownIcon,
+  ArrowRightIcon,
   ImagesSquareIcon,
   UploadSimpleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { Badge, Button, Switch } from "@radix-ui/themes";
+import { Badge, Switch } from "@radix-ui/themes";
 import { useRef } from "react";
 import type { UploadItem } from "./shared";
 import { SectionCard, UploadSlot } from "./shared";
@@ -17,6 +19,7 @@ interface MediaSectionProps {
   coverPreviewId: string | null;
   onPreviewUpload: (files: FileList | null) => void;
   onRemovePreview: (id: string) => void;
+  onReorderPreview: (fromId: string, toId: string) => void;
   onIconUpload: (files: FileList | null) => void;
   onCoverUpload: (files: FileList | null) => void;
   onSelectCoverPreview: (id: string) => void;
@@ -34,6 +37,7 @@ export function MediaSection({
   coverPreviewId,
   onPreviewUpload,
   onRemovePreview,
+  onReorderPreview,
   onIconUpload,
   onCoverUpload,
   onSelectCoverPreview,
@@ -43,6 +47,7 @@ export function MediaSection({
   onMediaDimensions,
 }: MediaSectionProps) {
   const previewInputRef = useRef<HTMLInputElement>(null);
+  const draggedPreviewIdRef = useRef<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,7 +106,7 @@ export function MediaSection({
           </div>
         ) : (
           <div className="grid gap-1.5 md:grid-cols-3 pb-1.5">
-            {previews.map((item) => {
+            {previews.map((item, index) => {
               const isCover =
                 usePreviewAsCover &&
                 (coverPreviewId
@@ -110,13 +115,35 @@ export function MediaSection({
               return (
                 <div
                   key={item.id}
-                  className={`group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition hover:border-white/25 ${isCover ? "ring-2 ring-emerald-400/70" : ""}`}
-                  onClick={() => previewInputRef.current?.click()}
+                  draggable
+                  className={`group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition hover:border-white/25 cursor-grab active:cursor-grabbing ${isCover ? "ring-2 ring-emerald-400/70" : ""}`}
+                  onDragStart={(event) => {
+                    draggedPreviewIdRef.current = item.id;
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", item.id);
+                  }}
+                  onDragEnd={() => {
+                    draggedPreviewIdRef.current = null;
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const fromId =
+                      draggedPreviewIdRef.current ||
+                      event.dataTransfer.getData("text/plain");
+                    if (fromId && fromId !== item.id) {
+                      onReorderPreview(fromId, item.id);
+                    }
+                    draggedPreviewIdRef.current = null;
+                  }}
                 >
                   <img
                     src={item.url}
                     alt={item.name}
-                    className="h-40 w-full object-cover"
+                    className="h-40 w-full object-cover pointer-events-none"
                     onLoad={(event) => {
                       const image = event.currentTarget;
                       if ((!item.width || !item.height) && image.naturalWidth && image.naturalHeight) {
@@ -132,16 +159,37 @@ export function MediaSection({
                         : ""}
                     </span>
                     <button
-                      className="ml-auto text-white/60 transition hover:text-white"
+                      type="button"
+                      disabled={index === 0}
+                      className="ml-auto text-white/60 transition hover:text-white disabled:opacity-25"
+                      onClick={() => onReorderPreview(item.id, previews[index - 1].id)}
+                      aria-label="预览图前移"
+                    >
+                      <ArrowLeftIcon size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === previews.length - 1}
+                      className="text-white/60 transition hover:text-white disabled:opacity-25"
+                      onClick={() => onReorderPreview(item.id, previews[index + 1].id)}
+                      aria-label="预览图后移"
+                    >
+                      <ArrowRightIcon size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className="text-white/60 transition hover:text-white"
                       onClick={() => {
                         if (usePreviewAsCover) {
                           onSelectCoverPreview(item.id);
                         }
                       }}
+                      aria-label="设为封面"
                     >
                       <ArrowLineDownIcon size={16} />
                     </button>
                     <button
+                      type="button"
                       className="text-white/60 transition hover:text-red-400"
                       onClick={() => onRemovePreview(item.id)}
                       aria-label="移除预览图"
@@ -200,6 +248,7 @@ export function MediaSection({
                   previews.map((item) => (
                     <button
                       key={item.id}
+                      type="button"
                       onClick={() => onSelectCoverPreview(item.id)}
                       className={`flex items-center gap-2 rounded-lg border px-3 py-1 text-sm transition w-full ${
                         coverPreviewId === item.id
