@@ -43,3 +43,14 @@ export interface RuleCheckItem {
   status: "pass" | "fail" | "warn" | "manual";
   detail: string;
 }
+
+export interface RepoFileChangeInfo {
+  entryId: string;
+  resourceName: string;
+  isNew: boolean;
+  owner: string;
+  repo: string;
+  commitHash: string;
+  baseCommitHash?: string;
+  manifest?: ManifestV2;
+}

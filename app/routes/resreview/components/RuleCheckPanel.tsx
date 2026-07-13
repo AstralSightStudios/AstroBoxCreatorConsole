@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Check, X, Warning, ArrowsClockwise, Spinner } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { useAccountState } from "~/logic/account/store";
@@ -24,53 +24,34 @@ interface CheckState {
 }
 
 function useResourceRuleChecks(
-  resource: PrResourcePreview,
+  resource: PrResourcePreview | undefined,
   prFiles: GithubPullFile[],
   token: string,
   astroboxToken: string | undefined,
   reloadTick: number,
 ): CheckState {
-  const [state, setState] = useState<CheckState>({ loading: true });
-  const cacheRef = useRef<Map<string, ResourceRuleCheckResult>>(new Map());
-  const lastResourceIdRef = useRef<string>("");
-  const prevPrFilesRef = useRef<GithubPullFile[] | null>(null);
-
-  // PR 数据更新（prFiles 引用变化）时清空整个缓存，
-  // 这样切换到其他资源时会重新请求而非命中过期缓存。
-  if (prevPrFilesRef.current !== prFiles) {
-    cacheRef.current.clear();
-    prevPrFilesRef.current = prFiles;
-  }
+  const [state, setState] = useState<CheckState>({ loading: Boolean(resource) });
 
   useEffect(() => {
+    if (!resource) {
+      setState({ loading: false });
+      return;
+    }
     if (!token) {
       setState({ loading: false, error: "未登录 GitHub" });
       return;
     }
 
-    const resourceId = resource.entry.id;
-    const isReload = resourceId === lastResourceIdRef.current;
-    lastResourceIdRef.current = resourceId;
-
-    if (!isReload) {
-      const cached = cacheRef.current.get(resourceId);
-      if (cached) {
-        setState({ loading: false, result: cached });
-        return;
-      }
-    }
-
     let cancelled = false;
-    setState((prev) => ({ loading: true, result: prev.result, error: undefined }));
+    setState({ loading: true });
     runResourceRuleChecks({ preview: resource, prFiles, token, astroboxToken })
       .then((result) => {
-        if (cancelled) return;
-        cacheRef.current.set(resourceId, result);
-        setState({ loading: false, result });
+        if (!cancelled) setState({ loading: false, result });
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
-        setState({ loading: false, error: err instanceof Error ? err.message : String(err) });
+        if (!cancelled) {
+          setState({ loading: false, error: err instanceof Error ? err.message : String(err) });
+        }
       });
     return () => {
       cancelled = true;
@@ -96,8 +77,8 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
   const astroboxToken = accountState.astrobox?.token;
   const [activeIdx, setActiveIdx] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
-
-  const resource = resources[activeIdx];
+  const safeActiveIdx = Math.min(activeIdx, Math.max(0, resources.length - 1));
+  const resource = resources[safeActiveIdx];
   const { loading, result, error } = useResourceRuleChecks(
     resource,
     prFiles,
@@ -121,7 +102,7 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
               key={r.entry.id}
               onClick={() => setActiveIdx(i)}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
-                i === activeIdx
+                i === safeActiveIdx
                   ? "bg-white/15 text-white"
                   : "bg-white/[0.04] text-white/55 hover:bg-white/10 hover:text-white/80"
               }`}
@@ -145,7 +126,7 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
         </div>
       )}
 
-      {result && (
+      {result && resource && (
         <RuleCheckResultView
           key={resource.entry.id + reloadTick}
           result={result}

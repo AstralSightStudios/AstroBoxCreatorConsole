@@ -7,14 +7,14 @@ import { PrStatusBadge, StatusBadge } from "./StatusBadges";
 import { formatTime } from "../utils";
 import { UserCircle, GithubLogo } from "@phosphor-icons/react";
 
-interface OverviewPanelProps {
+interface PullRequestSummaryCardProps {
   openPull: GithubPullRequest | null;
   openStatus: ReturnType<typeof deriveReviewStatus>;
   onApprove: () => void;
-  onClose?: () => void;
+  approving: boolean;
 }
 
-export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: OverviewPanelProps) {
+export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approving }: PullRequestSummaryCardProps) {
   if (!openPull) return null;
 
   return (
@@ -66,8 +66,8 @@ export function OverviewPanel({ openPull, openStatus, onApprove, onClose }: Over
             <GithubLogo size={16} weight="duotone" />
             在 GitHub 打开
           </Button>
-          <Button color="green" onClick={onApprove}>
-            Approve
+          <Button color="green" onClick={onApprove} disabled={approving}>
+            {approving ? "Approving..." : "Approve"}
           </Button>
         </div>
       </div>
