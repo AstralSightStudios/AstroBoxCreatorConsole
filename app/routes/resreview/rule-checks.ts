@@ -195,6 +195,45 @@ export function scanCsvPatchForZeroWidth(files: GithubPullFile[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// 乱码检测
+// ---------------------------------------------------------------------------
+
+const REPLACEMENT_CHAR = "\uFFFD";
+
+/** 检测字符串是否含乱码特征：替换字符 U+FFFD、连续问号、或 Latin-1 乱码段。 */
+function containsGarbledText(value: string): boolean {
+  // 1. UTF-8 解码失败产生的替换字符
+  if (value.includes(REPLACEMENT_CHAR)) return true;
+  // 2. 连续 4+ 个问号（CJK 字符丢失为 ?）
+  if (/\?{4,}/.test(value)) return true;
+  // 3. UTF-8 字节被按 Latin-1 解码产生的乱码段（连续 4+ 个 0xC0-0xFF 字符）
+  if (/[\u00C0-\u00FF]{4,}/.test(value)) return true;
+  return false;
+}
+
+function isTextFileForGarbledCheck(filename?: string): boolean {
+  if (!filename) return false;
+  return isCatalogFile(filename) || filename.endsWith(".json") || filename.endsWith(".csv");
+}
+
+/** 扫描 PR 改动中 CSV/JSON 新增行是否包含乱码，返回命中的行内容。 */
+export function scanPatchForGarbled(files: GithubPullFile[]): string[] {
+  const hits: string[] = [];
+  for (const file of files) {
+    if (!isTextFileForGarbledCheck(file.filename)) continue;
+    if (!file.patch) continue;
+    for (const line of file.patch.split(/\r?\n/)) {
+      if (!line.startsWith("+") || line.startsWith("+++")) continue;
+      const row = line.slice(1);
+      if (!row.trim()) continue;
+      if (row.trim().toLowerCase().startsWith("id,")) continue;
+      if (containsGarbledText(row)) hits.push(row.slice(0, 80));
+    }
+  }
+  return hits;
+}
+
+// ---------------------------------------------------------------------------
 // 字节获取（Tauri fetch_media / Web 代理，支持 Range 截断）
 // ---------------------------------------------------------------------------
 
@@ -293,6 +332,8 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 const WATCHFACE_MAGIC = [0x5a, 0xa5, 0x34, 0x12];
 const FACTORY_MAGIC = [0x60, 0x5a, 0x5a, 0x7e]; // \x60ZZ~
 
+const MIN_FIRMWARE_SIZE = 1_000_000;
+
 function bytesStartWith(bytes: Uint8Array, magic: number[]): boolean {
   if (bytes.length < magic.length) return false;
   for (let i = 0; i < magic.length; i += 1) {
@@ -316,12 +357,69 @@ function bytesContainAscii(bytes: Uint8Array, needle: string): boolean {
   return false;
 }
 
-export function detectPackageType(bytes: Uint8Array, fileName: string): DetectedPackageType {
+/** 统计字节流中某子序列出现次数。 */
+function countBytesSequence(bytes: Uint8Array, needle: number[]): number {
+  const n = needle.length;
+  if (n === 0) return bytes.length + 1;
+  let count = 0;
+  for (let i = 0; i <= bytes.length - n; i += 1) {
+    let j = 0;
+    while (j < n && bytes[i + j] === needle[j]) j += 1;
+    if (j === n) count += 1;
+  }
+  return count;
+}
+
+/** 判断是否为小米可穿戴工厂裸镜像。
+ * 匹配规则：以 \x60ZZ~ 开头；紧跟 32 字节版本号仅含数字与 .；含 vela_ap.bin；出现多于一个 PK\x03\x04。 */
+function isMiwearFactory(data: Uint8Array): boolean {
+  if (data.length < FACTORY_MAGIC.length + 32) return false;
+  if (!bytesStartWith(data, FACTORY_MAGIC)) return false;
+  const verField = data.subarray(FACTORY_MAGIC.length, FACTORY_MAGIC.length + 32);
+  let verLen = 0;
+  while (verLen < verField.length && verField[verLen] !== 0) verLen += 1;
+  if (verLen === 0) return false;
+  for (let i = 0; i < verLen; i += 1) {
+    const b = verField[i];
+    if (!((b >= 0x30 && b <= 0x39) || b === 0x2e)) return false;
+  }
+  if (!bytesContainAscii(data, "vela_ap.bin")) return false;
+  return countBytesSequence(data, ZIP_MAGIC) > 1;
+}
+
+/** 判断是否为小米可穿戴 OTA ZIP/JAR。
+ * 匹配规则：以 PK\x03\x04 开头；能作为 ZIP 打开；ZIP 条目中存在 vela_ap.bin。 */
+async function isMiwearOta(data: Uint8Array): Promise<boolean> {
+  if (!bytesStartWith(data, ZIP_MAGIC)) return false;
+  try {
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(data);
+    return Object.keys(entries).some((name) => {
+      const base = name.split("/").pop() ?? name;
+      return base === "vela_ap.bin";
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** 判断是否为小米可穿戴固件（工厂裸镜像或 OTA JAR）。fullSize 为文件原始大小。 */
+async function isXiaomiFirmware(data: Uint8Array, fullSize: number): Promise<boolean> {
+  if (fullSize < MIN_FIRMWARE_SIZE) return false;
+  if (isMiwearFactory(data)) return true;
+  return isMiwearOta(data);
+}
+
+export async function detectPackageType(
+  bytes: Uint8Array,
+  fileName: string,
+  fullSize?: number,
+): Promise<DetectedPackageType> {
   if (bytes.length === 0) return "unknown";
-  // 0. 小米可穿戴固件优先（OTA JAR 也是 PK 开头）
-  if (bytesStartWith(bytes, FACTORY_MAGIC)) return "firmware";
+  const size = fullSize ?? bytes.length;
+  // 0. 小米可穿戴固件优先（OTA JAR 也是 PK 开头，必须优先判断）
+  if (await isXiaomiFirmware(bytes, size)) return "firmware";
   if (bytesStartWith(bytes, ZIP_MAGIC)) {
-    if (bytesContainAscii(bytes, "vela_ap.bin")) return "firmware";
     if (
       bytesContainAscii(bytes, "toolkit") ||
       bytesContainAscii(bytes, "manifest-watch.json")
@@ -707,6 +805,19 @@ export async function runResourceRuleChecks(options: {
             .join(" | ")}`,
   });
 
+  // --- check: CSV/manifest 新增行无乱码 ---
+  const garbledHits = scanPatchForGarbled(prFiles);
+  checks.push({
+    title: "CSV/manifest 新增行无乱码",
+    status: garbledHits.length === 0 ? "pass" : "fail",
+    detail:
+      garbledHits.length === 0
+        ? "未检测到乱码"
+        : `检测到 ${garbledHits.length} 行含乱码特征：${garbledHits
+            .map((r) => r.slice(0, 60))
+            .join(" | ")}`,
+  });
+
   // --- check: icon 链接 ---
   const iconCheck = checkRawGithubUrl(preview.iconUrl);
   checks.push({
@@ -1083,7 +1194,7 @@ export async function runResourceRuleChecks(options: {
           bytes = await fetchResourceBytes(pkg.url, token);
         }
 
-        result.detectedType = detectPackageType(bytes, pkg.fileName);
+        result.detectedType = await detectPackageType(bytes, pkg.fileName, result.sizeBytes);
         result.effectiveCategory = effectiveCategory(result.detectedType, pkg.fileName);
 
         // 类型匹配
@@ -1104,8 +1215,8 @@ export async function runResourceRuleChecks(options: {
         } else if (!resourceId) {
           result.idMatch = "skipped";
         } else if (restype === "watchface") {
-          const found = bytesContainId(bytes, resourceId);
-          result.idMatch = found ? "match" : "mismatch";
+          // 安装时会强制修改表盘 ID 文件为 CSV/manifest 的 ID，无需校验包体内嵌 ID
+          result.idMatch = "skipped";
           result.detectedId = extractWatchfaceIdHint(bytes);
         } else if (restype === "quick_app") {
           if (result.effectiveCategory === "quick_app" || bytesStartWith(bytes, ZIP_MAGIC)) {
@@ -1137,17 +1248,18 @@ export async function runResourceRuleChecks(options: {
         typeMismatch.length > 0
           ? "fail"
           : typeInconclusive.length > 0
-            ? "warn"
+            ? "manual"
             : "pass",
       detail:
-        packageChecks
+        (typeInconclusive.length > 0 ? "可能有问题，需要人工复核。" : "") +
+        (packageChecks
           .map(
             (p) =>
               `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
                 p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
               }${p.error ? ` [${p.error}]` : ""}`,
           )
-          .join(" · ") || "无包体",
+          .join(" · ") || "无包体"),
     });
 
     // 聚合：内嵌 ID
@@ -1158,19 +1270,23 @@ export async function runResourceRuleChecks(options: {
       status:
         idMismatch.length > 0
           ? "fail"
-          : idSkipped.length === packageChecks.length
-            ? "warn"
-            : "pass",
+          : restype === "watchface"
+            ? "pass"
+            : idSkipped.length === packageChecks.length
+              ? "warn"
+              : "pass",
       detail:
-        (resourceId ? `资源 ID: ${resourceId} · ` : "") +
-        packageChecks
-          .map((p) => {
-            const detected = p.detectedId ? `检测到 ${p.detectedId}` : "未检测到";
-            return `${p.fileName}: ${
-              p.idMatch === "match" ? "匹配" : p.idMatch === "mismatch" ? `不匹配（${detected}）` : "跳过"
-            }${p.error ? ` [${p.error}]` : ""}`;
-          })
-          .join(" · "),
+        restype === "watchface"
+          ? "表盘包体内嵌 ID 不再强制校验（安装时会强制修改为 CSV/manifest 的 ID）"
+          : (resourceId ? `资源 ID: ${resourceId} · ` : "") +
+            packageChecks
+              .map((p) => {
+                const detected = p.detectedId ? `检测到 ${p.detectedId}` : "未检测到";
+                return `${p.fileName}: ${
+                  p.idMatch === "match" ? "匹配" : p.idMatch === "mismatch" ? `不匹配（${detected}）` : "跳过"
+                }${p.error ? ` [${p.error}]` : ""}`;
+              })
+              .join(" · "),
     });
   }
 
