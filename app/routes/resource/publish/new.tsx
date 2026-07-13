@@ -48,6 +48,11 @@ import {
   type LinkInput,
 } from "./components/types";
 import { loadDeviceOptions } from "~/logic/devices/catalog";
+import {
+  generateUniqueWatchfaceId,
+  validateWatchfaceIdFormat,
+  fetchExistingCatalogIds,
+} from "~/logic/publish/watchface-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import { MediaSection } from "./components/MediaSection";
 import { AuthorsLinksSection } from "./components/AuthorsLinksSection";
@@ -126,6 +131,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
   const [itemName, setItemName] = useState("");
   const [description, setDescription] = useState("");
+  const [idError, setIdError] = useState("");
+  const [idGenerating, setIdGenerating] = useState(false);
+  const [existingCatalogIds, setExistingCatalogIds] = useState<Map<string, string> | null>(null);
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [icon, setIcon] = useState<UploadItem | null>(null);
@@ -255,6 +263,45 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       return changed ? next : prev;
     });
   }, [deviceOptions]);
+
+  useEffect(() => {
+    let active = true;
+    const loadIds = async () => {
+      const token = loadAccountState().github?.token;
+      if (!token) return;
+      try {
+        const ids = await fetchExistingCatalogIds(token);
+        if (active) setExistingCatalogIds(ids);
+      } catch (error) {
+        console.error("load catalog ids failed", error);
+      }
+    };
+    loadIds();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (resourceType === "watchface" && !itemId.trim() && existingCatalogIds) {
+      setItemId(generateUniqueWatchfaceId(existingCatalogIds));
+    }
+  }, [resourceType, itemId, existingCatalogIds]);
+
+  useEffect(() => {
+    if (resourceType !== "watchface") {
+      setIdError("");
+      return;
+    }
+    const formatError = validateWatchfaceIdFormat(itemId);
+    if (formatError) {
+      setIdError(formatError);
+      return;
+    }
+    const ownedId = editContext?.mode === "catalog" ? editContext.catalog.entry.id.trim() : undefined;
+    const existingName = existingCatalogIds?.get(itemId.trim());
+    setIdError(existingName && itemId.trim() !== ownedId ? `该 ID 已被资源「${existingName}」占用，请更换一个` : "");
+  }, [itemId, resourceType, existingCatalogIds, editContext]);
 
   useEffect(() => {
     if (!isEditMode || !editContext) return;
@@ -505,6 +552,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     });
   };
 
+  const handleGenerateId = useCallback(async () => {
+    if (resourceType !== "watchface" || idGenerating) return;
+    setIdGenerating(true);
+    try {
+      const token = loadAccountState().github?.token;
+      if (!token) throw new Error("GitHub 未登录，无法检查 ID 是否重复");
+      const ids = await fetchExistingCatalogIds(token);
+      setExistingCatalogIds(ids);
+      setItemId(generateUniqueWatchfaceId(ids));
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setIdGenerating(false);
+    }
+  }, [resourceType, idGenerating]);
+
   const handleRemovePreview = (id: string) => {
     setPreviews((prev) => {
       const toRemove = prev.find((item) => item.id === id);
@@ -619,6 +682,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error("GitHub 未登录，无法上传文件。");
       }
 
+      if (resourceType === "watchface") {
+        const formatError = validateWatchfaceIdFormat(itemId);
+        if (formatError) throw new Error(formatError);
+        const ids = await fetchExistingCatalogIds(token);
+        setExistingCatalogIds(ids);
+        const originalId = editContext?.catalog.entry.id.trim();
+        const ownedId = editContext?.mode === "catalog" ? originalId : undefined;
+        const existingName = ids.get(itemId.trim());
+        if (existingName && itemId.trim() !== ownedId) {
+          throw new Error(`资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`);
+        }
+        if (originalId && itemId.trim() !== originalId && [...downloads, ...trialDownloads].some((download) => download.file?.skipUpload || download.existingFileName)) {
+          throw new Error("表盘 ID 已变更，请重新上传所有表盘包体文件。");
+        }
+      }
+
       if (mode === "new") {
         const repo = await uploadManifestAndAssets({
           manifest: manifestResult,
@@ -694,6 +773,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       const token = loadAccountState().github?.token;
       if (!token) throw new Error("GitHub 未登录，无法提交 PR。");
 
+      if (resourceType === "watchface") {
+        const formatError = validateWatchfaceIdFormat(itemId);
+        if (formatError) throw new Error(formatError);
+      }
+      const uploadedId = JSON.parse((lastManifest ?? manifestResult).manifestJson).item?.id?.trim();
+      if (uploadedId !== itemId.trim()) {
+        throw new Error("资源 ID 已变更，请重新上传仓库文件后再提交 PR。");
+      }
+
       const tags = tagsInput
         .split(/[;；]/)
         .map((t) => t.trim())
@@ -729,6 +817,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           owner: editContext.prHead.owner,
           repo: editContext.prHead.repo,
           branch: editContext.prHead.ref,
+          intent: { mode: "edit", originalId: editContext.catalog.entry.id },
           entry: {
             id: itemId.trim(),
             name: itemName.trim(),
@@ -765,6 +854,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         itemName,
         restype: resourceType,
         paidType: effectivePaidType,
+        intent: editContext
+          ? { mode: "edit", originalId: editContext.catalog.entry.id }
+          : { mode: "create" },
       });
 
       await createCatalogPullRequest({
@@ -1286,12 +1378,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 paidType={effectivePaidType}
                 paidTypeDisabled={hasEncryptedUpload}
                 resourceType={resourceType}
+                idError={idError}
+                idGenerating={idGenerating}
                 onItemIdChange={setItemId}
                 onItemNameChange={setItemName}
                 onDescriptionChange={setDescription}
                 onTagsChange={setTagsInput}
                 onPaidTypeChange={setPaidType}
                 onResourceTypeChange={setResourceType}
+                onGenerateId={handleGenerateId}
               />
               <MediaSection
                 previews={previews}

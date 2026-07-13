@@ -24,6 +24,10 @@ export interface CatalogEntry {
     paid_type: string;
 }
 
+export type CatalogWriteIntent =
+    | { mode: "create" }
+    | { mode: "edit"; originalId: string };
+
 export interface CatalogUpdateRequest {
     repoInfo: RepoInfo & { commitSha: string };
     iconPath: string;
@@ -34,6 +38,7 @@ export interface CatalogUpdateRequest {
     itemName: string;
     restype: string;
     paidType?: string;
+    intent: CatalogWriteIntent;
 }
 
 const CATALOG_CSV_COLUMNS = [
@@ -282,17 +287,43 @@ async function updateFile(
     );
 }
 
-function appendOrReplaceCsvRow(existingCsv: string, entry: CatalogEntry) {
+function appendOrReplaceCsvRow(
+    existingCsv: string,
+    entry: CatalogEntry,
+    intent: CatalogWriteIntent,
+) {
     const normalizedEntry = normalizeCatalogEntryForCsv(entry);
     validateCatalogEntryForCsv(normalizedEntry);
 
     const rows = existingCsv.split(/\r?\n/).filter((line) => line.trim().length > 0);
     const header = rows[0] || "";
     const dataRows = rows.slice(1);
+    const entries = parseCatalogCsv([header || CATALOG_CSV_HEADER, ...dataRows].join("\n"));
+    const targets = entries.filter((item) => item.id.trim() === normalizedEntry.id);
+    const originalId = intent.mode === "edit" ? intent.originalId.trim() : "";
+    const originals = entries.filter((item) => item.id.trim() === originalId);
+
+    if (targets.length > 1) {
+        throw new Error(`index_v2.csv 中资源 ID "${normalizedEntry.id}" 存在重复行。`);
+    }
+    if (targets[0] && (intent.mode === "create" || normalizedEntry.id !== originalId)) {
+        throw new Error(
+            `资源 ID "${normalizedEntry.id}" 已被「${targets[0].name || targets[0].id}」占用。`,
+        );
+    }
+    if (intent.mode === "edit" && originals.length !== 1) {
+        throw new Error(
+            originals.length === 0
+                ? `未在 index_v2.csv 中找到原资源 ID "${originalId}"。`
+                : `index_v2.csv 中原资源 ID "${originalId}" 存在重复行。`,
+        );
+    }
 
     const rowString = CATALOG_CSV_COLUMNS.map((column) => normalizedEntry[column]).join(",");
-
-    const filtered = dataRows.filter((line) => !line.startsWith(`${normalizedEntry.id},`));
+    const filtered = dataRows.filter((line) => {
+        const id = line.split(",", 1)[0]?.trim();
+        return id !== (intent.mode === "edit" ? originalId : normalizedEntry.id);
+    });
     filtered.push(rowString);
     return [header || CATALOG_CSV_HEADER, ...filtered].join("\n");
 }
@@ -353,7 +384,7 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
     );
     const csvContent = decodeCatalogContent(fileData.content);
 
-    const updatedCsv = appendOrReplaceCsvRow(csvContent, entry);
+    const updatedCsv = appendOrReplaceCsvRow(csvContent, entry, payload.intent);
     const encoded = ensureBase64(updatedCsv);
 
     await updateFile(
@@ -408,8 +439,9 @@ export async function updateCatalogEntryOnBranch(params: {
     repo: string;
     branch: string;
     entry: CatalogEntry;
+    intent: CatalogWriteIntent;
 }) {
-    const { token, owner, repo, branch, entry } = params;
+    const { token, owner, repo, branch, entry, intent } = params;
     validateCatalogEntryForCsv(entry);
 
     const fileData = await getFileContent(
@@ -420,7 +452,7 @@ export async function updateCatalogEntryOnBranch(params: {
         branch,
     );
     const csvContent = decodeCatalogContent(fileData.content);
-    const updatedCsv = appendOrReplaceCsvRow(csvContent, entry);
+    const updatedCsv = appendOrReplaceCsvRow(csvContent, entry, intent);
     const encoded = ensureBase64(updatedCsv);
 
     await updateFile(

@@ -1,10 +1,13 @@
 import {
+  Button,
   Select,
   TextArea,
   TextField,
   SegmentedControl,
 } from "@radix-ui/themes";
+import { DiceFiveIcon } from "@phosphor-icons/react";
 import { Field, SectionCard } from "./shared";
+import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
 
 type ResourceType = "quick_app" | "watchface";
 
@@ -16,12 +19,15 @@ interface BasicInfoSectionProps {
   paidType: string;
   paidTypeDisabled?: boolean;
   resourceType: ResourceType;
+  idError?: string;
+  idGenerating?: boolean;
   onItemIdChange: (value: string) => void;
   onItemNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onTagsChange: (value: string) => void;
   onPaidTypeChange: (value: string) => void;
   onResourceTypeChange: (value: ResourceType) => void;
+  onGenerateId?: () => void;
 }
 
 export function BasicInfoSection({
@@ -32,12 +38,15 @@ export function BasicInfoSection({
   paidType,
   paidTypeDisabled,
   resourceType,
+  idError,
+  idGenerating,
   onItemIdChange,
   onItemNameChange,
   onDescriptionChange,
   onTagsChange,
   onPaidTypeChange,
   onResourceTypeChange,
+  onGenerateId,
 }: BasicInfoSectionProps) {
   return (
     <SectionCard
@@ -111,19 +120,51 @@ export function BasicInfoSection({
           hint={
             resourceType === "quick_app"
               ? "填写快应用包名"
-              : "填写表盘唯一标识符"
+              : "12位纯数字，以9798开头"
           }
         >
-          <TextField.Root
-            placeholder={
-              resourceType === "quick_app"
-                ? "com.example.quickapp"
-                : "9798XXXXXXXX"
-            }
-            value={itemId}
-            onChange={(e) => onItemIdChange(e.target.value)}
-            radius="large"
-          />
+          <div className="flex gap-2 items-start">
+            <div className="flex-1 min-w-0">
+              <TextField.Root
+                placeholder={
+                  resourceType === "quick_app"
+                    ? "com.example.quickapp"
+                    : "9798XXXXXXXX"
+                }
+                value={itemId}
+                onChange={(e) => {
+                  if (resourceType === "watchface") {
+                    onItemIdChange(normalizeWatchfaceIdInput(e.target.value));
+                  } else {
+                    onItemIdChange(e.target.value);
+                  }
+                }}
+                inputMode={resourceType === "watchface" ? "numeric" : "text"}
+                maxLength={
+                  resourceType === "watchface" ? 12 : undefined
+                }
+                radius="large"
+                className={idError ? "!border-red-400/60" : ""}
+              />
+              {idError && (
+                <p className="text-xs text-red-400 mt-1">{idError}</p>
+              )}
+            </div>
+            {resourceType === "watchface" && onGenerateId && (
+              <Button
+                type="button"
+                variant="soft"
+                color="gray"
+                size="2"
+                onClick={onGenerateId}
+                disabled={idGenerating}
+                className="mt-0.5 shrink-0"
+              >
+                <DiceFiveIcon size={14} weight="duotone" />
+                {idGenerating ? "生成中" : "生成ID"}
+              </Button>
+            )}
+          </div>
         </Field>
       </div>
       <Field label="资源简介">

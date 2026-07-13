@@ -23,6 +23,7 @@ import type {
 } from "./manifest";
 import { encryptFileWithAes256Ecb } from "./encryption";
 import { submitResourceCryptoInfo } from "~/api/astrobox/resource";
+import { replaceWatchfaceIdInFile } from "./watchface-id";
 
 interface UploadManifestRequest {
   manifest: ManifestBuildResult;
@@ -55,6 +56,24 @@ async function prepareTextAsset(
   text: string,
 ): Promise<PreparedAsset> {
   return { path, base64Content: ensureBase64(text) };
+}
+
+async function applyWatchfaceId(
+  assets: DownloadAssetDescriptor[],
+  id: string,
+  onProgress?: (message: string) => void,
+) {
+  const files = new Map<File, File>();
+  for (const asset of assets) {
+    if (asset.skipUpload) continue;
+    let updated = files.get(asset.file);
+    if (!updated) {
+      onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
+      updated = await replaceWatchfaceIdInFile(asset.file, id);
+      files.set(asset.file, updated);
+    }
+    asset.file = updated;
+  }
 }
 
 async function encryptDownloadAssets(
@@ -309,9 +328,15 @@ export async function uploadManifestAndAssets({
   });
   await ensureMainResourceBranch(normalizedRepo, token);
 
-  // --- Pre-process encryption (must happen before batching) ---
-  // Deep copy download assets to avoid mutating the original manifest
-  const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
+  const parsedManifest = JSON.parse(manifest.manifestJson) as {
+    item?: { id?: string; restype?: string };
+  };
+  const downloadAssets = manifest.downloadAssets.map((asset) => ({ ...asset }));
+  const trialDownloadAssets = manifest.trialDownloadAssets.map((asset) => ({ ...asset }));
+  if (parsedManifest.item?.restype === "watchface") {
+    await applyWatchfaceId(downloadAssets, itemId.trim(), onProgress);
+    await applyWatchfaceId(trialDownloadAssets, itemId.trim(), onProgress);
+  }
   const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
   // --- Prepare all assets as base64 ---
@@ -346,7 +371,7 @@ export async function uploadManifestAndAssets({
     if (prepared) allAssets.push(prepared);
   }
 
-  for (const asset of manifest.trialDownloadAssets) {
+  for (const asset of trialDownloadAssets) {
     if (asset.skipUpload) continue;
     const prepared = await prepareFileAsset(asset);
     if (prepared) allAssets.push(prepared);
@@ -391,7 +416,7 @@ export async function upsertManifestAndAssets({
   onProgress?: (message: string) => void;
 }): Promise<RepoInfo & { commitSha: string }> {
   const parsedManifest = JSON.parse(manifest.manifestJson) as {
-    item?: { id?: string; name?: string };
+    item?: { id?: string; name?: string; restype?: string };
   };
   const itemId = parsedManifest.item?.id?.trim() || "";
   const itemName = parsedManifest.item?.name?.trim() || "";
@@ -404,8 +429,12 @@ export async function upsertManifestAndAssets({
   });
   await ensureMainResourceBranch(targetRepo, token);
 
-  // --- Pre-process encryption ---
-  const downloadAssets = manifest.downloadAssets.map((a) => ({ ...a }));
+  const downloadAssets = manifest.downloadAssets.map((asset) => ({ ...asset }));
+  const trialDownloadAssets = manifest.trialDownloadAssets.map((asset) => ({ ...asset }));
+  if (parsedManifest.item?.restype === "watchface") {
+    await applyWatchfaceId(downloadAssets, itemId, onProgress);
+    await applyWatchfaceId(trialDownloadAssets, itemId, onProgress);
+  }
   const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
   // --- Prepare all assets ---
@@ -440,7 +469,7 @@ export async function upsertManifestAndAssets({
     if (prepared) allAssets.push(prepared);
   }
 
-  for (const asset of manifest.trialDownloadAssets) {
+  for (const asset of trialDownloadAssets) {
     if (asset.skipUpload) continue;
     const prepared = await prepareFileAsset(asset);
     if (prepared) allAssets.push(prepared);

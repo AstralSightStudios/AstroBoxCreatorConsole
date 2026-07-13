@@ -40,7 +40,7 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
 }
 
-function installCatalogFetchMock() {
+function installCatalogFetchMock(csv = CATALOG_HEADER) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init });
@@ -50,7 +50,7 @@ function installCatalogFetchMock() {
     }
 
     return jsonResponse({
-      content: btoa(CATALOG_HEADER),
+      content: btoa(csv),
       sha: "catalog-sha",
     });
   }) as typeof fetch;
@@ -79,6 +79,7 @@ describe("catalog csv validation", () => {
             repo: "astrobox-catalog",
             branch: "submit-demo",
             entry,
+            intent: { mode: "create" },
           }),
         ).rejects.toThrow(new RegExp(String(field)));
 
@@ -96,6 +97,7 @@ describe("catalog csv validation", () => {
       repo: "astrobox-catalog",
       branch: "submit-demo",
       entry: { ...BASE_ENTRY, paid_type: "free" },
+      intent: { mode: "create" },
     });
 
     const updatedCsv = decodePutCatalogContent(calls);
@@ -104,5 +106,41 @@ describe("catalog csv validation", () => {
       "demo,Demo Resource,quick_app,octocat,astrobox-resource-demo,abcdef1,media/icon.png,media/cover.png,utility;demo,vendor-a;vendor-b,device-a;device-b,",
     );
     expect(updatedCsv).not.toContain("device-a;device-b,free");
+  });
+
+  test("rejects creating an occupied ID with the resource name", async () => {
+    installCatalogFetchMock(
+      `${CATALOG_HEADER}\n${Object.values(BASE_ENTRY).join(",")}`,
+    );
+
+    await expect(
+      updateCatalogEntryOnBranch({
+        token: "token-123",
+        owner: "octocat",
+        repo: "astrobox-catalog",
+        branch: "submit-demo",
+        entry: BASE_ENTRY,
+        intent: { mode: "create" },
+      }),
+    ).rejects.toThrow("Demo Resource");
+  });
+
+  test("renames an existing ID without leaving the old row", async () => {
+    const calls = installCatalogFetchMock(
+      `${CATALOG_HEADER}\n${Object.values(BASE_ENTRY).join(",")}`,
+    );
+
+    await updateCatalogEntryOnBranch({
+      token: "token-123",
+      owner: "octocat",
+      repo: "astrobox-catalog",
+      branch: "submit-demo",
+      entry: { ...BASE_ENTRY, id: "renamed" },
+      intent: { mode: "edit", originalId: BASE_ENTRY.id },
+    });
+
+    const updatedCsv = decodePutCatalogContent(calls);
+    expect(updatedCsv).toContain("renamed,Demo Resource");
+    expect(updatedCsv).not.toContain("\ndemo,Demo Resource");
   });
 });
