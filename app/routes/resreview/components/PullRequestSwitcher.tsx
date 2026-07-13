@@ -6,7 +6,7 @@ import type { GithubIssueComment } from "~/api/github/pr-review";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { ReviewStatusBadgeMini } from "./StatusBadges";
 
-interface WorkbenchSidebarProps {
+interface PullRequestSwitcherProps {
   pulls: GithubPullRequest[];
   openNumber: number;
   commentsByPr: Record<number, GithubIssueComment[]>;
@@ -17,7 +17,7 @@ interface WorkbenchSidebarProps {
   onRefresh: () => void;
 }
 
-export function WorkbenchSidebar({
+export function PullRequestSwitcher({
   pulls,
   openNumber,
   commentsByPr,
@@ -26,7 +26,7 @@ export function WorkbenchSidebar({
   onToggle,
   onSelect,
   onRefresh,
-}: WorkbenchSidebarProps) {
+}: PullRequestSwitcherProps) {
   return (
     <aside
       className={`flex shrink-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-sm transition-[width] duration-300 ease-[cubic-bezier(0.22,0.61,0.36,1)] ${
@@ -63,6 +63,7 @@ export function WorkbenchSidebar({
           <button
             type="button"
             title={isCollapsed ? "展开边栏" : "收起边栏"}
+            aria-label={isCollapsed ? "展开 PR 切换器" : "收起 PR 切换器"}
             onClick={onToggle}
             className={`inline-flex h-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/60 transition hover:bg-white/[0.08] hover:text-white ${
               isCollapsed ? "w-7" : "w-16 gap-1 px-2"

@@ -14,24 +14,21 @@ import {
   listOpenPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
-  listPullRequestReviews,
   approvePullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
   type GithubPullRequest,
-  type GithubPullReview,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
-import { PrGridCard } from "./components/PrGridCard";
-import { DesktopWorkbench } from "./components/DesktopWorkbench";
-import { MobileWorkbench } from "./components/MobileWorkbench";
+import { PullRequestCard } from "./components/PullRequestCard";
+import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
 import { loadPrResourcePreviews, getErrorMessage, extractOldCatalogEntriesFromFiles } from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
 import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
-import { StatePage, PRReviewPageSkeleton } from "./components/StatePage";
+import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAccessMessage";
 
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
@@ -48,7 +45,6 @@ export default function ResourceReviewPage() {
   const [openNumber, setOpenNumber] = useState<number | null>(null);
   const [files, setFiles] = useState<import("~/api/github/pr-review").GithubPullFile[]>([]);
   const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
-  const [reviews, setReviews] = useState<GithubPullReview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
@@ -59,6 +55,8 @@ export default function ResourceReviewPage() {
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [approving, setApproving] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
@@ -130,20 +128,20 @@ export default function ResourceReviewPage() {
     setLoadingDetail(true);
     setFiles([]);
     setResourcePreviews([]);
-    setReviews([]);
     try {
-      const [nextComments, nextFiles, nextReviews] = await Promise.all([
+      const [nextComments, nextFiles] = await Promise.all([
         listPullRequestComments(number),
         listPullRequestFiles(number),
-        listPullRequestReviews(number),
       ]);
+      if (callId !== loadDetailRef.current) return;
+      const nextResourcePreviews = await loadPrResourcePreviews(
+        nextFiles,
+        accountState.github?.token || "",
+      );
       if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
-      setReviews(nextReviews);
-      setResourcePreviews(
-        await loadPrResourcePreviews(nextFiles, accountState.github?.token || ""),
-      );
+      setResourcePreviews(nextResourcePreviews);
     } catch (err) {
       if (callId === loadDetailRef.current) {
         toast.error(getErrorMessage(err));
@@ -164,13 +162,15 @@ export default function ResourceReviewPage() {
   }, [canReview, refreshTick]);
 
   useEffect(() => {
+    setGeneralComment("");
+    setReplyTarget(null);
+    setEditingTarget(null);
     if (openNumber) {
       void loadDetail(openNumber);
     } else {
       loadDetailRef.current += 1;
       setFiles([]);
       setResourcePreviews([]);
-      setReviews([]);
       setLoadingDetail(false);
     }
   }, [openNumber, accountState.github?.token]);
@@ -182,17 +182,6 @@ export default function ResourceReviewPage() {
       return status.state === stateFilter;
     });
   }, [commentsByPr, pulls, stateFilter]);
-
-  const markFixed = async (id: string) => {
-    if (!openNumber) return;
-    try {
-      await createPullRequestComment(openNumber, `[ABCC_FIXED_${id}] 已确认修复`);
-      await loadDetail(openNumber);
-      toast.success("已写入 fixed 标记");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
-  };
 
   const refreshDetail = () => {
     if (!openNumber) return;
@@ -219,30 +208,38 @@ export default function ResourceReviewPage() {
   };
 
   const submitComment = async (body: string) => {
-    if (!openNumber || !body) return;
+    if (!openNumber || !body || submittingComment) return;
+    const number = openNumber;
+    setSubmittingComment(true);
     try {
       if (editingTarget) {
         await updatePullRequestComment(editingTarget.comment.id, body);
       } else {
-        await createPullRequestComment(openNumber, body);
+        await createPullRequestComment(number, body);
       }
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
-      await loadDetail(openNumber);
+      await loadDetail(number);
       toast.success(editingTarget ? "评论已更新" : "评论已发送");
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
   const approve = async () => {
-    if (!openNumber) return;
+    if (!openNumber || approving) return;
+    const number = openNumber;
+    setApproving(true);
     try {
-      await approvePullRequest(openNumber);
+      await approvePullRequest(number);
       toast.success("已提交 GitHub approve");
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -250,6 +247,7 @@ export default function ResourceReviewPage() {
     <>
       {openNumber ? (
         <NavIconButton
+          aria-label="刷新 PR 详情"
           onClick={() => {
             setDetailRotate((prev) => prev + 360);
             void loadDetail(openNumber);
@@ -281,6 +279,7 @@ export default function ResourceReviewPage() {
             </Select.Root>
           </NavIconButtonGroup>
           <NavIconButton
+            aria-label="刷新 PR 列表"
             onClick={() => {
               setRotate((prev) => prev + 360);
               setRefreshTick((prev) => prev + 1);
@@ -306,7 +305,7 @@ export default function ResourceReviewPage() {
   }, [setHeaderActions, stateFilter, loadingPulls, rotate, openNumber, loadingDetail, detailRotate]);
 
   if (!accountState.github?.token) {
-    return <StatePage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
+    return <ReviewAccessMessage title="PR审核" text="请先在侧边栏登录 GitHub 账号。" />;
   }
 
   if (isInitialLoading) {
@@ -315,7 +314,7 @@ export default function ResourceReviewPage() {
 
   if (!canReview) {
     return (
-      <StatePage
+      <ReviewAccessMessage
         title="PR审核"
         text={`当前 GitHub 账号没有 ${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name} 的 PR 管理权限。${permissionError ? ` ${permissionError}` : ""}`}
       />
@@ -352,66 +351,41 @@ export default function ResourceReviewPage() {
             transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
           >
             <LayoutGroup>
-              {isDesktop ? (
-                <DesktopWorkbench
-                  pulls={visiblePulls}
-                  openNumber={openNumber!}
-                  openPull={openPull}
-                  openComments={openComments}
-                  openStatus={openStatus}
-                  files={files}
-                  resourcePreviews={resourcePreviews}
-                  reviews={reviews}
-                  repoFileChanges={repoFileChanges}
-                  loadingDetail={loadingDetail}
-                  loadingPulls={loadingPulls}
-                  commentsByPr={commentsByPr}
-                  generalComment={generalComment}
-                  isSidebarCollapsed={isWorkbenchSidebarCollapsed}
-                  onToggleSidebar={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
-                  onSelectSidebar={handleSelectSidebar}
-                  onClose={handleCloseWorkbench}
-                  onRefreshList={() => {
-                    setRotate((prev) => prev + 360);
-                    setRefreshTick((prev) => prev + 1);
-                  }}
-                  onGeneralCommentChange={setGeneralComment}
-                  onSubmitComment={submitComment}
-                  replyTarget={replyTarget}
-                  onCancelReply={() => setReplyTarget(null)}
-                  editingTarget={editingTarget}
-                  onCancelEdit={() => setEditingTarget(null)}
-                  onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
-                  onEditComment={editComment}
-                  onDeleteComment={deleteComment}
-                  onMarkFixed={markFixed}
-                  onApprove={approve}
-                />
-              ) : (
-                <MobileWorkbench
-                  openPull={openPull}
-                  openComments={openComments}
-                  openStatus={openStatus}
-                  files={files}
-                  resourcePreviews={resourcePreviews}
-                  reviews={reviews}
-                  repoFileChanges={repoFileChanges}
-                  loadingDetail={loadingDetail}
-                  generalComment={generalComment}
-                  replyTarget={replyTarget}
-                  onClose={handleCloseWorkbench}
-                  onGeneralCommentChange={setGeneralComment}
-                  onSubmitComment={submitComment}
-                  onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
-                  onCancelReply={() => setReplyTarget(null)}
-                  editingTarget={editingTarget}
-                  onCancelEdit={() => setEditingTarget(null)}
-                  onDeleteComment={deleteComment}
-                  onEditComment={editComment}
-                  onMarkFixed={markFixed}
-                  onApprove={approve}
-                />
-              )}
+              <PullRequestReviewWorkspace
+                isDesktop={isDesktop}
+                pulls={visiblePulls}
+                openNumber={openNumber!}
+                openPull={openPull}
+                openComments={openComments}
+                openStatus={openStatus}
+                files={files}
+                resourcePreviews={resourcePreviews}
+                repoFileChanges={repoFileChanges}
+                loadingDetail={loadingDetail}
+                loadingPulls={loadingPulls}
+                commentsByPr={commentsByPr}
+                generalComment={generalComment}
+                replyTarget={replyTarget}
+                editingTarget={editingTarget}
+                isSwitcherCollapsed={isWorkbenchSidebarCollapsed}
+                submittingComment={submittingComment}
+                approving={approving}
+                onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
+                onSelectPull={handleSelectSidebar}
+                onClose={handleCloseWorkbench}
+                onRefreshList={() => {
+                  setRotate((prev) => prev + 360);
+                  setRefreshTick((prev) => prev + 1);
+                }}
+                onGeneralCommentChange={setGeneralComment}
+                onSubmitComment={submitComment}
+                onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
+                onCancelReply={() => setReplyTarget(null)}
+                onCancelEdit={() => setEditingTarget(null)}
+                onDeleteComment={deleteComment}
+                onEditComment={editComment}
+                onApprove={approve}
+              />
             </LayoutGroup>
           </motion.div>
         ) : (
@@ -446,7 +420,7 @@ export default function ResourceReviewPage() {
                     <LayoutGroup>
                       <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                         {visiblePulls.map((pull) => (
-                          <PrGridCard
+                          <PullRequestCard
                             key={pull.number}
                             pull={pull}
                             comments={commentsByPr[pull.number] ?? []}

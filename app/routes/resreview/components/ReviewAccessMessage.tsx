@@ -1,4 +1,4 @@
-export function StatePage({ title, text }: { title: string; text: string }) {
+export function ReviewAccessMessage({ title, text }: { title: string; text: string }) {
   return (
     <div className="grid h-full place-items-center px-6">
       <div className="max-w-lg rounded-2xl border border-white/10 bg-nav-item p-6 text-center">

@@ -1,37 +1,24 @@
 import { Tabs } from "@radix-ui/themes";
 import { useState, useCallback } from "react";
 import { SealCheck } from "@phosphor-icons/react";
-import type { GithubIssueComment, GithubPullRequest, GithubPullFile, GithubPullReview } from "~/api/github/pr-review";
+import type { GithubIssueComment, GithubPullRequest, GithubPullFile } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { FileEntry } from "./FileEntry";
-import { OverviewPanel } from "./OverviewPanel";
+import { PullRequestSummaryCard } from "./PullRequestSummaryCard";
 import { ResourceDetailTab } from "./ResourceDetailTab";
 import { RuleCheckPanel } from "./RuleCheckPanel";
 import { CommentTimeline } from "./CommentTimeline";
 import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
 import { RepoFileChanges } from "./RepoFileChanges";
-import type { PrResourcePreview } from "../types";
-import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 
-export interface RepoFileChangeInfo {
-  entryId: string;
-  resourceName: string;
-  isNew: boolean;
-  owner: string;
-  repo: string;
-  commitHash: string;
-  baseCommitHash?: string;
-  manifest?: ManifestV2;
-}
-
-export interface ReviewDetailContentProps {
+export interface PullRequestReviewViewProps {
   openPull: GithubPullRequest | null;
   openStatus: ReturnType<typeof deriveReviewStatus>;
   openComments: GithubIssueComment[];
   files: GithubPullFile[];
   resourcePreviews: PrResourcePreview[];
-  reviews: GithubPullReview[];
   repoFileChanges: RepoFileChangeInfo[];
   loadingDetail: boolean;
   generalComment: string;
@@ -44,21 +31,19 @@ export interface ReviewDetailContentProps {
   onCancelEdit: () => void;
   onDeleteComment: (comment: GithubIssueComment) => void;
   onEditComment: (comment: GithubIssueComment) => void;
-  onMarkFixed: (id: string) => void;
+  submittingComment: boolean;
+  approving: boolean;
   onApprove: () => void;
-  onClose?: () => void;
-  onFileComment?: (filePath: string) => void;
-  overviewPanelRef?: React.RefObject<HTMLDivElement | null>;
+  summaryCardRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export function ReviewDetailContent(props: ReviewDetailContentProps) {
+export function PullRequestReviewView(props: PullRequestReviewViewProps) {
   const {
     openPull,
     openStatus,
     openComments,
     files,
     resourcePreviews,
-    reviews: _reviews,
     repoFileChanges,
     loadingDetail,
     generalComment,
@@ -71,11 +56,10 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
     onCancelEdit,
     onDeleteComment,
     onEditComment,
-    onMarkFixed: _onMarkFixed,
+    submittingComment,
+    approving,
     onApprove,
-    onClose,
-    onFileComment,
-    overviewPanelRef,
+    summaryCardRef,
   } = props;
 
   const accountState = useAccountState();
@@ -87,19 +71,19 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
   }, [onGeneralCommentChange]);
 
   const setRef = (el: HTMLDivElement | null) => {
-    if (overviewPanelRef) {
-      overviewPanelRef.current = el;
+    if (summaryCardRef) {
+      summaryCardRef.current = el;
     }
   };
 
   return (
     <>
       <div ref={setRef}>
-        <OverviewPanel
+        <PullRequestSummaryCard
           openPull={openPull}
           openStatus={openStatus}
           onApprove={onApprove}
-          onClose={onClose}
+          approving={approving}
         />
       </div>
 
@@ -186,6 +170,7 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
                   value={generalComment}
                   onChange={onGeneralCommentChange}
                   onSubmit={onSubmitComment}
+                  submitting={submittingComment}
                   replyTarget={replyTarget}
                   onCancelReply={onCancelReply}
                   editingTarget={editingTarget}
@@ -214,17 +199,20 @@ export function ReviewDetailContent(props: ReviewDetailContentProps) {
 
 function RepoFileChangesTab({ repoFileChanges, onFileComment }: { repoFileChanges: RepoFileChangeInfo[]; onFileComment?: (path: string) => void }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const change = repoFileChanges[activeIdx];
+  const safeActiveIdx = Math.min(activeIdx, Math.max(0, repoFileChanges.length - 1));
+  const change = repoFileChanges[safeActiveIdx];
+
+  if (!change) return null;
 
   if (repoFileChanges.length === 1) {
     return (
       <RepoFileChanges
-        owner={change!.owner}
-        repo={change!.repo}
-        commitHash={change!.commitHash}
-        baseCommitHash={change!.baseCommitHash}
-        manifest={change!.manifest}
-        isNew={change!.isNew}
+        owner={change.owner}
+        repo={change.repo}
+        commitHash={change.commitHash}
+        baseCommitHash={change.baseCommitHash}
+        manifest={change.manifest}
+        isNew={change.isNew}
         onFileComment={onFileComment}
       />
     );
@@ -238,7 +226,7 @@ function RepoFileChangesTab({ repoFileChanges, onFileComment }: { repoFileChange
             key={r.entryId}
             onClick={() => setActiveIdx(i)}
             className={`rounded-md px-3 py-1.5 text-sm transition ${
-              i === activeIdx
+              i === safeActiveIdx
                 ? "bg-white/15 text-white"
                 : "bg-white/[0.04] text-white/55 hover:bg-white/10 hover:text-white/80"
             }`}
@@ -251,13 +239,13 @@ function RepoFileChangesTab({ repoFileChanges, onFileComment }: { repoFileChange
         ))}
       </div>
       <RepoFileChanges
-        key={change!.entryId}
-        owner={change!.owner}
-        repo={change!.repo}
-        commitHash={change!.commitHash}
-        baseCommitHash={change!.baseCommitHash}
-        manifest={change!.manifest}
-        isNew={change!.isNew}
+        key={change.entryId}
+        owner={change.owner}
+        repo={change.repo}
+        commitHash={change.commitHash}
+        baseCommitHash={change.baseCommitHash}
+        manifest={change.manifest}
+        isNew={change.isNew}
         onFileComment={onFileComment}
       />
     </div>

@@ -6,13 +6,13 @@ import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
 import { formatTime } from "../utils";
 
-interface PrGridCardProps {
+interface PullRequestCardProps {
   pull: GithubPullRequest;
   comments: GithubIssueComment[];
   onClick: () => void;
 }
 
-export function PrGridCard({ pull, comments, onClick }: PrGridCardProps) {
+export function PullRequestCard({ pull, comments, onClick }: PullRequestCardProps) {
   const status = deriveReviewStatus(comments);
   return (
     <motion.button
