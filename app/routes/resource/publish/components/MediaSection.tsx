@@ -23,6 +23,7 @@ interface MediaSectionProps {
   onToggleUsePreviewAsCover: (checked: boolean) => void;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
+  onMediaDimensions: (kind: "preview" | "icon" | "cover", id: string, width: number, height: number) => void;
 }
 
 export function MediaSection({
@@ -39,6 +40,7 @@ export function MediaSection({
   onToggleUsePreviewAsCover,
   onRemoveIcon,
   onRemoveCover,
+  onMediaDimensions,
 }: MediaSectionProps) {
   const previewInputRef = useRef<HTMLInputElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -115,9 +117,20 @@ export function MediaSection({
                     src={item.url}
                     alt={item.name}
                     className="h-40 w-full object-cover"
+                    onLoad={(event) => {
+                      const image = event.currentTarget;
+                      if ((!item.width || !item.height) && image.naturalWidth && image.naturalHeight) {
+                        onMediaDimensions("preview", item.id, image.naturalWidth, image.naturalHeight);
+                      }
+                    }}
                   />
                   <div className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <span className="truncate">{item.name}</span>
+                    <span className={`truncate ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "text-red-400" : ""}`}>
+                      {item.name}
+                      {isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02
+                        ? ` · 建议接近 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不影响提交`
+                        : ""}
+                    </span>
                     <button
                       className="ml-auto text-white/60 transition hover:text-white"
                       onClick={() => {
@@ -152,10 +165,12 @@ export function MediaSection({
         <div className="gap-3 flex flex-col">
           <UploadSlot
             label="图标"
-            description="建议 1:1，PNG 或 WebP"
+            description="必须 1:1，建议不超过 500×500"
             media={icon}
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
+            recommendedMaxSize={500}
+            onDimensions={(width, height) => icon && onMediaDimensions("icon", icon.id, width, height)}
           />
           <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-1">
             <div className="flex items-center gap-2 pt-1.5 px-2 pb-1">
@@ -206,6 +221,8 @@ export function MediaSection({
                 media={cover}
                 onPick={() => coverInputRef.current?.click()}
                 onRemove={onRemoveCover}
+                showRatio
+                onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
               />
             )}
           </div>

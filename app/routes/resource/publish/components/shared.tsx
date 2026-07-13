@@ -61,6 +61,8 @@ export interface UploadItem {
   pathOverride?: string;
   skipUpload?: boolean;
   source?: "upload" | "existing";
+  width?: number;
+  height?: number;
 }
 
 export function UploadSlot({
@@ -70,6 +72,9 @@ export function UploadSlot({
   onPick,
   onRemove,
   compact,
+  showRatio,
+  recommendedMaxSize,
+  onDimensions,
 }: {
   label: string;
   description?: string;
@@ -77,10 +82,22 @@ export function UploadSlot({
   onPick: () => void;
   onRemove: () => void;
   compact?: boolean;
+  showRatio?: boolean;
+  recommendedMaxSize?: number;
+  onDimensions?: (width: number, height: number) => void;
 }) {
+  const ratio = media?.width && media.height ? media.width / media.height : null;
+  const ratioWarning = showRatio && ratio !== null && Math.abs(ratio - 1.5) > 0.02;
+  const sizeWarning = Boolean(
+    recommendedMaxSize &&
+      media?.width &&
+      media.height &&
+      (media.width > recommendedMaxSize || media.height > recommendedMaxSize),
+  );
+  const warning = ratioWarning || sizeWarning;
   return (
     <div
-      className={`flex flex-col gap-1 rounded-lg ${compact ? "" : "border border-white/10 bg-white/5 p-1 h-full"}`}
+      className={`flex flex-col gap-1 rounded-lg ${compact ? "" : "border bg-white/5 p-1 h-full"} ${warning ? "border-red-400/70" : compact ? "" : "border-white/10"}`}
     >
       <div className="flex items-center gap-2 pt-1.5 px-2 pb-1">
         <p className="text-sm font-medium text-white">{label}</p>
@@ -95,11 +112,25 @@ export function UploadSlot({
               src={media.url}
               alt={media.name}
               className="h-full w-full object-cover"
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                if ((!media.width || !media.height) && image.naturalWidth && image.naturalHeight) {
+                  onDimensions?.(image.naturalWidth, image.naturalHeight);
+                }
+              }}
             />
           </div>
           <div className="flex flex-1 flex-col">
             <span className="text-sm font-medium text-white">{media.name}</span>
-            <span className="text-xs text-white/60">已就绪</span>
+            <span className={`text-xs ${warning ? "text-red-400" : "text-white/60"}`}>
+              {sizeWarning
+                ? `建议不超过 ${recommendedMaxSize}×${recommendedMaxSize}，当前 ${media.width}×${media.height}；不影响提交`
+                : ratio !== null
+                  ? ratioWarning
+                    ? `建议接近 3:2（1.5），当前 ${ratio.toFixed(2)}；不影响提交`
+                    : `${media.width}×${media.height} · 比例 ${ratio.toFixed(2)}`
+                  : "已就绪"}
+            </span>
           </div>
           <button
             className="text-white/60 transition hover:text-red-400"

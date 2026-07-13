@@ -38,6 +38,7 @@ import { StepList, type UploadItem } from "./components/shared";
 import {
   compressImageFile,
   createExistingUploadItem,
+  createImageUploadItem,
   createUploadItem,
   revokeUrl,
 } from "./components/uploadUtils";
@@ -61,6 +62,7 @@ import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection } from "./components/RepoStepSection";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
+import { validatePublish, validateRpkPackage } from "~/logic/publish/validation";
 import {
   buildRawFileUrl,
   fetchManifestForCatalogEntry,
@@ -500,6 +502,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     ],
   );
 
+  const publishValidation = useMemo(
+    () =>
+      validatePublish({
+        itemId,
+        itemName,
+        previews,
+        icon,
+        cover,
+        usePreviewAsCover,
+        coverPreviewId,
+        downloads,
+        trialDownloads,
+        links,
+      }),
+    [itemId, itemName, previews, icon, cover, usePreviewAsCover, coverPreviewId, downloads, trialDownloads, links],
+  );
+
   const handlePreviewUpload = async (files: FileList | null) => {
     if (!files?.length) return;
     const processed = await Promise.all(
@@ -513,7 +532,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }
       }),
     );
-    const newItems = processed.map(createUploadItem);
+    const newItems = await Promise.all(processed.map(createImageUploadItem));
     setPreviews((prev) => [...prev, ...newItems]);
     if (usePreviewAsCover && !coverPreviewId) {
       setCoverPreviewId(newItems[0]?.id ?? null);
@@ -530,9 +549,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       toast.error("图标处理失败，将使用原图");
       console.error("compress icon failed:", err);
     }
+    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
     setIcon((prev) => {
       revokeUrl(prev);
-      return createUploadItem(processed);
+      return next;
     });
   };
 
@@ -546,9 +566,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       toast.error("封面处理失败，将使用原图");
       console.error("compress cover failed:", err);
     }
+    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
     setCover((prev) => {
       revokeUrl(prev);
-      return createUploadItem(processed);
+      return next;
     });
   };
 
@@ -587,6 +608,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleRemoveCover = () => {
     revokeUrl(cover);
     setCover(null);
+  };
+
+  const handleMediaDimensions = (
+    kind: "preview" | "icon" | "cover",
+    id: string,
+    width: number,
+    height: number,
+  ) => {
+    if (kind === "preview") {
+      setPreviews((items) => items.map((item) => item.id === id ? { ...item, width, height } : item));
+    } else if (kind === "icon") {
+      setIcon((item) => item?.id === id ? { ...item, width, height } : item);
+    } else {
+      setCover((item) => item?.id === id ? { ...item, width, height } : item);
+    }
   };
 
   const handleUsePreviewAsCover = (checked: boolean) => {
@@ -655,22 +691,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error(extError);
       }
 
-      const missingDownload = downloads.some(
-        (d) => d.platformId.trim() && !d.file && !d.existingFileName,
-      );
-      const missingTrialDownload = trialDownloads.some(
-        (d) => d.platformId.trim() && !d.file && !d.existingFileName,
-      );
-
-      if (missingDownload) {
-        throw new Error("所有下载配置必须上传包体文件。");
+      if (publishValidation.errors.length) {
+        throw new Error(publishValidation.errors[0]);
       }
-      if (missingTrialDownload) {
-        throw new Error("所有试用下载配置必须上传包体文件。");
-      }
-
-      if (manifestResult.previewPaths.length === 0) {
-        throw new Error("请至少上传一张预览图。");
+      if (resourceType === "quick_app") {
+        for (const download of [...downloads, ...trialDownloads]) {
+          if (download.file && !download.file.skipUpload) {
+            await validateRpkPackage(download.file.file, itemId);
+          }
+        }
       }
 
       if (!manifestResult.manifestJson) {
@@ -753,7 +782,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       return;
     }
     const mode = editContext?.mode ?? "new";
-    if (!repoInfo) {
+    if (publishValidation.errors.length) {
+      setPrStatus("error");
+      setPrMessage(publishValidation.errors[0]);
+      return;
+    }
+    if (repoStatus !== "success" || !repoInfo) {
       setPrStatus("error");
       setPrMessage("请先完成仓库创建与文件上传。");
       return;
@@ -1006,7 +1040,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const goToStep = (index: number) => {
-    setActiveStepIndex(Math.max(0, Math.min(2, index)));
+    const target = Math.max(0, Math.min(2, index));
+    if (target > 0 && publishValidation.errors.length) {
+      toast.error(publishValidation.errors[0]);
+      setActiveStepIndex(0);
+      return;
+    }
+    if (target > 1 && (repoStatus !== "success" || !repoInfo?.commitSha)) {
+      toast.error("请先完成资源仓库上传并获取提交哈希。");
+      setActiveStepIndex(1);
+      return;
+    }
+    setActiveStepIndex(target);
   };
 
   // --- Draft system ---
@@ -1402,6 +1447,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onToggleUsePreviewAsCover={handleUsePreviewAsCover}
                 onRemoveIcon={handleRemoveIcon}
                 onRemoveCover={handleRemoveCover}
+                onMediaDimensions={handleMediaDimensions}
               />
               <AuthorsLinksSection
                 authors={authors}
@@ -1416,6 +1462,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
+                validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
                 onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
@@ -1433,6 +1480,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 allowEncryption={false}
+                validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
                 onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}

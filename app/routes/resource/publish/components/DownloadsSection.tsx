@@ -24,6 +24,7 @@ import { createUploadItem } from "./uploadUtils";
 import { type DeviceOption, type DownloadInput } from "./types";
 import { type UploadItem, SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
+import { toast } from "sonner";
 
 interface DownloadsSectionProps {
   title?: string;
@@ -37,6 +38,7 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
+  validateFile?: (file: File) => Promise<void>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -59,6 +61,7 @@ export function DownloadsSection({
   isVip,
   resourceId,
   allowEncryption = true,
+  validateFile,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
@@ -298,17 +301,22 @@ export function DownloadsSection({
                       ref={(node) => {
                         downloadFileInputs.current[item.uid] = node;
                       }}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const uploadItem = createUploadItem(file);
-                        onUpdateRow(item.uid, (row) => ({
-                          ...row,
-                          file: uploadItem,
-                          existingFileName: undefined,
-                        }));
-                        e.target.value = "";
-                      }}
+                       onChange={async (e) => {
+                         const file = e.target.files?.[0];
+                         e.target.value = "";
+                         if (!file) return;
+                         try {
+                           await validateFile?.(file);
+                           const uploadItem = createUploadItem(file);
+                           onUpdateRow(item.uid, (row) => ({
+                             ...row,
+                             file: uploadItem,
+                             existingFileName: undefined,
+                           }));
+                         } catch (error) {
+                           toast.error((error as Error).message);
+                         }
+                       }}
                     />
                     {item.file ? (
                       <>

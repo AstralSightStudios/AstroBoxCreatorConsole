@@ -3,7 +3,7 @@ import type { UploadItem } from "./shared";
 
 const COMPRESS_TARGET_HEIGHT = 720;
 
-function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+export function getImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
     return new Promise((resolve, reject) => {
         const img = new Image();
         const url = URL.createObjectURL(file);
@@ -60,6 +60,11 @@ export const createUploadItem = (file: File): UploadItem => ({
     url: URL.createObjectURL(file),
     file,
     source: "upload",
+});
+
+export const createImageUploadItem = async (file: File): Promise<UploadItem> => ({
+    ...createUploadItem(file),
+    ...(await getImageDimensions(file)),
 });
 
 export const createExistingUploadItem = (

@@ -7,7 +7,8 @@ import {
 import { Switch, TextField, Table } from "@radix-ui/themes";
 import { type Dispatch, type SetStateAction } from "react";
 import { type AuthorInput, type LinkInput } from "./types";
-import { Field, SectionCard } from "./shared";
+import { SectionCard } from "./shared";
+import { validateLink } from "~/logic/publish/validation";
 
 interface AuthorsLinksSectionProps {
   authors: AuthorInput[];
@@ -158,8 +159,10 @@ export function AuthorsLinksSection({
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {links.map((link, index) => (
-                <Table.Row key={`links-${index}`}>
+              {links.map((link, index) => {
+                const linkError = validateLink(link);
+                return (
+                <Table.Row key={`links-${index}`} className={linkError ? "outline outline-1 outline-red-400/70" : ""}>
                   <Table.RowHeaderCell width="40px" justify="center" px="0">
                     {links.length > 0 && (
                       <button
@@ -210,9 +213,11 @@ export function AuthorsLinksSection({
                   </Table.RowHeaderCell>
                   <Table.RowHeaderCell>
                     <label className="flex items-center gap-2 text-sm text-white/80 h-full">
-                      <TextField.Root
-                        placeholder="https://example.com"
-                        value={link.url}
+                       <TextField.Root
+                         type="url"
+                         placeholder="https://example.com"
+                         color={linkError ? "red" : undefined}
+                         value={link.url}
                         radius="large"
                         onChange={(e) =>
                           setLinks((prev) =>
@@ -223,12 +228,14 @@ export function AuthorsLinksSection({
                             ),
                           )
                         }
-                      />
-                    </label>
-                  </Table.RowHeaderCell>
-                </Table.Row>
-              ))}
-              {links.length === 0 && (
+                       />
+                     </label>
+                     {linkError && <p className="mt-1 text-xs text-red-400">{linkError}</p>}
+                   </Table.RowHeaderCell>
+                 </Table.Row>
+               );
+              })}
+               {links.length === 0 && (
                 <Table.Row key={`links-0`}>
                   <Table.RowHeaderCell
                     width="40px"
