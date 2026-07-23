@@ -307,10 +307,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setIdError(formatError);
       return;
     }
-    const ownedId =
-      editContext?.mode === "catalog"
-        ? editContext.catalog.entry.id.trim()
-        : undefined;
+    const ownedId = editContext?.catalog.entry.id.trim();
     const existingName = existingCatalogIds?.get(itemId.trim());
     if (existingName && itemId.trim() !== ownedId) {
       setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
@@ -741,8 +738,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         if (formatError) throw new Error(formatError);
         const ids = await fetchExistingCatalogIds(token);
         setExistingCatalogIds(ids);
-        const originalId = editContext?.catalog.entry.id.trim();
-        const ownedId = editContext?.mode === "catalog" ? originalId : undefined;
+        const ownedId = editContext?.catalog.entry.id.trim();
         const existingName = ids.get(itemId.trim());
         if (existingName && itemId.trim() !== ownedId) {
           throw new Error(
@@ -750,8 +746,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           );
         }
         if (
-          originalId &&
-          itemId.trim() !== originalId &&
+          ownedId &&
+          itemId.trim() !== ownedId &&
           [...downloads, ...trialDownloads].some(
             (download) => download.file?.skipUpload || download.existingFileName,
           )
