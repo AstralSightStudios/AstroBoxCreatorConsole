@@ -1,7 +1,7 @@
 export function ReviewAccessMessage({ title, text }: { title: string; text: string }) {
   return (
     <div className="grid h-full place-items-center px-6">
-      <div className="max-w-lg rounded-2xl border border-white/10 bg-nav-item p-6 text-center">
+      <div className="max-w-lg rounded-[14px] border border-white/10 bg-nav-item p-6 text-center">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
         <p className="mt-2 text-sm text-white/60">{text}</p>
       </div>
@@ -44,7 +44,7 @@ export function PRReviewPageSkeleton() {
 
 function PrCardSkeleton() {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/10 bg-black/15 px-4 py-4">
+    <div className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-[14px] border border-white/10 bg-nav-item px-4 py-4">
       {/* Title area — matches PullRequestCard title + PR number */}
       <div className="min-w-0 flex-1">
         <div className="h-5 w-full animate-pulse rounded bg-white/10" />

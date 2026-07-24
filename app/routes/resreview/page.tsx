@@ -270,12 +270,12 @@ export default function ResourceReviewPage() {
   }
 
   const handleSelectPull = (pull: GithubPullRequest) => {
-    navigate(`/resreview/detail?pr=${pull.number}`, { replace: true });
+    navigate(`/resreview/detail?pr=${pull.number}`);
     setIsWorkbenchSidebarCollapsed(false);
   };
 
   const handleSelectSidebar = (pull: GithubPullRequest) => {
-    navigate(`/resreview/detail?pr=${pull.number}`, { replace: true });
+    navigate(`/resreview/detail?pr=${pull.number}`);
   };
 
   const showWorkbench = openNumber !== null;

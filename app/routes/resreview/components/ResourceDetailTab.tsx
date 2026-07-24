@@ -154,7 +154,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
       )}
 
       {/* Resource Info Grid (2 columns) */}
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         <InfoCell label="资源仓库">
           <a
             href={`https://github.com/${entry.repo_owner}/${entry.repo_name}`}

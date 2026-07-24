@@ -21,7 +21,7 @@ export function PullRequestCard({ pull, comments, onClick }: PullRequestCardProp
       transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.85 }}
       type="button"
       onClick={onClick}
-      className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-white/10 bg-black/15 px-4 py-4 text-left hover:border-white/25 hover:bg-white/[0.04]"
+      className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-[14px] border border-white/10 bg-nav-item px-4 py-4 text-left hover:border-white/20 hover:bg-nav-item-hover transition-colors"
     >
       <div className="min-w-0 flex-1">
         <h2 className="line-clamp-2 text-base font-semibold text-white">

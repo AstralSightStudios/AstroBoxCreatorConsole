@@ -17,7 +17,7 @@ export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approv
   if (!openPull) return null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="rounded-[14px] border border-white/10 bg-nav-item p-4">
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
