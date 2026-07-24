@@ -3,8 +3,8 @@ import { toast } from "sonner";
 import { Button, Select } from "@radix-ui/themes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
-import NavIconButton, { NavIconButtonGroup } from "~/components/nav-icon-button";
-import { useHeaderActionsFit, useSetHeaderActions } from "~/layout/header-actions";
+import { useNavigate, useSearchParams } from "react-router";
+import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState } from "~/logic/account/store";
 import { useRepoEnv } from "~/config/repoEnv";
@@ -34,15 +34,17 @@ export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
   const setHeaderActions = useSetHeaderActions();
-  const headerActionsFit = useHeaderActionsFit();
   const { isDesktop } = useNavVisibility();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [permission, setPermission] = useState("");
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionError, setPermissionError] = useState("");
   const [pulls, setPulls] = useState<GithubPullRequest[]>([]);
   const [commentsByPr, setCommentsByPr] = useState<Record<number, import("~/api/github/pr-review").GithubIssueComment[]>>({});
-  const [openNumber, setOpenNumber] = useState<number | null>(null);
+  const prParam = searchParams.get("pr");
+  const openNumber = prParam && /^\d+$/.test(prParam) ? Number(prParam) : null;
   const [files, setFiles] = useState<import("~/api/github/pr-review").GithubPullFile[]>([]);
   const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
@@ -243,61 +245,7 @@ export default function ResourceReviewPage() {
     }
   };
 
-  const topbarActions = (
-    <>
-      {openNumber ? (
-        <NavIconButton
-          aria-label="刷新 PR 详情"
-          onClick={() => {
-            setDetailRotate((prev) => prev + 360);
-            void loadDetail(openNumber);
-          }}
-          disabled={loadingDetail}
-        >
-          <motion.div
-            animate={{ rotate: detailRotate }}
-            transition={{ duration: 0.6, ease: "easeInOut" }}
-            style={{ display: "flex" }}
-          >
-            <ArrowClockwiseIcon />
-          </motion.div>
-        </NavIconButton>
-      ) : (
-        <>
-          <NavIconButtonGroup>
-            <Select.Root
-              value={stateFilter}
-              onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
-            >
-              <Select.Trigger className="flex h-full! min-w-[135px] flex-row items-center gap-2 rounded-full border-none! bg-transparent! px-3 py-1 shadow-none!" />
-              <Select.Content position="popper" className="rounded-2xl">
-                <Select.Item value="all" className="rounded-lg">全部状态</Select.Item>
-                <Select.Item value="waiting_review" className="rounded-lg">等待审核</Select.Item>
-                <Select.Item value="changes_requested" className="rounded-lg">需要修改</Select.Item>
-                <Select.Item value="fixed_waiting" className="rounded-lg">已修复待复核</Select.Item>
-              </Select.Content>
-            </Select.Root>
-          </NavIconButtonGroup>
-          <NavIconButton
-            aria-label="刷新 PR 列表"
-            onClick={() => {
-              setRotate((prev) => prev + 360);
-              setRefreshTick((prev) => prev + 1);
-            }}
-            disabled={loadingPulls}
-          >
-            <motion.div
-              animate={{ rotate }}
-              transition={{ duration: 0.6, ease: "easeInOut" }}
-              style={{ display: "flex" }}
-            >
-              <ArrowClockwiseIcon />
-            </motion.div>
-          </NavIconButton>
-        </>
-      )}
-    </>
-  );
+  const topbarActions = null;
 
   useLayoutEffect(() => {
     setHeaderActions(topbarActions);
@@ -322,17 +270,12 @@ export default function ResourceReviewPage() {
   }
 
   const handleSelectPull = (pull: GithubPullRequest) => {
-    setOpenNumber(pull.number);
+    navigate(`/resreview/detail?pr=${pull.number}`, { replace: true });
     setIsWorkbenchSidebarCollapsed(false);
   };
 
   const handleSelectSidebar = (pull: GithubPullRequest) => {
-    setOpenNumber(pull.number);
-  };
-
-  const handleCloseWorkbench = () => {
-    setOpenNumber(null);
-    setIsWorkbenchSidebarCollapsed(false);
+    navigate(`/resreview/detail?pr=${pull.number}`, { replace: true });
   };
 
   const showWorkbench = openNumber !== null;
@@ -344,11 +287,7 @@ export default function ResourceReviewPage() {
         {showWorkbench ? (
           <motion.div
             key="workbench"
-            className="absolute inset-0 px-2 pt-5 pb-3"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
+            className="absolute inset-0 px-2 pb-3"
           >
             <LayoutGroup>
               <PullRequestReviewWorkspace
@@ -372,7 +311,6 @@ export default function ResourceReviewPage() {
                 approving={approving}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
-                onClose={handleCloseWorkbench}
                 onRefreshList={() => {
                   setRotate((prev) => prev + 360);
                   setRefreshTick((prev) => prev + 1);
@@ -391,24 +329,45 @@ export default function ResourceReviewPage() {
         ) : (
           <motion.div
             key="list"
-            className="absolute inset-0 px-2 pt-5 pb-3"
+            className="absolute inset-0 px-2 pb-3"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
           >
-            <div className="mx-auto flex h-full max-w-6xl flex-col gap-4">
+            <div className="flex h-full flex-col gap-2">
               <div className="flex flex-col gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm text-white/60">
-                    {env.owner}/{env.repoName}
-                  </p>
-                </div>
-                {!headerActionsFit && (
-                  <div className="flex flex-row items-center justify-end gap-2">
-                    {topbarActions}
+                <p className="text-sm text-white/60">
+                  {env.owner}/{env.repoName}
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <Select.Root
+                      value={stateFilter}
+                      onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
+                    >
+                      <Select.Trigger radius="large" className="w-full" />
+                      <Select.Content position="popper">
+                        <Select.Item value="all">全部状态</Select.Item>
+                        <Select.Item value="waiting_review">等待审核</Select.Item>
+                        <Select.Item value="changes_requested">需要修改</Select.Item>
+                        <Select.Item value="fixed_waiting">已修复待复核</Select.Item>
+                      </Select.Content>
+                    </Select.Root>
                   </div>
-                )}
+                  <Button
+                    variant="ghost"
+                    color="gray"
+                    className="shrink-0"
+                    onClick={() => {
+                      setRotate((prev) => prev + 360);
+                      setRefreshTick((prev) => prev + 1);
+                    }}
+                  >
+                    <ArrowClockwiseIcon size={15} />
+                    刷新
+                  </Button>
+                </div>
               </div>
 
               <section className="flex min-h-0 flex-1 flex-col">

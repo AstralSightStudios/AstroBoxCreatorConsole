@@ -44,6 +44,7 @@ const router = createBrowserRouter([
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "resreview", element: <ResourceReviewPage /> },
+      { path: "resreview/detail", element: <ResourceReviewPage /> },
       { path: "explorepage", element: <ExplorePageManager /> },
       { path: "admin/accounts", element: <AdminAccountsPage /> },
       { path: "admin/orders", element: <AdminOrdersPage /> },

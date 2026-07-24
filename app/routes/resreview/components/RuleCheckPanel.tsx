@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Check, X, Warning, ArrowsClockwise, Spinner } from "@phosphor-icons/react";
-import { motion } from "framer-motion";
 import { useAccountState } from "~/logic/account/store";
 import type { GithubPullFile } from "~/api/github/pr-review";
 import type { PrResourcePreview, RuleCheckItem } from "../types";
@@ -158,12 +157,7 @@ function RuleCheckResultView({
   const hasFail = counts.fail > 0;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-col gap-3"
-    >
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
         <div className="flex items-center gap-3 text-xs">
           <span className="inline-flex items-center gap-1 text-emerald-400">
@@ -216,7 +210,7 @@ function RuleCheckResultView({
 
       {/* 图片体积 */}
       {imageSizes.length > 0 && <ImageSizesBlock imageSizes={imageSizes} />}
-    </motion.div>
+    </div>
   );
 }
 

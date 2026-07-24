@@ -32,6 +32,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   "admin/inbox": "信箱管理",
   "admin/account-deletion": "账号注销工单",
   resreview: "PR审核",
+  "resreview/detail": "详情",
   interactions: "互动管理",
   explorepage: "探索页管理",
 };

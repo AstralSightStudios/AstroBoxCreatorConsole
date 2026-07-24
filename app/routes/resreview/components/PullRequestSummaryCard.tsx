@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { Button } from "@radix-ui/themes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GithubPullRequest } from "~/api/github/pr-review";
@@ -18,16 +17,11 @@ export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approv
   if (!openPull) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay: 0.1, ease: [0.22, 0.61, 0.36, 1] }}
-      className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
-    >
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
       <div className="flex flex-col gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 text-2xl font-semibold text-white">
+            <h2 className="min-w-0 text-lg font-semibold leading-tight text-white">
               <span className="break-words">{openPull.title}</span>
               <span className="ml-1 text-sm text-white/50">#{openPull.number}</span>
             </h2>
@@ -71,6 +65,6 @@ export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approv
           </Button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

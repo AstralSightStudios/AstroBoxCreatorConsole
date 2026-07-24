@@ -2,8 +2,6 @@ import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-revi
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 import type { ReplyTarget, EditingTarget } from "./CommentComposer";
-import { useDetailHeader } from "./useDetailHeader";
-import { DetailHeader } from "./DetailHeader";
 import { PullRequestReviewView } from "./PullRequestReviewView";
 import { PullRequestSwitcher } from "./PullRequestSwitcher";
 
@@ -28,7 +26,6 @@ interface PullRequestReviewWorkspaceProps {
   approving: boolean;
   onToggleSwitcher: () => void;
   onSelectPull: (pull: GithubPullRequest) => void;
-  onClose: () => void;
   onRefreshList: () => void;
   onGeneralCommentChange: (value: string) => void;
   onSubmitComment: (body: string) => void;
@@ -41,11 +38,8 @@ interface PullRequestReviewWorkspaceProps {
 }
 
 export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProps) {
-  const { scrollProgress, scrollRef, panelRef, onScroll } = useDetailHeader();
-
   return (
-    <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-4">
-      <DetailHeader scrollProgress={scrollProgress} openPull={props.openPull} onClose={props.onClose} />
+    <div className="flex h-full flex-col gap-4">
       <div className="flex min-h-0 flex-1 gap-4">
         {props.isDesktop && (
           <PullRequestSwitcher
@@ -59,11 +53,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             onRefresh={props.onRefreshList}
           />
         )}
-        <div
-          ref={scrollRef}
-          onScroll={onScroll}
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar"
-        >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar">
           <PullRequestReviewView
             openPull={props.openPull}
             openStatus={props.openStatus}
@@ -85,7 +75,6 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             onDeleteComment={props.onDeleteComment}
             onEditComment={props.onEditComment}
             onApprove={props.onApprove}
-            summaryCardRef={panelRef}
           />
         </div>
       </div>

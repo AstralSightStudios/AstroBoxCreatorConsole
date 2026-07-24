@@ -1,5 +1,3 @@
-import { CaretLeft } from "@phosphor-icons/react";
-import NavIconButton from "~/components/nav-icon-button";
 import { useRepoEnv } from "~/config/repoEnv";
 import type { GithubPullRequest } from "~/api/github/pr-review";
 import { formatTime } from "../utils";
@@ -7,10 +5,9 @@ import { formatTime } from "../utils";
 interface DetailHeaderProps {
   scrollProgress: number;
   openPull: GithubPullRequest | null;
-  onClose: () => void;
 }
 
-export function DetailHeader({ scrollProgress, openPull, onClose }: DetailHeaderProps) {
+export function DetailHeader({ scrollProgress, openPull }: DetailHeaderProps) {
   const env = useRepoEnv();
 
   const fullOpacity = 1 - scrollProgress;
@@ -18,9 +15,6 @@ export function DetailHeader({ scrollProgress, openPull, onClose }: DetailHeader
 
   return (
     <div className="flex items-center gap-3">
-      <NavIconButton onClick={onClose} className="size-10! shrink-0 bg-white/10 hover:bg-white/20">
-        <CaretLeft weight="bold" size={20} />
-      </NavIconButton>
       <div className="relative flex-1 min-w-0 h-14 overflow-hidden">
         <div
           style={{ opacity: fullOpacity, transform: `translateY(${-8 * scrollProgress}px)` }}

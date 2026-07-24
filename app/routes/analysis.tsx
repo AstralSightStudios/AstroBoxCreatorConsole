@@ -155,7 +155,7 @@ function ScopeSwitch({
     onChange: (next: AnalysisMapScope) => void;
 }) {
     return (
-        <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+        <div className="inline-flex w-fit shrink-0 gap-1 rounded-full border border-white/10 bg-white/5 p-1">
             <button
                 className={`rounded-full px-3 py-1.5 text-sm ${scope === "china" ? "bg-nav-item-selected text-white" : "text-white/70 hover:text-white"}`}
                 onClick={() => onChange("china")}
@@ -587,9 +587,9 @@ export default function Analysis() {
     return (
         <Page>
             <div className="px-2 pt-2.5">
-                <div className="grid w-full grid-cols-1 gap-2 lg:grid-cols-[max-content_minmax(0,360px)] lg:items-center lg:justify-between">
+                <div className="flex w-full items-center justify-between gap-2">
                     <ScopeSwitch scope={scope} onChange={setScope} />
-                    <div className="justify-self-stretch lg:justify-self-end">
+                    <div className="min-w-0">
                         <Select.Root
                             value={selectedResourceId || "__all_resources__"}
                             onValueChange={(value) =>
