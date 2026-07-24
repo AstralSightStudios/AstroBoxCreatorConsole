@@ -127,8 +127,8 @@ export default function ResourcePublish() {
     }
     if (data.length === 0) {
       return (
-        <p className="text-sm text-white/70">
-          暂无进行中的发布申请，点击左上角按钮开始新的提交。
+        <p className="px-3 text-sm text-white/70">
+          暂无进行中的发布申请，点击下方按钮开始新的提交。
         </p>
       );
     }
