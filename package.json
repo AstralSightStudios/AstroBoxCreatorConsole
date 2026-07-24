@@ -8,8 +8,8 @@
     "start": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "android": "bash ./scripts/build_android.sh",
-    "android:debug": "bash ./scripts/build_android_debug.sh",
+    "android": "tauri android build --target aarch64",
+    "android:debug": "tauri android build --target aarch64 --debug",
     "macos:release": "bash ./scripts/build_dmg.sh"
   },
   "dependencies": {
