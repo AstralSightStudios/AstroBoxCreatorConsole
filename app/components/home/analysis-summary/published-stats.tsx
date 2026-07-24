@@ -93,7 +93,7 @@ export default function PublishedStats() {
 
     return (
         <>
-            <div className="p-1.5 gap-2.5 datacard-grid-[150px]">
+            <div className="py-1.5 gap-2.5 datacard-grid-[150px]">
                 {stats.map(({ label, value }) => (
                     <DataCard key={label} label={label}>
                         <p className="card-num">{value}</p>
@@ -101,7 +101,7 @@ export default function PublishedStats() {
                 ))}
             </div>
             {error && (
-                <p className="px-3.5 text-size-small text-white/45">
+                <p className="px-1.5 text-size-small text-white/45">
                     已发布资源统计暂不可用，已显示占位信息。
                 </p>
             )}

@@ -38,7 +38,7 @@ export default function NavItem({
             >
                 {label}
             </p>
-            {isPlus && <PlusIcon className="ml-auto"></PlusIcon>}
+            {isPlus && <PlusIcon></PlusIcon>}
         </div>
     );
 }

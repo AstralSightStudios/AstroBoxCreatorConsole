@@ -149,7 +149,7 @@ export default function ExplorePageManager() {
   };
 
   return (
-    <div className="flex h-full flex-col gap-2 overflow-hidden px-4 py-3 md:px-6">
+    <div className="flex h-full flex-col gap-2 overflow-hidden px-2 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/55">
         <span>
           目标仓库{" "}

@@ -211,12 +211,9 @@ export default function Settings() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-6 md:px-6">
-      <div className="mx-auto flex w-full max-w-[860px] flex-col gap-7 pb-12">
+    <div className="h-full overflow-y-auto px-2 py-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-7 pb-12">
         <header className="flex flex-col gap-1 px-1 pt-1">
-          <h1 className="text-[24px] font-semibold tracking-tight text-white">
-            设置
-          </h1>
           <p className="text-[13px] text-white/50">
             管理控制台的运行环境、登录方式与相关协议。
           </p>

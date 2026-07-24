@@ -151,7 +151,7 @@ export default function DownloadsDistributionCard({
     };
 
     return (
-        <div className="p-1.5 w-full lg:flex-1 flex">
+        <div className="py-1.5 w-full lg:flex-1 flex">
             <div
                 //@ts-ignore
                 style={{ cornerShape: "superellipse(1.75)" }}

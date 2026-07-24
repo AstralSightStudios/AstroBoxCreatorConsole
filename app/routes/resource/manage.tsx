@@ -147,7 +147,7 @@ export default function ResourceManage() {
           </Tabs.List>
         </div>
         <div
-          className="flex flex-col gap-2 max-w-6xl mx-auto w-full pb-[54px]"
+          className="flex flex-col gap-2 max-w-6xl mx-auto w-full px-2 pb-[54px]"
           ref={ref}
         >
           <Tabs.Content value="manage">

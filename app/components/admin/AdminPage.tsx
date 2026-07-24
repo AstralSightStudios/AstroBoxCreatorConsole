@@ -44,12 +44,13 @@ export function AdminPage({
   }
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-5 md:px-6">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4">
-        <div className="flex flex-col gap-1 px-1">
-          <h1 className="text-[26px] font-semibold text-white">{title}</h1>
-          {description && <p className="text-sm text-white/60">{description}</p>}
-        </div>
+    <div className="h-full overflow-y-auto px-2 py-5">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+        {description && (
+          <div className="flex flex-col gap-1 px-1">
+            <p className="text-sm text-white/60">{description}</p>
+          </div>
+        )}
         {error && (
           <div className="flex items-center justify-between rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
             <span>{error}</span>

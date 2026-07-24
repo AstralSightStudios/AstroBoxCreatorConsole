@@ -520,6 +520,7 @@ export default function Home() {
 
     return (
         <Page>
+            <div className="px-2">
             <FilterBar
                 period={period}
                 onPeriodChange={setPeriod}
@@ -531,7 +532,7 @@ export default function Home() {
                 resourceLoading={resourceOptionsLoading}
             />
             {dashboardWarning && (
-                <p className="px-3.5 pb-2 text-size-small text-amber-200/85">
+                <p className="pb-2 text-size-small text-amber-200/85">
                     {dashboardWarning}
                 </p>
             )}
@@ -545,6 +546,7 @@ export default function Home() {
                 loading={dashboardLoading}
                 error={dashboardError}
             />
+            </div>
         </Page>
     );
 }

@@ -26,7 +26,6 @@ import {
     getCreatorAnalysisResources,
 } from "~/api/astrobox/analysis";
 import DataCard from "~/components/cards/datacard";
-import { PlusIcon } from "~/components/svgs";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 import { useDisplayAccount } from "~/logic/account/store";
 import Page from "~/layout/page";
@@ -587,12 +586,7 @@ export default function Analysis() {
 
     return (
         <Page>
-            <div className="flex items-center px-3.5 pt-1.5">
-                <p className="text-size-large font-[520]">数据分析</p>
-                <PlusIcon className="ml-auto" />
-            </div>
-
-            <div className="px-1.5 pt-2.5">
+            <div className="px-2 pt-2.5">
                 <div className="grid w-full grid-cols-1 gap-2 lg:grid-cols-[max-content_minmax(0,360px)] lg:items-center lg:justify-between">
                     <ScopeSwitch scope={scope} onChange={setScope} />
                     <div className="justify-self-stretch lg:justify-self-end">
@@ -628,7 +622,7 @@ export default function Analysis() {
             </div>
 
             {!canAccess && (
-                <div className="px-1.5 pt-3">
+                <div className="px-2 pt-3">
                     <SectionCard
                         title="数据分析暂不可用"
                         description="仅 CreatorPlus 及以上档位可访问"
@@ -643,7 +637,7 @@ export default function Analysis() {
             )}
 
             {canAccess && (
-                <div className="grid gap-3.5 px-1.5 pt-3 pb-6">
+                <div className="grid gap-3.5 px-2 pt-3 pb-6">
                     <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                         <DataCard label="资源数">
                             <p className="card-num">{formatNumber(overview?.summary.resources)}</p>

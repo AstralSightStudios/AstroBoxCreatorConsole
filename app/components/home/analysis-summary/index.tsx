@@ -19,9 +19,9 @@ export default function AnalysisSummary({
 
     return (
         <>
-            <div className="pt-1.5 px-3.5 mt-3.5 flex flex-row w-full">
+            <div className="pt-1.5 px-1.5 mt-3.5 flex flex-row w-full">
                 <p className="font-[520] text-size-large">分析摘要</p>
-                {showSummaryPlus && <PlusIcon className="ml-auto" />}
+                {showSummaryPlus && <PlusIcon className="ml-2.5" />}
             </div>
             <div className="flex flex-col w-full gap-2.5 lg:flex-row lg:items-stretch">
                 <div className="flex flex-col w-full lg:flex-1">

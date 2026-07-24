@@ -26,7 +26,6 @@ export function DetailHeader({ scrollProgress, openPull, onClose }: DetailHeader
           style={{ opacity: fullOpacity, transform: `translateY(${-8 * scrollProgress}px)` }}
           className="absolute inset-0 flex flex-col justify-center"
         >
-          <h1 className="text-[26px] font-semibold leading-tight text-white">PR审核</h1>
           <p className="truncate text-sm text-white/60">
             {env.owner}/{env.repoName}
           </p>

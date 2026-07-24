@@ -344,7 +344,7 @@ export default function ResourceReviewPage() {
         {showWorkbench ? (
           <motion.div
             key="workbench"
-            className="absolute inset-0 px-4 pt-5 pb-3 md:px-6"
+            className="absolute inset-0 px-2 pt-5 pb-3"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -391,16 +391,15 @@ export default function ResourceReviewPage() {
         ) : (
           <motion.div
             key="list"
-            className="absolute inset-0 px-4 pt-5 pb-3 md:px-6"
+            className="absolute inset-0 px-2 pt-5 pb-3"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
           >
-            <div className="mx-auto flex h-full max-w-[1500px] flex-col gap-4">
+            <div className="mx-auto flex h-full max-w-6xl flex-col gap-4">
               <div className="flex flex-col gap-3">
                 <div className="min-w-0">
-                  <h1 className="text-[26px] font-semibold text-white">PR审核</h1>
                   <p className="text-sm text-white/60">
                     {env.owner}/{env.repoName}
                   </p>

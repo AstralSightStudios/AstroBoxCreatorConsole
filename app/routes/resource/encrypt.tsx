@@ -330,7 +330,7 @@ export default function ResourceEncrypt() {
 
   return (
     <Page>
-      <div className="mx-auto max-w-5xl px-1 lg:px-3.5 w-full pt-1.5 pb-6 flex flex-col gap-4">
+      <div className="mx-auto max-w-6xl px-2 w-full pt-1.5 pb-6 flex flex-col gap-4">
         <div className="flex flex-col px-3 py-3.5">
           <div className="flex items-center gap-2 mb-2">
             <FingerprintSimpleIcon size={24} className="text-blue-500" />

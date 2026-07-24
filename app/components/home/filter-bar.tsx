@@ -49,7 +49,7 @@ export default function FilterBar({
         PERIOD_OPTIONS.find((option) => option.value === period)?.label || "全部时间";
 
     return (
-        <div className="flex flex-row flex-wrap px-2 pt-1.5 pb-3 gap-2.5">
+        <div className="flex flex-row flex-wrap pt-1.5 pb-3 gap-2.5">
             <DropdownMenu.Root>
                 <DropdownMenu.Trigger disabled={resourceDisabled}>
                     <Button

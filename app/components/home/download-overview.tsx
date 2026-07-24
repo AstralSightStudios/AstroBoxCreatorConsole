@@ -59,10 +59,10 @@ export default function DownloadOverview({
 
     return (
         <>
-            <div className="pt-1.5 px-3.5">
+            <div className="pt-1.5 px-1.5">
                 <p className="font-[520] text-size-large">下载数据</p>
             </div>
-            <div className="p-1.5 grid gap-2.5 datacard-grid-sm">
+            <div className="py-1.5 grid gap-2.5 datacard-grid-sm">
                 {cards.map(({ label, value, isPlus }) => (
                     <DataCard key={label} label={label} isPlus={isPlus}>
                         <p className="card-num">{value}</p>
@@ -70,7 +70,7 @@ export default function DownloadOverview({
                 ))}
             </div>
             {error && (
-                <p className="px-3.5 text-size-small text-white/45">
+                <p className="px-1.5 text-size-small text-white/45">
                     下载数据暂不可用，已显示占位信息。
                 </p>
             )}

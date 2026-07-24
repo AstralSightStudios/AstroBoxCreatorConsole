@@ -297,12 +297,41 @@ export default function Interactions() {
 
     return (
         <Page>
-            <div className="flex items-center px-3.5 pt-1.5">
-                <p className="text-size-large font-[520]">互动管理</p>
+            <div className="flex items-center gap-3 px-2 pt-2.5">
+                <div className="min-w-0 flex-1">
+                    <Select.Root
+                        value={selectedResourceId || "__all_resources__"}
+                        onValueChange={(value) => {
+                            setSelectedResourceId(
+                                value === "__all_resources__" ? "" : value,
+                            );
+                            setPage(1);
+                        }}
+                    >
+                        <Select.Trigger
+                            radius="large"
+                            placeholder="选择资源"
+                            className="w-full"
+                        />
+                        <Select.Content position="popper">
+                            <Select.Item value="__all_resources__">
+                                全部资源
+                            </Select.Item>
+                            {(summary?.resources ?? []).map((resource) => (
+                                <Select.Item
+                                    key={resource.resourceId}
+                                    value={resource.resourceId}
+                                >
+                                    {resource.resourceName} ({resource.total})
+                                </Select.Item>
+                            ))}
+                        </Select.Content>
+                    </Select.Root>
+                </div>
                 <Button
                     variant="ghost"
                     color="gray"
-                    className="!ml-auto"
+                    className="shrink-0"
                     onClick={() => setRefreshKey((value) => value + 1)}
                 >
                     <ArrowClockwiseIcon size={15} />
@@ -310,42 +339,7 @@ export default function Interactions() {
                 </Button>
             </div>
 
-            <div className="px-1.5 pt-2.5">
-                <div className="flex w-full justify-end">
-                    <div className="w-full lg:max-w-[360px]">
-                        <Select.Root
-                            value={selectedResourceId || "__all_resources__"}
-                            onValueChange={(value) => {
-                                setSelectedResourceId(
-                                    value === "__all_resources__" ? "" : value,
-                                );
-                                setPage(1);
-                            }}
-                        >
-                            <Select.Trigger
-                                radius="large"
-                                placeholder="选择资源"
-                                className="w-full"
-                            />
-                            <Select.Content position="popper">
-                                <Select.Item value="__all_resources__">
-                                    全部资源
-                                </Select.Item>
-                                {(summary?.resources ?? []).map((resource) => (
-                                    <Select.Item
-                                        key={resource.resourceId}
-                                        value={resource.resourceId}
-                                    >
-                                        {resource.resourceName} ({resource.total})
-                                    </Select.Item>
-                                ))}
-                            </Select.Content>
-                        </Select.Root>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid gap-3.5 px-1.5 pt-3 pb-6">
+            <div className="grid gap-3.5 px-2 pt-3 pb-6">
                 {summaryError && (
                     <p className="px-2 text-sm text-red-300">
                         互动概况加载失败：{summaryError}

@@ -48,7 +48,7 @@ export default function TopDownloads({ data, loading, error }: TopDownloadsProps
 
     return (
         <>
-            <div className="p-1.5 gap-2.5 flex flex-col">
+            <div className="py-1.5 gap-2.5 flex flex-col">
                 {entries.map(
                     ({ label, secondaryLabel, name, value, imageSrc }) => (
                         <DataCard
@@ -76,7 +76,7 @@ export default function TopDownloads({ data, loading, error }: TopDownloadsProps
                 )}
             </div>
             {error && (
-                <p className="px-3.5 text-size-small text-white/45">
+                <p className="px-1.5 text-size-small text-white/45">
                     下载排行数据暂不可用，已显示占位信息。
                 </p>
             )}
