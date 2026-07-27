@@ -1,4 +1,4 @@
-import { Switch, TextArea } from "@radix-ui/themes";
+import { Badge, Switch, TextArea } from "@radix-ui/themes";
 import { SectionCard } from "./shared";
 
 interface ExtSectionProps {
@@ -7,6 +7,7 @@ interface ExtSectionProps {
   enableAstroBoxCreatorFeatures: boolean;
   onChange: (value: string) => void;
   onToggleCreatorFeatures: (value: boolean) => void;
+  showPurchaseHint?: boolean;
 }
 
 export function ExtSection({
@@ -15,6 +16,7 @@ export function ExtSection({
   enableAstroBoxCreatorFeatures,
   onChange,
   onToggleCreatorFeatures,
+  showPurchaseHint = false,
 }: ExtSectionProps) {
   return (
     <SectionCard
@@ -37,6 +39,16 @@ export function ExtSection({
             onCheckedChange={onToggleCreatorFeatures}
           />
         </div>
+        {showPurchaseHint && !enableAstroBoxCreatorFeatures && (
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-400/20 bg-amber-400/10 px-2.5 py-1.5">
+            <Badge color="yellow" variant="soft" size="1">
+              提示
+            </Badge>
+            <p className="text-xs leading-relaxed text-amber-300">
+              若要在 AstroBox 内实现付费校验与资源解密，请您开启此选项。
+            </p>
+          </div>
+        )}
       </div>
       <TextArea
         rows={4}
