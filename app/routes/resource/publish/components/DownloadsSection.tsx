@@ -122,7 +122,6 @@ export function DownloadsSection({
     <SectionCard
       title={title}
       description={description}
-      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
     >
       {deviceError && (
         <Callout.Root color="amber">

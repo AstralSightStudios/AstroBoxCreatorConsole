@@ -20,7 +20,6 @@ export function ExtSection({
     <SectionCard
       title="扩展字段 (ext)"
       description="结构化扩展字段会自动写入 ext；这里的 JSON 仅用于补充其他自定义字段。"
-      className="border-0! bg-transparent! rounded-none! shadow-none!"
     >
       <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
         <div className="flex items-start justify-between gap-3">
