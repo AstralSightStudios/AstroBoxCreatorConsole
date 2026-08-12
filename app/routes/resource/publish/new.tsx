@@ -586,6 +586,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         toast.error("图标必须为正方形（1:1），请重新选择。");
         return;
       }
+      if (originalDims.width > 500 || originalDims.height > 500) {
+        toast.error("图标尺寸不能超过 500×500。");
+        return;
+      }
       let processed = file;
       try {
         processed = await compressImageFile(file, 100 * 1024);

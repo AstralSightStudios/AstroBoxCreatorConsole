@@ -124,6 +124,9 @@ export function MediaSection({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [insertIndex, setInsertIndex] = useState<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
@@ -144,6 +147,66 @@ export function MediaSection({
     const node = previewScrollerRef.current;
     if (!node) return;
     node.scrollBy({ left: direction * Math.max(node.clientWidth * 0.8, 260), behavior: "smooth" });
+  };
+
+  const previewWidthFor = (item: UploadItem): number => {
+    if (!item.width || !item.height) return 240;
+    const ratio = item.width / item.height;
+    return Math.min(360, Math.max(180, Math.round(ratio * 208)));
+  };
+
+  const syncActivePreview = () => {
+    const node = previewScrollerRef.current;
+    if (!node) return;
+    const cards = Array.from(
+      node.querySelectorAll<HTMLElement>("[data-preview-index]"),
+    );
+    if (cards.length === 0) return;
+    const center = node.scrollLeft + node.clientWidth / 2;
+    let matchedIndex = 0;
+    let minDistance = Number.POSITIVE_INFINITY;
+    cards.forEach((card, index) => {
+      const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+      const distance = Math.abs(cardCenter - center);
+      if (distance < minDistance) {
+        minDistance = distance;
+        matchedIndex = index;
+      }
+    });
+    setActiveIndex(matchedIndex);
+  };
+
+  const scrollPreviewTo = (index: number) => {
+    const node = previewScrollerRef.current;
+    if (!node) return;
+    const cards = Array.from(
+      node.querySelectorAll<HTMLElement>("[data-preview-index]"),
+    );
+    const target = cards[index];
+    if (target) {
+      node.scrollTo({
+        left: Math.max(target.offsetLeft - 12, 0),
+        behavior: "smooth",
+      });
+    }
+  };
+
+  const resolveInsertIndex = (clientX: number): number | null => {
+    const node = previewScrollerRef.current;
+    if (!node) return null;
+    const cards = Array.from(
+      node.querySelectorAll<HTMLElement>("[data-preview-index]"),
+    );
+    if (cards.length === 0) return null;
+    let insertIndex = cards.length;
+    for (let index = 0; index < cards.length; index++) {
+      const rect = cards[index].getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) {
+        insertIndex = index;
+        break;
+      }
+    }
+    return insertIndex;
   };
 
   return (
@@ -187,7 +250,7 @@ export function MediaSection({
         <div className="grid gap-3 md:grid-cols-2">
           <MediaTile
             label="图标"
-            hint="必须 1:1，建议不超过 500×500"
+            hint="必须 1:1 且不超过 500×500"
             media={icon}
             uploading={iconUploading}
             onPick={() => iconInputRef.current?.click()}
@@ -260,24 +323,44 @@ export function MediaSection({
                 event.preventDefault();
                 node.scrollBy({ left: event.deltaY || event.deltaX, behavior: "auto" });
               }}
+              onScroll={syncActivePreview}
             >
               {previews.map((item, index) => (
                 <div
                   key={item.id}
-                  className="group relative w-[260px] shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2"
+                  data-preview-index={index}
+                  className={`group relative shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2 transition-transform duration-150 ${
+                    draggingId ? "scale-90 shadow-2xl" : ""
+                  }`}
+                  style={{ width: previewWidthFor(item) }}
                   onDragOver={(event) => {
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
+                    const nextIndex = resolveInsertIndex(event.clientX);
+                    setInsertIndex(nextIndex);
+                    const node = previewScrollerRef.current;
+                    if (node) {
+                      const rect = node.getBoundingClientRect();
+                      if (event.clientX > rect.right - 48) {
+                        node.scrollBy({ left: 18, behavior: "auto" });
+                      } else if (event.clientX < rect.left + 48) {
+                        node.scrollBy({ left: -18, behavior: "auto" });
+                      }
+                    }
                   }}
                   onDrop={(event) => {
                     event.preventDefault();
                     const fromId =
                       draggedPreviewIdRef.current ||
                       event.dataTransfer.getData("text/plain");
-                    if (fromId && fromId !== item.id) {
-                      onReorderPreview(fromId, item.id);
+                    const targetId =
+                      previews[insertIndex ?? index]?.id ?? item.id;
+                    if (fromId && fromId !== targetId) {
+                      onReorderPreview(fromId, targetId);
                     }
                     draggedPreviewIdRef.current = null;
+                    setDraggingId(null);
+                    setInsertIndex(null);
                   }}
                 >
                   <button
