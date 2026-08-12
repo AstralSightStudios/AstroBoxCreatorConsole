@@ -45,6 +45,7 @@ function MediaTile({
   hint,
   media,
   uploading,
+  emptyClassName,
   onPick,
   onRemove,
 }: {
@@ -52,6 +53,7 @@ function MediaTile({
   hint: string;
   media: UploadItem | null;
   uploading?: boolean;
+  emptyClassName?: string;
   onPick: () => void;
   onRemove: () => void;
 }) {
@@ -92,7 +94,9 @@ function MediaTile({
       ) : (
         <button
           type="button"
-          className="flex h-36 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-black/20 text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
+          className={`flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-black/20 text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85 ${
+            emptyClassName || "h-36"
+          }`}
           onClick={onPick}
         >
           <UploadSimpleIcon size={24} weight="duotone" />
@@ -265,12 +269,13 @@ export function MediaSection({
       />
 
       <div className="flex flex-col gap-4">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
             hint="宽高比 1:1"
             media={icon}
             uploading={iconUploading}
+            emptyClassName="aspect-square"
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
           />
@@ -278,6 +283,7 @@ export function MediaSection({
             label="封面"
             hint="宽高比 3:2"
             media={cover}
+            emptyClassName="aspect-[3/2]"
             onPick={() => coverInputRef.current?.click()}
             onRemove={onRemoveCover}
           />
