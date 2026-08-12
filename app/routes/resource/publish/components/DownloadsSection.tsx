@@ -309,12 +309,12 @@ export function DownloadsSection({
                     </Select.Root>
                   </div>
 
-                  <div className="min-w-[100px] flex-1 md:min-w-0">
+                  <div className="min-w-[100px] max-md:w-28 max-md:shrink-0 md:min-w-0">
                     <TextField.Root
                       placeholder="版本号"
                       value={item.version}
                       radius="large"
-                      className="min-w-0"
+                      className="min-w-0 w-full"
                       onChange={(e) =>
                         onUpdateRow(item.uid, (row) => ({
                           ...row,
