@@ -2,13 +2,15 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ImagesSquareIcon,
+  InfoIcon,
   UploadSimpleIcon,
   XCircleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
-import { Badge } from "@radix-ui/themes";
-import { useRef } from "react";
+import { Badge, Button, Dialog } from "@radix-ui/themes";
+import { useRef, useState } from "react";
 import type { UploadItem } from "./shared";
-import { SectionCard, UploadSlot } from "./shared";
+import { SectionCard } from "./shared";
 
 interface MediaSectionProps {
   previews: UploadItem[];
@@ -21,7 +23,73 @@ interface MediaSectionProps {
   onCoverUpload: (files: FileList | null) => void;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
-  onMediaDimensions: (kind: "preview" | "icon" | "cover", id: string, width: number, height: number) => void;
+  onMediaDimensions: (
+    kind: "preview" | "icon" | "cover",
+    id: string,
+    width: number,
+    height: number,
+  ) => void;
+}
+
+function formatFileSize(size?: number): string {
+  if (size == null || !Number.isFinite(size)) return "-";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function MediaTile({
+  label,
+  hint,
+  media,
+  onPick,
+  onRemove,
+}: {
+  label: string;
+  hint: string;
+  media: UploadItem | null;
+  onPick: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-white">{label}</p>
+          <p className="text-xs text-white/55">{hint}</p>
+        </div>
+        {media && (
+          <button
+            type="button"
+            className="rounded-full p-1 text-white/55 transition hover:bg-red-500/15 hover:text-red-300"
+            onClick={onRemove}
+            aria-label={`移除${label}`}
+          >
+            <XIcon size={16} weight="bold" />
+          </button>
+        )}
+      </div>
+
+      {media ? (
+        <div className="flex h-36 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25">
+          <img
+            src={media.url}
+            alt={media.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="flex h-36 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-black/20 text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
+          onClick={onPick}
+        >
+          <UploadSimpleIcon size={24} weight="duotone" />
+          选择文件
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function MediaSection({
@@ -41,6 +109,11 @@ export function MediaSection({
   const draggedPreviewIdRef = useRef<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+
+  const lightboxItem =
+    lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
 
   return (
     <SectionCard
@@ -79,29 +152,61 @@ export function MediaSection({
         }}
       />
 
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 px-1.5 pt-1.5">
-          <p className="text-sm font-medium text-white">预览图组</p>
-          <Badge color="gray" variant="soft">
-            支持拖拽/多选
-          </Badge>
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <MediaTile
+            label="图标"
+            hint="必须 1:1，建议不超过 500×500"
+            media={icon}
+            onPick={() => iconInputRef.current?.click()}
+            onRemove={onRemoveIcon}
+          />
+          <MediaTile
+            label="封面"
+            hint="必须 3:2，不超过 1MB，PNG/JPG"
+            media={cover}
+            onPick={() => coverInputRef.current?.click()}
+            onRemove={onRemoveCover}
+          />
         </div>
-        {previews.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-white/5 px-4 py-6 text-sm text-white/60 mb-1.5"
-            onClick={() => previewInputRef.current?.click()}
-          >
-            <ImagesSquareIcon size={28} weight="duotone" />
-            <p>尚未上传预览图，点击以选择文件并上传</p>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-white">预览图</p>
+              <Badge color="gray" variant="soft">
+                支持多选
+              </Badge>
+              {previews.length > 0 && (
+                <span className="text-xs text-white/45">共 {previews.length} 张</span>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() => previewInputRef.current?.click()}
+            >
+              <UploadSimpleIcon size={15} weight="bold" />
+              添加预览图
+            </Button>
           </div>
-        ) : (
-          <div className="grid gap-1.5 md:grid-cols-3 pb-1.5">
-            {previews.map((item, index) => {
-              return (
+
+          {previews.length === 0 ? (
+            <button
+              type="button"
+              className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
+              onClick={() => previewInputRef.current?.click()}
+            >
+              <ImagesSquareIcon size={28} weight="duotone" />
+              尚未上传预览图，点击选择文件
+            </button>
+          ) : (
+            <div className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1">
+              {previews.map((item, index) => (
                 <div
                   key={item.id}
                   draggable
-                  className="group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition cursor-grab active:cursor-grabbing hover:border-white/25"
+                  className="group relative w-[200px] shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2"
                   onDragStart={(event) => {
                     draggedPreviewIdRef.current = item.id;
                     event.dataTransfer.effectAllowed = "move";
@@ -125,82 +230,134 @@ export function MediaSection({
                     draggedPreviewIdRef.current = null;
                   }}
                 >
-                  <img
-                    src={item.url}
-                    alt={item.name}
-                     className="h-40 w-full object-cover pointer-events-none"
-                     onLoad={(event) => {
-                       const image = event.currentTarget;
-                       if ((!item.width || !item.height) && image.naturalWidth && image.naturalHeight) {
-                         onMediaDimensions("preview", item.id, image.naturalWidth, image.naturalHeight);
-                       }
-                     }}
-                   />
-                   <div className="flex items-center gap-2 px-3 py-2 text-sm">
-                     <span className="truncate">
-                       {item.name}
-                     </span>
+                  <button
+                    type="button"
+                    className="block w-full overflow-hidden rounded-lg border border-white/10 bg-black/25"
+                    onClick={() => {
+                      setShowInfo(false);
+                      setLightboxIndex(index);
+                    }}
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.name}
+                      className="h-32 w-full object-contain"
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        if (
+                          (!item.width || !item.height) &&
+                          image.naturalWidth &&
+                          image.naturalHeight
+                        ) {
+                          onMediaDimensions(
+                            "preview",
+                            item.id,
+                            image.naturalWidth,
+                            image.naturalHeight,
+                          );
+                        }
+                      }}
+                    />
+                  </button>
+                  <div className="mt-2 flex items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate text-xs text-white/70">
+                      {item.name}
+                    </span>
                     <button
                       type="button"
                       disabled={index === 0}
-                      className="ml-auto text-white/60 transition hover:text-white disabled:opacity-25"
+                      className="rounded p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-20"
                       onClick={() => onReorderPreview(item.id, previews[index - 1].id)}
-                      aria-label="预览图前移"
+                      aria-label="前移"
                     >
-                      <ArrowLeftIcon size={16} />
+                      <ArrowLeftIcon size={14} />
                     </button>
                     <button
                       type="button"
                       disabled={index === previews.length - 1}
-                      className="text-white/60 transition hover:text-white disabled:opacity-25"
+                      className="rounded p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-20"
                       onClick={() => onReorderPreview(item.id, previews[index + 1].id)}
-                      aria-label="预览图后移"
+                      aria-label="后移"
                     >
-                      <ArrowRightIcon size={16} />
+                      <ArrowRightIcon size={14} />
                     </button>
                     <button
                       type="button"
-                      className="text-white/60 transition hover:text-red-400"
+                      className="rounded p-1 text-white/50 transition hover:bg-red-500/15 hover:text-red-300"
                       onClick={() => onRemovePreview(item.id)}
                       aria-label="移除预览图"
                     >
-                      <XCircleIcon size={16} weight="fill" />
+                      <XCircleIcon size={15} weight="fill" />
                     </button>
                   </div>
                 </div>
-              );
-            })}
-            <div
-              className={`group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition hover:border-white/25 p-3 pb-2.5 flex flex-col items-start justify-between`}
-              onClick={() => previewInputRef.current?.click()}
-            >
-              <UploadSimpleIcon size={16} />
-              <span className="truncate text-sm">添加预览图</span>
+              ))}
             </div>
-          </div>
-        )}
-
-        <div className="gap-3 flex flex-col">
-          <UploadSlot
-            label="图标"
-            description="必须 1:1，建议不超过 500×500"
-            media={icon}
-            onPick={() => iconInputRef.current?.click()}
-            onRemove={onRemoveIcon}
-            recommendedMaxSize={500}
-            onDimensions={(width, height) => icon && onMediaDimensions("icon", icon.id, width, height)}
-          />
-          <UploadSlot
-            label="封面"
-            description="必须 3:2，不超过 1MB，PNG/JPG"
-            media={cover}
-            onPick={() => coverInputRef.current?.click()}
-            onRemove={onRemoveCover}
-            showRatio
-            onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
-          />
+          )}
         </div>
       </div>
+
+      <Dialog.Root
+        open={lightboxIndex != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLightboxIndex(null);
+            setShowInfo(false);
+          }
+        }}
+      >
+        <Dialog.Content className="max-w-[min(96vw,900px)]">
+          <div className="flex items-start justify-between gap-3">
+            <Dialog.Title className="min-w-0 truncate">
+              {lightboxItem?.name ?? "预览图"}
+            </Dialog.Title>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="grid size-9 place-items-center rounded-full border border-white/15 text-white/70 transition hover:bg-white/10 hover:text-white"
+                onClick={() => setShowInfo((prev) => !prev)}
+                aria-label="查看图片信息"
+              >
+                <InfoIcon size={17} weight="bold" />
+              </button>
+              <button
+                type="button"
+                className="grid size-9 place-items-center rounded-full border border-white/15 text-white/70 transition hover:bg-white/10 hover:text-white"
+                onClick={() => setLightboxIndex(null)}
+                aria-label="关闭"
+              >
+                <XIcon size={17} weight="bold" />
+              </button>
+            </div>
+          </div>
+
+          {lightboxItem && (
+            <div className="flex flex-col gap-3">
+              <div className="flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/25">
+                <img
+                  src={lightboxItem.url}
+                  alt={lightboxItem.name}
+                  className="max-h-[62vh] max-w-full object-contain"
+                />
+              </div>
+              {showInfo && (
+                <div className="grid gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs text-white/70">
+                  <div>
+                    文件名：<span className="break-all">{lightboxItem.name}</span>
+                  </div>
+                  <div>
+                    分辨率：
+                    {lightboxItem.width && lightboxItem.height
+                      ? `${lightboxItem.width} × ${lightboxItem.height}`
+                      : "-"}
+                  </div>
+                  <div>体积：{formatFileSize(lightboxItem.file.size)}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </Dialog.Content>
+      </Dialog.Root>
     </SectionCard>
   );
 }

@@ -72,7 +72,13 @@ import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection } from "./components/RepoStepSection";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
-import { validatePublish, validateRpkPackage } from "~/logic/publish/validation";
+import {
+  COVER_MAX_BYTES,
+  COVER_RATIO,
+  COVER_RATIO_TOLERANCE,
+  validatePublish,
+  validateRpkPackage,
+} from "~/logic/publish/validation";
 import {
   buildRawFileUrl,
   fetchManifestForCatalogEntry,
@@ -574,6 +580,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       console.error("compress icon failed:", err);
     }
     const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
+    if (!next.width || !next.height || next.width !== next.height) {
+      toast.error("图标必须为正方形（1:1），请重新选择。");
+      revokeUrl(next);
+      return;
+    }
     setIcon((prev) => {
       revokeUrl(prev);
       return next;
@@ -591,6 +602,26 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       console.error("compress cover failed:", err);
     }
     const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
+    const ratio = next.width && next.height ? next.width / next.height : null;
+    if (
+      !next.width ||
+      !next.height ||
+      !ratio ||
+      Math.abs(ratio - COVER_RATIO) > COVER_RATIO_TOLERANCE
+    ) {
+      toast.error(
+        `封面必须为 3:2 宽高比，当前 ${
+          ratio ? ratio.toFixed(2) : "未知"
+        }。`,
+      );
+      revokeUrl(next);
+      return;
+    }
+    if (next.file.size > COVER_MAX_BYTES) {
+      toast.error("封面大小超过 1MB，请压缩后重新上传。");
+      revokeUrl(next);
+      return;
+    }
     setCover((prev) => {
       revokeUrl(prev);
       return next;

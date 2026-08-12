@@ -181,7 +181,7 @@ export function BasicInfoSection({
           radius="large"
         />
       </Field>
-      <Field label="标签" hint="逐个添加，不需要手动输入分隔符">
+      <Field label="标签">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             {tags.map((tag, index) => (
