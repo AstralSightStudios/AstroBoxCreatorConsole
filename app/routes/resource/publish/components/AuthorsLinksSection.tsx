@@ -362,131 +362,106 @@ export function AuthorsLinksSection({
               添加链接
             </Button>
           </div>
-          <Table.Root className="table-fixed w-full">
-            <Table.Header className="max-md:hidden">
-              <Table.Row>
-                <Table.ColumnHeaderCell
-                  width="40px"
-                  justify="center"
-                  p="0"
-                  className="h-full flex justify-center items-center shrink-0"
-                >
+          {links.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+              还未添加外部链接
+            </p>
+          ) : (
+            <div className="flex flex-col divide-y divide-white/10">
+              {links.map((link, index) => {
+                const linkError = validateLink(link);
+                const iconButton = (
+                  <Button
+                    type="button"
+                    variant="surface"
+                    color="gray"
+                    radius="large"
+                    className="min-w-0 w-full justify-start gap-2"
+                    onClick={() => {
+                      setIconQuery("");
+                      setIconPickerIndex(index);
+                    }}
+                  >
+                    <BinocularsIcon size={15} />
+                    <span className="truncate">{link.icon || "选择图标"}</span>
+                  </Button>
+                );
+                const titleField = (
+                  <TextField.Root
+                    placeholder="标题"
+                    value={link.title}
+                    radius="large"
+                    onChange={(e) =>
+                      setLinks((prev) =>
+                        prev.map((item, idx) =>
+                          idx === index
+                            ? { ...item, title: e.target.value }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                );
+                const urlField = (
+                  <div className="flex flex-col gap-1">
+                    <TextField.Root
+                      type="url"
+                      placeholder="https://example.com"
+                      value={link.url}
+                      radius="large"
+                      color={linkError ? "red" : undefined}
+                      onChange={(e) =>
+                        setLinks((prev) =>
+                          prev.map((item, idx) =>
+                            idx === index
+                              ? {
+                                  ...item,
+                                  url: normalizeLinkUrl(e.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                    {linkError && (
+                      <p className="text-xs text-red-400">{linkError}</p>
+                    )}
+                  </div>
+                );
+                const removeButton = (
                   <button
-                    className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px]"
+                    type="button"
+                    className="shrink-0 rounded p-1 text-white/60 transition hover:text-red-400"
                     onClick={() =>
-                      setLinks((prev) => [
-                        ...prev,
-                        { icon: "", title: "", url: "" },
-                      ])
+                      setLinks((prev) =>
+                        prev.filter((_, idx) => idx !== index),
+                      )
                     }
                   >
-                    <PlusIcon size={16} weight="bold" />
+                    <MinusIcon size={16} weight="bold" />
                   </button>
-                </Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>图标</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>标题</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>网址</Table.ColumnHeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {links.length === 0 ? (
-                <Table.Row className="max-md:flex max-md:flex-col max-md:gap-2 max-md:rounded-xl max-md:border max-md:border-white/10 max-md:bg-white/[0.03] max-md:p-2.5">
-                  <Table.RowHeaderCell width="40px" justify="center" px="0" />
-                  <Table.RowHeaderCell>
-                    <span className="text-white/60">还未添加外部链接</span>
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell />
-                  <Table.RowHeaderCell />
-                </Table.Row>
-              ) : (
-                links.map((link, index) => {
-                  const linkError = validateLink(link);
-                  return (
-                    <Table.Row
-                      key={`links-${index}`}
-                      className="max-md:flex max-md:flex-col max-md:gap-2 max-md:rounded-xl max-md:border max-md:border-white/10 max-md:bg-white/[0.03] max-md:p-2.5"
-                    >
-                      <Table.RowHeaderCell
-                        width="40px"
-                        justify="center"
-                        px="0"
-                        className="max-md:order-first max-md:flex max-md:items-center max-md:justify-start max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10"
-                      >
-                        <button
-                          className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
-                          onClick={() =>
-                            setLinks((prev) =>
-                              prev.filter((_, idx) => idx !== index),
-                            )
-                          }
-                        >
-                          <MinusIcon size={16} weight="bold" />
-                        </button>
-                      </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10">
-                        <Button
-                          type="button"
-                          variant="surface"
-                          color="gray"
-                          radius="large"
-                          className="min-w-0 w-full justify-start gap-2"
-                          onClick={() => {
-                            setIconQuery("");
-                            setIconPickerIndex(index);
-                          }}
-                        >
-                          <BinocularsIcon size={15} />
-                          <span className="truncate">
-                            {link.icon || "选择图标"}
-                          </span>
-                        </Button>
-                      </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10">
-                        <TextField.Root
-                          placeholder="标题"
-                          value={link.title}
-                          radius="large"
-                          onChange={(e) =>
-                            setLinks((prev) =>
-                              prev.map((item, idx) =>
-                                idx === index
-                                  ? { ...item, title: e.target.value }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2">
-                        <TextField.Root
-                          type="url"
-                          placeholder="https://example.com"
-                          value={link.url}
-                          radius="large"
-                          color={linkError ? "red" : undefined}
-                          onChange={(e) =>
-                            setLinks((prev) =>
-                              prev.map((item, idx) =>
-                                idx === index
-                                  ? {
-                                      ...item,
-                                      url: normalizeLinkUrl(e.target.value),
-                                    }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                        {linkError && (
-                          <p className="mt-1 text-xs text-red-400">{linkError}</p>
-                        )}
-                      </Table.RowHeaderCell>
-                    </Table.Row>
-                  );
-                })
-              )}
-            </Table.Body>
-          </Table.Root>
+                );
+                return (
+                  <div key={`links-${index}`} className="py-2.5">
+                    <div className="hidden items-center gap-2 md:grid md:grid-cols-[40px_180px_minmax(0,1fr)_minmax(0,1.4fr)]">
+                      {removeButton}
+                      {iconButton}
+                      {titleField}
+                      {urlField}
+                    </div>
+                    <div className="flex flex-col gap-2 md:hidden">
+                      <div className="flex items-center gap-1.5">
+                        {removeButton}
+                        <div className="min-w-0 flex-1">{iconButton}</div>
+                        <div className="min-w-0 flex-1">{titleField}</div>
+                      </div>
+                      {urlField}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-white/65">
