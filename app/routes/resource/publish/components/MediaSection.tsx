@@ -1,14 +1,15 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  DotsSixVerticalIcon,
   ImagesSquareIcon,
   InfoIcon,
   UploadSimpleIcon,
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Badge, Button, Dialog } from "@radix-ui/themes";
-import { useRef, useState } from "react";
+import { Badge, Button } from "@radix-ui/themes";
+import { useEffect, useRef, useState } from "react";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
 
@@ -126,6 +127,18 @@ export function MediaSection({
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
 
+  useEffect(() => {
+    if (lightboxIndex == null) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLightboxIndex(null);
+        setShowInfo(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex]);
+
   return (
     <SectionCard
       title="媒体素材"
@@ -217,16 +230,7 @@ export function MediaSection({
               {previews.map((item, index) => (
                 <div
                   key={item.id}
-                  draggable
-                  className="group relative w-[200px] shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2"
-                  onDragStart={(event) => {
-                    draggedPreviewIdRef.current = item.id;
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", item.id);
-                  }}
-                  onDragEnd={() => {
-                    draggedPreviewIdRef.current = null;
-                  }}
+                  className="group relative w-[260px] shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2"
                   onDragOver={(event) => {
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
@@ -253,7 +257,7 @@ export function MediaSection({
                     <img
                       src={item.url}
                       alt={item.name}
-                      className="h-32 w-full object-contain"
+                      className="h-44 w-full object-cover"
                       onLoad={(event) => {
                         const image = event.currentTarget;
                         if (
@@ -272,6 +276,22 @@ export function MediaSection({
                     />
                   </button>
                   <div className="mt-2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      draggable
+                      className="cursor-grab rounded p-1 text-white/40 transition hover:bg-white/10 hover:text-white active:cursor-grabbing"
+                      onDragStart={(event) => {
+                        draggedPreviewIdRef.current = item.id;
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", item.id);
+                      }}
+                      onDragEnd={() => {
+                        draggedPreviewIdRef.current = null;
+                      }}
+                      aria-label="拖拽排序"
+                    >
+                      <DotsSixVerticalIcon size={15} weight="bold" />
+                    </button>
                     <span className="min-w-0 flex-1 truncate text-xs text-white/70">
                       {item.name}
                     </span>
@@ -317,67 +337,71 @@ export function MediaSection({
         </div>
       </div>
 
-      <Dialog.Root
-        open={lightboxIndex != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setLightboxIndex(null);
-            setShowInfo(false);
-          }
-        }}
-      >
-        <Dialog.Content className="max-w-[min(96vw,900px)]">
-          <div className="flex items-start justify-between gap-3">
-            <Dialog.Title className="min-w-0 truncate">
-              {lightboxItem?.name ?? "预览图"}
-            </Dialog.Title>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="grid size-9 place-items-center rounded-full border border-white/15 text-white/70 transition hover:bg-white/10 hover:text-white"
-                onClick={() => setShowInfo((prev) => !prev)}
-                aria-label="查看图片信息"
-              >
-                <InfoIcon size={17} weight="bold" />
-              </button>
-              <button
-                type="button"
-                className="grid size-9 place-items-center rounded-full border border-white/15 text-white/70 transition hover:bg-white/10 hover:text-white"
-                onClick={() => setLightboxIndex(null)}
-                aria-label="关闭"
-              >
-                <XIcon size={17} weight="bold" />
-              </button>
-            </div>
+      {lightboxIndex != null && lightboxItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+          <div className="absolute right-4 top-4 flex items-center gap-2">
+            <button
+              type="button"
+              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
+              onClick={() => setShowInfo((prev) => !prev)}
+              aria-label="查看图片信息"
+            >
+              <InfoIcon size={18} weight="bold" />
+            </button>
+            <button
+              type="button"
+              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
+              onClick={() => {
+                setLightboxIndex(null);
+                setShowInfo(false);
+              }}
+              aria-label="关闭"
+            >
+              <XIcon size={18} weight="bold" />
+            </button>
           </div>
 
-          {lightboxItem && (
-            <div className="flex flex-col gap-3">
-              <div className="flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/25">
-                <img
-                  src={lightboxItem.url}
-                  alt={lightboxItem.name}
-                  className="max-h-[62vh] max-w-full object-contain"
-                />
+          <img
+            src={lightboxItem.url}
+            alt={lightboxItem.name}
+            className="max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] rounded-xl object-contain"
+          />
+
+          {showInfo && (
+            <div className="absolute right-0 top-0 flex h-full w-[min(88vw,360px)] flex-col border-l border-white/15 bg-[#111] p-5 shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-white">图片信息</h2>
+                <button
+                  type="button"
+                  className="grid size-9 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setShowInfo(false)}
+                  aria-label="关闭信息"
+                >
+                  <XIcon size={17} />
+                </button>
               </div>
-              {showInfo && (
-                <div className="grid gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs text-white/70">
+              <div className="mt-5 flex flex-col gap-3 text-sm text-white/75">
+                <div className="break-all">
+                  <div className="text-xs text-white/45">文件名</div>
+                  <div>{lightboxItem.name}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-white/45">分辨率</div>
                   <div>
-                    文件名：<span className="break-all">{lightboxItem.name}</span>
-                  </div>
-                  <div>
-                    分辨率：
                     {lightboxItem.width && lightboxItem.height
                       ? `${lightboxItem.width} × ${lightboxItem.height}`
                       : "-"}
                   </div>
-                  <div>体积：{formatFileSize(lightboxItem.file.size)}</div>
                 </div>
-              )}
+                <div>
+                  <div className="text-xs text-white/45">体积</div>
+                  <div>{formatFileSize(lightboxItem.file.size)}</div>
+                </div>
+              </div>
             </div>
           )}
-        </Dialog.Content>
-      </Dialog.Root>
+        </div>
+      )}
     </SectionCard>
   );
 }
