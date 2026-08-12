@@ -166,6 +166,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [icon, setIcon] = useState<UploadItem | null>(null);
+  const [iconUploading, setIconUploading] = useState(false);
   const [cover, setCover] = useState<UploadItem | null>(null);
 
   const [authors, setAuthors] = useState<AuthorInput[]>([
@@ -572,6 +573,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleIconUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    setIconUploading(true);
+    try {
     let processed = file;
     try {
       processed = await compressImageFile(file, 100 * 1024);
@@ -589,6 +592,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       revokeUrl(prev);
       return next;
     });
+    } finally {
+      setIconUploading(false);
+    }
   };
 
   const handleCoverUpload = async (files: FileList | null) => {
@@ -1588,6 +1594,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               <MediaSection
                 previews={previews}
                 icon={icon}
+                iconUploading={iconUploading}
                 cover={cover}
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}

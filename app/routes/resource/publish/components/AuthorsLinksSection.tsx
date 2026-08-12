@@ -4,11 +4,14 @@ import {
   MagnifyingGlassIcon,
   MinusIcon,
   PlusIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { Button, Dialog, Switch, TextField } from "@radix-ui/themes";
 import {
   type Dispatch,
   type SetStateAction,
+  type ComponentType,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -19,6 +22,55 @@ import {
   normalizeLinkUrl,
   validateLink,
 } from "~/logic/publish/validation";
+
+const iconNameToPascal = (name: string): string =>
+  name
+    .split("-")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join("");
+
+const phosphorIconModules = import.meta.glob<
+  { default?: ComponentType<{ size?: number; className?: string }> }
+>("/node_modules/@phosphor-icons/react/dist/csr/*.es.js");
+
+function PhosphorIconByName({
+  name,
+  size = 16,
+  className,
+}: {
+  name: string;
+  size?: number;
+  className?: string;
+}) {
+  const [Component, setComponent] = useState<
+    ComponentType<{ size?: number; className?: string }> | null
+  >(null);
+
+  useEffect(() => {
+    let active = true;
+    const modulePath = `/node_modules/@phosphor-icons/react/dist/csr/${iconNameToPascal(
+      name,
+    )}.es.js`;
+    const loader = phosphorIconModules[modulePath];
+    if (!loader) {
+      setComponent(null);
+      return;
+    }
+    loader()
+      .then((module) => {
+        if (active) setComponent(() => module.default ?? null);
+      })
+      .catch(() => {
+        if (active) setComponent(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [name]);
+
+  if (!Component) return <span className="grid size-5 place-items-center" />;
+  return <Component size={size} className={className} />;
+}
 
 interface AuthorsLinksSectionProps {
   authors: AuthorInput[];

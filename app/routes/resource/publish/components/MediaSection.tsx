@@ -15,6 +15,7 @@ import { SectionCard } from "./shared";
 interface MediaSectionProps {
   previews: UploadItem[];
   icon: UploadItem | null;
+  iconUploading?: boolean;
   cover: UploadItem | null;
   onPreviewUpload: (files: FileList | null) => void;
   onRemovePreview: (id: string) => void;
@@ -42,17 +43,19 @@ function MediaTile({
   label,
   hint,
   media,
+  uploading,
   onPick,
   onRemove,
 }: {
   label: string;
   hint: string;
   media: UploadItem | null;
+  uploading?: boolean;
   onPick: () => void;
   onRemove: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="relative flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-white">{label}</p>
@@ -70,7 +73,14 @@ function MediaTile({
         )}
       </div>
 
-      {media ? (
+      {uploading ? (
+        <div className="flex h-36 flex-col items-center justify-center gap-3 rounded-lg border border-white/10 bg-black/25 text-sm text-white/70">
+          <p>正在压缩图标...</p>
+          <div className="h-1.5 w-3/4 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-400" />
+          </div>
+        </div>
+      ) : media ? (
         <div className="flex h-36 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25">
           <img
             src={media.url}
@@ -95,6 +105,7 @@ function MediaTile({
 export function MediaSection({
   previews,
   icon,
+  iconUploading,
   cover,
   onPreviewUpload,
   onRemovePreview,
@@ -158,6 +169,7 @@ export function MediaSection({
             label="图标"
             hint="必须 1:1，建议不超过 500×500"
             media={icon}
+            uploading={iconUploading}
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
           />
