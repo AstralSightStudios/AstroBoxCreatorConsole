@@ -13,12 +13,25 @@ import {
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { loadPublishMode } from "~/config/publishMode";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile } from "~/logic/publish/github-actions";
-import { parseCatalogCsv, type CatalogEntry } from "~/logic/publish/catalog";
+import {
+  decodeCatalogContent,
+  getFileContent,
+  parseCatalogCsv,
+  type CatalogEntry,
+} from "~/logic/publish/catalog";
 import { buildRawFileUrl } from "~/logic/publish/manifest-loader";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { type PrResourcePreview, type ResourcePackagePreview, CATALOG_CSV_HEADER } from "./types";
+import {
+  extractSubmissionPathFromFilePath,
+  parseSubmissionCsv,
+  parseSubmissionRequestJson,
+  submissionCsvPath,
+  submissionRequestPath,
+} from "~/logic/publish/submission-protocol";
 
 export function isImagePath(path: string) {
   return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(path);
@@ -230,6 +243,106 @@ export async function loadPrResourcePreviews(
         return {
           entry,
           ref,
+          manifestError: getErrorMessage(err),
+          iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
+          coverUrl: buildResourceRawUrl(entry, ref, entry.cover),
+          previewUrls: [],
+          packages: [],
+        } satisfies PrResourcePreview;
+      }
+    }),
+  );
+}
+
+export async function loadStagingPrResourcePreviews(
+  files: GithubPullFile[],
+  token: string,
+  openPull: GithubPullRequest,
+): Promise<PrResourcePreview[]> {
+  const submissionPaths = Array.from(
+    new Set(
+      files
+        .map((file) => extractSubmissionPathFromFilePath(file.filename))
+        .filter((path): path is string => Boolean(path)),
+    ),
+  );
+  if (submissionPaths.length === 0) return [];
+
+  const baseRef = (openPull.base as { sha?: string }).sha || PUBLISH_CONFIG.defaultBranch;
+  let baseEntries: CatalogEntry[] = [];
+  try {
+    const baseFile = await getFileContent(
+      token,
+      PUBLISH_CONFIG.targetPrRepoOwner,
+      PUBLISH_CONFIG.targetPrRepoName,
+      PUBLISH_CONFIG.catalogFilePath,
+      baseRef,
+    );
+    baseEntries = parseCatalogCsv(decodeCatalogContent(baseFile.content));
+  } catch {
+    baseEntries = [];
+  }
+
+  const headOwner = openPull.head.repo?.owner?.login || "";
+  const headRepo = openPull.head.repo?.name || "";
+  const headRef = openPull.head.ref;
+
+  return Promise.all(
+    submissionPaths.map(async (submissionPath) => {
+      const csvFile = await getFileContent(
+        token,
+        headOwner,
+        headRepo,
+        submissionCsvPath(submissionPath),
+        headRef,
+      );
+      const requestFile = await getFileContent(
+        token,
+        headOwner,
+        headRepo,
+        submissionRequestPath(submissionPath),
+        headRef,
+      );
+      const entry = parseSubmissionCsv(decodeCatalogContent(csvFile.content));
+      const request = parseSubmissionRequestJson(
+        decodeCatalogContent(requestFile.content),
+      );
+      const baseEntry = request.original_id
+        ? baseEntries.find((item) => item.id === request.original_id)
+        : undefined;
+      const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
+
+      try {
+        const manifest = await fetchManifest(entry, token);
+        const iconPath = manifest.item?.icon || entry.icon;
+        const coverPath = manifest.item?.cover || entry.cover;
+        return {
+          entry,
+          baseEntry,
+          ref,
+          request,
+          predictedAction:
+            request.mode === "create"
+              ? "新增资源，将追加到目录末尾"
+              : "更新资源，将由仓库 Action 根据包内容判断原位替换或移尾",
+          manifest,
+          iconUrl: buildResourceRawUrl(entry, ref, iconPath),
+          coverUrl: buildResourceRawUrl(entry, ref, coverPath),
+          previewUrls: (manifest.item?.preview ?? [])
+            .map((path: string) => buildResourceRawUrl(entry, ref, path))
+            .filter(Boolean),
+          packages: collectPackages(entry, ref, manifest),
+        } satisfies PrResourcePreview;
+      } catch (err) {
+        return {
+          entry,
+          baseEntry,
+          ref,
+          request,
+          predictedAction:
+            request.mode === "create"
+              ? "新增资源，将追加到目录末尾"
+              : "更新资源，将由仓库 Action 根据包内容判断原位替换或移尾",
           manifestError: getErrorMessage(err),
           iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
           coverUrl: buildResourceRawUrl(entry, ref, entry.cover),

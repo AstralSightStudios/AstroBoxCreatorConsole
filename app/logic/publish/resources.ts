@@ -1,11 +1,23 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { loadPublishMode } from "~/config/publishMode";
 import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
 import {
+    decodeCatalogContent,
     fetchCatalogEntries,
+    getFileContent,
     parseCatalogCsv,
     type CatalogEntry,
 } from "./catalog";
+import {
+    buildSubmissionPath,
+    extractSubmissionPathFromFilePath,
+    parseSubmissionCsv,
+    parseSubmissionRequestJson,
+    submissionCsvPath,
+    submissionRequestPath,
+    type SubmissionRequest,
+} from "./submission-protocol";
 import {
     deriveReviewStatus,
     type NeedFixItem,
@@ -32,6 +44,10 @@ export interface PublishingResource {
     prUrl: string;
     prHead: { owner: string; repo: string; ref: string };
     catalog: ResourceCatalogContext;
+    submission?: {
+        path: string;
+        request: SubmissionRequest;
+    };
 }
 
 export interface ResourceEditContext {
@@ -41,6 +57,10 @@ export interface ResourceEditContext {
     prHead?: { owner: string; repo: string; ref: string };
     reviewState?: ReviewState;
     needs?: NeedFixItem[];
+    submission?: {
+        path: string;
+        request: SubmissionRequest;
+    };
 }
 
 function requireGithubAccount() {
@@ -154,6 +174,9 @@ function extractCatalogEntriesFromPullFiles(
 }
 
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
+    if (loadPublishMode() === "staging") {
+        return loadInProgressStagingResourcesForCurrentUser();
+    }
     const { token, username } = requireGithubAccount();
 
     const pulls = await githubFetch<any[]>(
@@ -217,6 +240,108 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
             }
         } catch (error) {
             console.error("Failed to process PR", pr.number, error);
+        }
+    }
+
+    return resources.sort((a, b) =>
+        (b.createdAt || "").localeCompare(a.createdAt || ""),
+    );
+}
+
+async function loadInProgressStagingResourcesForCurrentUser(): Promise<
+    PublishingResource[]
+> {
+    const { token, username } = requireGithubAccount();
+    const pulls = await githubFetch<any[]>(
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+
+    const resources: PublishingResource[] = [];
+
+    for (const pr of pulls) {
+        const headRepo = pr.head?.repo;
+        if (!headRepo) continue;
+        if (!pr.user?.login || pr.user.login !== username) continue;
+
+        try {
+            const [comments, files] = await Promise.all([
+                fetchIssueComments(
+                    PUBLISH_CONFIG.targetPrRepoOwner,
+                    PUBLISH_CONFIG.targetPrRepoName,
+                    pr.number,
+                    token,
+                ),
+                fetchPullFiles(
+                    PUBLISH_CONFIG.targetPrRepoOwner,
+                    PUBLISH_CONFIG.targetPrRepoName,
+                    pr.number,
+                    token,
+                ),
+            ]);
+            const review = deriveReviewStatus(comments);
+            const submissionPaths = Array.from(
+                new Set(
+                    files
+                        .map((file) => extractSubmissionPathFromFilePath(file.filename))
+                        .filter((path): path is string => Boolean(path)),
+                ),
+            );
+
+            for (const submissionPath of submissionPaths) {
+                const csvFile = await getFileContent(
+                    token,
+                    headRepo.owner?.login || "",
+                    headRepo.name,
+                    submissionCsvPath(submissionPath),
+                    pr.head.ref,
+                );
+                const requestFile = await getFileContent(
+                    token,
+                    headRepo.owner?.login || "",
+                    headRepo.name,
+                    submissionRequestPath(submissionPath),
+                    pr.head.ref,
+                );
+                const entry = parseSubmissionCsv(
+                    decodeCatalogContent(csvFile.content),
+                );
+                const request = parseSubmissionRequestJson(
+                    decodeCatalogContent(requestFile.content),
+                );
+
+                resources.push({
+                    id: entry.id,
+                    name: entry.name,
+                    restype: entry.restype,
+                    status: review.state,
+                    needs: review.items,
+                    createdAt: pr.created_at,
+                    prNumber: pr.number,
+                    prTitle: pr.title,
+                    prUrl: pr.html_url,
+                    prHead: {
+                        owner: headRepo.owner?.login,
+                        repo: headRepo.name,
+                        ref: pr.head.ref,
+                    },
+                    catalog: {
+                        entry,
+                        owner: headRepo.owner?.login || "",
+                        repo: headRepo.name,
+                        ref: pr.head.ref,
+                        sha: pr.head.sha,
+                    },
+                    submission: {
+                        path: submissionPath,
+                        request,
+                    },
+                });
+            }
+        } catch (error) {
+            console.error("Failed to process staging PR", pr.number, error);
         }
     }
 

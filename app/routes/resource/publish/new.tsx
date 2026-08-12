@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { loadPublishMode } from "~/config/publishMode";
 import {
   buildManifest,
   type ManifestBuildResult,
@@ -33,6 +34,11 @@ import {
   updateCatalogCsv,
   updateCatalogEntryOnBranch,
 } from "~/logic/publish/catalog";
+import {
+  createSubmissionBranch,
+  createSubmissionPullRequest,
+  updateSubmissionEntryOnBranch,
+} from "~/logic/publish/staging-submission";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
 import {
@@ -864,6 +870,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }));
 
       const manifestForCatalog = lastManifest ?? manifestResult;
+      const useStaging = loadPublishMode() === "staging";
+      const catalogEntry = {
+        id: itemId.trim(),
+        name: itemName.trim(),
+        restype: resourceType,
+        repo_owner: repoInfo.owner,
+        repo_name: repoInfo.name,
+        repo_commit_hash: repoInfo.commitSha.slice(0, 7),
+        icon: manifestForCatalog.iconPath,
+        cover: manifestForCatalog.coverPath,
+        tags: tags.join(";"),
+        device_vendors: Array.from(
+          new Set(selectedDevices.map((d) => d.vendor).filter(Boolean)),
+        ).join(";"),
+        devices: Array.from(new Set(selectedDevices.map((d) => d.id))).join(
+          ";",
+        ),
+        paid_type: effectivePaidType?.trim() ?? "",
+      };
 
       if (mode === "in_progress") {
         if (!editContext?.prHead) {
@@ -877,34 +902,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           targetBranch: editContext.prHead.ref,
         });
 
-        await updateCatalogEntryOnBranch({
-          token,
-          owner: editContext.prHead.owner,
-          repo: editContext.prHead.repo,
-          branch: editContext.prHead.ref,
-          intent: {
-            mode: "edit",
-            originalId: editContext.catalog.entry.id,
-          },
-          entry: {
-            id: itemId.trim(),
-            name: itemName.trim(),
-            restype: resourceType,
-            repo_owner: repoInfo.owner,
-            repo_name: repoInfo.name,
-            repo_commit_hash: repoInfo.commitSha.slice(0, 7),
-            icon: manifestForCatalog.iconPath,
-            cover: manifestForCatalog.coverPath,
-            tags: tags.join(";"),
-            device_vendors: Array.from(
-              new Set(selectedDevices.map((d) => d.vendor).filter(Boolean)),
-            ).join(";"),
-            devices: Array.from(new Set(selectedDevices.map((d) => d.id))).join(
-              ";",
-            ),
-            paid_type: effectivePaidType?.trim() ?? "",
-          },
-        });
+        if (useStaging) {
+          if (!editContext.submission) {
+            throw new Error("缺少新流程提交信息，无法更新现有 PR。");
+          }
+          await updateSubmissionEntryOnBranch({
+            token,
+            owner: editContext.prHead.owner,
+            repo: editContext.prHead.repo,
+            branch: editContext.prHead.ref,
+            entry: catalogEntry,
+            request: editContext.submission.request,
+            submissionPath: editContext.submission.path,
+          });
+        } else {
+          await updateCatalogEntryOnBranch({
+            token,
+            owner: editContext.prHead.owner,
+            repo: editContext.prHead.repo,
+            branch: editContext.prHead.ref,
+            intent: {
+              mode: "edit",
+              originalId: editContext.catalog.entry.id,
+            },
+            entry: catalogEntry,
+          });
+        }
 
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
@@ -912,29 +935,54 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         return;
       }
 
-      const branchInfo = await updateCatalogCsv({
-        repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
-        iconPath: manifestForCatalog.iconPath,
-        coverPath: manifestForCatalog.coverPath,
-        tags,
-        devices: selectedDevices,
-        itemId,
-        itemName,
-        restype: resourceType,
-        paidType: effectivePaidType,
-        intent: editContext
-          ? { mode: "edit", originalId: editContext.catalog.entry.id }
-          : { mode: "create" },
-      });
+      if (useStaging) {
+        const branchInfo = await createSubmissionBranch({
+          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
+          iconPath: manifestForCatalog.iconPath,
+          coverPath: manifestForCatalog.coverPath,
+          tags,
+          devices: selectedDevices,
+          itemId,
+          itemName,
+          restype: resourceType,
+          paidType: effectivePaidType,
+          intent: editContext
+            ? { mode: "edit", originalId: editContext.catalog.entry.id }
+            : { mode: "create" },
+        });
+        await createSubmissionPullRequest({
+          forkOwner: branchInfo.forkOwner,
+          forkRepo: branchInfo.forkRepo,
+          branch: branchInfo.branch,
+          token,
+          title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
+          body: prBody.trim() || undefined,
+        });
+      } else {
+        const branchInfo = await updateCatalogCsv({
+          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
+          iconPath: manifestForCatalog.iconPath,
+          coverPath: manifestForCatalog.coverPath,
+          tags,
+          devices: selectedDevices,
+          itemId,
+          itemName,
+          restype: resourceType,
+          paidType: effectivePaidType,
+          intent: editContext
+            ? { mode: "edit", originalId: editContext.catalog.entry.id }
+            : { mode: "create" },
+        });
 
-      await createCatalogPullRequest({
-        forkOwner: branchInfo.forkOwner,
-        forkRepo: branchInfo.forkRepo,
-        branch: branchInfo.branch,
-        token,
-        title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
-        body: prBody.trim() || undefined,
-      });
+        await createCatalogPullRequest({
+          forkOwner: branchInfo.forkOwner,
+          forkRepo: branchInfo.forkRepo,
+          branch: branchInfo.branch,
+          token,
+          title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
+          body: prBody.trim() || undefined,
+        });
+      }
 
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");

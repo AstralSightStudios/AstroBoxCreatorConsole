@@ -15,6 +15,12 @@ import {
   type RepoEnvId,
 } from "~/config/repoEnv";
 import {
+  PUBLISH_MODES,
+  savePublishMode,
+  usePublishMode,
+  type PublishMode,
+} from "~/config/publishMode";
+import {
   LOGIN_METHODS,
   saveLoginMethod,
   useLoginMethod,
@@ -122,6 +128,7 @@ function LinkRow({
 
 export default function Settings() {
   const currentEnv = useRepoEnvId();
+  const currentPublishMode = usePublishMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -150,6 +157,12 @@ export default function Settings() {
   const handleSelect = (id: RepoEnvId) => {
     if (id === currentEnv) return;
     setPending(id);
+  };
+
+  const handleSelectPublishMode = (id: PublishMode) => {
+    if (id === currentPublishMode) return;
+    savePublishMode(id);
+    toast.success(`已切换到 ${PUBLISH_MODES[id].label}`);
   };
 
   const confirmSwitch = () => {
@@ -213,6 +226,28 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </SectionCard>
+
+        {/* 提交与审核模式 */}
+        <SectionCard
+          title="提交与审核模式"
+          description={`当前：${PUBLISH_MODES[currentPublishMode].label}`}
+        >
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {(
+              Object.values(PUBLISH_MODES) as Array<
+                (typeof PUBLISH_MODES)[PublishMode]
+              >
+            ).map((mode) => (
+              <OptionCard
+                key={mode.id}
+                selected={mode.id === currentPublishMode}
+                onClick={() => handleSelectPublishMode(mode.id)}
+                title={mode.label}
+                description={mode.description}
+              />
+            ))}
+          </div>
         </SectionCard>
 
         {/* AstroBox 登录方式 */}

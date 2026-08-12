@@ -8,6 +8,7 @@ import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState } from "~/logic/account/store";
 import { useRepoEnv } from "~/config/repoEnv";
+import { usePublishMode } from "~/config/publishMode";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
@@ -15,6 +16,7 @@ import {
   listPullRequestComments,
   listPullRequestFiles,
   approvePullRequest,
+  mergePullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
@@ -23,7 +25,12 @@ import {
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
-import { loadPrResourcePreviews, getErrorMessage, extractOldCatalogEntriesFromFiles } from "./utils";
+import {
+  loadPrResourcePreviews,
+  loadStagingPrResourcePreviews,
+  getErrorMessage,
+  extractOldCatalogEntriesFromFiles,
+} from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
 import { parseReviewCommentBody } from "./utils/comment";
@@ -33,6 +40,7 @@ import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAc
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
+  const publishMode = usePublishMode();
   const setHeaderActions = useSetHeaderActions();
   const { isDesktop } = useNavVisibility();
   const navigate = useNavigate();
@@ -59,6 +67,7 @@ export default function ResourceReviewPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [merging, setMerging] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
@@ -69,6 +78,22 @@ export default function ResourceReviewPage() {
 
   const repoFileChanges = useMemo(() => {
     if (files.length === 0 || resourcePreviews.length === 0) return [];
+    if (publishMode === "staging") {
+      return resourcePreviews.map((preview) => {
+        const oldEntry = preview.baseEntry;
+        const isNew = !oldEntry || !oldEntry.repo_commit_hash;
+        return {
+          entryId: preview.entry.id,
+          resourceName: preview.entry.name,
+          isNew,
+          owner: preview.entry.repo_owner,
+          repo: preview.entry.repo_name,
+          commitHash: preview.entry.repo_commit_hash || preview.ref,
+          baseCommitHash: isNew ? undefined : oldEntry!.repo_commit_hash,
+          manifest: preview.manifest,
+        };
+      });
+    }
     const oldEntries = extractOldCatalogEntriesFromFiles(files);
     const oldById = new Map<string, CatalogEntry>();
     for (const entry of oldEntries) oldById.set(entry.id, entry);
@@ -87,7 +112,7 @@ export default function ResourceReviewPage() {
         manifest: preview.manifest,
       };
     });
-  }, [files, resourcePreviews]);
+  }, [files, resourcePreviews, publishMode]);
 
   const loadPermission = async () => {
     setCheckingPermission(true);
@@ -136,10 +161,17 @@ export default function ResourceReviewPage() {
         listPullRequestFiles(number),
       ]);
       if (callId !== loadDetailRef.current) return;
-      const nextResourcePreviews = await loadPrResourcePreviews(
-        nextFiles,
-        accountState.github?.token || "",
-      );
+      const nextResourcePreviews =
+        publishMode === "staging" && openPull
+          ? await loadStagingPrResourcePreviews(
+              nextFiles,
+              accountState.github?.token || "",
+              openPull,
+            )
+          : await loadPrResourcePreviews(
+              nextFiles,
+              accountState.github?.token || "",
+            );
       if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
@@ -175,7 +207,7 @@ export default function ResourceReviewPage() {
       setResourcePreviews([]);
       setLoadingDetail(false);
     }
-  }, [openNumber, accountState.github?.token]);
+  }, [openNumber, accountState.github?.token, publishMode]);
 
   const visiblePulls = useMemo(() => {
     if (stateFilter === "all") return pulls;
@@ -245,6 +277,24 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const merge = async () => {
+    if (!openNumber || merging) return;
+    const number = openNumber;
+    setMerging(true);
+    try {
+      await mergePullRequest(number);
+      toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
+      await loadPulls();
+      if (openNumber === number) {
+        navigate("/resreview", { replace: true });
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const topbarActions = null;
 
   useLayoutEffect(() => {
@@ -309,6 +359,8 @@ export default function ResourceReviewPage() {
                 isSwitcherCollapsed={isWorkbenchSidebarCollapsed}
                 submittingComment={submittingComment}
                 approving={approving}
+                merging={merging}
+                canMerge={publishMode === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
                 onRefreshList={() => {
@@ -323,6 +375,7 @@ export default function ResourceReviewPage() {
                 onDeleteComment={deleteComment}
                 onEditComment={editComment}
                 onApprove={approve}
+                onMerge={merge}
               />
             </LayoutGroup>
           </motion.div>

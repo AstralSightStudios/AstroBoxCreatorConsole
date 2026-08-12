@@ -21,7 +21,10 @@ export interface GithubPullRequest {
   };
   base: {
     ref: string;
+    sha?: string;
   };
+  mergeable?: boolean | null;
+  mergeable_state?: string;
   labels?: Array<{ name: string; color?: string }>;
   changed_files?: number;
   additions?: number;
@@ -98,6 +101,30 @@ export async function listOpenPullRequests() {
   return githubFetch<GithubPullRequest[]>(
     repoPath("/pulls?state=open&per_page=80&sort=updated&direction=desc"),
     { headers: headers() },
+  );
+}
+
+export async function getPullRequest(prNumber: number) {
+  return githubFetch<GithubPullRequest>(
+    repoPath(`/pulls/${prNumber}`),
+    { headers: headers() },
+  );
+}
+
+export async function mergePullRequest(prNumber: number) {
+  const latest = await getPullRequest(prNumber);
+  if (latest.mergeable === false) {
+    throw new Error(
+      `PR #${prNumber} 当前不可合并（mergeable_state: ${latest.mergeable_state || "unknown"}），请先更新分支。`,
+    );
+  }
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/merge`),
+    {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({ merge_method: "merge" }),
+    },
   );
 }
 

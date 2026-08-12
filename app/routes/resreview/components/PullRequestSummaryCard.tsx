@@ -11,9 +11,20 @@ interface PullRequestSummaryCardProps {
   openStatus: ReturnType<typeof deriveReviewStatus>;
   onApprove: () => void;
   approving: boolean;
+  merging: boolean;
+  canMerge: boolean;
+  onMerge: () => void;
 }
 
-export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approving }: PullRequestSummaryCardProps) {
+export function PullRequestSummaryCard({
+  openPull,
+  openStatus,
+  onApprove,
+  approving,
+  merging,
+  canMerge,
+  onMerge,
+}: PullRequestSummaryCardProps) {
   if (!openPull) return null;
 
   return (
@@ -63,6 +74,11 @@ export function PullRequestSummaryCard({ openPull, openStatus, onApprove, approv
           <Button color="green" onClick={onApprove} disabled={approving}>
             {approving ? "Approving..." : "Approve"}
           </Button>
+          {canMerge && (
+            <Button color="blue" onClick={onMerge} disabled={merging}>
+              {merging ? "Merging..." : "合入"}
+            </Button>
+          )}
         </div>
       </div>
     </div>
