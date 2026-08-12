@@ -41,6 +41,8 @@ describe("submission protocol", () => {
     const parsed = parseSubmissionCsv(csv);
     expect(parsed.id).toBe("demo");
     expect(parsed.repo_owner).toBe("OctoCat");
+    expect(csv.split("\n")).toHaveLength(2);
+    expect(csv.split("\n")[1].split(",")).toHaveLength(12);
   });
 
   test("rejects extra submission CSV rows", () => {
