@@ -84,7 +84,6 @@ interface EncryptConfigDialogProps {
   triggerDisabled?: boolean;
   allDeviceIds?: string[];
   onBatchSaved?: () => void;
-  onSaved?: () => void;
 }
 
 export function EncryptConfigDialog({
@@ -93,7 +92,6 @@ export function EncryptConfigDialog({
   triggerDisabled,
   allDeviceIds,
   onBatchSaved,
-  onSaved,
 }: EncryptConfigDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -202,7 +200,6 @@ export function EncryptConfigDialog({
         enabled: form.enabled,
       });
       toast.success(`${PLATFORM_META[platform].name} 配置已保存`);
-      onSaved?.();
     } catch (err) {
       const msg = getErrorMessage(err);
       if (/Resource not found/i.test(msg)) {
@@ -263,7 +260,6 @@ export function EncryptConfigDialog({
     setBatchProgress({ done: targetDeviceIds.length, total: targetDeviceIds.length });
     setBatchSaving(false);
     toast.success(`已批量应用配置到 ${successCount}/${targetDeviceIds.length} 个设备`);
-    onSaved?.();
     onBatchSaved?.();
   };
 

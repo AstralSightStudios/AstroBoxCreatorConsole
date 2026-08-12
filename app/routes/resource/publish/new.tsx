@@ -27,12 +27,7 @@ import {
 } from "~/logic/publish/submission";
 import { loadAccountState, useDisplayAccount } from "~/logic/account/store";
 import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
-import {
-  listSellerResourceFileKeys,
-  listSellerResourceConfigs,
-  type SellerResourceFileKey,
-  type SellerResourceConfigListResponse,
-} from "~/api/astrobox/order";
+import { listSellerResourceFileKeys } from "~/api/astrobox/order";
 import {
   createCatalogPullRequest,
   updateCatalogCsv,
@@ -126,51 +121,6 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
   return next;
 }
 
-interface DownloadReadinessIssue {
-  platformId: string;
-  deviceName: string;
-  missingEncryption: boolean;
-  missingMapping: boolean;
-}
-
-async function checkDownloadReadiness(
-  resourceId: string,
-  downloads: DownloadInput[],
-  deviceMap: Map<string, DeviceOption>,
-): Promise<DownloadReadinessIssue[]> {
-  const trimmedId = resourceId.trim();
-  const [fileKeys, configs] = await Promise.all([
-    trimmedId
-      ? listSellerResourceFileKeys({ resourceId: trimmedId, limit: 500 })
-      : ([] as SellerResourceFileKey[]),
-    trimmedId
-      ? listSellerResourceConfigs({ resourceId: trimmedId })
-      : ({ products: [], skus: [] }) as SellerResourceConfigListResponse,
-  ]);
-
-  const encryptedDeviceSet = new Set(fileKeys.map((k) => k.deviceId));
-  const mappedDeviceSet = new Set(
-    configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
-  );
-
-  return downloads
-    .filter((d) => d.platformId.trim())
-    .map((d) => {
-      const platformId = d.platformId.trim();
-      const willEncryptOnUpload = Boolean(
-        d.file && !d.file.skipUpload && d.encryptOnUpload,
-      );
-      const hasEncryptedKey = encryptedDeviceSet.has(platformId);
-      return {
-        platformId,
-        deviceName: deviceMap.get(platformId)?.name || platformId,
-        missingEncryption: !willEncryptOnUpload && !hasEncryptedKey,
-        missingMapping: !mappedDeviceSet.has(platformId),
-      };
-    })
-    .filter((issue) => issue.missingEncryption || issue.missingMapping);
-}
-
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -223,10 +173,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       ),
     [deviceOptions],
   );
-  const deviceMap = useMemo(
-    () => new Map(deviceOptions.map((d) => [d.id, d])),
-    [deviceOptions],
-  );
 
   const [extRaw, setExtRaw] = useState("{}");
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
@@ -242,14 +188,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [repoNameInput, setRepoNameInput] = useState("");
   const [uploadLogs, setUploadLogs] = useState<string[]>([]);
-  const [purchaseCheckOpen, setPurchaseCheckOpen] = useState(false);
-  const [purchaseCheckLoading, setPurchaseCheckLoading] = useState(false);
-  const [purchaseCheckIssues, setPurchaseCheckIssues] = useState<
-    DownloadReadinessIssue[] | null
-  >(null);
-  const [purchaseCheckError, setPurchaseCheckError] = useState("");
-  const [mappingHintVersion, setMappingHintVersion] = useState(0);
-  const [hasMappedDownloads, setHasMappedDownloads] = useState(false);
   const [editContext, setEditContext] = useState<ResourceEditContext | null>(
     () => {
       if (!isEditMode) {
@@ -1135,47 +1073,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
   };
 
-  const handleEnterRepoStep = async () => {
-    if (publishValidation.errors.length) {
-      toast.error(publishValidation.errors[0]);
-      setActiveStepIndex(0);
-      return;
-    }
-    setPurchaseCheckOpen(true);
-    setPurchaseCheckLoading(true);
-    setPurchaseCheckIssues(null);
-    setPurchaseCheckError("");
-    try {
-      const issues = await checkDownloadReadiness(
-        itemId,
-        downloads,
-        deviceMap,
-      );
-      if (issues.length === 0) {
-        setPurchaseCheckOpen(false);
-        setActiveStepIndex(1);
-        return;
-      }
-      setPurchaseCheckIssues(issues);
-    } catch (error) {
-      setPurchaseCheckError((error as Error).message || "校验失败");
-    } finally {
-      setPurchaseCheckLoading(false);
-    }
-  };
-
   const goToStep = (index: number) => {
     const target = Math.max(0, Math.min(2, index));
-    // Only trigger the purchase/encryption readiness check when moving forward
-    // into step 2. Returning from step 3 should not block the user again.
-    if (
-      target === 1 &&
-      enableAstroBoxCreatorFeatures &&
-      activeStepIndex < 1
-    ) {
-      handleEnterRepoStep();
-      return;
-    }
     if (target > 0 && publishValidation.errors.length) {
       toast.error(publishValidation.errors[0]);
       setActiveStepIndex(0);
@@ -1188,33 +1087,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
     setActiveStepIndex(target);
   };
-
-  // Detect whether any configured download already has a paid platform mapping.
-  // This drives the yellow hint in ExtSection when purchase features are disabled.
-  useEffect(() => {
-    if (enableAstroBoxCreatorFeatures || !itemId.trim()) {
-      setHasMappedDownloads(false);
-      return;
-    }
-    let active = true;
-    listSellerResourceConfigs({ resourceId: itemId.trim() })
-      .then((configs) => {
-        const mappedDeviceSet = new Set(
-          configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
-        );
-        const has = downloads.some(
-          (d) =>
-            d.platformId.trim() && mappedDeviceSet.has(d.platformId.trim()),
-        );
-        if (active) setHasMappedDownloads(has);
-      })
-      .catch(() => {
-        if (active) setHasMappedDownloads(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [itemId, downloads, enableAstroBoxCreatorFeatures, mappingHintVersion]);
 
   // --- Draft system ---
   const [draftList, setDraftList] = useState<PublishDraft[]>([]);
@@ -1354,89 +1226,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </div>
   );
 
-  // Purchase/encryption readiness check dialog
-  const purchaseCheckDialog = (
-    <AlertDialog.Root open={purchaseCheckOpen}>
-      <AlertDialog.Content maxWidth="460px">
-        <AlertDialog.Title>资源下载配置未就绪</AlertDialog.Title>
-        <AlertDialog.Description size="2" className="mb-3">
-          当前已开启「购买与资源加密相关功能」，但服务端校验发现以下下载配置尚未完成：
-        </AlertDialog.Description>
-
-        {purchaseCheckLoading && (
-          <div className="flex items-center gap-2 py-3 text-white/60">
-            <Spinner size="2" />
-            <span className="text-sm">正在校验加密与付费平台映射...</span>
-          </div>
-        )}
-
-        {!purchaseCheckLoading && purchaseCheckError && (
-          <div className="rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-300">
-            校验失败：{purchaseCheckError}
-          </div>
-        )}
-
-        {!purchaseCheckLoading &&
-          !purchaseCheckError &&
-          purchaseCheckIssues &&
-          purchaseCheckIssues.length > 0 && (
-            <div className="max-h-56 overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2.5">
-              <ul className="flex flex-col gap-1.5 text-sm text-white/85">
-                {purchaseCheckIssues.map((issue) => {
-                  const parts = [
-                    issue.missingEncryption && "缺少加密",
-                    issue.missingMapping && "缺少付费平台映射",
-                  ].filter(Boolean);
-                  return (
-                    <li key={issue.platformId} className="flex gap-2">
-                      <span className="font-medium text-white">
-                        {issue.deviceName}
-                      </span>
-                      <span className="text-white/60">
-                        （{parts.join("、")}）
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-        {!purchaseCheckLoading &&
-          !purchaseCheckError &&
-          purchaseCheckIssues &&
-          purchaseCheckIssues.length === 0 && (
-            <div className="py-2 text-sm text-emerald-300">
-              所有下载配置均已就绪。
-            </div>
-          )}
-
-        <div className="flex justify-end gap-3 mt-4">
-          <AlertDialog.Action>
-            <Button
-              variant="soft"
-              color="gray"
-              onClick={() => setPurchaseCheckOpen(false)}
-            >
-              返回上一步
-            </Button>
-          </AlertDialog.Action>
-          <AlertDialog.Action>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPurchaseCheckOpen(false);
-                setActiveStepIndex(1);
-              }}
-            >
-              跳过，继续创建仓库
-            </Button>
-          </AlertDialog.Action>
-        </div>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
-  );
-
   // Auto-save restore prompt
   const autoSaveDialog = (
     <AlertDialog.Root open={autoSavePromptOpen}>
@@ -1556,7 +1345,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   return (
     <Page>
       {autoSaveDialog}
-      {purchaseCheckDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -1715,9 +1503,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onUpdateRow={updateDownloadRow}
                 onBatchSetDevices={batchSetDownloadDevices}
                 onFillAll={fillAllDownloads}
-                onEncryptionMappingChange={() =>
-                  setMappingHintVersion((v) => v + 1)
-                }
               />
               <DownloadsSection
                 title="试用版下载配置"
@@ -1745,7 +1530,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 }
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
-                showPurchaseHint={hasMappedDownloads}
               />
               <div className="flex flex-row justify-end gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
                 <Button

@@ -47,7 +47,6 @@ interface DownloadsSectionProps {
   ) => void;
   onBatchSetDevices?: (selectedIds: string[]) => void;
   onFillAll?: (template: { version: string; file: UploadItem | null; encryptOnUpload?: boolean }) => void;
-  onEncryptionMappingChange?: () => void;
 }
 
 export function DownloadsSection({
@@ -68,7 +67,6 @@ export function DownloadsSection({
   onUpdateRow,
   onBatchSetDevices,
   onFillAll,
-  onEncryptionMappingChange,
 }: DownloadsSectionProps) {
   const downloadFileInputs = useRef<Record<string, HTMLInputElement | null>>(
     {},
@@ -379,7 +377,6 @@ export function DownloadsSection({
                           allDeviceIds={downloads
                             .map((d) => d.platformId)
                             .filter(Boolean)}
-                          onSaved={onEncryptionMappingChange}
                         />
                       )}
                     </div>
