@@ -18,7 +18,7 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN)(?:_([^\]]+))?\]\s*(.*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*(.*)$/i;
 
 export function filterReviewTagComments<T extends {
     id?: number;
@@ -33,15 +33,20 @@ export function filterReviewTagComments<T extends {
 }>(
     comments: T[],
     allowedAuthors?: Set<string>,
+    prAuthor?: string,
 ): T[] {
     if (!allowedAuthors || allowedAuthors.size === 0) return comments;
     return comments.filter((comment) => {
-    const body = comment.body?.trim();
-    if (!body || !COMMENT_PATTERN.test(body)) return true;
-    // REOPEN 标签由 PR 创建者（资源创作者）发出，允许非组织成员发布。
-    if (/^\s*\[ABCC_REOPEN\]/i.test(body)) return true;
-    return Boolean(comment.user?.login && allowedAuthors.has(comment.user.login));
-});
+        const body = comment.body?.trim();
+        if (!body || !COMMENT_PATTERN.test(body)) return true;
+        const login = comment.user?.login;
+        const isMember = Boolean(login && allowedAuthors.has(login));
+        const isAuthor = Boolean(prAuthor && login && login === prAuthor);
+        // FIXED / REOPEN 由 PR 创建者通过工具发送，属于合法流程；
+        // 其余标签（NEEDFIX/CLOSE/REFUSE）只能由组织 member 发送。
+        const isAuthorFlowTag = /^\s*\[ABCC_(FIXED|REOPEN)\]/i.test(body);
+        return isMember || (isAuthor && isAuthorFlowTag);
+    });
 }
 
 export function deriveReviewStatus(comments: Array<{ id?: number; body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {

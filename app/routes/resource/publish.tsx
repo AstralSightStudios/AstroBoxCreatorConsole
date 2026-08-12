@@ -147,7 +147,7 @@ export default function ResourcePublish() {
             <Spinner size="2" />
           </Callout.Icon>
           <Callout.Text className="font-semibold text-white/45">
-            <p>正在载入申请列表...</p>
+            <span>正在载入申请列表...</span>
           </Callout.Text>
         </Callout.Root>
       );
@@ -163,7 +163,7 @@ export default function ResourcePublish() {
             <WarningOctagonIcon size={16} weight="fill" />
           </Callout.Icon>
           <Callout.Text className="font-semibold">
-            <p>加载失败：{error}</p>
+            <span>加载失败：{error}</span>
           </Callout.Text>
         </Callout.Root>
       );

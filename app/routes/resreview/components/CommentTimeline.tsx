@@ -63,6 +63,7 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
     if (tagType === "FIXED") return "bg-emerald-500/15 text-emerald-100";
     if (tagType === "CLOSE") return "bg-red-500/15 text-red-100";
     if (tagType === "REOPEN") return "bg-sky-500/15 text-sky-100";
+    if (tagType === "REFUSE") return "bg-purple-500/15 text-purple-100";
     return "bg-white/10 text-white/60";
   };
 

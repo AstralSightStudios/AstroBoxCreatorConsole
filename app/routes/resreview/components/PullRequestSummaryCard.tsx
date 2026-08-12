@@ -14,9 +14,11 @@ interface PullRequestSummaryCardProps {
   approving: boolean;
   merging: boolean;
   closing: boolean;
+  refusing: boolean;
   canMerge: boolean;
   onMerge: () => void;
   onClose: (reason: string) => void;
+  onRefuse: (reason: string) => void;
 }
 
 export function PullRequestSummaryCard({
@@ -26,12 +28,16 @@ export function PullRequestSummaryCard({
   approving,
   merging,
   closing,
+  refusing,
   canMerge,
   onMerge,
   onClose,
+  onRefuse,
 }: PullRequestSummaryCardProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
+  const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
+  const [refuseReason, setRefuseReason] = useState("");
   if (!openPull) return null;
   const badgeState: "open" | "closed" | "merged" =
     openPull.state === "closed"
@@ -102,6 +108,15 @@ export function PullRequestSummaryCard({
               {closing ? "关闭中..." : "关闭 PR"}
             </Button>
           )}
+          {openPull.state === "open" && (
+            <Button
+              color="red"
+              disabled={refusing}
+              onClick={() => setRefuseDialogOpen(true)}
+            >
+              {refusing ? "拒绝中..." : "拒绝"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -144,6 +159,50 @@ export function PullRequestSummaryCard({
               }}
             >
               {closing ? "关闭中..." : "确认关闭"}
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={refuseDialogOpen}
+        onOpenChange={(open) => {
+          setRefuseDialogOpen(open);
+          if (!open) setRefuseReason("");
+        }}
+      >
+        <Dialog.Content className="max-w-[420px]">
+          <Dialog.Title>拒绝 PR #{openPull.number}</Dialog.Title>
+          <Dialog.Description size="2" className="text-white/60">
+            拒绝后将关闭 PR 并记录 REFUSE 标签，该 PR 不再显示在审核列表中，创作者也无法从工具内重新打开。
+          </Dialog.Description>
+          <label className="mt-3 block text-sm text-white/70">
+            拒绝原因（可选）
+          </label>
+          <TextArea
+            className="mt-1.5 min-h-[100px] resize-y border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
+            placeholder="例如：该资源不符合社区收录规范，本次申请不予通过。"
+            value={refuseReason}
+            onChange={(e) => setRefuseReason(e.target.value)}
+            radius="large"
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="soft"
+              color="gray"
+              onClick={() => setRefuseDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              color="red"
+              disabled={refusing}
+              onClick={() => {
+                onRefuse(refuseReason.trim());
+                setRefuseDialogOpen(false);
+              }}
+            >
+              {refusing ? "拒绝中..." : "确认拒绝"}
             </Button>
           </div>
         </Dialog.Content>

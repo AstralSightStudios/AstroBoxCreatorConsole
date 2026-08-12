@@ -78,6 +78,7 @@ export default function ResourceReviewPage() {
   const [approving, setApproving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [refusing, setRefusing] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
@@ -148,7 +149,6 @@ export default function ResourceReviewPage() {
     setLoadingPulls(true);
     try {
       const list = await listReviewPullRequests("all");
-      setPulls(list);
       const commentEntries = await Promise.all(
         list.map(async (pull) => {
           try {
@@ -157,6 +157,7 @@ export default function ResourceReviewPage() {
               filterReviewTagComments(
                 await listPullRequestComments(pull.number),
                 orgMembers,
+                pull.user?.login,
               ),
             ] as const;
           } catch {
@@ -164,7 +165,22 @@ export default function ResourceReviewPage() {
           }
         }),
       );
-      setCommentsByPr(Object.fromEntries(commentEntries));
+      const commentMap = Object.fromEntries(commentEntries);
+      const commentsByNumber = commentMap as Record<
+        number,
+        import("~/api/github/pr-review").GithubIssueComment[]
+      >;
+      const refusedNumbers = new Set(
+        list
+          .filter((pull) =>
+            (commentsByNumber[pull.number] ?? []).some((comment) =>
+              /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+            ),
+          )
+          .map((pull) => pull.number),
+      );
+      setPulls(list.filter((pull) => !refusedNumbers.has(pull.number)));
+      setCommentsByPr(commentsByNumber);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -180,7 +196,7 @@ export default function ResourceReviewPage() {
     try {
       const [nextComments, nextFiles] = await Promise.all([
         listPullRequestComments(number).then((comments) =>
-          filterReviewTagComments(comments, orgMembers),
+          filterReviewTagComments(comments, orgMembers, openPull?.user?.login),
         ),
         listPullRequestFiles(number),
       ]);
@@ -200,14 +216,22 @@ export default function ResourceReviewPage() {
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
-      const closeComment = nextComments.find(
-        (comment) =>
-          /^\s*\[ABCC_CLOSE\]/i.test(comment.body || "") &&
-          Boolean(
-            comment.user?.login && orgMembers.has(comment.user.login),
-          ),
+      const refuseComment = nextComments.find((comment) =>
+        /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
       );
-      if (closeComment) {
+      if (refuseComment) {
+        const fresh = await getPullRequest(number);
+        if (fresh.state === "open") {
+          await closePullRequest(number);
+          toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
+          await loadPulls();
+          navigate("/resreview", { replace: true });
+        }
+      }
+      const closeComment = nextComments.find((comment) =>
+        /^\s*\[ABCC_CLOSE\]/i.test(comment.body || ""),
+      );
+      if (closeComment && !refuseComment) {
         const fresh = await getPullRequest(number);
         if (fresh.state === "open") {
           await closePullRequest(number);
@@ -216,14 +240,9 @@ export default function ResourceReviewPage() {
         }
       }
       const reopenComment = nextComments.find(
-        (comment) =>
-          /^\s*\[ABCC_REOPEN\]/i.test(comment.body || "") &&
-          Boolean(
-            comment.user?.login &&
-              comment.user.login === openPull?.user?.login,
-          ),
+        (comment) => /^\s*\[ABCC_REOPEN\]/i.test(comment.body || ""),
       );
-      if (reopenComment) {
+      if (reopenComment && !refuseComment) {
         const fresh = await getPullRequest(number);
         if (fresh.state === "closed" && !fresh.merged_at) {
           await reopenPullRequest(number);
@@ -376,6 +395,26 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const refusePr = async (reason: string) => {
+    if (!openNumber || refusing) return;
+    const number = openNumber;
+    setRefusing(true);
+    try {
+      await closePullRequest(number);
+      const commentBody = reason
+        ? `[ABCC_REFUSE] ${reason}`
+        : "[ABCC_REFUSE] 该 PR 已被审核成员拒绝。";
+      await createPullRequestComment(number, commentBody);
+      toast.success("PR 已拒绝，不再显示在审核列表中。");
+      await loadPulls();
+      navigate("/resreview", { replace: true });
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRefusing(false);
+    }
+  };
+
   const topbarActions = null;
 
   useLayoutEffect(() => {
@@ -442,6 +481,7 @@ export default function ResourceReviewPage() {
                 approving={approving}
                 merging={merging}
                 closing={closing}
+                refusing={refusing}
                 canMerge={publishMode === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
@@ -459,6 +499,7 @@ export default function ResourceReviewPage() {
                 onApprove={approve}
                 onMerge={merge}
                 onClose={closePr}
+                onRefuse={refusePr}
               />
             </LayoutGroup>
           </motion.div>

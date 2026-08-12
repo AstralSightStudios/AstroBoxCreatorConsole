@@ -1,7 +1,7 @@
 import MarkdownIt from "markdown-it";
 
 export interface ParsedReviewComment {
-  tagType: "NEEDFIX" | "FIXED" | "CLOSE" | "REOPEN" | "";
+  tagType: "NEEDFIX" | "FIXED" | "CLOSE" | "REOPEN" | "REFUSE" | "";
   tagId: string;
   replyTarget: string;
   replyExcerpt: string;
@@ -101,11 +101,12 @@ export function parseReviewCommentBody(body: string): ParsedReviewComment {
   const normalized = body || "";
   const tagMatch = normalized.match(COMMENT_TAG_PATTERN);
   const rawTagType = (tagMatch?.[1] || "").toUpperCase();
-  const tagType: "NEEDFIX" | "FIXED" | "CLOSE" | "REOPEN" | "" =
+  const tagType: "NEEDFIX" | "FIXED" | "CLOSE" | "REOPEN" | "REFUSE" | "" =
     rawTagType === "NEEDFIX" ||
     rawTagType === "FIXED" ||
     rawTagType === "CLOSE" ||
-    rawTagType === "REOPEN"
+    rawTagType === "REOPEN" ||
+    rawTagType === "REFUSE"
       ? rawTagType
       : "";
   const tagId = tagMatch?.[2]?.trim() || "";

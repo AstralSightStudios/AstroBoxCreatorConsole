@@ -252,9 +252,19 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                     token,
                 ),
             ]);
-            const review = deriveReviewStatus(
-                filterReviewTagComments(comments, orgMembers),
+            const filteredComments = filterReviewTagComments(
+                comments,
+                orgMembers,
+                pr.user?.login,
             );
+            if (
+                filteredComments.some((comment) =>
+                    /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+                )
+            ) {
+                continue;
+            }
+            const review = deriveReviewStatus(filteredComments);
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
 
             for (const entry of relatedEntries) {
@@ -306,12 +316,14 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
     const orgMembers = await listOrganizationMembers(
         PUBLISH_CONFIG.upstreamRepoOwner,
     ).catch(() => new Set<string>());
-    const pulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        },
-    );
+    const pulls = (
+        await githubFetch<any[]>(
+            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        )
+    ).filter((pull) => !pull.merged_at);
 
     const resources: PublishingResource[] = [];
 
@@ -335,9 +347,19 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                     token,
                 ),
             ]);
-            const review = deriveReviewStatus(
-                filterReviewTagComments(comments, orgMembers),
+            const filteredComments = filterReviewTagComments(
+                comments,
+                orgMembers,
+                pr.user?.login,
             );
+            if (
+                filteredComments.some((comment) =>
+                    /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+                )
+            ) {
+                continue;
+            }
+            const review = deriveReviewStatus(filteredComments);
             const submissionPaths = Array.from(
                 new Set(
                     files
