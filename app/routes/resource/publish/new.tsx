@@ -183,11 +183,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [paidType, setPaidType] = useState("");
   const [enableAstroBoxCreatorFeatures, setEnableAstroBoxCreatorFeatures] =
     useState(false);
-  const hasEncryptedUpload = useMemo(
-    () => downloads.some((d) => Boolean(d.encryptOnUpload)),
-    [downloads],
-  );
-  const effectivePaidType = hasEncryptedUpload ? "force_paid" : paidType;
+  const effectivePaidType = paidType;
   const tags = useMemo(() => parseTagText(tagsInput), [tagsInput]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
@@ -1588,7 +1584,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 tags={tags}
                 tagInput={tagInput}
                 paidType={effectivePaidType}
-                paidTypeDisabled={hasEncryptedUpload}
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
