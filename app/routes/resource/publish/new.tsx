@@ -238,6 +238,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [previewUploading, setPreviewUploading] = useState(false);
+  const [previewProcessingId, setPreviewProcessingId] = useState<string | null>(
+    null,
+  );
   const [icon, setIcon] = useState<UploadItem | null>(null);
   const [iconUploading, setIconUploading] = useState(false);
   const [cover, setCover] = useState<UploadItem | null>(null);
@@ -644,6 +647,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         let progressTimer: number | undefined;
         try {
           console.log("[preview-upload] compress", index + 1, file.name, file.size);
+          setPreviewProcessingId(itemId);
           progressTimer = window.setInterval(() => {
             setPreviews((prev) =>
               prev.map((item) =>
@@ -658,6 +662,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           const item = await createImageUploadItem(processed);
           console.log("[preview-upload] ready", file.name, item.width, item.height);
           if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
           setPreviews((prev) =>
             prev.map((old) =>
               old.id === itemId ? { ...item, processing: false, progress: 100 } : old,
@@ -665,6 +670,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           );
         } catch (err) {
           if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
           console.error("[preview-upload] failed", file.name, err);
           toast.error(`图片处理失败：${file.name}`);
           setPreviews((prev) =>
@@ -676,6 +682,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
       console.log("[preview-upload] done");
     } finally {
+      setPreviewProcessingId(null);
       setPreviewUploading(false);
     }
   };
@@ -1730,6 +1737,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               <MediaSection
                 previews={previews}
                 previewUploading={previewUploading}
+                previewProcessingId={previewProcessingId}
                 icon={icon}
                 iconUploading={iconUploading}
                 cover={cover}

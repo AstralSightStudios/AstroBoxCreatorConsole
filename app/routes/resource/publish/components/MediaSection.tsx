@@ -16,6 +16,7 @@ import { SectionCard } from "./shared";
 interface MediaSectionProps {
   previews: UploadItem[];
   previewUploading?: boolean;
+  previewProcessingId?: string | null;
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
@@ -117,6 +118,7 @@ function MediaTile({
 export function MediaSection({
   previews,
   previewUploading,
+  previewProcessingId,
   icon,
   iconUploading,
   cover,
@@ -559,12 +561,19 @@ export function MediaSection({
                       }}
                     />
                     {item.processing && (
-                      <div className="absolute bottom-1 left-1 right-1 h-1.5 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-blue-400 transition-all"
-                          style={{ width: `${Math.min(100, item.progress || 0)}%` }}
-                        />
-                      </div>
+                      <>
+                        <div className="absolute inset-0 bg-black/55" />
+                        {item.id === previewProcessingId && (
+                          <div className="absolute left-1 right-1 top-1 h-1.5 overflow-hidden rounded-full bg-white/15">
+                            <div
+                              className="h-full rounded-full bg-blue-400 transition-all"
+                              style={{
+                                width: `${Math.min(100, item.progress || 0)}%`,
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
                     )}
                   </button>
                   <div className="mt-2 flex items-center gap-1">
