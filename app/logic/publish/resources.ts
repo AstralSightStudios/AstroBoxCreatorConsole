@@ -10,7 +10,6 @@ import {
     type CatalogEntry,
 } from "./catalog";
 import {
-    buildSubmissionPath,
     extractSubmissionPathFromFilePath,
     parseSubmissionCsv,
     parseSubmissionRequestJson,

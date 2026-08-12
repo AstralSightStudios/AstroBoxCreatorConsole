@@ -17,7 +17,6 @@ import {
     getOrCreateFork,
     getRefSha,
     normalizeCatalogPaidType,
-    serializeCatalogEntry,
     type CatalogEntry,
     type CatalogUpdateRequest,
 } from "./catalog";
