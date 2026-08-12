@@ -45,6 +45,17 @@ export function PrStepSection({
           onChange={(e) => onPrBodyChange(e.target.value)}
           radius="large"
         />
+        <p className="px-1.5 text-xs text-white/60">
+          欢迎加入{" "}
+          <a
+            href="https://qm.qq.com/q/4YVntKbEMo"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300"
+          >
+            AstroBox 资源开发者官方 QQ 群
+          </a>
+        </p>
       </div>
       <div className="max-h-48 overflow-auto bg-black/25 border-t border-white/10 p-2.5 text-xs text-white/70 -mb-2.5 flex items-center gap-1">
         {prMessage && (

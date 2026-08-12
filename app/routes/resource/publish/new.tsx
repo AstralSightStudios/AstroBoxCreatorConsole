@@ -1051,6 +1051,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
       const manifestForCatalog = lastManifest ?? manifestResult;
       const useStaging = loadPublishMode() === "staging";
+      const prBodyContent = [
+        prBody.trim(),
+        "欢迎加入 [AstroBox 资源开发者官方 QQ 群](https://qm.qq.com/q/4YVntKbEMo)",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const catalogEntry = {
         id: itemId.trim(),
         name: itemName.trim(),
@@ -1138,7 +1144,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
             itemName || itemId || "资源"
           }`,
-          body: prBody.trim() || undefined,
+          body: prBodyContent || undefined,
         });
       } else {
         const branchInfo = await updateCatalogCsv({
@@ -1164,7 +1170,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
             itemName || itemId || "资源"
           }`,
-          body: prBody.trim() || undefined,
+          body: prBodyContent || undefined,
         });
       }
 
