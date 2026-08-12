@@ -690,21 +690,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleIconUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    const originalDims = await getImageDimensions(file);
+    if (
+      !originalDims.width ||
+      !originalDims.height ||
+      originalDims.width !== originalDims.height
+    ) {
+      toast.error("图标宽高比必须为 1:1，请重新选择。");
+      return;
+    }
+    if (originalDims.width > 500 || originalDims.height > 500) {
+      toast.error("图标尺寸过大，请重新选择。");
+      return;
+    }
     setIconUploading(true);
     try {
-      const originalDims = await getImageDimensions(file);
-      if (
-        !originalDims.width ||
-        !originalDims.height ||
-        originalDims.width !== originalDims.height
-      ) {
-        toast.error("图标宽高比必须为 1:1，请重新选择。");
-        return;
-      }
-      if (originalDims.width > 500 || originalDims.height > 500) {
-        toast.error("图标尺寸过大，请重新选择。");
-        return;
-      }
       let processed = file;
       try {
         processed = await compressImageFile(file, 100 * 1024);
