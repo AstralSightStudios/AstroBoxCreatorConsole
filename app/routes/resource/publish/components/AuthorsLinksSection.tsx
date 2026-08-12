@@ -382,8 +382,14 @@ export function AuthorsLinksSection({
                       setIconPickerIndex(index);
                     }}
                   >
-                    <BinocularsIcon size={15} />
-                    <span className="truncate">{link.icon || "选择图标"}</span>
+                    {link.icon ? (
+                      <PhosphorIconByName name={link.icon} size={16} />
+                    ) : (
+                      <BinocularsIcon size={15} />
+                    )}
+                    <span className="truncate">
+                      {link.icon || "选择图标"}
+                    </span>
                   </Button>
                 );
                 const titleField = (
