@@ -139,7 +139,7 @@ export function DownloadsSection({
           <Callout.Text>设备列表不可用，请稍后重试</Callout.Text>
         </Callout.Root>
       )}
-      <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
+      <div className="flex flex-col gap-3 max-w-full">
         <div className="flex items-center gap-1.5 px-1">
           {onBatchSetDevices && (
             <Popover.Root
@@ -208,8 +208,8 @@ export function DownloadsSection({
             </AlertDialog.Root>
           )}
         </div>
-        <Table.Root className="table-fixed w-full min-w-lg">
-          <Table.Header>
+        <Table.Root className="table-fixed w-full">
+          <Table.Header className="max-md:hidden">
             <Table.Row>
               <Table.ColumnHeaderCell
                 width="40px"
@@ -229,7 +229,9 @@ export function DownloadsSection({
               <Table.ColumnHeaderCell>版本号</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>包体</Table.ColumnHeaderCell>
               {isVip && allowEncryption && (
-                <Table.ColumnHeaderCell>加密上传</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="max-md:hidden">
+                  加密上传
+                </Table.ColumnHeaderCell>
               )}
             </Table.Row>
           </Table.Header>
@@ -356,7 +358,7 @@ export function DownloadsSection({
                   </div>
                 </Table.RowHeaderCell>
                 {isVip && allowEncryption && (
-                  <Table.RowHeaderCell>
+                  <Table.RowHeaderCell className="max-md:hidden">
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}

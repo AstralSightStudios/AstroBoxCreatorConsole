@@ -121,9 +121,9 @@ export function AuthorsLinksSection({
       description="作者会自动填入当前 AstroBox 用户名；外链用于补充官网、文档、社区等入口。"
     >
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
-          <Table.Root className="table-fixed w-full min-w-lg">
-            <Table.Header>
+        <div className="flex flex-col gap-3 max-w-full">
+          <Table.Root className="table-fixed w-full">
+            <Table.Header className="max-md:hidden">
               <Table.Row>
                 <Table.ColumnHeaderCell
                   width="40px"
@@ -205,9 +205,9 @@ export function AuthorsLinksSection({
 
         <div className="h-px bg-white/10" />
 
-        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
-          <Table.Root className="table-fixed w-full min-w-lg">
-            <Table.Header>
+        <div className="flex flex-col gap-3 max-w-full">
+          <Table.Root className="table-fixed w-full">
+            <Table.Header className="max-md:hidden">
               <Table.Row>
                 <Table.ColumnHeaderCell
                   width="40px"
