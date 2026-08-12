@@ -5,6 +5,7 @@ export type AccountProvider = "astrobox" | "github";
 export interface AstroboxAccount {
     avatar: string;
     name: string;
+    username: string;
     plan: string;
     email: string;
     token: string;
@@ -92,6 +93,7 @@ function normalizeState(state: AccountState | undefined): AccountState {
         ? {
               avatar: state.astrobox.avatar?.trim() || "",
               name: state.astrobox.name?.trim() || "",
+              username: state.astrobox.username?.trim() || "",
               plan: state.astrobox.plan?.trim() || "",
               email: state.astrobox.email?.trim() || "",
               token: state.astrobox.token || "",

@@ -179,6 +179,10 @@ export function persistAstroboxAccount(
             profile?.preferred_username ||
             profile?.name ||
             "",
+        username:
+            profile?.username ||
+            profile?.preferred_username ||
+            "",
         plan: profile?.vip || profile?.tag || "",
         email: profile?.email ?? "",
         token,

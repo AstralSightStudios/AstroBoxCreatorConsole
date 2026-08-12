@@ -53,6 +53,7 @@ function makeAccount(overrides?: Partial<AstroboxAccount>): AstroboxAccount {
     return {
         avatar: "",
         name: "Astro",
+        username: "astro",
         plan: "pro",
         email: "astro@example.com",
         token: "access-token",

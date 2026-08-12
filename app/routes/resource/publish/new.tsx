@@ -26,7 +26,11 @@ import {
   uploadManifestAndAssets,
   type RepoInfo,
 } from "~/logic/publish/submission";
-import { loadAccountState, useDisplayAccount } from "~/logic/account/store";
+import {
+  loadAccountState,
+  useAccountState,
+  useDisplayAccount,
+} from "~/logic/account/store";
 import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
 import { listSellerResourceFileKeys } from "~/api/astrobox/order";
 import {
@@ -137,6 +141,7 @@ function parseTagText(raw: string): string[] {
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const accountState = useAccountState();
   const displayAccount = useDisplayAccount();
   const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
@@ -227,6 +232,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const isEditing = isEditMode || Boolean(editContext);
   const missingEditContext = isEditMode && !editContext;
+
+  useEffect(() => {
+    if (mode !== "new") return;
+    const username = accountState.astrobox?.username?.trim();
+    if (!username) return;
+    setAuthors((prev) => {
+      if (prev.length === 1 && !prev[0].name.trim()) {
+        return [{ name: username, bindABAccount: true }];
+      }
+      return prev;
+    });
+  }, [accountState.astrobox?.username, mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1391,6 +1408,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       </div>
     </div>
   ) : null;
+
+  if (mode === "new" && !accountState.astrobox?.username?.trim()) {
+    return (
+      <Page>
+        <div className="mx-auto max-w-2xl px-2 py-10">
+          <Callout.Root color="amber">
+            <Callout.Icon>
+              <WarningOctagonIcon size={18} weight="fill" />
+            </Callout.Icon>
+            <Callout.Text>
+              发布新资源前需要先登录 AstroBox 账号，以便自动读取作者用户名。
+            </Callout.Text>
+          </Callout.Root>
+        </div>
+      </Page>
+    );
+  }
 
   return (
     <Page>
