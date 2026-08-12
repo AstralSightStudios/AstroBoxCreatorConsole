@@ -272,7 +272,7 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
                   <Select.Root
                     value={item.platformId || undefined}
                     onValueChange={(value) =>
@@ -320,7 +320,7 @@ export function DownloadsSection({
                     }
                   />
 
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="col-span-2 flex min-w-0 items-center gap-2 md:col-span-1">
                     <input
                       type="file"
                       className="hidden"
@@ -397,7 +397,7 @@ export function DownloadsSection({
                   </div>
 
                   {isVip && allowEncryption && (
-                    <div className="flex items-center gap-2">
+                    <div className="col-span-2 flex items-center gap-2 md:col-span-1">
                       <span className="text-xs text-white/65">加密上传</span>
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
