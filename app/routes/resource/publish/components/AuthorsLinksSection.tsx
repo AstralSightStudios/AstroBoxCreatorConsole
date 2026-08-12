@@ -1,13 +1,20 @@
 import {
   BinocularsIcon,
   InfoIcon,
+  MagnifyingGlassIcon,
   MinusIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
-import { Button, Switch, TextField } from "@radix-ui/themes";
-import { type Dispatch, type SetStateAction } from "react";
+import { Button, Dialog, Switch, TextField } from "@radix-ui/themes";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useMemo,
+  useState,
+} from "react";
 import { type AuthorInput, type LinkInput } from "./types";
 import { SectionCard } from "./shared";
+import { PHOSPHOR_ICON_NAMES } from "~/routes/resreview/phosphor-icons";
 import {
   normalizeLinkUrl,
   validateLink,
@@ -26,6 +33,17 @@ export function AuthorsLinksSection({
   links,
   setLinks,
 }: AuthorsLinksSectionProps) {
+  const [iconPickerIndex, setIconPickerIndex] = useState<number | null>(null);
+  const [iconQuery, setIconQuery] = useState("");
+
+  const filteredIcons = useMemo(() => {
+    const query = iconQuery.trim().toLowerCase();
+    if (!query) return PHOSPHOR_ICON_NAMES;
+    return PHOSPHOR_ICON_NAMES.filter((name) =>
+      name.toLowerCase().includes(query),
+    );
+  }, [iconQuery]);
+
   return (
     <SectionCard
       title="作者与外链"
@@ -34,10 +52,7 @@ export function AuthorsLinksSection({
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">作者</p>
-              <p className="text-xs text-white/55">至少保留一个作者，作者名不能为空。</p>
-            </div>
+            <p className="text-sm font-semibold text-white">作者</p>
             <Button
               type="button"
               variant="soft"
@@ -60,9 +75,10 @@ export function AuthorsLinksSection({
                 className="grid gap-2 rounded-lg border border-white/10 bg-black/20 p-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
               >
                 <TextField.Root
-                  placeholder="作者名称"
+                  placeholder={index === 0 ? "当前 AstroBox 账号" : "作者名称"}
                   value={author.name}
                   radius="large"
+                  disabled={index === 0}
                   onChange={(e) =>
                     setAuthors((prev) =>
                       prev.map((item, idx) =>
@@ -75,6 +91,7 @@ export function AuthorsLinksSection({
                   <label className="flex items-center gap-2 text-sm text-white/80">
                     <Switch
                       checked={author.bindABAccount}
+                      disabled={index === 0}
                       onCheckedChange={(checked) =>
                         setAuthors((prev) =>
                           prev.map((item, idx) =>
@@ -91,7 +108,7 @@ export function AuthorsLinksSection({
                     type="button"
                     variant="ghost"
                     color="red"
-                    disabled={authors.length <= 1}
+                    disabled={index === 0 || authors.length <= 1}
                     onClick={() =>
                       setAuthors((prev) => prev.filter((_, idx) => idx !== index))
                     }
@@ -106,12 +123,7 @@ export function AuthorsLinksSection({
 
         <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">外部链接</p>
-              <p className="text-xs text-white/55">
-                标题、图标、网址为必填项；如果其中任意一项有值，另外两项也必须填写。
-              </p>
-            </div>
+            <p className="text-sm font-semibold text-white">外部链接</p>
             <Button
               type="button"
               variant="soft"
@@ -140,7 +152,7 @@ export function AuthorsLinksSection({
                     key={`link-${index}`}
                     className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2.5"
                   >
-                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_minmax(0,1.5fr)_auto] md:items-start">
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_minmax(0,1.5fr)_auto] md:items-center">
                       <TextField.Root
                         placeholder="标题"
                         value={link.title}
@@ -155,20 +167,21 @@ export function AuthorsLinksSection({
                           )
                         }
                       />
-                      <TextField.Root
-                        placeholder="图标（必填）"
-                        value={link.icon}
+                      <Button
+                        type="button"
+                        variant="surface"
+                        color="gray"
                         radius="large"
-                        onChange={(e) =>
-                          setLinks((prev) =>
-                            prev.map((item, idx) =>
-                              idx === index
-                                ? { ...item, icon: e.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
+                        className="min-w-0 justify-start"
+                        onClick={() => {
+                          setIconQuery("");
+                          setIconPickerIndex(index);
+                        }}
+                      >
+                        <span className="truncate">
+                          {link.icon || "选择图标"}
+                        </span>
+                      </Button>
                       <TextField.Root
                         type="url"
                         placeholder="https://example.com"
@@ -192,6 +205,7 @@ export function AuthorsLinksSection({
                         type="button"
                         variant="ghost"
                         color="red"
+                        className="justify-self-center"
                         onClick={() =>
                           setLinks((prev) =>
                             prev.filter((_, idx) => idx !== index),
@@ -227,6 +241,56 @@ export function AuthorsLinksSection({
           </div>
         </div>
       </div>
+
+      <Dialog.Root
+        open={iconPickerIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setIconPickerIndex(null);
+        }}
+      >
+        <Dialog.Content className="max-w-[min(94vw,720px)]">
+          <Dialog.Title>选择 Phosphor Icon</Dialog.Title>
+          <TextField.Root
+            placeholder="搜索图标名称"
+            value={iconQuery}
+            radius="large"
+            onChange={(e) => setIconQuery(e.target.value)}
+          >
+            <TextField.Slot>
+              <MagnifyingGlassIcon size={16} />
+            </TextField.Slot>
+          </TextField.Root>
+          <div className="max-h-[420px] overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+              {filteredIcons.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="truncate rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2 text-left text-xs text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+                  onClick={() => {
+                    if (iconPickerIndex == null) return;
+                    setLinks((prev) =>
+                      prev.map((item, idx) =>
+                        idx === iconPickerIndex
+                          ? { ...item, icon: name }
+                          : item,
+                      ),
+                    );
+                    setIconPickerIndex(null);
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            {filteredIcons.length === 0 && (
+              <p className="py-10 text-center text-sm text-white/40">
+                没有匹配的图标
+              </p>
+            )}
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
     </SectionCard>
   );
 }
