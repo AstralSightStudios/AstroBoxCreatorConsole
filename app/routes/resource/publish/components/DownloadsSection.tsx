@@ -265,7 +265,7 @@ export function DownloadsSection({
                       </button>
                     )}
                     <button
-                      className="text-white/60 transition hover:text-red-400"
+                      className="rounded-lg p-1 text-white/60 transition hover:bg-red-500/10 hover:text-red-300"
                       onClick={() => onRemoveRow(item.uid)}
                     >
                       <MinusIcon size={16} weight="bold" />
@@ -315,7 +315,7 @@ export function DownloadsSection({
                     }
                   />
 
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <input
                       type="file"
                       className="hidden"
