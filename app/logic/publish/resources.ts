@@ -188,12 +188,14 @@ function extractCatalogEntriesFromPullFiles(
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
     const mode = loadPublishMode() === "staging" ? "staging" : "legacy";
     const { token } = requireGithubAccount();
-    const pulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        },
-    );
+    const pulls = (
+        await githubFetch<any[]>(
+            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        )
+    ).filter((pull) => !pull.merged_at);
     const signature = pulls
         .map(
             (pull) =>

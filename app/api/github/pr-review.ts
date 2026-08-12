@@ -119,10 +119,11 @@ export async function listOrganizationMembers(org: string): Promise<Set<string>>
 export async function listReviewPullRequests(
   state: "open" | "closed" | "all" = "open",
 ) {
-  return githubFetch<GithubPullRequest[]>(
+  const pulls = await githubFetch<GithubPullRequest[]>(
     repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
     { headers: headers() },
   );
+  return pulls.filter((pull) => !pull.merged_at);
 }
 
 export async function getPullRequest(prNumber: number) {
