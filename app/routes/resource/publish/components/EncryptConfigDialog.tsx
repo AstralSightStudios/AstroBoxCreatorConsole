@@ -288,6 +288,7 @@ export function EncryptConfigDialog({
           className="ml-2"
         >
           <PencilSimpleIcon size={14} />
+          配置付费平台映射
         </Button>
       </Dialog.Trigger>
       <Dialog.Content maxWidth="520px">

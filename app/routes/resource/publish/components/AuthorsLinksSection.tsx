@@ -244,7 +244,7 @@ export function AuthorsLinksSection({
             </Button>
           </div>
           <Table.Root className="table-fixed w-full">
-            <Table.Header>
+            <Table.Header className="max-md:hidden">
               <Table.Row>
                 <Table.ColumnHeaderCell
                   width="40px"
@@ -271,7 +271,7 @@ export function AuthorsLinksSection({
             </Table.Header>
             <Table.Body>
               {links.length === 0 ? (
-                <Table.Row>
+                <Table.Row className="max-md:flex max-md:flex-col max-md:gap-2 max-md:rounded-xl max-md:border max-md:border-white/10 max-md:bg-white/[0.03] max-md:p-2.5">
                   <Table.RowHeaderCell width="40px" justify="center" px="0" />
                   <Table.RowHeaderCell>
                     <span className="text-white/60">还未添加外部链接</span>
@@ -283,8 +283,16 @@ export function AuthorsLinksSection({
                 links.map((link, index) => {
                   const linkError = validateLink(link);
                   return (
-                    <Table.Row key={`links-${index}`}>
-                      <Table.RowHeaderCell width="40px" justify="center" px="0">
+                    <Table.Row
+                      key={`links-${index}`}
+                      className="max-md:flex max-md:flex-col max-md:gap-2 max-md:rounded-xl max-md:border max-md:border-white/10 max-md:bg-white/[0.03] max-md:p-2.5"
+                    >
+                      <Table.RowHeaderCell
+                        width="40px"
+                        justify="center"
+                        px="0"
+                        className="max-md:order-last max-md:w-full max-md:px-0"
+                      >
                         <button
                           className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
                           onClick={() =>
@@ -296,7 +304,7 @@ export function AuthorsLinksSection({
                           <MinusIcon size={16} weight="bold" />
                         </button>
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell>
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
                         <Button
                           type="button"
                           variant="surface"
@@ -314,7 +322,7 @@ export function AuthorsLinksSection({
                           </span>
                         </Button>
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell>
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
                         <TextField.Root
                           placeholder="标题"
                           value={link.title}
@@ -330,7 +338,7 @@ export function AuthorsLinksSection({
                           }
                         />
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell>
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
                         <TextField.Root
                           type="url"
                           placeholder="https://example.com"
