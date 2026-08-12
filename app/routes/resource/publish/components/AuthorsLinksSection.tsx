@@ -428,9 +428,9 @@ export function AuthorsLinksSection({
                         )
                       }
                     />
-                    {linkError && (
-                      <p className="text-xs text-red-400">{linkError}</p>
-                    )}
+                    <div className="min-h-4 text-xs text-red-400">
+                      {linkError || "\u00A0"}
+                    </div>
                   </div>
                 );
                 const removeButton = (
