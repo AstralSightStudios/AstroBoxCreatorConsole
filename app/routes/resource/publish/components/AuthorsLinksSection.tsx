@@ -246,7 +246,12 @@ export function AuthorsLinksSection({
           <Table.Root className="table-fixed w-full">
             <Table.Header>
               <Table.Row>
-                <Table.ColumnHeaderCell width="40px" justify="center" p="0">
+                <Table.ColumnHeaderCell
+                  width="40px"
+                  justify="center"
+                  p="0"
+                  className="h-full flex justify-center items-center shrink-0"
+                >
                   <button
                     className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px]"
                     onClick={() =>
