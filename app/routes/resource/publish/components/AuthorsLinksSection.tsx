@@ -44,12 +44,130 @@ function isSubsequence(needle: string, haystack: string): boolean {
     return true;
 }
 
-function fuzzyIconMatch(name: string, rawQuery: string): boolean {
+const preferredExact = new Set([
+    "link",
+    "link-simple",
+    "github-logo",
+    "gitlab-logo",
+    "git-pull-request",
+    "globe",
+    "globe-simple",
+    "code",
+    "terminal",
+    "book",
+    "book-open",
+    "article",
+    "newspaper",
+    "rss",
+    "download",
+    "download-simple",
+    "cloud-arrow-down",
+    "package",
+    "telegram-logo",
+    "discord-logo",
+    "youtube-logo",
+    "x-logo",
+    "twitter-logo",
+    "instagram-logo",
+    "facebook-logo",
+    "wechat-logo",
+    "whatsapp-logo",
+    "envelope",
+    "envelope-simple",
+    "chat",
+    "chat-circle",
+    "notion-logo",
+    "figma-logo",
+    "medium-logo",
+    "dev-to-logo",
+    "open-ai-logo",
+]);
+
+const preferredTokens = [
+    "link",
+    "git",
+    "repo",
+    "github",
+    "gitlab",
+    "code",
+    "terminal",
+    "web",
+    "globe",
+    "site",
+    "blog",
+    "book",
+    "article",
+    "news",
+    "docs",
+    "read",
+    "rss",
+    "download",
+    "cloud",
+    "package",
+    "message",
+    "chat",
+    "mail",
+    "envelope",
+    "social",
+    "telegram",
+    "discord",
+    "youtube",
+    "twitter",
+    "instagram",
+    "facebook",
+    "wechat",
+    "whatsapp",
+    "notion",
+    "figma",
+    "medium",
+    "dev",
+    "stack",
+    "open-ai",
+];
+
+function iconBaseScore(name: string): number {
+    let score = 0;
+    if (preferredExact.has(name)) score += 800;
+    for (const token of preferredTokens) {
+        if (name.includes(token)) score += 40;
+    }
+    return score;
+}
+
+function iconMatchScore(name: string, pascalName: string, token: string): number {
+    const normalized = token.toLowerCase();
+    if (name === normalized) return 300;
+    if (name.startsWith(normalized)) return 180;
+    if (pascalName.toLowerCase().startsWith(normalized)) return 170;
+    if (name.includes(normalized)) return 120;
+    if (isSubsequence(normalized, name)) return 60;
+    return 0;
+}
+
+function searchIcons(names: readonly string[], rawQuery: string): string[] {
     const query = rawQuery.trim().toLowerCase();
-    if (!query) return true;
-    const terms = query.split(/[\s-]+/).filter(Boolean);
-    const normalizedName = name.toLowerCase().replace(/-/g, " ");
-    return terms.every((term) => isSubsequence(term, normalizedName));
+    const tokens = query.split(/[\s-]+/).filter(Boolean);
+    if (tokens.length === 0) {
+        return [...names].sort(
+            (a, b) => iconBaseScore(b) - iconBaseScore(a) || a.localeCompare(b),
+        );
+    }
+    return names
+        .map((name) => {
+            const pascalName = iconNameToPascal(name);
+            const matchScore = tokens.reduce(
+                (sum, token) => sum + iconMatchScore(name, pascalName, token),
+                0,
+            );
+            return {
+                name,
+                score: matchScore + iconBaseScore(name),
+                matched: tokens.every((token) => iconMatchScore(name, pascalName, token) > 0),
+            };
+        })
+        .filter((option) => option.matched)
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+        .map((option) => option.name);
 }
 
 function PhosphorIconByName({
@@ -111,14 +229,15 @@ export function AuthorsLinksSection({
   const [iconPickerIndex, setIconPickerIndex] = useState<number | null>(null);
   const [iconQuery, setIconQuery] = useState("");
 
-  const filteredIcons = useMemo(() => {
-    return PHOSPHOR_ICON_NAMES.filter((name) => fuzzyIconMatch(name, iconQuery));
-  }, [iconQuery]);
-
-  const visibleIcons = useMemo(
-    () => filteredIcons.slice(0, 160),
-    [filteredIcons],
+  const filteredIcons = useMemo(
+    () => searchIcons(PHOSPHOR_ICON_NAMES, iconQuery),
+    [iconQuery],
   );
+
+  const visibleIcons = useMemo(() => {
+    if (iconQuery.trim()) return filteredIcons;
+    return filteredIcons.slice(0, 240);
+  }, [filteredIcons, iconQuery]);
 
   return (
     <SectionCard
@@ -400,7 +519,7 @@ export function AuthorsLinksSection({
             </Dialog.Title>
           </div>
           <TextField.Root
-            placeholder="搜索图标名称"
+            placeholder="输入关键词，例如 github / link / globe / chat / docs"
             value={iconQuery}
             radius="large"
             onChange={(e) => setIconQuery(e.target.value)}

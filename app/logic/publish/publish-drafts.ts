@@ -10,6 +10,18 @@ export interface PublishDraft {
   formData: PublishDraftFormData;
 }
 
+export interface DraftMediaItem {
+  id: string;
+  name: string;
+  dataUrl?: string;
+  url?: string;
+  pathOverride?: string;
+  skipUpload?: boolean;
+  source?: "upload" | "existing";
+  width?: number;
+  height?: number;
+}
+
 export interface PublishDraftFormData {
   itemId: string;
   itemName: string;
@@ -19,6 +31,9 @@ export interface PublishDraftFormData {
   paidType: string;
   authors: AuthorInput[];
   links: LinkInput[];
+  previews: DraftMediaItem[];
+  icon: DraftMediaItem | null;
+  cover: DraftMediaItem | null;
   downloads: DownloadInput[];
   trialDownloads: DownloadInput[];
   enableAstroBoxCreatorFeatures: boolean;

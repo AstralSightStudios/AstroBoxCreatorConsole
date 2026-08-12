@@ -95,6 +95,7 @@ import {
   clearAutoSavedDraft,
   type PublishDraft,
   type PublishDraftFormData,
+  type DraftMediaItem,
 } from "~/logic/publish/publish-drafts";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
@@ -143,6 +144,76 @@ function parseTagText(raw: string): string[] {
         .split(/[;；,，]/)
         .map((token) => token.trim())
         .filter(Boolean);
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}`;
+}
+
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [meta, base64] = dataUrl.split(",");
+  const type = meta?.replace("data:", "").split(";")[0] || "application/octet-stream";
+  const bytes = Uint8Array.from(atob(base64 || ""), (c) => c.charCodeAt(0));
+  return new File([bytes], name, { type });
+}
+
+async function serializeMediaItem(
+  item: UploadItem | null,
+): Promise<DraftMediaItem | null> {
+  if (!item) return null;
+  if (item.skipUpload || !item.file?.size) {
+    return {
+      id: item.id,
+      name: item.name,
+      url: item.url,
+      pathOverride: item.pathOverride,
+      skipUpload: true,
+      source: "existing",
+      width: item.width,
+      height: item.height,
+    };
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    dataUrl: await fileToDataUrl(item.file),
+    pathOverride: item.pathOverride,
+    skipUpload: item.skipUpload,
+    source: "upload",
+    width: item.width,
+    height: item.height,
+  };
+}
+
+function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
+  if (!item) return null;
+  if (item.dataUrl) {
+    const file = dataUrlToFile(item.dataUrl, item.name);
+    const restored = createUploadItem(file);
+    return {
+      ...restored,
+      pathOverride: item.pathOverride,
+      width: item.width,
+      height: item.height,
+    };
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    url: item.url || "",
+    file: new File([], item.name),
+    pathOverride: item.pathOverride,
+    skipUpload: true,
+    source: "existing",
+    width: item.width,
+    height: item.height,
+  };
 }
 
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
@@ -1211,20 +1282,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   } | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const buildFormData = useCallback((): PublishDraftFormData => ({
-    itemId,
-    itemName,
-    description,
-    resourceType,
-    tagsInput,
-    paidType,
-    authors,
-    links,
-    downloads: downloads.map((d) => ({ ...d, file: null })),
-    trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
-    enableAstroBoxCreatorFeatures,
-    extRaw,
-  }), [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw]);
+  const buildFormData = useCallback(async (): Promise<PublishDraftFormData> => {
+    const [serializedPreviews, serializedIcon, serializedCover] = await Promise.all([
+      Promise.all(previews.map(serializeMediaItem)).then((items) =>
+        items.filter((item): item is DraftMediaItem => item !== null),
+      ),
+      serializeMediaItem(icon),
+      serializeMediaItem(cover),
+    ]);
+    return {
+      itemId,
+      itemName,
+      description,
+      resourceType,
+      tagsInput,
+      paidType,
+      authors,
+      links,
+      previews: serializedPreviews,
+      icon: serializedIcon,
+      cover: serializedCover,
+      downloads: downloads.map((d) => ({ ...d, file: null })),
+      trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
+      enableAstroBoxCreatorFeatures,
+      extRaw,
+    };
+  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover]);
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
@@ -1235,6 +1318,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setPaidType(data.paidType);
     setAuthors(data.authors);
     setLinks(data.links);
+    setPreviews(
+      (data.previews ?? [])
+        .map(restoreMediaItem)
+        .filter((item): item is UploadItem => Boolean(item)),
+    );
+    setIcon(restoreMediaItem(data.icon));
+    setCover(restoreMediaItem(data.cover));
     setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
@@ -1246,7 +1336,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (isEditMode) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      autoSaveDraft(buildFormData());
+      void buildFormData().then(autoSaveDraft);
     }, 3000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -1263,9 +1353,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [isEditMode]);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     const name = draftName.trim() || itemName || "未命名草稿";
-    saveDraft(name, buildFormData());
+    const data = await buildFormData();
+    saveDraft(name, data);
     setDraftName("");
     setSaveDraftOpen(false);
     setDraftList(listDrafts());

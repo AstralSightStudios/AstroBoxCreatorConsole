@@ -111,6 +111,8 @@ describe("RPK validation", () => {
 
   test("rejects mismatched package", async () => {
     const file = rpk({ "manifest.json": JSON.stringify({ package: "com.other.app" }) });
-    await expect(validateRpkPackage(file, "com.example.app")).rejects.toThrow("精确一致");
+    await expect(validateRpkPackage(file, "com.example.app")).rejects.toThrow(
+      "无法使用自动检查更新",
+    );
   });
 });
