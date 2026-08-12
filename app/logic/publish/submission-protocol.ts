@@ -52,13 +52,11 @@ export function normalizeSubmissionPathSegment(
 
 export function buildSubmissionPath(
     githubLogin: string,
-    repoOwner: string,
     repoName: string,
 ): string {
     const login = normalizeSubmissionPathSegment(githubLogin, "GitHub 用户名");
-    const owner = normalizeSubmissionPathSegment(repoOwner, "仓库 owner");
     const name = normalizeSubmissionPathSegment(repoName, "仓库名");
-    return `${PUBLISH_CONFIG.submissionRootPath}/${login}/${owner}--${name}`;
+    return `${PUBLISH_CONFIG.submissionRootPath}/${login}/${name}`;
 }
 
 export function submissionCsvPath(submissionPath: string): string {
@@ -79,9 +77,9 @@ export function extractSubmissionPathFromFilePath(
 ): string | undefined {
     if (!filename || !isSubmissionFilePath(filename)) return undefined;
     const parts = filename.split("/");
-    // tmp/submissions/<login>/<owner>--<repo>/<file>
-    if (parts.length < 5) return undefined;
-    return parts.slice(0, 4).join("/");
+    // tmp/<login>/<repo>/<file>
+    if (parts.length < 4) return undefined;
+    return parts.slice(0, 3).join("/");
 }
 
 export function parseSubmissionCsv(csv: string): CatalogEntry {

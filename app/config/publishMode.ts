@@ -15,7 +15,7 @@ export const PUBLISH_MODES: Record<
     staging: {
         id: "staging",
         label: "新流程",
-        description: "提交 tmp/submissions 单资源请求，由仓库 Action 校验并合入目录。",
+        description: "提交 tmp 单资源请求，由仓库 Action 校验并合入目录。",
     },
 };
 

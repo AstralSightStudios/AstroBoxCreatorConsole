@@ -183,7 +183,6 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
 
     const submissionPath = buildSubmissionPath(
         githubLogin,
-        entry.repo_owner,
         entry.repo_name,
     );
 

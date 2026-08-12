@@ -25,8 +25,8 @@ const STATIC_CONFIG = {
     trialDownloadsDirectory: "downloads/trial",
     repoNamePrefix: "astrobox-resource-",
     catalogFilePath: "index_v2.csv",
-    submissionRootPath: "tmp/submissions",
-    submissionCsvFileName: "res.csv",
+    submissionRootPath: "tmp",
+    submissionCsvFileName: "resource.csv",
     submissionRequestFileName: "request.json",
     defaultPrTitle: "[ABCC] Add new resource",
 } as const;

@@ -26,14 +26,14 @@ const ENTRY: CatalogEntry = {
 
 describe("submission protocol", () => {
   test("builds lower-case safe submission path", () => {
-    expect(buildSubmissionPath("Alice", "OctoCat", "AstroBox-Resource-Demo")).toBe(
-      "tmp/submissions/alice/octocat--astrobox-resource-demo",
+    expect(buildSubmissionPath("Alice", "AstroBox-Resource-Demo")).toBe(
+      "tmp/alice/astrobox-resource-demo",
     );
   });
 
   test("rejects path traversal segments", () => {
-    expect(() => buildSubmissionPath("../Alice", "owner", "repo")).toThrow();
-    expect(() => buildSubmissionPath("alice", "owner", "repo/../x")).toThrow();
+    expect(() => buildSubmissionPath("../Alice", "repo")).toThrow();
+    expect(() => buildSubmissionPath("alice", "repo/../x")).toThrow();
   });
 
   test("parses exact two-row submission CSV", () => {
