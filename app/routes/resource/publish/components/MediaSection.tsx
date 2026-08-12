@@ -156,7 +156,7 @@ export function MediaSection({
                        {item.name}
                        {isCover && item.width && item.height
                          ? Math.abs(item.width / item.height - 1.5) > 0.02
-                           ? ` · 建议接近 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不影响提交`
+                            ? ` · 必须 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不满足将无法提交`
                            : ` · ${item.width}×${item.height} · 比例 ${(item.width / item.height).toFixed(2)}`
                          : ""}
                      </span>
@@ -268,7 +268,7 @@ export function MediaSection({
               <UploadSlot
                 compact
                 label="单独上传封面"
-                description="建议 3:2，PNG/JPG"
+                 description="必须 3:2，不超过 1MB，PNG/JPG"
                 media={cover}
                  onPick={() => coverInputRef.current?.click()}
                  onRemove={onRemoveCover}

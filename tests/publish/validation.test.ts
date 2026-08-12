@@ -8,10 +8,11 @@ import {
 } from "../../app/logic/publish/validation";
 
 const image = { file: new Blob(), width: 100, height: 100 };
+const coverImage = { file: new Blob(), width: 150, height: 100 };
 const validInput = {
   itemId: "com.example.app",
   itemName: "Example",
-  previews: [{ ...image, id: "preview" }],
+  previews: [{ ...coverImage, id: "preview" }],
   icon: image,
   cover: null,
   usePreviewAsCover: true,
@@ -45,6 +46,38 @@ describe("publish validation", () => {
     expect(result.errors.join(" ")).toContain("预览图");
     expect(result.errors.join(" ")).toContain("正式下载第 1 行");
     expect(result.errors.join(" ")).toContain("试用下载第 1 行");
+  });
+
+  test("rejects cover with wrong aspect ratio or over 1MB", () => {
+    const wrongRatioPreview = validatePublish({
+      ...validInput,
+      previews: [{ ...image, id: "preview" }],
+    });
+    expect(wrongRatioPreview.errors.join(" ")).toContain("3:2");
+
+    const wrongRatioUpload = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: image,
+    });
+    expect(wrongRatioUpload.errors.join(" ")).toContain("3:2");
+
+    const oversized = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { ...coverImage, file: new Blob([new Uint8Array(1024 * 1024 + 1)]) },
+    });
+    expect(oversized.errors.join(" ")).toContain("1MB");
+
+    const unreadable = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { file: new Blob() },
+    });
+    expect(unreadable.errors.join(" ")).toContain("无法读取");
   });
 
   test("reports invalid links without blocking publishing", () => {

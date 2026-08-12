@@ -34,6 +34,11 @@ export interface PublishValidationInput {
   links: ValidationLinkInput[];
 }
 
+/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
+export const COVER_RATIO = 1.5;
+export const COVER_RATIO_TOLERANCE = 0.02;
+export const COVER_MAX_BYTES = 1024 * 1024;
+
 export interface PublishValidationResult {
   errors: string[];
   linkErrors: Array<string | null>;
@@ -86,7 +91,29 @@ export function validatePublish(
       ? input.previews.some((preview) => preview.id === input.coverPreviewId)
       : input.previews.length > 0
     : Boolean(input.cover);
-  if (!hasCover) errors.push("请选择或上传封面。");
+  if (!hasCover) {
+    errors.push("请选择或上传封面。");
+  } else {
+    const coverItem = input.usePreviewAsCover
+      ? (input.previews.find((preview) => preview.id === input.coverPreviewId) ??
+        input.previews[0])
+      : input.cover;
+    if (coverItem) {
+      if (!coverItem.width || !coverItem.height) {
+        errors.push("封面无法读取，请重新上传。");
+      } else if (
+        Math.abs(coverItem.width / coverItem.height - COVER_RATIO) >
+        COVER_RATIO_TOLERANCE
+      ) {
+        errors.push(
+          `封面必须为 3:2 宽高比，当前 ${(coverItem.width / coverItem.height).toFixed(2)}。`,
+        );
+      }
+      if (coverItem.file && coverItem.file.size > COVER_MAX_BYTES) {
+        errors.push("封面大小超过 1MB，请压缩后重新上传。");
+      }
+    }
+  }
   if (input.downloads.length === 0) errors.push("请至少添加一个正式下载设备。");
   errors.push(...validateDownloadRows(input.downloads, "正式下载"));
   errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));

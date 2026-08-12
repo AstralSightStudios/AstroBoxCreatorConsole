@@ -127,7 +127,7 @@ export function UploadSlot({
                 ? `建议不超过 ${recommendedMaxSize}×${recommendedMaxSize}，当前 ${media.width}×${media.height}；不影响提交`
                 : ratio !== null
                   ? ratioWarning
-                    ? `建议接近 3:2（1.5），当前 ${ratio.toFixed(2)}；不影响提交`
+                    ? `必须 3:2（1.5），当前 ${ratio.toFixed(2)}；不满足将无法提交`
                     : `${media.width}×${media.height} · 比例 ${ratio.toFixed(2)}`
                   : "已就绪"}
             </span>
