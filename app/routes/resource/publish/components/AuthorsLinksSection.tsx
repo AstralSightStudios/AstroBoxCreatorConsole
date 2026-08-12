@@ -95,6 +95,7 @@ export function AuthorsLinksSection({
       name.toLowerCase().includes(query),
     );
   }, [iconQuery]);
+  const visibleIcons = useMemo(() => filteredIcons.slice(0, 160), [filteredIcons]);
 
   return (
     <SectionCard
@@ -204,7 +205,23 @@ export function AuthorsLinksSection({
                     key={`link-${index}`}
                     className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2.5"
                   >
-                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_minmax(0,1.5fr)_auto] md:items-center">
+                    <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1.5fr)_auto] md:items-center">
+                      <Button
+                        type="button"
+                        variant="surface"
+                        color="gray"
+                        radius="large"
+                        className="min-w-0 justify-start gap-2"
+                        onClick={() => {
+                          setIconQuery("");
+                          setIconPickerIndex(index);
+                        }}
+                      >
+                        <BinocularsIcon size={15} />
+                        <span className="truncate">
+                          {link.icon || "选择图标"}
+                        </span>
+                      </Button>
                       <TextField.Root
                         placeholder="标题"
                         value={link.title}
@@ -219,21 +236,6 @@ export function AuthorsLinksSection({
                           )
                         }
                       />
-                      <Button
-                        type="button"
-                        variant="surface"
-                        color="gray"
-                        radius="large"
-                        className="min-w-0 justify-start"
-                        onClick={() => {
-                          setIconQuery("");
-                          setIconPickerIndex(index);
-                        }}
-                      >
-                        <span className="truncate">
-                          {link.icon || "选择图标"}
-                        </span>
-                      </Button>
                       <TextField.Root
                         type="url"
                         placeholder="https://example.com"
@@ -300,8 +302,13 @@ export function AuthorsLinksSection({
           if (!open) setIconPickerIndex(null);
         }}
       >
-        <Dialog.Content className="max-w-[min(94vw,720px)]">
-          <Dialog.Title>选择 Phosphor Icon</Dialog.Title>
+        <Dialog.Content className="max-w-[min(94vw,760px)] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <Dialog.Title className="m-0 min-w-0">选择 Phosphor Icon</Dialog.Title>
+            <Dialog.Close className="grid size-8 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white">
+              <XIcon size={17} />
+            </Dialog.Close>
+          </div>
           <TextField.Root
             placeholder="搜索图标名称"
             value={iconQuery}
@@ -314,11 +321,11 @@ export function AuthorsLinksSection({
           </TextField.Root>
           <div className="max-h-[420px] overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-              {filteredIcons.map((name) => (
+              {visibleIcons.map((name) => (
                 <button
                   key={name}
                   type="button"
-                  className="truncate rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2 text-left text-xs text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+                  className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2 text-left text-xs text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
                   onClick={() => {
                     if (iconPickerIndex == null) return;
                     setLinks((prev) =>
@@ -331,13 +338,21 @@ export function AuthorsLinksSection({
                     setIconPickerIndex(null);
                   }}
                 >
-                  {name}
+                  <span className="grid size-6 shrink-0 place-items-center text-white">
+                    <PhosphorIconByName name={name} size={16} />
+                  </span>
+                  <span className="truncate">{name}</span>
                 </button>
               ))}
             </div>
             {filteredIcons.length === 0 && (
               <p className="py-10 text-center text-sm text-white/40">
                 没有匹配的图标
+              </p>
+            )}
+            {filteredIcons.length > visibleIcons.length && (
+              <p className="mt-2 text-center text-xs text-white/40">
+                仅显示前 {visibleIcons.length} 个，搜索可缩小范围。
               </p>
             )}
           </div>
