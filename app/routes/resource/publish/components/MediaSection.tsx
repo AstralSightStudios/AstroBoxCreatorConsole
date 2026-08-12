@@ -64,7 +64,7 @@ function MediaTile({
   onRemove: () => void;
 }) {
   return (
-    <div className="relative flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-white">{label}</p>
@@ -396,7 +396,7 @@ export function MediaSection({
       />
 
       <div className="flex flex-col gap-4">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
             hint="宽高比 1:1"
