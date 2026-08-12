@@ -130,6 +130,12 @@ async function fetchPullFiles(
 const CATALOG_CSV_HEADER =
     "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
 
+let inProgressCache: {
+    signature: string;
+    mode: "legacy" | "staging";
+    data: PublishingResource[];
+} | null = null;
+
 function parseCatalogEntryRow(row: string) {
     return parseCatalogCsv(`${CATALOG_CSV_HEADER}\n${row}`)[0];
 }
@@ -179,9 +185,31 @@ function extractCatalogEntriesFromPullFiles(
 }
 
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
-    if (loadPublishMode() === "staging") {
-        return loadInProgressStagingResourcesForCurrentUser();
+    const mode = loadPublishMode() === "staging" ? "staging" : "legacy";
+    const { token } = requireGithubAccount();
+    const pulls = await githubFetch<any[]>(
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+    const signature = pulls
+        .map((pull) => `${pull.number}:${pull.updated_at || ""}`)
+        .join("|");
+    if (inProgressCache && inProgressCache.mode === mode && inProgressCache.signature === signature) {
+        return inProgressCache.data;
     }
+    const result =
+        mode === "staging"
+            ? await loadInProgressStagingResourcesForCurrentUser()
+            : await loadInProgressLegacyResourcesForCurrentUser();
+    inProgressCache = { signature, mode, data: result };
+    return result;
+}
+
+async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
+    PublishingResource[]
+> {
     const { token, username } = requireGithubAccount();
     const orgMembers = await listOrganizationMembers(
         PUBLISH_CONFIG.upstreamRepoOwner,

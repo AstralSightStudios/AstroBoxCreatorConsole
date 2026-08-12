@@ -61,6 +61,7 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
   const getTagBadgeClass = (tagType: ParsedReviewComment["tagType"]): string => {
     if (tagType === "NEEDFIX") return "bg-amber-500/15 text-amber-100";
     if (tagType === "FIXED") return "bg-emerald-500/15 text-emerald-100";
+    if (tagType === "CLOSE") return "bg-red-500/15 text-red-100";
     return "bg-white/10 text-white/60";
   };
 

@@ -53,6 +53,7 @@ import {
   updateSubmissionEntryOnBranch,
 } from "~/logic/publish/staging-submission";
 import { createPullRequestComment } from "~/api/github/pr-review";
+import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
 import {
@@ -1785,18 +1786,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                         需要修改项{needFixProgressText}
                       </p>
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col divide-y divide-white/10">
                       {needFixItems.map((item) => (
                         <div
                           key={item.id}
-                          className="flex flex-col gap-0.5 text-sm text-white/85"
+                          className="flex items-start gap-3 py-2 text-sm text-white/85 first:pt-0 last:pb-0"
                         >
-                          <span className="font-mono text-xs text-amber-300">
+                          <span className="w-28 shrink-0 font-mono text-xs leading-5 text-amber-300">
                             {item.id}
                           </span>
-                          <span className="text-white/85">
-                            {item.message || "（无附加说明）"}
-                          </span>
+                          <div
+                            className="min-w-0 flex-1 break-words text-white/85"
+                            dangerouslySetInnerHTML={{
+                              __html: renderCommentMarkdownInlineHtml(
+                                item.message || "（无附加说明）",
+                              ),
+                            }}
+                          />
                         </div>
                       ))}
                     </div>

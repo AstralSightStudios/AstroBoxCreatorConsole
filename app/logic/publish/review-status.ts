@@ -16,7 +16,7 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED)_([^\]]+)\]\s*(.*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE)(?:_([^\]]+))?\]\s*(.*)$/i;
 
 export function filterReviewTagComments<T extends {
     body?: string;
@@ -53,7 +53,7 @@ export function deriveReviewStatus(comments: Array<{ body?: string; created_at?:
         const match = body.match(COMMENT_PATTERN);
         if (!match) continue;
         const kind = match[1].toUpperCase();
-        const id = match[2].trim();
+        const id = (match[2] || "").trim();
         const message = (match[3] || "").trim();
 
         if (kind === "NEEDFIX") {

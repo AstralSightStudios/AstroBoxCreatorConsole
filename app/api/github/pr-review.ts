@@ -145,6 +145,17 @@ export async function mergePullRequest(prNumber: number) {
   );
 }
 
+export async function closePullRequest(prNumber: number) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ state: "closed" }),
+    },
+  );
+}
+
 export async function listPullRequestComments(prNumber: number) {
   return githubFetch<GithubIssueComment[]>(
     repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`),

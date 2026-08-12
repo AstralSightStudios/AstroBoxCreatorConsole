@@ -20,6 +20,7 @@ import {
   listPullRequestFiles,
   approvePullRequest,
   mergePullRequest,
+  closePullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
@@ -195,6 +196,20 @@ export default function ResourceReviewPage() {
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
+      if (
+        orgMembers.size > 0 &&
+        nextComments.some(
+          (comment) =>
+            /^\s*\[ABCC_CLOSE\]/i.test(comment.body || "") &&
+            Boolean(
+              comment.user?.login && orgMembers.has(comment.user.login),
+            ),
+        )
+      ) {
+        await closePullRequest(number);
+        toast.success("检测到 CLOSE 标签，PR 已关闭。");
+        await loadPulls();
+      }
     } catch (err) {
       if (callId === loadDetailRef.current) {
         toast.error(getErrorMessage(err));
