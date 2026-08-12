@@ -15,6 +15,7 @@ import {
 } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
+  getPullRequest,
   listReviewPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
@@ -199,19 +200,20 @@ export default function ResourceReviewPage() {
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
-      if (
-        orgMembers.size > 0 &&
-        nextComments.some(
-          (comment) =>
-            /^\s*\[ABCC_CLOSE\]/i.test(comment.body || "") &&
-            Boolean(
-              comment.user?.login && orgMembers.has(comment.user.login),
-            ),
-        )
-      ) {
-        await closePullRequest(number);
-        toast.success("检测到 CLOSE 标签，PR 已关闭。");
-        await loadPulls();
+      const closeComment = nextComments.find(
+        (comment) =>
+          /^\s*\[ABCC_CLOSE\]/i.test(comment.body || "") &&
+          Boolean(
+            comment.user?.login && orgMembers.has(comment.user.login),
+          ),
+      );
+      if (closeComment) {
+        const fresh = await getPullRequest(number);
+        if (fresh.state === "open") {
+          await closePullRequest(number);
+          toast.success("检测到 CLOSE 标签，PR 已关闭。");
+          await loadPulls();
+        }
       }
       const reopenComment = nextComments.find(
         (comment) =>
@@ -221,14 +223,13 @@ export default function ResourceReviewPage() {
               comment.user.login === openPull?.user?.login,
           ),
       );
-      if (
-        reopenComment &&
-        openPull?.state === "closed" &&
-        !openPull.merged_at
-      ) {
-        await reopenPullRequest(number);
-        toast.success("检测到 REOPEN 标签，PR 已重新打开。");
-        await loadPulls();
+      if (reopenComment) {
+        const fresh = await getPullRequest(number);
+        if (fresh.state === "closed" && !fresh.merged_at) {
+          await reopenPullRequest(number);
+          toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+          await loadPulls();
+        }
       }
     } catch (err) {
       if (callId === loadDetailRef.current) {

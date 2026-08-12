@@ -1179,9 +1179,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           for (const item of needFixItems) {
             if (!fixedSelections[item.id]) continue;
             const note = (fixedNotes[item.id] || "").trim();
+            const tag = `[ABCC_FIXED_${item.id}] ${note}`.trim();
+            let body = tag;
+            if (item.commentId || item.commentBody) {
+              const quoted = (
+                item.commentBody ||
+                item.message ||
+                ""
+              )
+                .trim()
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n");
+              body = `${tag}\n\n> @${item.author?.login || "reviewer"} · 评论 #${
+                item.commentId || "?"
+              }\n${quoted}`;
+            }
             await createPullRequestComment(
               editContext.prNumber,
-              `[ABCC_FIXED_${item.id}] ${note}`.trim(),
+              body,
             );
           }
         }
@@ -1536,14 +1552,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     editContext?.mode === "in_progress" ? "update" : "new";
   const needFixItems = useMemo(
     () =>
-      editContext?.mode === "in_progress" ? (editContext.needs ?? []) : [],
+      editContext?.mode === "in_progress"
+        ? (editContext.needs ?? []).filter((item) => !item.fixed)
+        : [],
     [editContext],
   );
-  const needFixProgressText = useMemo(() => {
-    if (needFixItems.length === 0) return "";
-    const finished = needFixItems.filter((item) => item.fixed).length;
-    return `（已完成 ${finished}/${needFixItems.length}）`;
-  }, [needFixItems]);
   const [fixedSelections, setFixedSelections] = useState<Record<string, boolean>>({});
   const [fixedNotes, setFixedNotes] = useState<Record<string, string>>({});
 
@@ -1784,7 +1797,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                         className="text-amber-300"
                       />
                       <p className="text-sm font-semibold text-amber-200">
-                        需要修改项{needFixProgressText}
+                        需要修改下面{needFixItems.length}项
                       </p>
                     </div>
                     <div className="flex flex-col divide-y divide-white/10">

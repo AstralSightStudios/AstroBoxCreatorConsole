@@ -6,7 +6,6 @@ import { useAccountState } from "~/logic/account/store";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { FileEntry } from "./FileEntry";
 import { PullRequestSummaryCard } from "./PullRequestSummaryCard";
-import { PrStatusBadge } from "./StatusBadges";
 import { ResourceDetailTab } from "./ResourceDetailTab";
 import { RuleCheckPanel } from "./RuleCheckPanel";
 import { CommentTimeline } from "./CommentTimeline";
@@ -102,17 +101,6 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           onClose={onClose}
         />
       </div>
-
-      {openPull?.state === "closed" && (
-        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-          <PrStatusBadge state={openPull.merged_at ? "merged" : "closed"} />
-          <p className="min-w-0 text-sm text-white/65">
-            {openPull.merged_at
-              ? "该 PR 已合入，相关资源请求已进入自动应用流程。"
-              : "该 PR 已关闭，创作者可在 GitHub 上评论 [ABCC_REOPEN] 重新打开。"}
-          </p>
-        </div>
-      )}
 
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-4">

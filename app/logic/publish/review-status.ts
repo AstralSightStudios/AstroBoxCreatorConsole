@@ -3,6 +3,8 @@ export type ReviewState = "waiting_review" | "changes_requested" | "fixed_waitin
 export interface NeedFixItem {
     id: string;
     message: string;
+    commentId?: number;
+    commentBody?: string;
     fixedMessage?: string;
     fixed: boolean;
     createdAt?: string;
@@ -19,10 +21,12 @@ export interface ReviewStatusResult {
 const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN)(?:_([^\]]+))?\]\s*(.*)$/i;
 
 export function filterReviewTagComments<T extends {
+    id?: number;
     body?: string;
     created_at?: string;
     user?: { login: string; avatar_url?: string };
 } = {
+    id?: number;
     body?: string;
     created_at?: string;
     user?: { login: string; avatar_url?: string };
@@ -40,8 +44,10 @@ export function filterReviewTagComments<T extends {
 });
 }
 
-export function deriveReviewStatus(comments: Array<{ body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
+export function deriveReviewStatus(comments: Array<{ id?: number; body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
     const needFixes = new Map<string, string>();
+    const needFixCommentIds = new Map<string, number>();
+    const needFixCommentBodies = new Map<string, string>();
     const needFixCreatedAt = new Map<string, string>();
     const needFixAuthor = new Map<string, { login: string; avatar_url?: string }>();
     const fixed = new Set<string>();
@@ -60,6 +66,10 @@ export function deriveReviewStatus(comments: Array<{ body?: string; created_at?:
 
         if (kind === "NEEDFIX") {
             needFixes.set(id, message);
+            if (typeof comment.id === "number") {
+                needFixCommentIds.set(id, comment.id);
+            }
+            needFixCommentBodies.set(id, body);
             if (comment.created_at) {
                 needFixCreatedAt.set(id, comment.created_at);
             }
@@ -90,6 +100,8 @@ export function deriveReviewStatus(comments: Array<{ body?: string; created_at?:
         ([id, message]) => ({
             id,
             message,
+            commentId: needFixCommentIds.get(id),
+            commentBody: needFixCommentBodies.get(id),
             fixedMessage: fixed.has(id) ? fixedMessages.get(id) : undefined,
             fixed: fixed.has(id),
             createdAt: needFixCreatedAt.get(id),

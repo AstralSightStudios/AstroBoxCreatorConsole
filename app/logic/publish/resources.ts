@@ -195,7 +195,10 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
         },
     );
     const signature = pulls
-        .map((pull) => `${pull.number}:${pull.updated_at || ""}`)
+        .map(
+            (pull) =>
+                `${pull.state || "open"}:${pull.number}:${pull.updated_at || ""}`,
+        )
         .join("|");
     if (inProgressCache && inProgressCache.mode === mode && inProgressCache.signature === signature) {
         return inProgressCache.data;
