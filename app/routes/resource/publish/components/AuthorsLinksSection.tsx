@@ -1,6 +1,5 @@
 import {
   BinocularsIcon,
-  InfoIcon,
   MagnifyingGlassIcon,
   MinusIcon,
   PlusIcon,
@@ -409,7 +408,7 @@ export function AuthorsLinksSection({
                   />
                 );
                 const urlField = (
-                  <div className="relative pb-4">
+                  <div className="flex flex-col gap-1">
                     <TextField.Root
                       type="url"
                       placeholder="https://example.com"
@@ -430,9 +429,7 @@ export function AuthorsLinksSection({
                       }
                     />
                     {linkError && (
-                      <p className="absolute left-0 top-full mt-1 text-xs text-red-400">
-                        {linkError}
-                      </p>
+                      <p className="text-xs text-red-400">{linkError}</p>
                     )}
                   </div>
                 );
@@ -472,21 +469,6 @@ export function AuthorsLinksSection({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-white/65">
-          <p className="flex items-center gap-1.5">
-            <InfoIcon size={16} />
-            图标请使用 Phosphor Icon 名称。
-          </p>
-          <a
-            href="https://phosphoricons.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-blue-400 transition hover:bg-white/10 hover:text-blue-300"
-          >
-            <BinocularsIcon size={16} />
-            浏览全部图标
-          </a>
-        </div>
       </div>
 
       <Dialog.Root
