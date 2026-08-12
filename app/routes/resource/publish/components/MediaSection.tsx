@@ -304,6 +304,14 @@ export function MediaSection({
                   </div>
                 </div>
               ))}
+              <button
+                type="button"
+                className="flex min-h-[180px] w-[200px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
+                onClick={() => previewInputRef.current?.click()}
+              >
+                <UploadSimpleIcon size={24} weight="duotone" />
+                添加预览图
+              </button>
             </div>
           )}
         </div>

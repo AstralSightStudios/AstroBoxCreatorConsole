@@ -203,6 +203,8 @@ export function AuthorsLinksSection({
           </Table.Root>
         </div>
 
+        <div className="h-px bg-white/10" />
+
         <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
           <Table.Root className="table-fixed w-full min-w-lg">
             <Table.Header>
