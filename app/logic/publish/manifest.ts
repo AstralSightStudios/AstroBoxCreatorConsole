@@ -95,6 +95,23 @@ function buildDownloadsObject(
     );
 }
 
+function mediaAssetFingerprint(file: File): string {
+    return `${file.name}|${file.size}|${file.type}`;
+}
+
+function reuseDuplicateAsset(
+    asset: AssetDescriptor,
+    seen: Map<string, AssetDescriptor>,
+): AssetDescriptor {
+    const fingerprint = mediaAssetFingerprint(asset.file);
+    const existing = seen.get(fingerprint);
+    if (existing) {
+        return { ...asset, path: existing.path, skipUpload: true };
+    }
+    seen.set(fingerprint, asset);
+    return asset;
+}
+
 export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     const mediaDir = PUBLISH_CONFIG.mediaDirectory.replace(/\/+$/, "");
     const downloadsDir = PUBLISH_CONFIG.downloadsDirectory.replace(/\/+$/, "");
@@ -103,11 +120,17 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         "",
     );
 
-    const previewAssets: AssetDescriptor[] = input.previews.map((item) => ({
-        path: item.pathOverride || `${mediaDir}/${item.name}`,
-        file: item.file,
-        skipUpload: item.skipUpload,
-    }));
+    const seenAssets = new Map<string, AssetDescriptor>();
+    const previewAssets: AssetDescriptor[] = input.previews.map((item) =>
+        reuseDuplicateAsset(
+            {
+                path: item.pathOverride || `${mediaDir}/${item.name}`,
+                file: item.file,
+                skipUpload: item.skipUpload,
+            },
+            seenAssets,
+        ),
+    );
     const previewPathMap = new Map<string | undefined, string>();
     input.previews.forEach((item) => {
         previewPathMap.set(
@@ -115,23 +138,31 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             item.pathOverride || `${mediaDir}/${item.name}`,
         );
     });
-    const previewPaths = previewAssets.map((asset) => asset.path);
+    const previewPaths = Array.from(
+        new Set(previewAssets.map((asset) => asset.path)),
+    );
 
     const iconAsset = input.icon
-        ? {
-              path: input.icon.pathOverride || `${mediaDir}/${input.icon.name}`,
-              file: input.icon.file,
-              skipUpload: input.icon.skipUpload,
-          }
+        ? reuseDuplicateAsset(
+              {
+                  path: input.icon.pathOverride || `${mediaDir}/${input.icon.name}`,
+                  file: input.icon.file,
+                  skipUpload: input.icon.skipUpload,
+              },
+              seenAssets,
+          )
         : undefined;
 
     const coverAsset =
         !input.usePreviewAsCover && input.cover
-            ? {
-                  path: input.cover.pathOverride || `${mediaDir}/${input.cover.name}`,
-                  file: input.cover.file,
-                  skipUpload: input.cover.skipUpload,
-              }
+            ? reuseDuplicateAsset(
+                  {
+                      path: input.cover.pathOverride || `${mediaDir}/${input.cover.name}`,
+                      file: input.cover.file,
+                      skipUpload: input.cover.skipUpload,
+                  },
+                  seenAssets,
+              )
             : undefined;
 
     const coverPath = input.usePreviewAsCover

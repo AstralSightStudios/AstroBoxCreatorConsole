@@ -1,12 +1,11 @@
 import {
   ArrowLeftIcon,
-  ArrowLineDownIcon,
   ArrowRightIcon,
   ImagesSquareIcon,
   UploadSimpleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { Badge, Switch } from "@radix-ui/themes";
+import { Badge } from "@radix-ui/themes";
 import { useRef } from "react";
 import type { UploadItem } from "./shared";
 import { SectionCard, UploadSlot } from "./shared";
@@ -15,15 +14,11 @@ interface MediaSectionProps {
   previews: UploadItem[];
   icon: UploadItem | null;
   cover: UploadItem | null;
-  usePreviewAsCover: boolean;
-  coverPreviewId: string | null;
   onPreviewUpload: (files: FileList | null) => void;
   onRemovePreview: (id: string) => void;
   onReorderPreview: (fromId: string, toId: string) => void;
   onIconUpload: (files: FileList | null) => void;
   onCoverUpload: (files: FileList | null) => void;
-  onSelectCoverPreview: (id: string) => void;
-  onToggleUsePreviewAsCover: (checked: boolean) => void;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
   onMediaDimensions: (kind: "preview" | "icon" | "cover", id: string, width: number, height: number) => void;
@@ -33,15 +28,11 @@ export function MediaSection({
   previews,
   icon,
   cover,
-  usePreviewAsCover,
-  coverPreviewId,
   onPreviewUpload,
   onRemovePreview,
   onReorderPreview,
   onIconUpload,
   onCoverUpload,
-  onSelectCoverPreview,
-  onToggleUsePreviewAsCover,
   onRemoveIcon,
   onRemoveCover,
   onMediaDimensions,
@@ -54,8 +45,7 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description="上传或导入预览图组、应用图标与封面。封面可以直接选择已有的预览图。"
-      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
+      description="上传或导入预览图组、应用图标与封面。相同文件会自动复用，无需重复上传。"
     >
       <input
         ref={previewInputRef}
@@ -107,16 +97,11 @@ export function MediaSection({
         ) : (
           <div className="grid gap-1.5 md:grid-cols-3 pb-1.5">
             {previews.map((item, index) => {
-              const isCover =
-                usePreviewAsCover &&
-                (coverPreviewId
-                  ? coverPreviewId === item.id
-                  : previews[0]?.id === item.id);
               return (
                 <div
                   key={item.id}
                   draggable
-                  className={`group relative overflow-hidden rounded-lg border bg-white/5 transition cursor-grab active:cursor-grabbing ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "border-red-400/70 ring-2 ring-red-400/40" : "border-white/10 hover:border-white/25"} ${isCover ? "ring-2 ring-emerald-400/70" : ""}`}
+                  className="group relative overflow-hidden rounded-lg border border-white/10 bg-white/5 transition cursor-grab active:cursor-grabbing hover:border-white/25"
                   onDragStart={(event) => {
                     draggedPreviewIdRef.current = item.id;
                     event.dataTransfer.effectAllowed = "move";
@@ -152,13 +137,8 @@ export function MediaSection({
                      }}
                    />
                    <div className="flex items-center gap-2 px-3 py-2 text-sm">
-                     <span className={`truncate ${isCover && item.width && item.height && Math.abs(item.width / item.height - 1.5) > 0.02 ? "text-red-400" : ""}`}>
+                     <span className="truncate">
                        {item.name}
-                       {isCover && item.width && item.height
-                         ? Math.abs(item.width / item.height - 1.5) > 0.02
-                            ? ` · 必须 3:2（1.5），当前 ${(item.width / item.height).toFixed(2)}；不满足将无法提交`
-                           : ` · ${item.width}×${item.height} · 比例 ${(item.width / item.height).toFixed(2)}`
-                         : ""}
                      </span>
                     <button
                       type="button"
@@ -177,18 +157,6 @@ export function MediaSection({
                       aria-label="预览图后移"
                     >
                       <ArrowRightIcon size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="text-white/60 transition hover:text-white"
-                      onClick={() => {
-                        if (usePreviewAsCover) {
-                          onSelectCoverPreview(item.id);
-                        }
-                      }}
-                      aria-label="设为封面"
-                    >
-                      <ArrowLineDownIcon size={16} />
                     </button>
                     <button
                       type="button"
@@ -222,61 +190,15 @@ export function MediaSection({
             recommendedMaxSize={500}
             onDimensions={(width, height) => icon && onMediaDimensions("icon", icon.id, width, height)}
           />
-          <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-1">
-            <div className="flex items-center gap-2 pt-1.5 px-2 pb-1">
-              <p className="text-sm font-medium text-white">封面</p>
-              <Badge color="grass" variant="soft">
-                可复用预览
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between gap-2 px-1.5 pb-1.5">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={usePreviewAsCover}
-                  onCheckedChange={(checked) =>
-                    onToggleUsePreviewAsCover(Boolean(checked))
-                  }
-                />
-                <p className="text-sm text-white/80">使用预览图作为封面</p>
-              </div>
-            </div>
-            {usePreviewAsCover ? (
-              <div className="flex flex-wrap gap-2">
-                {previews.length === 0 ? (
-                  <p className="text-sm text-white/60 px-2 pb-1">
-                    请先上传预览图以选择封面
-                  </p>
-                ) : (
-                  previews.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => onSelectCoverPreview(item.id)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-1 text-sm transition w-full ${
-                        coverPreviewId === item.id
-                          ? "border-emerald-400/70 bg-emerald-400/10 text-white"
-                          : "border-white/15 bg-white/5 text-white/80 hover:border-white/30"
-                      }`}
-                    >
-                      <ImagesSquareIcon size={16} />
-                      {item.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : (
-              <UploadSlot
-                compact
-                label="单独上传封面"
-                 description="必须 3:2，不超过 1MB，PNG/JPG"
-                media={cover}
-                 onPick={() => coverInputRef.current?.click()}
-                 onRemove={onRemoveCover}
-                 showRatio
-                 onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
-               />
-            )}
-          </div>
+          <UploadSlot
+            label="封面"
+            description="必须 3:2，不超过 1MB，PNG/JPG"
+            media={cover}
+            onPick={() => coverInputRef.current?.click()}
+            onRemove={onRemoveCover}
+            showRatio
+            onDimensions={(width, height) => cover && onMediaDimensions("cover", cover.id, width, height)}
+          />
         </div>
       </div>
     </SectionCard>

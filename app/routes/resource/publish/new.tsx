@@ -127,6 +127,13 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
   return next;
 }
 
+function parseTagText(raw: string): string[] {
+    return raw
+        .split(/[;；,，]/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+}
+
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -149,8 +156,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [icon, setIcon] = useState<UploadItem | null>(null);
   const [cover, setCover] = useState<UploadItem | null>(null);
-  const [usePreviewAsCover, setUsePreviewAsCover] = useState(true);
-  const [coverPreviewId, setCoverPreviewId] = useState<string | null>(null);
 
   const [authors, setAuthors] = useState<AuthorInput[]>([
     { name: "", bindABAccount: true },
@@ -161,6 +166,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [trialDownloads, setTrialDownloads] =
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [tagsInput, setTagsInput] = useState("");
+  const [tagInput, setTagInput] = useState("");
   const [paidType, setPaidType] = useState("");
   const [enableAstroBoxCreatorFeatures, setEnableAstroBoxCreatorFeatures] =
     useState(false);
@@ -169,6 +175,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [downloads],
   );
   const effectivePaidType = hasEncryptedUpload ? "force_paid" : paidType;
+  const tags = useMemo(() => parseTagText(tagsInput), [tagsInput]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
@@ -399,27 +406,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         );
 
         const coverPath = manifest.item.cover;
-        const matchedCover = previewItems.find(
-          (item) => (item.pathOverride || item.name) === coverPath,
+        setCover(
+          coverPath
+            ? createExistingUploadItem(
+                coverPath.split("/").pop() || "cover",
+                buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
+                coverPath,
+              )
+            : null,
         );
-        if (matchedCover) {
-          setUsePreviewAsCover(true);
-          setCoverPreviewId(matchedCover.id);
-          setCover(null);
-        } else if (coverPath) {
-          setUsePreviewAsCover(false);
-          setCover(
-            createExistingUploadItem(
-              coverPath.split("/").pop() || "cover",
-              buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
-              coverPath,
-            ),
-          );
-        } else {
-          setUsePreviewAsCover(true);
-          setCoverPreviewId(previewItems[0]?.id ?? null);
-          setCover(null);
-        }
 
         const ext = isManifestExtObject(manifest.ext) ? manifest.ext : {};
         setDownloads(
@@ -491,8 +486,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         previews,
         icon,
         cover,
-        usePreviewAsCover,
-        coverPreviewId,
+        usePreviewAsCover: false,
+        coverPreviewId: null,
         authors,
         links,
         downloads,
@@ -503,7 +498,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [
       authors,
       cover,
-      coverPreviewId,
       description,
       downloads,
       enableAstroBoxCreatorFeatures,
@@ -515,7 +509,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       previews,
       resourceType,
       trialDownloads,
-      usePreviewAsCover,
     ],
   );
 
@@ -527,13 +520,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         previews,
         icon,
         cover,
-        usePreviewAsCover,
-        coverPreviewId,
+        usePreviewAsCover: false,
+        coverPreviewId: null,
         downloads,
         trialDownloads,
         links,
       }),
-    [itemId, itemName, previews, icon, cover, usePreviewAsCover, coverPreviewId, downloads, trialDownloads, links],
+    [itemId, itemName, previews, icon, cover, downloads, trialDownloads, links],
   );
 
   const handlePreviewUpload = async (files: FileList | null) => {
@@ -551,9 +544,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     const newItems = await Promise.all(processed.map(createImageUploadItem));
     setPreviews((prev) => [...prev, ...newItems]);
-    if (usePreviewAsCover && !coverPreviewId) {
-      setCoverPreviewId(newItems[0]?.id ?? null);
-    }
   };
 
   const handleIconUpload = async (files: FileList | null) => {
@@ -606,15 +596,34 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [resourceType, idGenerating]);
 
+  const addTag = () => {
+    const nextTag = tagInput.trim();
+    if (!nextTag) return;
+    if (tags.some((tag) => tag.toLowerCase() === nextTag.toLowerCase())) {
+      setTagInput("");
+      return;
+    }
+    setTagsInput((prev) => {
+      const existing = parseTagText(prev);
+      return [...existing, nextTag].join(";");
+    });
+    setTagInput("");
+  };
+
+  const removeTag = (index: number) => {
+    setTagsInput((prev) => {
+      const next = parseTagText(prev);
+      next.splice(index, 1);
+      return next.join(";");
+    });
+  };
+
   const handleRemovePreview = (id: string) => {
     setPreviews((prev) => {
       const toRemove = prev.find((item) => item.id === id);
       revokeUrl(toRemove);
       return prev.filter((item) => item.id !== id);
     });
-    if (coverPreviewId === id) {
-      setCoverPreviewId(null);
-    }
   };
 
   const handleReorderPreview = (fromId: string, toId: string) => {
@@ -651,13 +660,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setIcon((item) => item?.id === id ? { ...item, width, height } : item);
     } else {
       setCover((item) => item?.id === id ? { ...item, width, height } : item);
-    }
-  };
-
-  const handleUsePreviewAsCover = (checked: boolean) => {
-    setUsePreviewAsCover(Boolean(checked));
-    if (checked && previews[0]) {
-      setCoverPreviewId(previews[0].id);
     }
   };
 
@@ -1496,12 +1498,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           )}
 
           {activeStepIndex === 0 && (
-            <div className="border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] rounded-[14px]">
+            <div className="flex flex-col gap-3">
               <BasicInfoSection
                 itemId={itemId}
                 itemName={itemName}
                 description={description}
-                tagsInput={tagsInput}
+                tags={tags}
+                tagInput={tagInput}
                 paidType={effectivePaidType}
                 paidTypeDisabled={hasEncryptedUpload}
                 resourceType={resourceType}
@@ -1510,7 +1513,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onItemIdChange={setItemId}
                 onItemNameChange={setItemName}
                 onDescriptionChange={setDescription}
-                onTagsChange={setTagsInput}
+                onAddTag={addTag}
+                onRemoveTag={removeTag}
+                onTagInputChange={setTagInput}
                 onPaidTypeChange={setPaidType}
                 onResourceTypeChange={setResourceType}
                 onGenerateId={handleGenerateId}
@@ -1519,15 +1524,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 previews={previews}
                 icon={icon}
                 cover={cover}
-                usePreviewAsCover={usePreviewAsCover}
-                coverPreviewId={coverPreviewId}
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}
                 onReorderPreview={handleReorderPreview}
                 onIconUpload={handleIconUpload}
                 onCoverUpload={handleCoverUpload}
-                onSelectCoverPreview={setCoverPreviewId}
-                onToggleUsePreviewAsCover={handleUsePreviewAsCover}
                  onRemoveIcon={handleRemoveIcon}
                  onRemoveCover={handleRemoveCover}
                  onMediaDimensions={handleMediaDimensions}
@@ -1579,7 +1580,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
-              <div className="flex flex-row justify-end gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
+              <div className="flex flex-row justify-end gap-2 p-2 rounded-[14px] border border-white/10 bg-nav-item">
                 <Button
                   className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
                   radius="large"
