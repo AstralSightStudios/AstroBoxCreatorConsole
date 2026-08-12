@@ -272,7 +272,7 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1fr)_auto] md:items-start">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
                   <Select.Root
                     value={item.platformId || undefined}
                     onValueChange={(value) =>
