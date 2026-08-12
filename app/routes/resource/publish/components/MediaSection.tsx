@@ -394,8 +394,8 @@ export function MediaSection({
             hint="宽高比 1:1"
             media={icon}
             uploading={iconUploading}
-            emptyClassName="aspect-square"
-            mediaClassName="aspect-square"
+            emptyClassName="aspect-square max-md:aspect-[3/1]"
+            mediaClassName="aspect-square max-md:aspect-[3/1]"
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
           />
