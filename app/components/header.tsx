@@ -9,6 +9,7 @@ import FunctionButton from "~/components/nav/function-button";
 import {
   useHeaderActions,
   useHeaderActionsFit,
+  useHeaderBreadcrumb,
   useSetHeaderActionsFit,
 } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
@@ -42,6 +43,7 @@ export default function Header() {
   const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
   const headerActions = useHeaderActions();
   const headerActionsFit = useHeaderActionsFit();
+  const breadcrumbOverride = useHeaderBreadcrumb();
   const setHeaderActionsFit = useSetHeaderActionsFit();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
@@ -123,8 +125,11 @@ export default function Header() {
 
       <div ref={breadcrumbRef} className="flex flex-row items-center gap-1 pl-1">
         {breadcrumbKeys.map((key, index) => {
-          const label = PAGE_NAME_MAP[key] ?? key;
           const isLast = index === breadcrumbKeys.length - 1;
+          const label =
+            isLast && breadcrumbOverride
+              ? breadcrumbOverride
+              : PAGE_NAME_MAP[key] ?? key;
           const to = key === "" ? "/" : `/${key}`;
 
           return (

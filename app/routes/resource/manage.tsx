@@ -15,6 +15,7 @@ import {
 import ResourcePublish from "./publish";
 import { SectionCard } from "./publish/components/shared";
 import { useLayoutEffect, useEffect, useRef, useState } from "react";
+import { useSetHeaderBreadcrumb } from "~/layout/header-actions";
 
 function formatRestype(restype: string) {
   if (restype === "quick_app") return "快应用";
@@ -52,7 +53,14 @@ export default function ResourceManage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
+  const [tab, setTab] = useState("manage");
+  const setHeaderBreadcrumb = useSetHeaderBreadcrumb();
   const { ref, width } = useElementWidth();
+
+  useEffect(() => {
+    setHeaderBreadcrumb(tab === "manage" ? "已发布资源" : "审核列表");
+    return () => setHeaderBreadcrumb(null);
+  }, [tab, setHeaderBreadcrumb]);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +98,7 @@ export default function ResourceManage() {
   return (
     <Page>
       <div className="z-1 max-[1024px]:bg-linear-to-b max-[1024px]:bottom-0 from-0% from-bg/0 to-65% max-[1024px]:to-[rgba(17,17,19,0.75)] fixed inset-x-0 max-[1024px]:h-16" />
-      <Tabs.Root defaultValue="manage">
+      <Tabs.Root value={tab} onValueChange={setTab}>
         <div
           style={width ? { width: width } : { width: "100vw" }}
           className={`z-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] fixed bottom-0 flex justify-center min-[1024px]:top-0 min-[1024px]:sticky min-[1024px]:w-full!`}
