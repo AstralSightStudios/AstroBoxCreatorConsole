@@ -1498,7 +1498,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           )}
 
           {activeStepIndex === 0 && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 rounded-[14px] border border-white/10 bg-nav-item p-3 shadow-[0_18px_36px_rgba(0,0,0,0.32)]">
               <BasicInfoSection
                 itemId={itemId}
                 itemName={itemName}
@@ -1580,7 +1580,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
-              <div className="flex flex-row justify-end gap-2 p-2 rounded-[14px] border border-white/10 bg-nav-item">
+              <div className="flex flex-row justify-end gap-2 pt-1">
                 <Button
                   className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
                   radius="large"

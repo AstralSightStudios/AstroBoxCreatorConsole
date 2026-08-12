@@ -1,6 +1,5 @@
 import {
   Button,
-  Badge,
   Select,
   TextArea,
   TextField,
@@ -186,24 +185,20 @@ export function BasicInfoSection({
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             {tags.map((tag, index) => (
-              <Badge
+              <span
                 key={`${tag}-${index}`}
-                color="gray"
-                variant="soft"
-                radius="full"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-white"
               >
-                <span className="flex items-center gap-1.5">
-                  {tag}
-                  <button
-                    type="button"
-                    className="text-white/60 transition hover:text-white"
-                    onClick={() => onRemoveTag(index)}
-                    aria-label={`移除标签 ${tag}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              </Badge>
+                {tag}
+                <button
+                  type="button"
+                  className="grid size-5 place-items-center rounded-full text-white/60 transition hover:bg-white/15 hover:text-white"
+                  onClick={() => onRemoveTag(index)}
+                  aria-label={`移除标签 ${tag}`}
+                >
+                  ×
+                </button>
+              </span>
             ))}
             {tags.length === 0 && (
               <span className="text-sm text-white/40">暂无标签</span>
