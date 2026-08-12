@@ -55,6 +55,7 @@ export interface ResourceEditContext {
     mode: "in_progress" | "catalog";
     catalog: ResourceCatalogContext;
     prNumber?: number;
+    prUrl?: string;
     prHead?: { owner: string; repo: string; ref: string };
     reviewState?: ReviewState;
     needs?: NeedFixItem[];

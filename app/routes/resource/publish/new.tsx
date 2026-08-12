@@ -1,4 +1,13 @@
-import { Badge, Button, Callout, Spinner, Popover, Text, AlertDialog } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Callout,
+  Checkbox,
+  Spinner,
+  Popover,
+  Text,
+  AlertDialog,
+} from "@radix-ui/themes";
 import {
   FileXIcon,
   UploadIcon,
@@ -43,6 +52,7 @@ import {
   createSubmissionPullRequest,
   updateSubmissionEntryOnBranch,
 } from "~/logic/publish/staging-submission";
+import { createPullRequestComment } from "~/api/github/pr-review";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
 import {
@@ -1164,6 +1174,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           });
         }
 
+        if (editContext.mode === "in_progress" && editContext.prNumber) {
+          for (const item of needFixItems) {
+            if (!fixedSelections[item.id]) continue;
+            const note = (fixedNotes[item.id] || "").trim();
+            await createPullRequestComment(
+              editContext.prNumber,
+              `[ABCC_FIXED_${item.id}] ${note}`.trim(),
+            );
+          }
+        }
+
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
         navigate("/manage", { replace: true });
@@ -1522,6 +1543,24 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     const finished = needFixItems.filter((item) => item.fixed).length;
     return `（已完成 ${finished}/${needFixItems.length}）`;
   }, [needFixItems]);
+  const [fixedSelections, setFixedSelections] = useState<Record<string, boolean>>({});
+  const [fixedNotes, setFixedNotes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (editContext?.mode !== "in_progress") {
+      setFixedSelections({});
+      setFixedNotes({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    const notes: Record<string, string> = {};
+    for (const item of needFixItems) {
+      next[item.id] = false;
+      notes[item.id] = "";
+    }
+    setFixedSelections(next);
+    setFixedNotes(notes);
+  }, [editContext, needFixItems]);
 
   const stepsCard = (
     <div className="flex flex-wrap flex-col gap-6">
@@ -1750,20 +1789,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                       {needFixItems.map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-center gap-2 text-sm text-white/85"
+                          className="flex flex-col gap-0.5 text-sm text-white/85"
                         >
-                          <Badge
-                            color={item.fixed ? "green" : "yellow"}
-                            variant="soft"
-                          >
+                          <span className="font-mono text-xs text-amber-300">
                             {item.id}
-                          </Badge>
+                          </span>
                           <span className="text-white/85">
                             {item.message || "（无附加说明）"}
                           </span>
                         </div>
                       ))}
                     </div>
+                    {editContext.prNumber && (
+                      <div className="mt-2 flex justify-end">
+                        <a
+                          href={
+                            editContext.prUrl ||
+                            `https://github.com/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pull/${editContext.prNumber}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-400 transition hover:text-blue-300"
+                        >
+                          到 GitHub 查看审核和评论
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
             </Callout.Root>
@@ -1932,6 +1983,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               onSubmit={handleCreatePR}
               onBack={() => goToStep(1)}
               mode={prStepMode}
+              needFixItems={needFixItems}
+              fixedSelections={fixedSelections}
+              fixedNotes={fixedNotes}
+              onFixedToggle={(id) =>
+                setFixedSelections((prev) => ({ ...prev, [id]: !prev[id] }))
+              }
+              onFixedNoteChange={(id, value) =>
+                setFixedNotes((prev) => ({ ...prev, [id]: value }))
+              }
             />
           )}
         </div>

@@ -1,4 +1,4 @@
-import { Button, TextArea } from "@radix-ui/themes";
+import { Button, Checkbox, TextArea, TextField } from "@radix-ui/themes";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { SectionCard } from "./shared";
@@ -12,6 +12,11 @@ interface PrStepSectionProps {
   onSubmit: () => void;
   onBack: () => void;
   mode?: "new" | "update";
+  needFixItems?: Array<{ id: string; message: string }>;
+  fixedSelections?: Record<string, boolean>;
+  fixedNotes?: Record<string, string>;
+  onFixedToggle?: (id: string) => void;
+  onFixedNoteChange?: (id: string, value: string) => void;
 }
 
 export function PrStepSection({
@@ -22,6 +27,11 @@ export function PrStepSection({
   onSubmit,
   onBack,
   mode = "new",
+  needFixItems = [],
+  fixedSelections = {},
+  fixedNotes = {},
+  onFixedToggle,
+  onFixedNoteChange,
 }: PrStepSectionProps) {
   const isUpdate = mode === "update";
   return (
@@ -38,6 +48,37 @@ export function PrStepSection({
       padding={false}
     >
       <div className="flex flex-col gap-2 px-2">
+        {needFixItems.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 p-2.5">
+            <p className="text-sm font-semibold text-amber-200">
+              本次更新已修复的问题
+            </p>
+            {needFixItems.map((item) => (
+              <div key={item.id} className="flex flex-col gap-1.5">
+                <label className="flex items-start gap-2 text-sm text-white/85">
+                  <Checkbox
+                    checked={Boolean(fixedSelections[item.id])}
+                    onCheckedChange={() => onFixedToggle?.(item.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="font-mono text-xs text-amber-300">
+                      {item.id}
+                    </span>
+                    <span className="ml-2">{item.message || "（无附加说明）"}</span>
+                  </span>
+                </label>
+                {fixedSelections[item.id] && (
+                  <TextField.Root
+                    placeholder="修复说明（可选）"
+                    value={fixedNotes[item.id] || ""}
+                    radius="large"
+                    onChange={(e) => onFixedNoteChange?.(item.id, e.target.value)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <TextArea
           rows={3}
           placeholder="可填写说明、变更摘要或备注"

@@ -84,6 +84,7 @@ export default function ResourcePublish() {
       mode: "in_progress",
       catalog: resource.catalog,
       prNumber: resource.prNumber,
+      prUrl: resource.prUrl,
       prHead: resource.prHead,
       reviewState: resource.status,
       needs: resource.needs,
