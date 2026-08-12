@@ -148,7 +148,11 @@ export function parseSubmissionRequestJson(raw: string): SubmissionRequest {
 }
 
 export function buildSubmissionRequest(request: SubmissionRequest): string {
-    return `${JSON.stringify(request, null, 2)}\n`;
+    const payload =
+        request.mode === "create"
+            ? { schema_version: 1, mode: "create" as const }
+            : request;
+    return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
 export async function canonicalCatalogEntryDigest(

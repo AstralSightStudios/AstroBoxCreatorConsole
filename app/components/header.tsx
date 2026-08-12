@@ -124,13 +124,23 @@ export default function Header() {
       ) : null}
 
       <div ref={breadcrumbRef} className="flex flex-row items-center gap-1 pl-1">
-        {breadcrumbKeys.map((key, index) => {
-          const isLast = index === breadcrumbKeys.length - 1;
+        {(
+          breadcrumbOverride
+            ? [...breadcrumbKeys, `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`]
+            : breadcrumbKeys
+        ).map((key, index) => {
+          const isLast =
+            breadcrumbOverride
+              ? index === breadcrumbKeys.length
+              : index === breadcrumbKeys.length - 1;
           const label =
-            isLast && breadcrumbOverride
+            breadcrumbOverride && isLast
               ? breadcrumbOverride
               : PAGE_NAME_MAP[key] ?? key;
-          const to = key === "" ? "/" : `/${key}`;
+          const to =
+            key === ""
+              ? "/"
+              : `/${breadcrumbOverride && isLast ? breadcrumbKeys[breadcrumbKeys.length - 1] : key}`;
 
           return (
             <div
