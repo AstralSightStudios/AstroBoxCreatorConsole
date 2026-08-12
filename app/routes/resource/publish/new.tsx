@@ -631,18 +631,47 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     console.log("[preview-upload] start", fileList.length, fileList.map((f) => f.name));
     setPreviewUploading(true);
     try {
+      const initialItems = fileList.map((file) => ({
+        ...createUploadItem(file),
+        processing: true,
+        progress: 0,
+      }));
+      setPreviews((prev) => [...prev, ...initialItems]);
+
       for (let index = 0; index < fileList.length; index++) {
         const file = fileList[index];
+        const itemId = initialItems[index].id;
+        let progressTimer: number | undefined;
         try {
           console.log("[preview-upload] compress", index + 1, file.name, file.size);
+          progressTimer = window.setInterval(() => {
+            setPreviews((prev) =>
+              prev.map((item) =>
+                item.id === itemId && item.processing
+                  ? { ...item, progress: Math.min(90, (item.progress || 0) + 8 + Math.random() * 12) }
+                  : item,
+              ),
+            );
+          }, 160);
           const processed = await compressImageFile(file, 500 * 1024);
           console.log("[preview-upload] read dimensions", file.name, processed.size);
           const item = await createImageUploadItem(processed);
           console.log("[preview-upload] ready", file.name, item.width, item.height);
-          setPreviews((prev) => [...prev, item]);
+          if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...item, processing: false, progress: 100 } : old,
+            ),
+          );
         } catch (err) {
+          if (progressTimer != null) window.clearInterval(progressTimer);
           console.error("[preview-upload] failed", file.name, err);
           toast.error(`图片处理失败：${file.name}`);
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...old, processing: false, progress: 100 } : old,
+            ),
+          );
         }
       }
       console.log("[preview-upload] done");

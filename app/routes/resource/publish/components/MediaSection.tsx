@@ -528,7 +528,7 @@ export function MediaSection({
                 >
                   <button
                     type="button"
-                    className="block w-full overflow-hidden rounded-lg border border-white/10 bg-black/25"
+                    className="relative block w-full overflow-hidden rounded-lg border border-white/10 bg-black/25"
                     onClick={() => {
                       if (suppressClickRef.current) {
                         suppressClickRef.current = false;
@@ -558,6 +558,14 @@ export function MediaSection({
                         }
                       }}
                     />
+                    {item.processing && (
+                      <div className="absolute bottom-1 left-1 right-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-blue-400 transition-all"
+                          style={{ width: `${Math.min(100, item.progress || 0)}%` }}
+                        />
+                      </div>
+                    )}
                   </button>
                   <div className="mt-2 flex items-center gap-1">
                     <button

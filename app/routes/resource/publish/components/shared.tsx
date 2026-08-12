@@ -63,6 +63,8 @@ export interface UploadItem {
   source?: "upload" | "existing";
   width?: number;
   height?: number;
+  processing?: boolean;
+  progress?: number;
 }
 
 export function UploadSlot({
