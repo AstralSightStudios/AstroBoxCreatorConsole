@@ -127,7 +127,7 @@ export function AuthorsLinksSection({
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 max-w-full">
-          <div className="flex items-center justify-between md:hidden">
+          <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-white">作者</p>
             <Button
               type="button"

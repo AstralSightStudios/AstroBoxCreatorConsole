@@ -144,9 +144,11 @@ export function MediaSection({
   }, [lightboxIndex]);
 
   const scrollPreview = (direction: -1 | 1) => {
-    const node = previewScrollerRef.current;
-    if (!node) return;
-    node.scrollBy({ left: direction * Math.max(node.clientWidth * 0.8, 260), behavior: "smooth" });
+    const nextIndex = Math.min(
+      previews.length - 1,
+      Math.max(0, activeIndex + direction),
+    );
+    scrollPreviewTo(nextIndex);
   };
 
   const previewWidthFor = (item: UploadItem): number => {
