@@ -15,6 +15,7 @@ import { SectionCard } from "./shared";
 
 interface MediaSectionProps {
   previews: UploadItem[];
+  previewUploading?: boolean;
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
@@ -115,6 +116,7 @@ function MediaTile({
 
 export function MediaSection({
   previews,
+  previewUploading,
   icon,
   iconUploading,
   cover,
@@ -441,10 +443,11 @@ export function MediaSection({
               <Button
                 type="button"
                 variant="soft"
+                disabled={previewUploading}
                 onClick={() => previewInputRef.current?.click()}
               >
                 <UploadSimpleIcon size={15} weight="bold" />
-                添加预览图
+                {previewUploading ? "处理中..." : "添加预览图"}
               </Button>
             </div>
           </div>
@@ -603,7 +606,7 @@ export function MediaSection({
                 onClick={() => previewInputRef.current?.click()}
               >
                 <UploadSimpleIcon size={24} weight="duotone" />
-                添加预览图
+                {previewUploading ? "处理中..." : "添加预览图"}
               </button>
             </div>
             {previews.length > 1 && (

@@ -237,6 +237,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   >(null);
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
+  const [previewUploading, setPreviewUploading] = useState(false);
   const [icon, setIcon] = useState<UploadItem | null>(null);
   const [iconUploading, setIconUploading] = useState(false);
   const [cover, setCover] = useState<UploadItem | null>(null);
@@ -626,19 +627,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const handlePreviewUpload = async (files: FileList | null) => {
     if (!files?.length) return;
-    const processed = await Promise.all(
-      Array.from(files).map(async (file) => {
+    const fileList = Array.from(files);
+    console.log("[preview-upload] start", fileList.length, fileList.map((f) => f.name));
+    setPreviewUploading(true);
+    try {
+      for (let index = 0; index < fileList.length; index++) {
+        const file = fileList[index];
         try {
-          return await compressImageFile(file, 500 * 1024);
+          console.log("[preview-upload] compress", index + 1, file.name, file.size);
+          const processed = await compressImageFile(file, 500 * 1024);
+          console.log("[preview-upload] read dimensions", file.name, processed.size);
+          const item = await createImageUploadItem(processed);
+          console.log("[preview-upload] ready", file.name, item.width, item.height);
+          setPreviews((prev) => [...prev, item]);
         } catch (err) {
+          console.error("[preview-upload] failed", file.name, err);
           toast.error(`图片处理失败：${file.name}`);
-          console.error("compress preview failed:", err);
-          return file;
         }
-      }),
-    );
-    const newItems = await Promise.all(processed.map(createImageUploadItem));
-    setPreviews((prev) => [...prev, ...newItems]);
+      }
+      console.log("[preview-upload] done");
+    } finally {
+      setPreviewUploading(false);
+    }
   };
 
   const handleIconUpload = async (files: FileList | null) => {
@@ -1690,6 +1700,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               />
               <MediaSection
                 previews={previews}
+                previewUploading={previewUploading}
                 icon={icon}
                 iconUploading={iconUploading}
                 cover={cover}
