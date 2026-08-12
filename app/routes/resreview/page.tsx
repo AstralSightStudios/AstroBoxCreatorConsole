@@ -9,7 +9,10 @@ import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState } from "~/logic/account/store";
 import { useRepoEnv } from "~/config/repoEnv";
 import { usePublishMode } from "~/config/publishMode";
-import { deriveReviewStatus } from "~/logic/publish/review-status";
+import {
+  deriveReviewStatus,
+  filterReviewTagComments,
+} from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
   listOpenPullRequests,
@@ -20,6 +23,7 @@ import {
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
+  listOrganizationMembers,
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
@@ -47,6 +51,7 @@ export default function ResourceReviewPage() {
   const [searchParams] = useSearchParams();
 
   const [permission, setPermission] = useState("");
+  const [orgMembers, setOrgMembers] = useState<Set<string>>(new Set());
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionError, setPermissionError] = useState("");
   const [pulls, setPulls] = useState<GithubPullRequest[]>([]);
@@ -128,6 +133,12 @@ export default function ResourceReviewPage() {
     }
   };
 
+  useEffect(() => {
+    void listOrganizationMembers(COMMUNITY_REPO_CONFIG.owner)
+      .then(setOrgMembers)
+      .catch(() => setOrgMembers(new Set()));
+  }, []);
+
   const loadPulls = async () => {
     setLoadingPulls(true);
     try {
@@ -136,7 +147,13 @@ export default function ResourceReviewPage() {
       const commentEntries = await Promise.all(
         list.map(async (pull) => {
           try {
-            return [pull.number, await listPullRequestComments(pull.number)] as const;
+            return [
+              pull.number,
+              filterReviewTagComments(
+                await listPullRequestComments(pull.number),
+                orgMembers,
+              ),
+            ] as const;
           } catch {
             return [pull.number, []] as const;
           }
@@ -157,7 +174,9 @@ export default function ResourceReviewPage() {
     setResourcePreviews([]);
     try {
       const [nextComments, nextFiles] = await Promise.all([
-        listPullRequestComments(number),
+        listPullRequestComments(number).then((comments) =>
+          filterReviewTagComments(comments, orgMembers),
+        ),
         listPullRequestFiles(number),
       ]);
       if (callId !== loadDetailRef.current) return;
@@ -193,7 +212,7 @@ export default function ResourceReviewPage() {
 
   useEffect(() => {
     if (canReview) void loadPulls();
-  }, [canReview, refreshTick]);
+  }, [canReview, refreshTick, orgMembers]);
 
   useEffect(() => {
     setGeneralComment("");
@@ -207,7 +226,7 @@ export default function ResourceReviewPage() {
       setResourcePreviews([]);
       setLoadingDetail(false);
     }
-  }, [openNumber, openPull, accountState.github?.token, publishMode]);
+  }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
 
   const visiblePulls = useMemo(() => {
     if (stateFilter === "all") return pulls;

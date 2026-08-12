@@ -216,6 +216,51 @@ function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
   };
 }
 
+function imageMimeFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const mimes: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+    avif: "image/avif",
+  };
+  return mimes[ext] || "application/octet-stream";
+}
+
+async function loadRemoteMediaItem(
+  path: string,
+  url: string,
+): Promise<UploadItem> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      path.split("/").pop() || "image",
+      { type: blob.type || imageMimeFromPath(path) },
+    );
+    const item = await createImageUploadItem(file);
+    return {
+      ...item,
+      pathOverride: path,
+      skipUpload: true,
+      source: "existing",
+    };
+  } catch (error) {
+    console.warn("[edit-media] failed to download remote image", path, error);
+    return createExistingUploadItem(
+      path.split("/").pop() || "image",
+      url,
+      path,
+    );
+  }
+}
+
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -483,23 +528,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           })) || [],
         );
 
-        const previewItems: UploadItem[] =
-          manifest.item.preview?.map((path, index) =>
-            createExistingUploadItem(
-              path.split("/").pop() || `preview-${index + 1}`,
-              buildRawFileUrl(repo.owner, repo.name, ref, path),
+        const previewItems: UploadItem[] = await Promise.all(
+          (manifest.item.preview || []).map((path, index) =>
+            loadRemoteMediaItem(
               path,
+              buildRawFileUrl(repo.owner, repo.name, ref, path),
+            ).catch(() =>
+              createExistingUploadItem(
+                path.split("/").pop() || `preview-${index + 1}`,
+                buildRawFileUrl(repo.owner, repo.name, ref, path),
+                path,
+              ),
             ),
-          ) || [];
+          ),
+        );
         setPreviews(previewItems);
 
         const iconPath = manifest.item.icon;
         setIcon(
           iconPath
-            ? createExistingUploadItem(
-                iconPath.split("/").pop() || "icon",
-                buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
+            ? await loadRemoteMediaItem(
                 iconPath,
+                buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
               )
             : null,
         );
@@ -507,10 +557,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         const coverPath = manifest.item.cover;
         setCover(
           coverPath
-            ? createExistingUploadItem(
-                coverPath.split("/").pop() || "cover",
-                buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
+            ? await loadRemoteMediaItem(
                 coverPath,
+                buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
               )
             : null,
         );

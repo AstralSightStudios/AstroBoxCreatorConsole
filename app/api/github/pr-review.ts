@@ -97,6 +97,23 @@ export async function getCurrentGithubPermission() {
   );
 }
 
+export async function listOrganizationMembers(org: string): Promise<Set<string>> {
+  const members = new Set<string>();
+  for (let page = 1; page <= 10; page += 1) {
+    const data = await githubFetch<
+      Array<{ login?: string }>
+    >(
+      `https://api.github.com/orgs/${encodeURIComponent(org)}/members?per_page=100&page=${page}`,
+      { headers: headers() },
+    );
+    for (const user of data) {
+      if (user.login) members.add(user.login);
+    }
+    if (data.length < 100) break;
+  }
+  return members;
+}
+
 export async function listOpenPullRequests() {
   return githubFetch<GithubPullRequest[]>(
     repoPath("/pulls?state=open&per_page=80&sort=updated&direction=desc"),

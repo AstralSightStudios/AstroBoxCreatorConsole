@@ -2,6 +2,7 @@ import { PUBLISH_CONFIG } from "~/config/publish";
 import { loadPublishMode } from "~/config/publishMode";
 import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
+import { listOrganizationMembers } from "~/api/github/pr-review";
 import {
     decodeCatalogContent,
     fetchCatalogEntries,
@@ -19,6 +20,7 @@ import {
 } from "./submission-protocol";
 import {
     deriveReviewStatus,
+    filterReviewTagComments,
     type NeedFixItem,
     type ReviewState,
 } from "./review-status";
@@ -76,6 +78,9 @@ export async function loadOwnedCatalogResourcesForCurrentUser(): Promise<
     ResourceCatalogContext[]
 > {
     const { token, username } = requireGithubAccount();
+    const orgMembers = await listOrganizationMembers(
+        PUBLISH_CONFIG.upstreamRepoOwner,
+    ).catch(() => new Set<string>());
     const catalog = await fetchCatalogEntries({ token });
     return catalog.entries
         .filter((entry) => entry.repo_owner === username)
@@ -177,6 +182,9 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
         return loadInProgressStagingResourcesForCurrentUser();
     }
     const { token, username } = requireGithubAccount();
+    const orgMembers = await listOrganizationMembers(
+        PUBLISH_CONFIG.upstreamRepoOwner,
+    ).catch(() => new Set<string>());
 
     const pulls = await githubFetch<any[]>(
         `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
@@ -209,7 +217,9 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
                     token,
                 ),
             ]);
-            const review = deriveReviewStatus(comments);
+            const review = deriveReviewStatus(
+                filterReviewTagComments(comments, orgMembers),
+            );
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
 
             for (const entry of relatedEntries) {
@@ -251,6 +261,9 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
     PublishingResource[]
 > {
     const { token, username } = requireGithubAccount();
+    const orgMembers = await listOrganizationMembers(
+        PUBLISH_CONFIG.upstreamRepoOwner,
+    ).catch(() => new Set<string>());
     const pulls = await githubFetch<any[]>(
         `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
         {
@@ -280,7 +293,9 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                     token,
                 ),
             ]);
-            const review = deriveReviewStatus(comments);
+            const review = deriveReviewStatus(
+                filterReviewTagComments(comments, orgMembers),
+            );
             const submissionPaths = Array.from(
                 new Set(
                     files

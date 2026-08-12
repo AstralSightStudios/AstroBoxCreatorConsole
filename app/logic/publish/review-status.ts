@@ -18,6 +18,26 @@ export interface ReviewStatusResult {
 
 const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED)_([^\]]+)\]\s*(.*)$/i;
 
+export function filterReviewTagComments<T extends {
+    body?: string;
+    created_at?: string;
+    user?: { login: string; avatar_url?: string };
+} = {
+    body?: string;
+    created_at?: string;
+    user?: { login: string; avatar_url?: string };
+}>(
+    comments: T[],
+    allowedAuthors?: Set<string>,
+): T[] {
+    if (!allowedAuthors || allowedAuthors.size === 0) return comments;
+    return comments.filter((comment) => {
+        const body = comment.body?.trim();
+        if (!body || !COMMENT_PATTERN.test(body)) return true;
+        return Boolean(comment.user?.login && allowedAuthors.has(comment.user.login));
+    });
+}
+
 export function deriveReviewStatus(comments: Array<{ body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
     const needFixes = new Map<string, string>();
     const needFixCreatedAt = new Map<string, string>();
