@@ -25,6 +25,7 @@ interface PullRequestReviewWorkspaceProps {
   submittingComment: boolean;
   approving: boolean;
   merging: boolean;
+  closing: boolean;
   canMerge: boolean;
   onToggleSwitcher: () => void;
   onSelectPull: (pull: GithubPullRequest) => void;
@@ -38,6 +39,7 @@ interface PullRequestReviewWorkspaceProps {
   onEditComment: (comment: GithubIssueComment) => void;
   onApprove: () => void;
   onMerge: () => void;
+  onClose: (reason: string) => void;
 }
 
 export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProps) {
@@ -71,6 +73,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             submittingComment={props.submittingComment}
             approving={props.approving}
             merging={props.merging}
+            closing={props.closing}
             canMerge={props.canMerge}
             onGeneralCommentChange={props.onGeneralCommentChange}
             onSubmitComment={props.onSubmitComment}
@@ -81,6 +84,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             onEditComment={props.onEditComment}
             onApprove={props.onApprove}
             onMerge={props.onMerge}
+            onClose={props.onClose}
           />
         </div>
       </div>

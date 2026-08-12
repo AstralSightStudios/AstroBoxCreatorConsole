@@ -76,6 +76,7 @@ export default function ResourceReviewPage() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [closing, setClosing] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
@@ -354,6 +355,26 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const closePr = async (reason: string) => {
+    if (!openNumber || closing) return;
+    const number = openNumber;
+    setClosing(true);
+    try {
+      await closePullRequest(number);
+      const commentBody = reason
+        ? `[ABCC_CLOSE] ${reason}`
+        : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
+      await createPullRequestComment(number, commentBody);
+      toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
+      await loadPulls();
+      await loadDetail(number);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setClosing(false);
+    }
+  };
+
   const topbarActions = null;
 
   useLayoutEffect(() => {
@@ -419,6 +440,7 @@ export default function ResourceReviewPage() {
                 submittingComment={submittingComment}
                 approving={approving}
                 merging={merging}
+                closing={closing}
                 canMerge={publishMode === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
@@ -435,6 +457,7 @@ export default function ResourceReviewPage() {
                 onEditComment={editComment}
                 onApprove={approve}
                 onMerge={merge}
+                onClose={closePr}
               />
             </LayoutGroup>
           </motion.div>

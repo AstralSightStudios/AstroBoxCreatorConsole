@@ -73,7 +73,6 @@ export function CommentComposer({
 }: CommentComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [tagEnabled, setTagEnabled] = useState(false);
-  const [closeEnabled, setCloseEnabled] = useState(false);
   const [tab, setTab] = useState<"write" | "preview">("write");
   const tagIdRef = useRef(makeNeedFixId());
 
@@ -153,9 +152,7 @@ export function CommentComposer({
   const handleSubmit = () => {
     if (!value.trim()) return;
     let body = value.trim();
-    if (closeEnabled) {
-      body = `[ABCC_CLOSE] ${body}`;
-    } else if (tagEnabled) {
+    if (tagEnabled) {
       body = `[ABCC_NEEDFIX_${tagIdRef.current}] ${body}`;
     }
     if (replyTarget) {
@@ -314,13 +311,6 @@ export function CommentComposer({
           <label className="inline-flex items-center gap-2 text-xs text-white/50">
             <Switch checked={tagEnabled} onCheckedChange={handleTagToggle} />
             NEEDFIX 标签
-          </label>
-          <label className="inline-flex items-center gap-2 text-xs text-white/50">
-            <Switch
-              checked={closeEnabled}
-              onCheckedChange={setCloseEnabled}
-            />
-            CLOSE 标签（关闭 PR）
           </label>
           <div className="ml-auto">
             <Button size="2" disabled={!canSubmit} onClick={handleSubmit} className="gap-1.5">
