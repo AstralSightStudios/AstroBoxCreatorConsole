@@ -1774,6 +1774,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               )}
               {editContext.mode === "in_progress" &&
                 editContext.reviewState === "changes_requested" &&
+                activeStepIndex !== 2 &&
                 needFixItems.length > 0 && (
                   <div className="mt-2.5 rounded-md border border-amber-400/30 bg-amber-400/5 p-2.5">
                     <div className="mb-2 flex items-center gap-2">
