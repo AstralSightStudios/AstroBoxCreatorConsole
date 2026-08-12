@@ -77,6 +77,7 @@ import {
   COVER_MAX_BYTES,
   COVER_RATIO,
   COVER_RATIO_TOLERANCE,
+  readRpkManifestInfo,
   validatePublish,
   validateRpkPackage,
 } from "~/logic/publish/validation";
@@ -1630,7 +1631,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                  resourceId={itemId}
-                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 validateFile={
+                   resourceType === "quick_app"
+                     ? async (file) => {
+                         const info = await readRpkManifestInfo(file);
+                         if (info.packageName !== itemId) {
+                           throw new Error(
+                             `RPK package 必须与资源 ID 精确一致：${itemId}`,
+                           );
+                         }
+                         return info;
+                       }
+                     : undefined
+                 }
                  onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
@@ -1648,7 +1661,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                  allowEncryption={false}
-                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 validateFile={
+                   resourceType === "quick_app"
+                     ? async (file) => {
+                         const info = await readRpkManifestInfo(file);
+                         if (info.packageName !== itemId) {
+                           throw new Error(
+                             `RPK package 必须与资源 ID 精确一致：${itemId}`,
+                           );
+                         }
+                         return info;
+                       }
+                     : undefined
+                 }
                  onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}

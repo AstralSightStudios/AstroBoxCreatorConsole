@@ -161,6 +161,40 @@ export async function readRpkPackage(file: Blob): Promise<string> {
   }
 }
 
+export interface RpkManifestInfo {
+    packageName: string;
+    versionName: string;
+}
+
+export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> {
+    let entries: Record<string, Uint8Array>;
+    try {
+        entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    } catch {
+        throw new Error("RPK 文件无法解压。");
+    }
+    const manifestName = Object.keys(entries).find(
+        (name) => name.split(/[\\/]/).pop() === "manifest.json",
+    );
+    if (!manifestName) throw new Error("RPK 包内缺少 manifest.json。");
+    let manifest: Record<string, unknown>;
+    try {
+        manifest = JSON.parse(new TextDecoder().decode(entries[manifestName]));
+    } catch {
+        throw new Error("RPK manifest.json 不是有效 JSON。");
+    }
+    const packageName =
+        typeof manifest.package === "string" ? manifest.package.trim() : "";
+    const versionName =
+        typeof manifest.versionName === "string"
+            ? manifest.versionName.trim()
+            : typeof manifest.version_name === "string"
+              ? manifest.version_name.trim()
+              : "";
+    if (!packageName) throw new Error("RPK manifest.json 缺少 package 字段。");
+    return { packageName, versionName };
+}
+
 export async function validateRpkPackage(
   file: Blob,
   resourceId: string,

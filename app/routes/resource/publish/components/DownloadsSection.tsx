@@ -38,7 +38,7 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
-  validateFile?: (file: File) => Promise<void>;
+  validateFile?: (file: File) => Promise<{ versionName?: string } | void>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -219,47 +219,29 @@ export function DownloadsSection({
             添加设备
           </Button>
         </div>
-        <Table.Root className="table-fixed w-full">
-          <Table.Header className="max-md:hidden">
-            <Table.Row>
-              <Table.ColumnHeaderCell
-                width="40px"
-                justify="center"
-                p="0"
-                className="h-full flex justify-center items-center"
+        <div className="flex flex-col gap-2">
+          {downloads.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+              {emptyMessage}
+            </p>
+          ) : (
+            downloads.map((item, index) => (
+              <div
+                key={item.uid || `download-${index}`}
+                className="rounded-lg border border-white/10 bg-black/20 p-2.5"
               >
-                <button
-                  className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px] disabled:text-white/30 disabled:pointer-events-none"
-                  onClick={onAddRow}
-                  disabled={sortedDeviceOptions.length === 0 || isDeviceLoading}
-                >
-                  <PlusIcon size={16} weight="bold" />
-                </button>
-              </Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>版本号</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>包体</Table.ColumnHeaderCell>
-              {isVip && allowEncryption && (
-                <Table.ColumnHeaderCell className="max-md:hidden">
-                  加密上传
-                </Table.ColumnHeaderCell>
-              )}
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {downloads.map((item, index) => (
-              <Table.Row key={`links-${index}`}>
-                <Table.RowHeaderCell width="40px" justify="center" px="0">
-                  {downloads.length > 0 && (
-                    <button
-                      className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
-                      onClick={() => onRemoveRow(item.uid)}
-                    >
-                      <MinusIcon size={16} weight="bold" />
-                    </button>
-                  )}
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-white/55">
+                    设备 {index + 1}
+                  </span>
+                  <button
+                    className="text-white/60 transition hover:text-red-400"
+                    onClick={() => onRemoveRow(item.uid)}
+                  >
+                    <MinusIcon size={16} weight="bold" />
+                  </button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1.5fr)_auto] md:items-start">
                   <Select.Root
                     value={item.platformId || undefined}
                     onValueChange={(value) =>
@@ -270,14 +252,12 @@ export function DownloadsSection({
                     }
                   >
                     <Select.Trigger radius="large" placeholder="请选择设备" />
-
                     <Select.Content position="popper">
                       {sortedDeviceOptions.map((opt) => {
                         const usedElsewhere = downloads.some(
                           (row, idx) =>
                             idx !== index && row.platformId === opt.id,
                         );
-
                         return (
                           <Select.Item
                             key={opt.id}
@@ -291,8 +271,7 @@ export function DownloadsSection({
                       })}
                     </Select.Content>
                   </Select.Root>
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
+
                   <TextField.Root
                     placeholder="版本号"
                     value={item.version}
@@ -304,31 +283,33 @@ export function DownloadsSection({
                       }))
                     }
                   />
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <div className="flex flex-wrap items-center gap-2 h-full w-fit">
+
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <input
                       type="file"
                       className="hidden"
                       ref={(node) => {
                         downloadFileInputs.current[item.uid] = node;
                       }}
-                       onChange={async (e) => {
-                         const file = e.target.files?.[0];
-                         e.target.value = "";
-                         if (!file) return;
-                         try {
-                           await validateFile?.(file);
-                           const uploadItem = createUploadItem(file);
-                           onUpdateRow(item.uid, (row) => ({
-                             ...row,
-                             file: uploadItem,
-                             existingFileName: undefined,
-                           }));
-                         } catch (error) {
-                           toast.error((error as Error).message);
-                         }
-                       }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        try {
+                          const meta = await validateFile?.(file);
+                          const uploadItem = createUploadItem(file);
+                          onUpdateRow(item.uid, (row) => ({
+                            ...row,
+                            file: uploadItem,
+                            existingFileName: undefined,
+                            ...(meta?.versionName
+                              ? { version: meta.versionName }
+                              : {}),
+                          }));
+                        } catch (error) {
+                          toast.error((error as Error).message);
+                        }
+                      }}
                     />
                     {item.file ? (
                       <>
@@ -339,7 +320,9 @@ export function DownloadsSection({
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
                         </Button>
-                        <span className=" text-white/80">{item.file.name}</span>
+                        <span className="min-w-0 truncate text-white/80">
+                          {item.file.name}
+                        </span>
                       </>
                     ) : item.existingFileName ? (
                       <>
@@ -350,26 +333,22 @@ export function DownloadsSection({
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
                         </Button>
-                        <span className=" text-emerald-100">
+                        <span className="min-w-0 truncate text-emerald-100">
                           当前: {item.existingFileName}
                         </span>
                       </>
                     ) : (
-                      <>
-                        <Button
-                          radius="large"
-                          onClick={() => pickDownloadFile(item.uid)}
-                          className="-mx-1"
-                        >
-                          <UploadSimpleIcon size={16} weight="bold" />
-                          请上传文件
-                        </Button>
-                      </>
+                      <Button
+                        radius="large"
+                        onClick={() => pickDownloadFile(item.uid)}
+                      >
+                        <UploadSimpleIcon size={16} weight="bold" />
+                        请上传文件
+                      </Button>
                     )}
                   </div>
-                </Table.RowHeaderCell>
-                {isVip && allowEncryption && (
-                  <Table.RowHeaderCell className="max-md:hidden">
+
+                  {isVip && allowEncryption && (
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
@@ -392,28 +371,12 @@ export function DownloadsSection({
                         />
                       )}
                     </div>
-                  </Table.RowHeaderCell>
-                )}
-              </Table.Row>
-            ))}
-
-            {downloads.length === 0 && (
-              <Table.Row key={`links-0`}>
-                <Table.RowHeaderCell
-                  width="40px"
-                  justify="center"
-                  px="0"
-                ></Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <span className="text-white/60">{emptyMessage}</span>
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell />
-                <Table.RowHeaderCell />
-                {isVip && allowEncryption && <Table.RowHeaderCell />}
-              </Table.Row>
-            )}
-          </Table.Body>
-        </Table.Root>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col px-1.5 py-1 w-full">
