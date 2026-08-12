@@ -1135,7 +1135,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           forkRepo: branchInfo.forkRepo,
           branch: branchInfo.branch,
           token,
-          title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
+          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+            itemName || itemId || "资源"
+          }`,
           body: prBody.trim() || undefined,
         });
       } else {
@@ -1159,7 +1161,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           forkRepo: branchInfo.forkRepo,
           branch: branchInfo.branch,
           token,
-          title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
+          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+            itemName || itemId || "资源"
+          }`,
           body: prBody.trim() || undefined,
         });
       }
