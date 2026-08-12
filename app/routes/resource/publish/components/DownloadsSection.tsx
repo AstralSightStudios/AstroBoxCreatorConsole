@@ -272,7 +272,7 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1.5fr)_auto] md:items-start">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1fr)_auto] md:items-start">
                   <Select.Root
                     value={item.platformId || undefined}
                     onValueChange={(value) =>
@@ -282,7 +282,11 @@ export function DownloadsSection({
                       }))
                     }
                   >
-                    <Select.Trigger radius="large" placeholder="请选择设备" />
+                    <Select.Trigger
+                      radius="large"
+                      placeholder="请选择设备"
+                      className="w-full"
+                    />
                     <Select.Content position="popper">
                       {sortedDeviceOptions.map((opt) => {
                         const usedElsewhere = downloads.some(
@@ -307,6 +311,7 @@ export function DownloadsSection({
                     placeholder="版本号"
                     value={item.version}
                     radius="large"
+                    className="min-w-0"
                     onChange={(e) =>
                       onUpdateRow(item.uid, (row) => ({
                         ...row,
