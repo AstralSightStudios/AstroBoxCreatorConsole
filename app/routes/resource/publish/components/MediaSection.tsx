@@ -143,6 +143,22 @@ export function MediaSection({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lightboxIndex]);
 
+  useEffect(() => {
+    const node = previewScrollerRef.current;
+    if (!node) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (node.scrollWidth <= node.clientWidth + 1) return;
+      event.preventDefault();
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      node.scrollLeft += delta;
+    };
+    node.addEventListener("wheel", handleWheel, { passive: false });
+    return () => node.removeEventListener("wheel", handleWheel);
+  }, [previews.length]);
+
   const scrollPreview = (direction: -1 | 1) => {
     const nextIndex = Math.min(
       previews.length - 1,
@@ -322,12 +338,6 @@ export function MediaSection({
               className={`scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1 transition-transform duration-150 ${
                 draggingId ? "scale-90" : ""
               }`}
-              onWheel={(event) => {
-                const node = previewScrollerRef.current;
-                if (!node || node.scrollWidth <= node.clientWidth + 1) return;
-                event.preventDefault();
-                node.scrollBy({ left: event.deltaY || event.deltaX, behavior: "auto" });
-              }}
               onScroll={syncActivePreview}
             >
               {previews.map((item, index) => (
