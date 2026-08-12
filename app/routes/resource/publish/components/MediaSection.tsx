@@ -130,6 +130,17 @@ export function MediaSection({
   const previewInputRef = useRef<HTMLInputElement>(null);
   const previewScrollerRef = useRef<HTMLDivElement>(null);
   const draggedPreviewIdRef = useRef<string | null>(null);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    id: string;
+    index: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    longPress: boolean;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const suppressClickRef = useRef(false);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -152,6 +163,17 @@ export function MediaSection({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lightboxIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current != null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, []);
 
   useEffect(() => {
     const node = previewScrollerRef.current;
@@ -235,6 +257,97 @@ export function MediaSection({
       }
     }
     return insertIndex;
+  };
+
+  const handlePointerMove = (event: PointerEvent) => {
+    const drag = pointerDragRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.longPress) {
+      if (Math.hypot(dx, dy) > 8) {
+        if (longPressTimerRef.current != null) {
+          window.clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+        pointerDragRef.current = null;
+      }
+      return;
+    }
+    if (!drag.moved && Math.hypot(dx, dy) > 5) {
+      drag.moved = true;
+      suppressClickRef.current = true;
+      setDraggingId(drag.id);
+      setInsertIndex(drag.index);
+    }
+    if (!drag.moved) return;
+    const nextIndex = resolveInsertIndex(event.clientX);
+    if (nextIndex != null) setInsertIndex(nextIndex);
+    const node = previewScrollerRef.current;
+    if (node) {
+      const rect = node.getBoundingClientRect();
+      if (event.clientX > rect.right - 48) {
+        node.scrollBy({ left: 18, behavior: "auto" });
+      } else if (event.clientX < rect.left + 48) {
+        node.scrollBy({ left: -18, behavior: "auto" });
+      }
+    }
+  };
+
+  const handlePointerUp = () => {
+    const drag = pointerDragRef.current;
+    if (drag?.longPress && drag.moved) {
+      const targetId =
+        previews[insertIndex ?? drag.index]?.id ?? drag.id;
+      if (targetId !== drag.id) {
+        onReorderPreview(drag.id, targetId);
+      }
+    }
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerUp);
+    pointerDragRef.current = null;
+    setDraggingId(null);
+    setInsertIndex(null);
+  };
+
+  const handleCardPointerDown = (
+    event: React.PointerEvent,
+    item: UploadItem,
+    index: number,
+  ) => {
+    if (event.pointerType !== "touch") return;
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      id: item.id,
+      index,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      longPress: false,
+    };
+    suppressClickRef.current = false;
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+    }
+    longPressTimerRef.current = window.setTimeout(() => {
+      const drag = pointerDragRef.current;
+      if (drag && !drag.moved) {
+        drag.longPress = true;
+        setDraggingId(drag.id);
+        setInsertIndex(index);
+      }
+    }, 260);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   return (
@@ -350,7 +463,7 @@ export function MediaSection({
             <div
               ref={previewScrollerRef}
               className={`scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1 transition-transform duration-150 ${
-                draggingId ? "scale-90" : ""
+                draggingId ? "scale-90 touch-none" : ""
               }`}
               onScroll={syncActivePreview}
             >
@@ -365,6 +478,9 @@ export function MediaSection({
                   draggable
                   className="group relative shrink-0 cursor-grab rounded-xl border border-white/10 bg-white/[0.03] p-2 active:cursor-grabbing"
                   style={{ width: previewWidthFor(item) }}
+                  onPointerDown={(event) =>
+                    handleCardPointerDown(event, item, index)
+                  }
                   onDragStart={(event) => {
                     draggedPreviewIdRef.current = item.id;
                     setDraggingId(item.id);
@@ -411,6 +527,10 @@ export function MediaSection({
                     type="button"
                     className="block w-full overflow-hidden rounded-lg border border-white/10 bg-black/25"
                     onClick={() => {
+                      if (suppressClickRef.current) {
+                        suppressClickRef.current = false;
+                        return;
+                      }
                       setShowInfo(false);
                       setLightboxIndex(index);
                     }}
