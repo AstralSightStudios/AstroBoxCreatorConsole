@@ -25,21 +25,33 @@ export function getImageDimensions(file: Blob): Promise<{ width: number; height:
 export async function compressImageFile(
     file: File,
     targetBytes: number,
+    useWorker = true,
 ): Promise<File> {
     if (file.size <= targetBytes) return file;
 
     const { width, height } = await getImageDimensions(file);
-    const compressed = await imageCompression(file, {
-        maxSizeMB: Math.max(0.01, targetBytes / (1024 * 1024)),
-        maxWidthOrHeight: Math.max(width, height),
-        alwaysKeepResolution: true,
-        initialQuality: 0.95,
-        preserveExif: false,
-        fileType: file.type || "image/jpeg",
-        useWebWorker: false,
-    });
+    try {
+        const compressed = await imageCompression(file, {
+            maxSizeMB: Math.max(0.01, targetBytes / (1024 * 1024)),
+            maxWidthOrHeight: Math.max(width, height),
+            alwaysKeepResolution: true,
+            initialQuality: 0.95,
+            preserveExif: false,
+            fileType: file.type || "image/jpeg",
+            useWebWorker: useWorker,
+        });
 
-    return new File([compressed], file.name, { type: compressed.type });
+        return new File([compressed], file.name, { type: compressed.type });
+    } catch (error) {
+        if (useWorker) {
+            console.warn(
+                "image compression worker failed, falling back to main thread",
+                error,
+            );
+            return compressImageFile(file, targetBytes, false);
+        }
+        throw error;
+    }
 }
 
 export const createUploadItem = (file: File): UploadItem => ({
