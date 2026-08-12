@@ -52,7 +52,10 @@ import {
   createSubmissionPullRequest,
   updateSubmissionEntryOnBranch,
 } from "~/logic/publish/staging-submission";
-import { createPullRequestComment } from "~/api/github/pr-review";
+import {
+  createPullRequestComment,
+  reopenPullRequest,
+} from "~/api/github/pr-review";
 import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
@@ -1141,6 +1144,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           throw new Error("缺少 PR 分支信息，无法更新。");
         }
 
+        if (editContext.prState === "closed" && editContext.prNumber) {
+          await reopenPullRequest(editContext.prNumber);
+          await createPullRequestComment(
+            editContext.prNumber,
+            "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。",
+          );
+        }
+
         await syncBranchWithUpstream({
           token,
           forkOwner: editContext.prHead.owner,
@@ -1548,8 +1559,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const repoStepMode: "new" | "edit" =
     isEditMode || Boolean(editContext) ? "edit" : "new";
-  const prStepMode: "new" | "update" =
-    editContext?.mode === "in_progress" ? "update" : "new";
+  const prStepMode: "new" | "update" | "reopen" =
+    editContext?.mode === "in_progress"
+      ? editContext.prState === "closed"
+        ? "reopen"
+        : "update"
+      : "new";
   const needFixItems = useMemo(
     () =>
       editContext?.mode === "in_progress"

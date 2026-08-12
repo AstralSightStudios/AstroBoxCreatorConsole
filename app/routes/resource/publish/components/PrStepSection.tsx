@@ -10,7 +10,7 @@ interface PrStepSectionProps {
   onPrBodyChange: (value: string) => void;
   onSubmit: () => void;
   onBack: () => void;
-  mode?: "new" | "update";
+  mode?: "new" | "update" | "reopen";
   needFixItems?: Array<{ id: string; message: string }>;
   fixedSelections?: Record<string, boolean>;
   fixedNotes?: Record<string, string>;
@@ -32,16 +32,23 @@ export function PrStepSection({
   onFixedToggle,
   onFixedNoteChange,
 }: PrStepSectionProps) {
-  const isUpdate = mode === "update";
+  const isReopen = mode === "reopen";
+  const isUpdate = mode === "update" || isReopen;
   return (
     <SectionCard
       title={
-        isUpdate ? "步骤 3 · 更新 Pull Request" : "步骤 3 · 提交 Pull Request"
+        isReopen
+          ? "步骤 3 · 重新打开并提交 PR"
+          : isUpdate
+            ? "步骤 3 · 更新 Pull Request"
+            : "步骤 3 · 提交 Pull Request"
       }
       description={
-        isUpdate
-          ? `向 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName} 的现有 PR 推送最新提交。`
-          : `将当前仓库的 ${MAIN_RESOURCE_BRANCH} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`
+        isReopen
+          ? `重新打开已关闭的 PR，并将最新修改推送至 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName} 的现有 PR。`
+          : isUpdate
+            ? `向 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName} 的现有 PR 推送最新提交。`
+            : `将当前仓库的 ${MAIN_RESOURCE_BRANCH} 分支提交到 ${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}。`
       }
       className="gap-0!"
       padding={false}
@@ -117,12 +124,16 @@ export function PrStepSection({
           disabled={prStatus === "loading"}
         >
           {prStatus === "loading"
-            ? isUpdate
-              ? "更新中..."
-              : "创建中..."
-            : isUpdate
-              ? "更新"
-              : "提交"}
+            ? isReopen
+              ? "重新打开并提交中..."
+              : isUpdate
+                ? "更新中..."
+                : "创建中..."
+            : isReopen
+              ? "重新打开并提交"
+              : isUpdate
+                ? "更新"
+                : "提交"}
         </Button>
       </div>
     </SectionCard>

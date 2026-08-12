@@ -102,12 +102,13 @@ export default function ResourcePublish() {
   };
 
   const handleSelect = (resource: PublishingResource) => {
-    if (resource.prState !== "open") return;
+    if (resource.prState === "merged") return;
     const editContext: ResourceEditContext = {
       mode: "in_progress",
       catalog: resource.catalog,
       prNumber: resource.prNumber,
       prUrl: resource.prUrl,
+      prState: resource.prState,
       prHead: resource.prHead,
       reviewState: resource.status,
       needs: resource.needs,
@@ -193,7 +194,7 @@ export default function ResourcePublish() {
                 <Table.Row
                   key={`${item.prNumber}-${item.id}`}
                 className={
-                  item.prState === "open"
+                  item.prState !== "merged"
                     ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
                     : ""
                 }
