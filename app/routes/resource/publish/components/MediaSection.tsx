@@ -548,7 +548,7 @@ export function MediaSection({
                     <img
                       src={item.url}
                       alt={item.name}
-                      className="h-64 w-full object-cover"
+                      className="h-64 w-full object-contain"
                       onLoad={(event) => {
                         const image = event.currentTarget;
                         if (
