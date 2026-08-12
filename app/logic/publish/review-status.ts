@@ -20,6 +20,28 @@ export interface ReviewStatusResult {
 
 const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
 
+export type TagAction = "close" | "reopen";
+
+/**
+ * 一个 PR 上可能同时存在 CLOSE 与 REOPEN 标签评论（例如关闭后又被创作者重开）。
+ * 只取最新一条决定动作，避免 CLOSE/REOPEN 互相触发形成循环；
+ * 评论正文里引用（blockquote）中的标签不会被计算。
+ */
+export function resolveLatestTagAction(
+    comments: Array<{ body?: string; created_at?: string }>,
+): TagAction | null {
+    const actionComments = comments
+        .filter((comment) =>
+            /^\s*\[ABCC_(CLOSE|REOPEN)\]/i.test(comment.body?.trim() || ""),
+        )
+        .sort((a, b) =>
+            (a.created_at || "").localeCompare(b.created_at || ""),
+        );
+    const latest = actionComments[actionComments.length - 1];
+    if (!latest) return null;
+    return /^\s*\[ABCC_REOPEN\]/i.test(latest.body || "") ? "reopen" : "close";
+}
+
 export function filterReviewTagComments<T extends {
     id?: number;
     body?: string;

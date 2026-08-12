@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   deriveReviewStatus,
   filterReviewTagComments,
+  resolveLatestTagAction,
 } from "../../app/logic/publish/review-status";
 import { parseReviewCommentBody } from "../../app/routes/resreview/utils/comment";
 
@@ -73,5 +74,34 @@ describe("review tags", () => {
       "creator",
     );
     expect(filtered).toEqual([memberRefuse]);
+  });
+
+  test("latest CLOSE/REOPEN tag wins to avoid toggle loops", () => {
+    const closeFirst = {
+      body: "[ABCC_CLOSE] 关闭",
+      created_at: "2026-08-12T10:00:00Z",
+    };
+    const reopenLater = {
+      body: "[ABCC_REOPEN] 重开",
+      created_at: "2026-08-12T11:00:00Z",
+    };
+    const closeLater = {
+      body: "[ABCC_CLOSE] 关闭",
+      created_at: "2026-08-12T12:00:00Z",
+    };
+    expect(resolveLatestTagAction([closeFirst, reopenLater])).toBe("reopen");
+    expect(resolveLatestTagAction([reopenLater, closeLater])).toBe("close");
+    expect(resolveLatestTagAction([closeFirst])).toBe("close");
+    expect(resolveLatestTagAction([reopenLater])).toBe("reopen");
+    expect(resolveLatestTagAction([])).toBeNull();
+  });
+
+  test("quoted CLOSE/REOPEN tags inside comments are ignored", () => {
+    const commentWithQuote = {
+      body:
+        "[ABCC_FIXED_abc] 已修复\n\n> [ABCC_CLOSE] 旧评论引用",
+      created_at: "2026-08-12T10:00:00Z",
+    };
+    expect(resolveLatestTagAction([commentWithQuote])).toBeNull();
   });
 });

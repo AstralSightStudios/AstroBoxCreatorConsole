@@ -12,6 +12,7 @@ import { usePublishMode } from "~/config/publishMode";
 import {
   deriveReviewStatus,
   filterReviewTagComments,
+  resolveLatestTagAction,
 } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
@@ -227,27 +228,23 @@ export default function ResourceReviewPage() {
           await loadPulls();
           navigate("/resreview", { replace: true });
         }
-      }
-      const closeComment = nextComments.find((comment) =>
-        /^\s*\[ABCC_CLOSE\]/i.test(comment.body || ""),
-      );
-      if (closeComment && !refuseComment) {
-        const fresh = await getPullRequest(number);
-        if (fresh.state === "open") {
-          await closePullRequest(number);
-          toast.success("检测到 CLOSE 标签，PR 已关闭。");
-          await loadPulls();
-        }
-      }
-      const reopenComment = nextComments.find(
-        (comment) => /^\s*\[ABCC_REOPEN\]/i.test(comment.body || ""),
-      );
-      if (reopenComment && !refuseComment) {
-        const fresh = await getPullRequest(number);
-        if (fresh.state === "closed" && !fresh.merged_at) {
-          await reopenPullRequest(number);
-          toast.success("检测到 REOPEN 标签，PR 已重新打开。");
-          await loadPulls();
+      } else {
+        // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
+        // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
+        const latestAction = resolveLatestTagAction(nextComments);
+        if (latestAction) {
+          const fresh = await getPullRequest(number);
+          if (latestAction === "reopen") {
+            if (fresh.state === "closed" && !fresh.merged_at) {
+              await reopenPullRequest(number);
+              toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+              await loadPulls();
+            }
+          } else if (fresh.state === "open") {
+            await closePullRequest(number);
+            toast.success("检测到 CLOSE 标签，PR 已关闭。");
+            await loadPulls();
+          }
         }
       }
     } catch (err) {
