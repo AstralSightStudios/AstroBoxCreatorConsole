@@ -44,6 +44,8 @@ export interface PublishingResource {
     prTitle: string;
     prUrl: string;
     prState: "open" | "closed" | "merged";
+    refused?: boolean;
+    refuseReason?: string;
     prHead: { owner: string; repo: string; ref: string };
     catalog: ResourceCatalogContext;
     submission?: {
@@ -258,13 +260,15 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                 orgMembers,
                 pr.user?.login,
             );
-            if (
-                filteredComments.some((comment) =>
-                    /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
-                )
-            ) {
-                continue;
-            }
+            const refuseComment = filteredComments.find((comment) =>
+                /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+            );
+            const refused = Boolean(refuseComment);
+            const refuseReason = refuseComment
+                ? (refuseComment.body || "")
+                      .replace(/^\s*\[ABCC_REFUSE\]\s*/i, "")
+                      .trim()
+                : "";
             const review = deriveReviewStatus(filteredComments);
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
 
@@ -286,6 +290,8 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                     prTitle: pr.title,
                     prUrl: pr.html_url,
                     prState,
+                    refused: refused || undefined,
+                    refuseReason: refuseReason || undefined,
                     prHead: {
                         owner: headRepo.owner?.login,
                         repo: headRepo.name,
@@ -353,13 +359,15 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                 orgMembers,
                 pr.user?.login,
             );
-            if (
-                filteredComments.some((comment) =>
-                    /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
-                )
-            ) {
-                continue;
-            }
+            const refuseComment = filteredComments.find((comment) =>
+                /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+            );
+            const refused = Boolean(refuseComment);
+            const refuseReason = refuseComment
+                ? (refuseComment.body || "")
+                      .replace(/^\s*\[ABCC_REFUSE\]\s*/i, "")
+                      .trim()
+                : "";
             const review = deriveReviewStatus(filteredComments);
             const submissionPaths = Array.from(
                 new Set(
@@ -408,6 +416,8 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                     prTitle: pr.title,
                     prUrl: pr.html_url,
                     prState,
+                    refused: refused || undefined,
+                    refuseReason: refuseReason || undefined,
                     prHead: {
                         owner: headRepo.owner?.login,
                         repo: headRepo.name,

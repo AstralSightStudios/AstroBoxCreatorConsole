@@ -66,6 +66,20 @@ export default function ResourcePublish() {
   const { data, loading, error } = useInProgressResources(refreshTick);
 
   const statusRender = (resource: PublishingResource) => {
+    if (resource.refused) {
+      return (
+        <span className="flex flex-col gap-1">
+          <span className="flex items-center gap-1 text-purple-300">
+            <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
+          </span>
+          {resource.refuseReason && (
+            <span className="max-w-[320px] whitespace-normal break-words text-xs leading-5 text-white/45">
+              {resource.refuseReason}
+            </span>
+          )}
+        </span>
+      );
+    }
     if (resource.prState === "merged") {
       return (
         <span className="flex items-center gap-1 text-white/45">
@@ -102,7 +116,7 @@ export default function ResourcePublish() {
   };
 
   const handleSelect = (resource: PublishingResource) => {
-    if (resource.prState === "merged") return;
+    if (resource.prState === "merged" || resource.refused) return;
     const editContext: ResourceEditContext = {
       mode: "in_progress",
       catalog: resource.catalog,
@@ -194,7 +208,7 @@ export default function ResourcePublish() {
                 <Table.Row
                   key={`${item.prNumber}-${item.id}`}
                 className={
-                  item.prState !== "merged"
+                  item.prState !== "merged" && !item.refused
                     ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
                     : ""
                 }
@@ -212,7 +226,7 @@ export default function ResourcePublish() {
                     : "--"}
                 </Table.Cell>
                 <Table.Cell>
-                  {item.prState === "closed" ? (
+                  {item.prState === "closed" && !item.refused ? (
                     <Button
                       size="1"
                       variant="soft"
