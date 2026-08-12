@@ -148,11 +148,7 @@ export function parseSubmissionRequestJson(raw: string): SubmissionRequest {
 }
 
 export function buildSubmissionRequest(request: SubmissionRequest): string {
-    const payload =
-        request.mode === "create"
-            ? { schema_version: 1, mode: "create" as const }
-            : request;
-    return `${JSON.stringify(payload, null, 2)}\n`;
+    return `${JSON.stringify(request, null, 2)}\n`;
 }
 
 export async function canonicalCatalogEntryDigest(
@@ -169,12 +165,14 @@ export async function canonicalCatalogEntryDigest(
         .join("");
 }
 
-export function buildCreateSubmissionRequest(): SubmissionRequest {
+export function buildCreateSubmissionRequest(
+    baseCatalogCommit?: string | null,
+): SubmissionRequest {
     return {
         schema_version: 1,
         mode: "create",
         original_id: null,
         base_entry_digest: null,
-        base_catalog_commit: null,
+        base_catalog_commit: baseCatalogCommit ?? null,
     };
 }

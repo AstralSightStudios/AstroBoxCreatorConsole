@@ -214,7 +214,7 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
 
     let request: SubmissionRequest;
     if (intent.mode === "create") {
-        request = buildCreateSubmissionRequest();
+        request = buildCreateSubmissionRequest(upstreamCommit);
     } else {
         const originalId = intent.originalId.trim();
         const original = latest.entries.find(
