@@ -251,12 +251,26 @@ export function DownloadsSection({
                   <span className="text-xs font-medium text-white/55">
                     设备 {index + 1}
                   </span>
-                  <button
-                    className="text-white/60 transition hover:text-red-400"
-                    onClick={() => onRemoveRow(item.uid)}
-                  >
-                    <MinusIcon size={16} weight="bold" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {fileWarnings[item.uid] && (
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-lg text-yellow-300 transition hover:bg-yellow-400/10 hover:text-yellow-200"
+                        onClick={() =>
+                          setWarningDialog(fileWarnings[item.uid] || null)
+                        }
+                        aria-label="查看 RPK 包名提示"
+                      >
+                        <InfoIcon size={16} weight="bold" />
+                      </button>
+                    )}
+                    <button
+                      className="text-white/60 transition hover:text-red-400"
+                      onClick={() => onRemoveRow(item.uid)}
+                    >
+                      <MinusIcon size={16} weight="bold" />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_minmax(0,1.5fr)_auto] md:items-start">
                   <Select.Root
@@ -375,18 +389,6 @@ export function DownloadsSection({
                         请上传文件
                       </Button>
                     )}
-                    {fileWarnings[item.uid] && (
-                      <button
-                        type="button"
-                        className="grid size-8 place-items-center rounded-full border border-yellow-400/40 bg-yellow-400/10 text-yellow-300 transition hover:bg-yellow-400/20 hover:text-yellow-200"
-                        onClick={() =>
-                          setWarningDialog(fileWarnings[item.uid] || null)
-                        }
-                        aria-label="查看 RPK 包名提示"
-                      >
-                        <InfoIcon size={16} weight="bold" />
-                      </button>
-                    )}
                   </div>
 
                   {isVip && allowEncryption && (
@@ -434,10 +436,17 @@ export function DownloadsSection({
       >
         <Dialog.Content maxWidth="420px">
           <Dialog.Title>RPK 包名提示</Dialog.Title>
-          <Dialog.Description size="2" color="amber">
+          <Dialog.Description size="2">
             RPK包名（{warningDialog?.packageName ?? ""}）和资源ID（
             {warningDialog?.resourceId ?? ""}）不一致，将无法使用自动检查更新功能。
           </Dialog.Description>
+          <div className="mt-4 flex justify-end">
+            <Dialog.Close>
+              <Button variant="soft" color="gray">
+                关闭
+              </Button>
+            </Dialog.Close>
+          </div>
         </Dialog.Content>
       </Dialog.Root>
 
