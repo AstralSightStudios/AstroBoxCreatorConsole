@@ -450,12 +450,12 @@ export function AuthorsLinksSection({
                       {urlField}
                     </div>
                     <div className="flex flex-col gap-2 md:hidden">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         {removeButton}
-                        <div className="min-w-0 flex-1">{iconButton}</div>
+                        <div className="w-28 shrink-0">{iconButton}</div>
                         <div className="min-w-0 flex-1">{titleField}</div>
                       </div>
-                      {urlField}
+                      <div className="pl-8">{urlField}</div>
                     </div>
                   </div>
                 );
