@@ -16,6 +16,7 @@ import {
     fetchCatalogEntries,
     getOrCreateFork,
     getRefSha,
+    normalizeCatalogPaidType,
     serializeCatalogEntry,
     type CatalogEntry,
     type CatalogUpdateRequest,
@@ -63,7 +64,7 @@ export function buildSubmissionEntry(payload: CatalogUpdateRequest): CatalogEntr
         tags: payload.tags.join(";"),
         device_vendors: vendors,
         devices: deviceIds,
-        paid_type: payload.paidType?.trim() ?? "",
+        paid_type: normalizeCatalogPaidType(payload.paidType),
     };
 }
 
