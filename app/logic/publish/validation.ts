@@ -37,7 +37,7 @@ export interface PublishValidationInput {
 /** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
 export const COVER_RATIO = 1.5;
 export const COVER_RATIO_TOLERANCE = 0.02;
-export const COVER_MAX_BYTES = 1024 * 1024;
+export const COVER_MAX_BYTES = 600 * 1024;
 
 export interface PublishValidationResult {
   errors: string[];

@@ -206,16 +206,16 @@ export function AuthorsLinksSection({
                     <label className="flex items-center gap-2 text-sm text-white/80">
                       <Switch
                         checked={author.bindABAccount}
-                        disabled={index === 0}
-                        onCheckedChange={(checked) =>
+                        onCheckedChange={(checked) => {
+                          if (index === 0) return;
                           setAuthors((prev) =>
                             prev.map((item, idx) =>
                               idx === index
                                 ? { ...item, bindABAccount: Boolean(checked) }
                                 : item,
                             ),
-                          )
-                        }
+                          );
+                        }}
                       />
                     </label>
                   </Table.RowHeaderCell>

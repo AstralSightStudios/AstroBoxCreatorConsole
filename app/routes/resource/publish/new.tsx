@@ -559,7 +559,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     const processed = await Promise.all(
       Array.from(files).map(async (file) => {
         try {
-          return await compressImageFile(file, 800 * 1024);
+          return await compressImageFile(file, 500 * 1024);
         } catch (err) {
           toast.error(`图片处理失败：${file.name}`);
           console.error("compress preview failed:", err);
@@ -582,11 +582,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         !originalDims.height ||
         originalDims.width !== originalDims.height
       ) {
-        toast.error("图标必须为正方形（1:1），请重新选择。");
+        toast.error("图标宽高比必须为 1:1，请重新选择。");
         return;
       }
       if (originalDims.width > 500 || originalDims.height > 500) {
-        toast.error("图标尺寸不能超过 500×500。");
+        toast.error("图标尺寸过大，请重新选择。");
         return;
       }
       let processed = file;
@@ -623,7 +623,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       Math.abs(originalRatio - COVER_RATIO) > COVER_RATIO_TOLERANCE
     ) {
       toast.error(
-        `封面必须为 3:2 宽高比，当前 ${
+        `封面宽高比必须为 3:2，当前 ${
           originalRatio ? originalRatio.toFixed(2) : "未知"
         }。`,
       );
@@ -631,7 +631,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
     let processed = file;
     try {
-      processed = await compressImageFile(file, 1024 * 1024);
+      processed = await compressImageFile(file, 600 * 1024);
     } catch (err) {
       toast.error("封面处理失败，将使用原图");
       console.error("compress cover failed:", err);
@@ -640,7 +640,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       createUploadItem(processed),
     );
     if (next.file.size > COVER_MAX_BYTES) {
-      toast.error("封面大小超过 1MB，请压缩后重新上传。");
+      toast.error("封面体积过大，请压缩后重新上传。");
       revokeUrl(next);
       return;
     }

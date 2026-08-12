@@ -268,7 +268,7 @@ export function MediaSection({
         <div className="grid gap-3 md:grid-cols-2">
           <MediaTile
             label="图标"
-            hint="必须 1:1 且不超过 500×500"
+            hint="宽高比 1:1"
             media={icon}
             uploading={iconUploading}
             onPick={() => iconInputRef.current?.click()}
@@ -276,7 +276,7 @@ export function MediaSection({
           />
           <MediaTile
             label="封面"
-            hint="必须 3:2，不超过 1MB，PNG/JPG"
+            hint="宽高比 3:2"
             media={cover}
             onPick={() => coverInputRef.current?.click()}
             onRemove={onRemoveCover}
