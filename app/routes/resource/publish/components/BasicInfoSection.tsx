@@ -187,7 +187,7 @@ export function BasicInfoSection({
             {tags.map((tag, index) => (
               <span
                 key={`${tag}-${index}`}
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-white"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs text-white"
               >
                 {tag}
                 <button
@@ -204,7 +204,7 @@ export function BasicInfoSection({
               <span className="text-sm text-white/40">暂无标签</span>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-w-md">
             <TextField.Root
               placeholder="输入标签后回车或点击添加"
               value={tagInput}
