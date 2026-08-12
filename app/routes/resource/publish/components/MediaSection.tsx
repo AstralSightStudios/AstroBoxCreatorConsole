@@ -49,6 +49,7 @@ function MediaTile({
   uploading,
   emptyClassName,
   mediaClassName,
+  imageClassName,
   onPick,
   onRemove,
 }: {
@@ -58,6 +59,7 @@ function MediaTile({
   uploading?: boolean;
   emptyClassName?: string;
   mediaClassName?: string;
+  imageClassName?: string;
   onPick: () => void;
   onRemove: () => void;
 }) {
@@ -96,7 +98,9 @@ function MediaTile({
           <img
             src={media.url}
             alt={media.name}
-            className="h-full w-full object-cover"
+            className={
+              imageClassName || "h-full w-full object-cover"
+            }
           />
         </div>
       ) : (
@@ -400,6 +404,7 @@ export function MediaSection({
             uploading={iconUploading}
             emptyClassName="aspect-square max-md:aspect-[3/1]"
             mediaClassName="aspect-square max-md:aspect-[3/1]"
+            imageClassName="max-h-full max-w-full object-contain"
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
           />
