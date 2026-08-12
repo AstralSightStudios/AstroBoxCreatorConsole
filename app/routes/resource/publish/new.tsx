@@ -1038,7 +1038,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         .map((t) => t.trim())
         .filter(Boolean);
       if (tags.length === 0) {
-        throw new Error("请至少填写一个标签（用分号分隔）。");
+        throw new Error("请至少添加一个标签。");
       }
 
       const deviceMap = new Map(deviceOptions.map((d) => [d.id, d]));
@@ -1307,6 +1307,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const goToStep = (index: number) => {
     const target = Math.max(0, Math.min(2, index));
+    if (target > 0 && tags.length === 0) {
+      toast.error("请至少添加一个标签。");
+      setActiveStepIndex(0);
+      return;
+    }
     if (target > 0 && publishValidation.errors.length) {
       toast.error(publishValidation.errors[0]);
       setActiveStepIndex(0);
