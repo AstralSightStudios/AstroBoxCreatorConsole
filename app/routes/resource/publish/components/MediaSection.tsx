@@ -118,6 +118,7 @@ export function MediaSection({
   onMediaDimensions,
 }: MediaSectionProps) {
   const previewInputRef = useRef<HTMLInputElement>(null);
+  const previewScrollerRef = useRef<HTMLDivElement>(null);
   const draggedPreviewIdRef = useRef<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -138,6 +139,12 @@ export function MediaSection({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lightboxIndex]);
+
+  const scrollPreview = (direction: -1 | 1) => {
+    const node = previewScrollerRef.current;
+    if (!node) return;
+    node.scrollBy({ left: direction * Math.max(node.clientWidth * 0.8, 260), behavior: "smooth" });
+  };
 
   return (
     <SectionCard
@@ -206,14 +213,32 @@ export function MediaSection({
                 <span className="text-xs text-white/45">共 {previews.length} 张</span>
               )}
             </div>
-            <Button
-              type="button"
-              variant="soft"
-              onClick={() => previewInputRef.current?.click()}
-            >
-              <UploadSimpleIcon size={15} weight="bold" />
-              添加预览图
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 px-2 py-1.5 text-white/65 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                onClick={() => scrollPreview(-1)}
+                aria-label="上一组预览图"
+              >
+                <ArrowLeftIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 px-2 py-1.5 text-white/65 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                onClick={() => scrollPreview(1)}
+                aria-label="下一组预览图"
+              >
+                <ArrowRightIcon size={15} />
+              </button>
+              <Button
+                type="button"
+                variant="soft"
+                onClick={() => previewInputRef.current?.click()}
+              >
+                <UploadSimpleIcon size={15} weight="bold" />
+                添加预览图
+              </Button>
+            </div>
           </div>
 
           {previews.length === 0 ? (
@@ -226,7 +251,16 @@ export function MediaSection({
               尚未上传预览图，点击选择文件
             </button>
           ) : (
-            <div className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1">
+            <div
+              ref={previewScrollerRef}
+              className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1"
+              onWheel={(event) => {
+                const node = previewScrollerRef.current;
+                if (!node || node.scrollWidth <= node.clientWidth + 1) return;
+                event.preventDefault();
+                node.scrollBy({ left: event.deltaY || event.deltaX, behavior: "auto" });
+              }}
+            >
               {previews.map((item, index) => (
                 <div
                   key={item.id}
@@ -257,7 +291,7 @@ export function MediaSection({
                     <img
                       src={item.url}
                       alt={item.name}
-                      className="h-44 w-full object-cover"
+                      className="h-52 w-full object-contain"
                       onLoad={(event) => {
                         const image = event.currentTarget;
                         if (

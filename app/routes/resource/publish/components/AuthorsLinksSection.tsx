@@ -127,6 +127,23 @@ export function AuthorsLinksSection({
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 max-w-full">
+          <div className="flex items-center justify-between md:hidden">
+            <p className="text-sm font-semibold text-white">作者</p>
+            <Button
+              type="button"
+              variant="soft"
+              size="1"
+              onClick={() =>
+                setAuthors((prev) => [
+                  ...prev,
+                  { name: "", bindABAccount: true },
+                ])
+              }
+            >
+              <PlusIcon size={14} weight="bold" />
+              添加作者
+            </Button>
+          </div>
           <Table.Root className="table-fixed w-full">
             <Table.Header className="max-md:hidden">
               <Table.Row>
@@ -211,6 +228,23 @@ export function AuthorsLinksSection({
         <div className="h-px bg-white/10" />
 
         <div className="flex flex-col gap-3 max-w-full">
+          <div className="flex items-center justify-between md:hidden">
+            <p className="text-sm font-semibold text-white">外部链接</p>
+            <Button
+              type="button"
+              variant="soft"
+              size="1"
+              onClick={() =>
+                setLinks((prev) => [
+                  ...prev,
+                  { icon: "", title: "", url: "" },
+                ])
+              }
+            >
+              <PlusIcon size={14} weight="bold" />
+              添加链接
+            </Button>
+          </div>
           <Table.Root className="table-fixed w-full">
             <Table.Header className="max-md:hidden">
               <Table.Row>

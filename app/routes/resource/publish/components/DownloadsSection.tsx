@@ -207,6 +207,17 @@ export function DownloadsSection({
               </AlertDialog.Content>
             </AlertDialog.Root>
           )}
+          <Button
+            size="1"
+            variant="soft"
+            radius="large"
+            className="text-xs! md:hidden"
+            disabled={sortedDeviceOptions.length === 0 || isDeviceLoading}
+            onClick={onAddRow}
+          >
+            <PlusIcon size={14} weight="bold" />
+            添加设备
+          </Button>
         </div>
         <Table.Root className="table-fixed w-full">
           <Table.Header className="max-md:hidden">
