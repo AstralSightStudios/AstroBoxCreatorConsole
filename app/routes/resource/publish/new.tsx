@@ -1379,33 +1379,34 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   // Auto-save debounce
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || previewUploading) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       void buildFormData().then(autoSaveDraft);
-    }, 3000);
+    }, 1000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [buildFormData, isEditMode]);
+  }, [buildFormData, isEditMode, previewUploading]);
 
   // Check for auto-saved draft on mount
   useEffect(() => {
     if (isEditMode) return;
-    const saved = loadAutoSavedDraft();
-    if (saved && saved.formData.itemName) {
-      setAutoSavedData(saved);
-      setAutoSavePromptOpen(true);
-    }
+    void loadAutoSavedDraft().then((saved) => {
+      if (saved && saved.formData.itemName) {
+        setAutoSavedData(saved);
+        setAutoSavePromptOpen(true);
+      }
+    });
   }, [isEditMode]);
 
   const handleSaveDraft = async () => {
     const name = draftName.trim() || itemName || "未命名草稿";
     const data = await buildFormData();
-    saveDraft(name, data);
+    await saveDraft(name, data);
     setDraftName("");
     setSaveDraftOpen(false);
-    setDraftList(listDrafts());
+    setDraftList(await listDrafts());
   };
 
   const handleRestoreDraft = (draft: PublishDraft) => {
@@ -1413,22 +1414,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setDraftPopoverOpen(false);
   };
 
-  const handleDeleteDraft = (id: string) => {
-    deleteDraft(id);
-    setDraftList(listDrafts());
+  const handleDeleteDraft = async (id: string) => {
+    await deleteDraft(id);
+    setDraftList(await listDrafts());
   };
 
-  const handleRestoreAutoSave = () => {
+  const handleRestoreAutoSave = async () => {
     if (autoSavedData) {
       restoreFormData(autoSavedData.formData);
     }
     setAutoSavePromptOpen(false);
-    clearAutoSavedDraft();
+    await clearAutoSavedDraft();
   };
 
-  const handleDismissAutoSave = () => {
+  const handleDismissAutoSave = async () => {
     setAutoSavePromptOpen(false);
-    clearAutoSavedDraft();
+    await clearAutoSavedDraft();
   };
 
   const formatDraftTime = (ts: number) => {
@@ -1533,7 +1534,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
         <Popover.Root open={draftPopoverOpen} onOpenChange={(open) => {
           setDraftPopoverOpen(open);
-          if (open) setDraftList(listDrafts());
+          if (open) void listDrafts().then(setDraftList);
         }}>
           <Popover.Trigger>
             <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
