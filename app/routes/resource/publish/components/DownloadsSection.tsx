@@ -272,55 +272,59 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
-                  <Select.Root
-                    value={item.platformId || undefined}
-                    onValueChange={(value) =>
-                      onUpdateRow(item.uid, (row) => ({
-                        ...row,
-                        platformId: value,
-                      }))
-                    }
-                  >
-                    <Select.Trigger
+                <div className="flex flex-wrap gap-2 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
+                  <div className="min-w-[160px] flex-1 md:min-w-0">
+                    <Select.Root
+                      value={item.platformId || undefined}
+                      onValueChange={(value) =>
+                        onUpdateRow(item.uid, (row) => ({
+                          ...row,
+                          platformId: value,
+                        }))
+                      }
+                    >
+                      <Select.Trigger
+                        radius="large"
+                        placeholder="请选择设备"
+                        className="w-full"
+                      />
+                      <Select.Content position="popper">
+                        {sortedDeviceOptions.map((opt) => {
+                          const usedElsewhere = downloads.some(
+                            (row, idx) =>
+                              idx !== index && row.platformId === opt.id,
+                          );
+                          return (
+                            <Select.Item
+                              key={opt.id}
+                              value={opt.id}
+                              disabled={usedElsewhere}
+                            >
+                              {opt.name}
+                              {usedElsewhere ? "（已使用）" : ""}
+                            </Select.Item>
+                          );
+                        })}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
+
+                  <div className="min-w-[160px] flex-1 md:min-w-0">
+                    <TextField.Root
+                      placeholder="版本号"
+                      value={item.version}
                       radius="large"
-                      placeholder="请选择设备"
-                      className="w-full"
+                      className="min-w-0"
+                      onChange={(e) =>
+                        onUpdateRow(item.uid, (row) => ({
+                          ...row,
+                          version: e.target.value,
+                        }))
+                      }
                     />
-                    <Select.Content position="popper">
-                      {sortedDeviceOptions.map((opt) => {
-                        const usedElsewhere = downloads.some(
-                          (row, idx) =>
-                            idx !== index && row.platformId === opt.id,
-                        );
-                        return (
-                          <Select.Item
-                            key={opt.id}
-                            value={opt.id}
-                            disabled={usedElsewhere}
-                          >
-                            {opt.name}
-                            {usedElsewhere ? "（已使用）" : ""}
-                          </Select.Item>
-                        );
-                      })}
-                    </Select.Content>
-                  </Select.Root>
+                  </div>
 
-                  <TextField.Root
-                    placeholder="版本号"
-                    value={item.version}
-                    radius="large"
-                    className="min-w-0"
-                    onChange={(e) =>
-                      onUpdateRow(item.uid, (row) => ({
-                        ...row,
-                        version: e.target.value,
-                      }))
-                    }
-                  />
-
-                  <div className="col-span-2 flex min-w-0 items-center gap-2 md:col-span-1">
+                  <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
                     <input
                       type="file"
                       className="hidden"
@@ -397,7 +401,7 @@ export function DownloadsSection({
                   </div>
 
                   {isVip && allowEncryption && (
-                    <div className="col-span-2 flex items-center gap-2 md:col-span-1">
+                    <div className="flex w-full items-center gap-2 md:w-auto">
                       <span className="text-xs text-white/65">加密上传</span>
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
