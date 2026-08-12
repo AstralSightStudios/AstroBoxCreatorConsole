@@ -207,7 +207,7 @@ export default function ResourceReviewPage() {
       setResourcePreviews([]);
       setLoadingDetail(false);
     }
-  }, [openNumber, accountState.github?.token, publishMode]);
+  }, [openNumber, openPull, accountState.github?.token, publishMode]);
 
   const visiblePulls = useMemo(() => {
     if (stateFilter === "all") return pulls;
