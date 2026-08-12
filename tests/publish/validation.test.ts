@@ -93,7 +93,7 @@ describe("publish validation", () => {
       ...validInput,
       links: [{ icon: "Link", title: "Site", url: "http://example.com" }],
     });
-    expect(result.errors).toEqual([]);
+    expect(result.errors.join(" ")).toContain("外部链接填写不完整");
     expect(result.linkErrors[0]).toContain("HTTPS");
   });
 });

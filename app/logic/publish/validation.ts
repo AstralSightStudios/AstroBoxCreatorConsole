@@ -135,6 +135,10 @@ export function validatePublish(
   errors.push(...validateDownloadRows(input.downloads, "正式下载"));
   errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));
   const linkErrors = input.links.map(validateLink);
+  const linkErrorText = linkErrors.filter(Boolean).join("；");
+  if (linkErrorText) {
+    errors.push(`外部链接填写不完整：${linkErrorText}`);
+  }
   return { errors, linkErrors };
 }
 
