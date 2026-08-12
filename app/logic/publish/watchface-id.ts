@@ -1,4 +1,5 @@
 import { fetchCatalogEntries } from "./catalog";
+import { PUBLISH_CONFIG } from "~/config/publish";
 
 export const WATCHFACE_ID_LENGTH = 12;
 export const WATCHFACE_ID_PREFIX = "9798";
@@ -52,7 +53,13 @@ export async function replaceWatchfaceIdInFile(
 export async function fetchExistingCatalogIds(
   token: string,
 ): Promise<Map<string, string>> {
-  const { entries } = await fetchCatalogEntries({ token });
+  const { entries } = await fetchCatalogEntries({
+    token,
+    owner: "AstralSightStudios",
+    repo: "AstroBox-Repo",
+    ref: "main",
+    path: PUBLISH_CONFIG.catalogFilePath,
+  });
   const map = new Map<string, string>();
   for (const e of entries) {
     const id = e.id.trim();

@@ -336,18 +336,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [resourceType, itemId, existingCatalogIds]);
 
   useEffect(() => {
-    if (resourceType !== "watchface") {
+    const trimmed = itemId.trim();
+    if (!trimmed) {
       setIdError("");
       return;
     }
-    const formatError = validateWatchfaceIdFormat(itemId);
-    if (formatError) {
-      setIdError(formatError);
-      return;
-    }
     const ownedId = editContext?.catalog.entry.id.trim();
-    const existingName = existingCatalogIds?.get(itemId.trim());
-    if (existingName && itemId.trim() !== ownedId) {
+    if (resourceType === "watchface") {
+      const formatError = validateWatchfaceIdFormat(trimmed);
+      if (formatError) {
+        setIdError(formatError);
+        return;
+      }
+    }
+    const existingName = existingCatalogIds?.get(trimmed);
+    if (existingName && trimmed !== ownedId) {
       setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
       return;
     }
@@ -1651,9 +1654,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               />
               <DownloadsSection
                 title="试用版下载配置"
-                description="可选。结构与下载配置一致，但不允许加密上传。"
+                description="可选。结构与下载配置一致，但不允许加密上传。如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
                 emptyMessage="还未添加任何试用下载设备"
-                helperText="如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
+                helperText=""
                 downloads={trialDownloads}
                 sortedDeviceOptions={sortedDeviceOptions}
                 isDeviceLoading={isDeviceLoading}

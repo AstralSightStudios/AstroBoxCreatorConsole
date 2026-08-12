@@ -451,7 +451,7 @@ export function DownloadsSection({
       </Dialog.Root>
 
       <div className="flex flex-col px-1.5 py-1 w-full">
-        <p className="text-xs text-white/60">{helperText}</p>
+        {helperText && <p className="text-xs text-white/60">{helperText}</p>}
       </div>
     </SectionCard>
   );
