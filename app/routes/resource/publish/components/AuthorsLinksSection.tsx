@@ -403,7 +403,7 @@ export function AuthorsLinksSection({
                   />
                 );
                 const urlField = (
-                  <div className="flex flex-col gap-1">
+                  <div className="relative pb-4">
                     <TextField.Root
                       type="url"
                       placeholder="https://example.com"
@@ -424,7 +424,9 @@ export function AuthorsLinksSection({
                       }
                     />
                     {linkError && (
-                      <p className="text-xs text-red-400">{linkError}</p>
+                      <p className="absolute left-0 top-full mt-1 text-xs text-red-400">
+                        {linkError}
+                      </p>
                     )}
                   </div>
                 );
