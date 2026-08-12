@@ -557,7 +557,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     const processed = await Promise.all(
       Array.from(files).map(async (file) => {
         try {
-          return await compressImageFile(file);
+          return await compressImageFile(file, 800 * 1024);
         } catch (err) {
           toast.error(`图片处理失败：${file.name}`);
           console.error("compress preview failed:", err);
@@ -574,7 +574,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (!file) return;
     let processed = file;
     try {
-      processed = await compressImageFile(file);
+      processed = await compressImageFile(file, 100 * 1024);
     } catch (err) {
       toast.error("图标处理失败，将使用原图");
       console.error("compress icon failed:", err);
@@ -596,7 +596,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (!file) return;
     let processed = file;
     try {
-      processed = await compressImageFile(file);
+      processed = await compressImageFile(file, 1024 * 1024);
     } catch (err) {
       toast.error("封面处理失败，将使用原图");
       console.error("compress cover failed:", err);
