@@ -18,7 +18,7 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*(.*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
 
 export function filterReviewTagComments<T extends {
     id?: number;
@@ -44,7 +44,8 @@ export function filterReviewTagComments<T extends {
         const isAuthor = Boolean(prAuthor && login && login === prAuthor);
         // FIXED / REOPEN 由 PR 创建者通过工具发送，属于合法流程；
         // 其余标签（NEEDFIX/CLOSE/REFUSE）只能由组织 member 发送。
-        const isAuthorFlowTag = /^\s*\[ABCC_(FIXED|REOPEN)\]/i.test(body);
+        const isAuthorFlowTag =
+            /^\s*\[ABCC_(?:FIXED|REOPEN)(?:_[^\]]+)?\]/i.test(body);
         return isMember || (isAuthor && isAuthorFlowTag);
     });
 }
