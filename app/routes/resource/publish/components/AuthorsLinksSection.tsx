@@ -4,7 +4,6 @@ import {
   MagnifyingGlassIcon,
   MinusIcon,
   PlusIcon,
-  XIcon,
 } from "@phosphor-icons/react";
 import { Button, Dialog, Switch, Table, TextField } from "@radix-ui/themes";
 import {
@@ -29,9 +28,11 @@ const iconNameToPascal = (name: string): string =>
     .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
     .join("");
 
-const phosphorIconModules = import.meta.glob<
-  { default?: ComponentType<{ size?: number; className?: string }> }
->("/node_modules/@phosphor-icons/react/dist/csr/*.es.js");
+type PhosphorIconComponent = ComponentType<{ size?: number; className?: string }>;
+
+const phosphorIconModules = import.meta.glob<Record<string, PhosphorIconComponent>>(
+  "/node_modules/@phosphor-icons/react/dist/csr/*.es.js",
+);
 
 function isSubsequence(needle: string, haystack: string): boolean {
     let cursor = 0;
@@ -76,7 +77,11 @@ function PhosphorIconByName({
     }
     loader()
       .then((module) => {
-        if (active) setComponent(() => module.default ?? null);
+        if (!active) return;
+        const pascalName = iconNameToPascal(name);
+        const component =
+          module[`${pascalName}Icon`] || module[pascalName] || null;
+        setComponent(() => component);
       })
       .catch(() => {
         if (active) setComponent(null);
@@ -355,12 +360,11 @@ export function AuthorsLinksSection({
           if (!open) setIconPickerIndex(null);
         }}
       >
-        <Dialog.Content className="max-w-[min(94vw,760px)] p-5">
+        <Dialog.Content className="flex max-w-[min(94vw,760px)] flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-4">
-            <Dialog.Title className="m-0 min-w-0">选择 Phosphor Icon</Dialog.Title>
-            <Dialog.Close className="grid size-8 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white">
-              <XIcon size={17} />
-            </Dialog.Close>
+            <Dialog.Title className="m-0 min-w-0 text-base">
+              选择 Phosphor Icon
+            </Dialog.Title>
           </div>
           <TextField.Root
             placeholder="搜索图标名称"

@@ -50,6 +50,7 @@ import {
   createExistingUploadItem,
   createImageUploadItem,
   createUploadItem,
+  getImageDimensions,
   revokeUrl,
 } from "./components/uploadUtils";
 import {
@@ -575,23 +576,29 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (!file) return;
     setIconUploading(true);
     try {
-    let processed = file;
-    try {
-      processed = await compressImageFile(file, 100 * 1024);
-    } catch (err) {
-      toast.error("图标处理失败，将使用原图");
-      console.error("compress icon failed:", err);
-    }
-    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
-    if (!next.width || !next.height || next.width !== next.height) {
-      toast.error("图标必须为正方形（1:1），请重新选择。");
-      revokeUrl(next);
-      return;
-    }
-    setIcon((prev) => {
-      revokeUrl(prev);
-      return next;
-    });
+      const originalDims = await getImageDimensions(file);
+      if (
+        !originalDims.width ||
+        !originalDims.height ||
+        originalDims.width !== originalDims.height
+      ) {
+        toast.error("图标必须为正方形（1:1），请重新选择。");
+        return;
+      }
+      let processed = file;
+      try {
+        processed = await compressImageFile(file, 100 * 1024);
+      } catch (err) {
+        toast.error("图标处理失败，将使用原图");
+        console.error("compress icon failed:", err);
+      }
+      const next = await createImageUploadItem(processed).catch(() =>
+        createUploadItem(processed),
+      );
+      setIcon((prev) => {
+        revokeUrl(prev);
+        return next;
+      });
     } finally {
       setIconUploading(false);
     }
@@ -600,6 +607,24 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleCoverUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    const originalDims = await getImageDimensions(file);
+    const originalRatio =
+      originalDims.width && originalDims.height
+        ? originalDims.width / originalDims.height
+        : null;
+    if (
+      !originalDims.width ||
+      !originalDims.height ||
+      !originalRatio ||
+      Math.abs(originalRatio - COVER_RATIO) > COVER_RATIO_TOLERANCE
+    ) {
+      toast.error(
+        `封面必须为 3:2 宽高比，当前 ${
+          originalRatio ? originalRatio.toFixed(2) : "未知"
+        }。`,
+      );
+      return;
+    }
     let processed = file;
     try {
       processed = await compressImageFile(file, 1024 * 1024);
@@ -607,22 +632,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       toast.error("封面处理失败，将使用原图");
       console.error("compress cover failed:", err);
     }
-    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
-    const ratio = next.width && next.height ? next.width / next.height : null;
-    if (
-      !next.width ||
-      !next.height ||
-      !ratio ||
-      Math.abs(ratio - COVER_RATIO) > COVER_RATIO_TOLERANCE
-    ) {
-      toast.error(
-        `封面必须为 3:2 宽高比，当前 ${
-          ratio ? ratio.toFixed(2) : "未知"
-        }。`,
-      );
-      revokeUrl(next);
-      return;
-    }
+    const next = await createImageUploadItem(processed).catch(() =>
+      createUploadItem(processed),
+    );
     if (next.file.size > COVER_MAX_BYTES) {
       toast.error("封面大小超过 1MB，请压缩后重新上传。");
       revokeUrl(next);
