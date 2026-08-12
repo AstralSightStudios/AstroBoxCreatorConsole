@@ -2,7 +2,6 @@ import { Button, Checkbox, TextArea, TextField } from "@radix-ui/themes";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { SectionCard } from "./shared";
-import { GitPullRequestIcon } from "@phosphor-icons/react";
 
 interface PrStepSectionProps {
   prBody: string;
@@ -97,18 +96,6 @@ export function PrStepSection({
             AstroBox 资源开发者官方 QQ 群
           </a>
         </p>
-      </div>
-      <div className="max-h-48 overflow-auto bg-black/25 border-t border-white/10 p-2.5 text-xs text-white/70 -mb-2.5 flex items-center gap-1">
-        {prMessage && (
-          <>
-            <GitPullRequestIcon size={16} weight="bold" />
-            <p
-              className={`text-sm ${prStatus === "error" ? "text-amber-400" : "text-white/70"}`}
-            >
-              {prMessage}
-            </p>
-          </>
-        )}
       </div>
       <div className="flex flex-row max-lg:flex-col justify-between gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
         <Button
