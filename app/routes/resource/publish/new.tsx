@@ -79,7 +79,6 @@ import {
   COVER_RATIO_TOLERANCE,
   readRpkManifestInfo,
   validatePublish,
-  validateRpkPackage,
 } from "~/logic/publish/validation";
 import {
   buildRawFileUrl,
@@ -795,14 +794,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
        if (publishValidation.errors.length) {
          throw new Error(publishValidation.errors[0]);
        }
-       if (resourceType === "quick_app") {
-         for (const download of [...downloads, ...trialDownloads]) {
-           if (download.file && !download.file.skipUpload) {
-             await validateRpkPackage(download.file.file, itemId);
-           }
-         }
-       }
-
        if (!manifestResult.manifestJson) {
         throw new Error("缺少 manifest 数据，请先填写必要字段。");
       }
@@ -1639,12 +1630,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                    resourceType === "quick_app"
                      ? async (file) => {
                          const info = await readRpkManifestInfo(file);
-                         if (info.packageName !== itemId) {
-                           throw new Error(
-                             `RPK包名和资源ID不一致，将无法使用自动检查更新的功能。`,
-                           );
-                         }
-                         return info;
+                         return {
+                           versionName: info.versionName,
+                           warning:
+                             info.packageName !== itemId
+                               ? {
+                                   packageName: info.packageName,
+                                   resourceId: itemId,
+                                 }
+                               : undefined,
+                         };
                        }
                      : undefined
                  }
@@ -1669,12 +1664,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                    resourceType === "quick_app"
                      ? async (file) => {
                          const info = await readRpkManifestInfo(file);
-                         if (info.packageName !== itemId) {
-                           throw new Error(
-                             `RPK包名和资源ID不一致，将无法使用自动检查更新的功能。`,
-                           );
-                         }
-                         return info;
+                         return {
+                           versionName: info.versionName,
+                           warning:
+                             info.packageName !== itemId
+                               ? {
+                                   packageName: info.packageName,
+                                   resourceId: itemId,
+                                 }
+                               : undefined,
+                         };
                        }
                      : undefined
                  }

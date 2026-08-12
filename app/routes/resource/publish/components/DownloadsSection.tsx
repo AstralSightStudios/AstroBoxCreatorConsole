@@ -3,6 +3,7 @@ import {
   PlusIcon,
   MinusIcon,
   WarningDiamondIcon,
+  InfoIcon,
   ListChecksIcon,
   CopyIcon,
   ChecksIcon,
@@ -18,6 +19,7 @@ import {
   Checkbox,
   Text,
   AlertDialog,
+  Dialog,
 } from "@radix-ui/themes";
 import { useMemo, useRef, useState } from "react";
 import { createUploadItem } from "./uploadUtils";
@@ -38,7 +40,15 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
-  validateFile?: (file: File) => Promise<{ versionName?: string } | void>;
+  validateFile?: (
+    file: File,
+  ) => Promise<
+    | {
+        versionName?: string;
+        warning?: { packageName: string; resourceId: string };
+      }
+    | void
+  >;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -73,6 +83,13 @@ export function DownloadsSection({
   );
   const [batchSelectOpen, setBatchSelectOpen] = useState(false);
   const [fillAllOpen, setFillAllOpen] = useState(false);
+  const [fileWarnings, setFileWarnings] = useState<
+    Record<string, { packageName: string; resourceId: string }>
+  >({});
+  const [warningDialog, setWarningDialog] = useState<{
+    packageName: string;
+    resourceId: string;
+  } | null>(null);
 
   const selectedDeviceIds = useMemo(
     () => new Set(downloads.map((d) => d.platformId).filter(Boolean)),
@@ -306,6 +323,18 @@ export function DownloadsSection({
                               ? { version: meta.versionName }
                               : {}),
                           }));
+                          if (meta?.warning) {
+                            setFileWarnings((prev) => ({
+                              ...prev,
+                              [item.uid]: meta.warning!,
+                            }));
+                          } else {
+                            setFileWarnings((prev) => {
+                              const next = { ...prev };
+                              delete next[item.uid];
+                              return next;
+                            });
+                          }
                         } catch (error) {
                           toast.error((error as Error).message);
                         }
@@ -346,6 +375,18 @@ export function DownloadsSection({
                         请上传文件
                       </Button>
                     )}
+                    {fileWarnings[item.uid] && (
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-full border border-yellow-400/40 bg-yellow-400/10 text-yellow-300 transition hover:bg-yellow-400/20 hover:text-yellow-200"
+                        onClick={() =>
+                          setWarningDialog(fileWarnings[item.uid] || null)
+                        }
+                        aria-label="查看 RPK 包名提示"
+                      >
+                        <InfoIcon size={16} weight="bold" />
+                      </button>
+                    )}
                   </div>
 
                   {isVip && allowEncryption && (
@@ -384,6 +425,21 @@ export function DownloadsSection({
           )}
         </div>
       </div>
+
+      <Dialog.Root
+        open={warningDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setWarningDialog(null);
+        }}
+      >
+        <Dialog.Content maxWidth="420px">
+          <Dialog.Title>RPK 包名提示</Dialog.Title>
+          <Dialog.Description size="2" color="amber">
+            RPK包名（{warningDialog?.packageName ?? ""}）和资源ID（
+            {warningDialog?.resourceId ?? ""}）不一致，将无法使用自动检查更新功能。
+          </Dialog.Description>
+        </Dialog.Content>
+      </Dialog.Root>
 
       <div className="flex flex-col px-1.5 py-1 w-full">
         <p className="text-xs text-white/60">{helperText}</p>
