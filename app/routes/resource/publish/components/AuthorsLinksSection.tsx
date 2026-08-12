@@ -410,7 +410,7 @@ export function AuthorsLinksSection({
                         width="40px"
                         justify="center"
                         px="0"
-                        className="max-md:order-last max-md:w-full max-md:px-0"
+                        className="max-md:order-first max-md:flex max-md:items-center max-md:justify-start max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10"
                       >
                         <button
                           className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
@@ -423,7 +423,7 @@ export function AuthorsLinksSection({
                           <MinusIcon size={16} weight="bold" />
                         </button>
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10">
                         <Button
                           type="button"
                           variant="surface"
@@ -441,7 +441,7 @@ export function AuthorsLinksSection({
                           </span>
                         </Button>
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2 max-md:border-b max-md:border-white/10">
                         <TextField.Root
                           placeholder="标题"
                           value={link.title}
@@ -457,7 +457,7 @@ export function AuthorsLinksSection({
                           }
                         />
                       </Table.RowHeaderCell>
-                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0">
+                      <Table.RowHeaderCell className="max-md:w-full max-md:px-0 max-md:py-2">
                         <TextField.Root
                           type="url"
                           placeholder="https://example.com"
