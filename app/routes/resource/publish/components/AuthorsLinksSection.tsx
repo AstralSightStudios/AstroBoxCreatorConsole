@@ -455,7 +455,7 @@ export function AuthorsLinksSection({
                         <div className="w-28 shrink-0">{iconButton}</div>
                         <div className="min-w-0 flex-1">{titleField}</div>
                       </div>
-                      <div className="pl-8">{urlField}</div>
+                      <div className="pl-7">{urlField}</div>
                     </div>
                   </div>
                 );
