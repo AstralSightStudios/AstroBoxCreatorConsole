@@ -43,6 +43,7 @@ export interface PublishingResource {
     prNumber: number;
     prTitle: string;
     prUrl: string;
+    prState: "open" | "closed" | "merged";
     prHead: { owner: string; repo: string; ref: string };
     catalog: ResourceCatalogContext;
     submission?: {
@@ -188,7 +189,7 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
     const mode = loadPublishMode() === "staging" ? "staging" : "legacy";
     const { token } = requireGithubAccount();
     const pulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
         {
             headers: { Authorization: `Bearer ${token}` },
         },
@@ -216,7 +217,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
     ).catch(() => new Set<string>());
 
     const pulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=50`,
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
         {
             headers: { Authorization: `Bearer ${token}` },
         },
@@ -252,6 +253,12 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
 
             for (const entry of relatedEntries) {
+                const prState: "open" | "closed" | "merged" =
+                    pr.state === "closed"
+                        ? pr.merged_at
+                            ? "merged"
+                            : "closed"
+                        : "open";
                 resources.push({
                     id: entry.id,
                     name: entry.name,
@@ -262,6 +269,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                     prNumber: pr.number,
                     prTitle: pr.title,
                     prUrl: pr.html_url,
+                    prState,
                     prHead: {
                         owner: headRepo.owner?.login,
                         repo: headRepo.name,
@@ -354,6 +362,12 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                 const request = parseSubmissionRequestJson(
                     decodeCatalogContent(requestFile.content),
                 );
+                const prState: "open" | "closed" | "merged" =
+                    pr.state === "closed"
+                        ? pr.merged_at
+                            ? "merged"
+                            : "closed"
+                        : "open";
 
                 resources.push({
                     id: entry.id,
@@ -365,6 +379,7 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                     prNumber: pr.number,
                     prTitle: pr.title,
                     prUrl: pr.html_url,
+                    prState,
                     prHead: {
                         owner: headRepo.owner?.login,
                         repo: headRepo.name,

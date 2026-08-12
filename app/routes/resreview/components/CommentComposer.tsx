@@ -74,6 +74,7 @@ export function CommentComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [tagEnabled, setTagEnabled] = useState(false);
   const [closeEnabled, setCloseEnabled] = useState(false);
+  const [reopenEnabled, setReopenEnabled] = useState(false);
   const [tab, setTab] = useState<"write" | "preview">("write");
   const tagIdRef = useRef(makeNeedFixId());
 
@@ -153,7 +154,9 @@ export function CommentComposer({
   const handleSubmit = () => {
     if (!value.trim()) return;
     let body = value.trim();
-    if (closeEnabled) {
+    if (reopenEnabled) {
+      body = `[ABCC_REOPEN] ${body}`;
+    } else if (closeEnabled) {
       body = `[ABCC_CLOSE] ${body}`;
     } else if (tagEnabled) {
       body = `[ABCC_NEEDFIX_${tagIdRef.current}] ${body}`;
@@ -318,9 +321,22 @@ export function CommentComposer({
           <label className="inline-flex items-center gap-2 text-xs text-white/50">
             <Switch
               checked={closeEnabled}
-              onCheckedChange={setCloseEnabled}
+              onCheckedChange={(checked) => {
+                setCloseEnabled(checked);
+                if (checked) setReopenEnabled(false);
+              }}
             />
             CLOSE 标签（关闭 PR）
+          </label>
+          <label className="inline-flex items-center gap-2 text-xs text-white/50">
+            <Switch
+              checked={reopenEnabled}
+              onCheckedChange={(checked) => {
+                setReopenEnabled(checked);
+                if (checked) setCloseEnabled(false);
+              }}
+            />
+            REOPEN 标签（重新打开 PR）
           </label>
           <div className="ml-auto">
             <Button size="2" disabled={!canSubmit} onClick={handleSubmit} className="gap-1.5">

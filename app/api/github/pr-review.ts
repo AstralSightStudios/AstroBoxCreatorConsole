@@ -6,6 +6,8 @@ export interface GithubPullRequest {
   number: number;
   title: string;
   html_url: string;
+  state?: "open" | "closed";
+  merged_at?: string;
   user?: {
     login: string;
     avatar_url?: string;
@@ -114,9 +116,11 @@ export async function listOrganizationMembers(org: string): Promise<Set<string>>
   return members;
 }
 
-export async function listOpenPullRequests() {
+export async function listReviewPullRequests(
+  state: "open" | "closed" | "all" = "open",
+) {
   return githubFetch<GithubPullRequest[]>(
-    repoPath("/pulls?state=open&per_page=80&sort=updated&direction=desc"),
+    repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
     { headers: headers() },
   );
 }
@@ -152,6 +156,17 @@ export async function closePullRequest(prNumber: number) {
       method: "PATCH",
       headers: headers(),
       body: JSON.stringify({ state: "closed" }),
+    },
+  );
+}
+
+export async function reopenPullRequest(prNumber: number) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ state: "open" }),
     },
   );
 }

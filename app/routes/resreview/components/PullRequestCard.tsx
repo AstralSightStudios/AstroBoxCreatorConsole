@@ -14,6 +14,12 @@ interface PullRequestCardProps {
 
 export function PullRequestCard({ pull, comments, onClick }: PullRequestCardProps) {
   const status = deriveReviewStatus(comments);
+  const prBadgeState: "open" | "closed" | "merged" =
+    pull.state === "closed"
+      ? pull.merged_at
+        ? "merged"
+        : "closed"
+      : "open";
   return (
     <motion.button
       layoutId={`pr-item-${pull.number}`}
@@ -29,7 +35,7 @@ export function PullRequestCard({ pull, comments, onClick }: PullRequestCardProp
           <span className="ml-1.5 text-[12px] font-medium text-white/40">#{pull.number}</span>
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-white/50">
-          <PrStatusBadge state="open" />
+          <PrStatusBadge state={prBadgeState} />
           <span className="inline-flex min-w-0 items-center gap-2">
             {pull.user?.avatar_url ? (
               <img

@@ -16,7 +16,7 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE)(?:_([^\]]+))?\]\s*(.*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN)(?:_([^\]]+))?\]\s*(.*)$/i;
 
 export function filterReviewTagComments<T extends {
     body?: string;
@@ -32,10 +32,12 @@ export function filterReviewTagComments<T extends {
 ): T[] {
     if (!allowedAuthors || allowedAuthors.size === 0) return comments;
     return comments.filter((comment) => {
-        const body = comment.body?.trim();
-        if (!body || !COMMENT_PATTERN.test(body)) return true;
-        return Boolean(comment.user?.login && allowedAuthors.has(comment.user.login));
-    });
+    const body = comment.body?.trim();
+    if (!body || !COMMENT_PATTERN.test(body)) return true;
+    // REOPEN 标签由 PR 创建者（资源创作者）发出，允许非组织成员发布。
+    if (/^\s*\[ABCC_REOPEN\]/i.test(body)) return true;
+    return Boolean(comment.user?.login && allowedAuthors.has(comment.user.login));
+});
 }
 
 export function deriveReviewStatus(comments: Array<{ body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {

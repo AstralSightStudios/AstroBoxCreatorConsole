@@ -1,4 +1,5 @@
 import {
+  ArrowClockwiseIcon,
   CheckCircleIcon,
   ClockIcon,
   FileArrowUpIcon,
@@ -8,7 +9,12 @@ import {
 import { Button, Table, Callout, Spinner } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import Page from "~/layout/page";
+import {
+  createPullRequestComment,
+  reopenPullRequest,
+} from "~/api/github/pr-review";
 import {
   loadInProgressResourcesForCurrentUser,
   type PublishingResource,
@@ -23,7 +29,7 @@ function formatRestype(restype: string) {
   return restype || "未知";
 }
 
-function useInProgressResources() {
+function useInProgressResources(refreshTick: number) {
   const [data, setData] = useState<PublishingResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,16 +54,32 @@ function useInProgressResources() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshTick]);
 
   return { data, loading, error };
 }
 
 export default function ResourcePublish() {
   const navigate = useNavigate();
-  const { data, loading, error } = useInProgressResources();
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [reopening, setReopening] = useState<number | null>(null);
+  const { data, loading, error } = useInProgressResources(refreshTick);
 
   const statusRender = (resource: PublishingResource) => {
+    if (resource.prState === "merged") {
+      return (
+        <span className="flex items-center gap-1 text-white/45">
+          <CheckCircleIcon size={18} weight="fill" /> 已合入
+        </span>
+      );
+    }
+    if (resource.prState === "closed") {
+      return (
+        <span className="flex items-center gap-1 text-red-300">
+          <WarningOctagonIcon size={18} weight="fill" /> 已关闭
+        </span>
+      );
+    }
     if (resource.status === "changes_requested") {
       return (
         <span className="flex items-center gap-1 text-amber-300">
@@ -80,6 +102,7 @@ export default function ResourcePublish() {
   };
 
   const handleSelect = (resource: PublishingResource) => {
+    if (resource.prState !== "open") return;
     const editContext: ResourceEditContext = {
       mode: "in_progress",
       catalog: resource.catalog,
@@ -91,6 +114,24 @@ export default function ResourcePublish() {
       submission: resource.submission,
     };
     navigate("/publish/edit", { state: { editContext } });
+  };
+
+  const handleReopen = async (resource: PublishingResource) => {
+    if (reopening !== null) return;
+    setReopening(resource.prNumber);
+    try {
+      await reopenPullRequest(resource.prNumber);
+      await createPullRequestComment(
+        resource.prNumber,
+        "[ABCC_REOPEN] 创作者已重新打开此 PR。",
+      );
+      toast.success("PR 已重新打开，并已记录 REOPEN 标签。");
+      setRefreshTick((prev) => prev + 1);
+    } catch (err) {
+      toast.error((err as Error).message || "重新打开 PR 失败");
+    } finally {
+      setReopening(null);
+    }
   };
 
   const content = useMemo(() => {
@@ -130,7 +171,7 @@ export default function ResourcePublish() {
     if (data.length === 0) {
       return (
         <p className="px-3 text-sm text-white/70">
-          暂无进行中的发布申请，点击下方按钮开始新的提交。
+          暂无发布申请，点击下方按钮开始新的提交。
         </p>
       );
     }
@@ -144,13 +185,18 @@ export default function ResourcePublish() {
               <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>提交日期</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
             </Table.Row>
           </Table.Header>
           <Table.Body>
             {data.map((item) => (
-              <Table.Row
-                key={`${item.prNumber}-${item.id}`}
-                className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
+                <Table.Row
+                  key={`${item.prNumber}-${item.id}`}
+                className={
+                  item.prState === "open"
+                    ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
+                    : ""
+                }
                 onClick={() => handleSelect(item)}
               >
                 <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
@@ -163,6 +209,23 @@ export default function ResourcePublish() {
                   {item.createdAt
                     ? new Date(item.createdAt).toLocaleDateString("zh-CN")
                     : "--"}
+                </Table.Cell>
+                <Table.Cell>
+                  {item.prState === "closed" ? (
+                    <Button
+                      size="1"
+                      variant="soft"
+                      color="blue"
+                      disabled={reopening === item.prNumber}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleReopen(item);
+                      }}
+                    >
+                      <ArrowClockwiseIcon size={14} weight="bold" />
+                      {reopening === item.prNumber ? "重新打开中..." : "重新打开"}
+                    </Button>
+                  ) : null}
                 </Table.Cell>
               </Table.Row>
             ))}

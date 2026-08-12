@@ -1790,16 +1790,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                       {needFixItems.map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-start gap-3 py-2 text-sm text-white/85 first:pt-0 last:pb-0"
+                          className="min-w-0 py-2 text-sm leading-6 text-white/85 first:pt-0 last:pb-0"
                         >
-                          <span className="w-28 shrink-0 font-mono text-xs leading-5 text-amber-300">
-                            {item.id}
-                          </span>
                           <div
-                            className="min-w-0 flex-1 break-words text-white/85"
+                            className="min-w-0 break-words [&_code]:font-mono [&_code]:text-xs [&_code]:text-amber-300"
                             dangerouslySetInnerHTML={{
                               __html: renderCommentMarkdownInlineHtml(
-                                item.message || "（无附加说明）",
+                                `\`${item.id}\`　${item.message || "（无附加说明）"}`,
                               ),
                             }}
                           />

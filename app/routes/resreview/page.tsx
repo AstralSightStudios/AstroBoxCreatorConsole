@@ -15,12 +15,13 @@ import {
 } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
-  listOpenPullRequests,
+  listReviewPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
   approvePullRequest,
   mergePullRequest,
   closePullRequest,
+  reopenPullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
@@ -64,6 +65,7 @@ export default function ResourceReviewPage() {
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
+  const [prStateFilter, setPrStateFilter] = useState<"all" | "open" | "closed">("all");
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
@@ -143,7 +145,7 @@ export default function ResourceReviewPage() {
   const loadPulls = async () => {
     setLoadingPulls(true);
     try {
-      const list = await listOpenPullRequests();
+      const list = await listReviewPullRequests("all");
       setPulls(list);
       const commentEntries = await Promise.all(
         list.map(async (pull) => {
@@ -210,6 +212,23 @@ export default function ResourceReviewPage() {
         toast.success("检测到 CLOSE 标签，PR 已关闭。");
         await loadPulls();
       }
+      const reopenComment = nextComments.find(
+        (comment) =>
+          /^\s*\[ABCC_REOPEN\]/i.test(comment.body || "") &&
+          Boolean(
+            comment.user?.login &&
+              comment.user.login === openPull?.user?.login,
+          ),
+      );
+      if (
+        reopenComment &&
+        openPull?.state === "closed" &&
+        !openPull.merged_at
+      ) {
+        await reopenPullRequest(number);
+        toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+        await loadPulls();
+      }
     } catch (err) {
       if (callId === loadDetailRef.current) {
         toast.error(getErrorMessage(err));
@@ -244,12 +263,18 @@ export default function ResourceReviewPage() {
   }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
 
   const visiblePulls = useMemo(() => {
-    if (stateFilter === "all") return pulls;
-    return pulls.filter((pull) => {
+    let list = pulls;
+    if (prStateFilter === "open") {
+      list = list.filter((pull) => pull.state !== "closed");
+    } else if (prStateFilter === "closed") {
+      list = list.filter((pull) => pull.state === "closed");
+    }
+    if (stateFilter === "all") return list;
+    return list.filter((pull) => {
       const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
       return status.state === stateFilter;
     });
-  }, [commentsByPr, pulls, stateFilter]);
+  }, [commentsByPr, pulls, stateFilter, prStateFilter]);
 
   const refreshDetail = () => {
     if (!openNumber) return;
@@ -428,7 +453,23 @@ export default function ResourceReviewPage() {
                   {env.owner}/{env.repoName}
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                    <div className="min-w-0 flex-1">
+                      <Select.Root
+                        value={prStateFilter}
+                        onValueChange={(val) =>
+                          setPrStateFilter(val as "all" | "open" | "closed")
+                        }
+                      >
+                        <Select.Trigger radius="large" className="w-full" />
+                        <Select.Content position="popper">
+                          <Select.Item value="all">全部 PR</Select.Item>
+                          <Select.Item value="open">进行中</Select.Item>
+                          <Select.Item value="closed">已关闭</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                    <div className="min-w-0 flex-1">
                     <Select.Root
                       value={stateFilter}
                       onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
@@ -441,6 +482,7 @@ export default function ResourceReviewPage() {
                         <Select.Item value="fixed_waiting">已修复待复核</Select.Item>
                       </Select.Content>
                     </Select.Root>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
@@ -460,7 +502,7 @@ export default function ResourceReviewPage() {
               <section className="flex min-h-0 flex-1 flex-col">
                 <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-3 no-scrollbar">
                   {visiblePulls.length === 0 ? (
-                    <div className="py-16 text-center text-sm text-white/45">暂无 open PR</div>
+                    <div className="py-16 text-center text-sm text-white/45">暂无 PR</div>
                   ) : (
                     <LayoutGroup>
                       <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
