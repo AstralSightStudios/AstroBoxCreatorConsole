@@ -272,7 +272,7 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 max-md:gap-1 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
+                <div className="flex flex-wrap gap-1 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
                   <div
                     className="min-w-[120px] flex-1 md:min-w-0"
                     style={{
