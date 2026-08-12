@@ -46,6 +46,7 @@ function MediaTile({
   media,
   uploading,
   emptyClassName,
+  mediaClassName,
   onPick,
   onRemove,
 }: {
@@ -54,6 +55,7 @@ function MediaTile({
   media: UploadItem | null;
   uploading?: boolean;
   emptyClassName?: string;
+  mediaClassName?: string;
   onPick: () => void;
   onRemove: () => void;
 }) {
@@ -84,11 +86,15 @@ function MediaTile({
           </div>
         </div>
       ) : media ? (
-        <div className="flex h-36 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25">
+        <div
+          className={`flex min-h-56 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25 ${
+            mediaClassName || ""
+          }`}
+        >
           <img
             src={media.url}
             alt={media.name}
-            className="max-h-full max-w-full object-contain"
+            className="h-full w-full object-cover"
           />
         </div>
       ) : (
@@ -276,6 +282,7 @@ export function MediaSection({
             media={icon}
             uploading={iconUploading}
             emptyClassName="aspect-square"
+            mediaClassName="aspect-square"
             onPick={() => iconInputRef.current?.click()}
             onRemove={onRemoveIcon}
           />
@@ -284,6 +291,7 @@ export function MediaSection({
             hint="宽高比 3:2"
             media={cover}
             emptyClassName="aspect-[3/2]"
+            mediaClassName="aspect-[3/2]"
             onPick={() => coverInputRef.current?.click()}
             onRemove={onRemoveCover}
           />
