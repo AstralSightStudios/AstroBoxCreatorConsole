@@ -44,12 +44,29 @@ export interface PublishValidationResult {
   linkErrors: Array<string | null>;
 }
 
+export function normalizeLinkUrl(raw: string): string {
+    let value = raw.trim();
+    while (value.startsWith("`") && value.endsWith("`")) {
+        value = value.slice(1, -1).trim();
+    }
+    if (value.startsWith("<") && value.endsWith(">")) {
+        value = value.slice(1, -1).trim();
+    }
+    return value;
+}
+
 export function validateLink(link: ValidationLinkInput): string | null {
   if (![link.icon, link.title, link.url].some((value) => value.trim())) return null;
-  if (!link.url.trim()) return "请填写 URL";
+  const missing = [
+    !link.icon.trim() && "图标",
+    !link.title.trim() && "标题",
+    !link.url.trim() && "网址",
+  ].filter(Boolean);
+  if (missing.length) return `请填写：${missing.join("、")}`;
+  const url = normalizeLinkUrl(link.url);
   try {
-    const url = new URL(link.url.trim());
-    if (url.protocol !== "https:" || !url.hostname) return "仅支持有效 HTTPS URL";
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname) return "仅支持有效 HTTPS URL";
   } catch {
     return "URL 格式无效";
   }

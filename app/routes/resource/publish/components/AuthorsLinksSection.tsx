@@ -1,14 +1,17 @@
 import {
-  PlusIcon,
-  MinusIcon,
   BinocularsIcon,
   InfoIcon,
+  MinusIcon,
+  PlusIcon,
 } from "@phosphor-icons/react";
-import { Switch, TextField, Table } from "@radix-ui/themes";
+import { Button, Switch, TextField } from "@radix-ui/themes";
 import { type Dispatch, type SetStateAction } from "react";
 import { type AuthorInput, type LinkInput } from "./types";
 import { SectionCard } from "./shared";
-import { validateLink } from "~/logic/publish/validation";
+import {
+  normalizeLinkUrl,
+  validateLink,
+} from "~/logic/publish/validation";
 
 interface AuthorsLinksSectionProps {
   authors: AuthorInput[];
@@ -26,160 +29,120 @@ export function AuthorsLinksSection({
   return (
     <SectionCard
       title="作者与外链"
-      description="可以添加多个作者以及外部链接（官网、文档、社区等）。"
+      description="作者会自动填入当前 AstroBox 用户名；外链用于补充官网、文档、社区等入口。"
     >
-      <div className="flex flex-col gap-1">
-        {/*<div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-white pt-1.5 px-2">
-            资源作者列表
-          </p>
-        </div>*/}
-        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
-          <Table.Root className="table-fixed w-full min-w-lg">
-            <Table.Header>
-              <Table.Row>
-                <Table.ColumnHeaderCell
-                  width="40px"
-                  justify="center"
-                  p="0"
-                  className="h-full flex justify-center items-center shrink-0"
-                >
-                  <button
-                    className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px]"
-                    onClick={() =>
-                      setAuthors((prev) => [
-                        ...prev,
-                        { name: "", bindABAccount: true },
-                      ])
-                    }
-                  >
-                    <PlusIcon size={16} weight="bold" />
-                  </button>
-                </Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>作者名称</Table.ColumnHeaderCell>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">作者</p>
+              <p className="text-xs text-white/55">至少保留一个作者，作者名不能为空。</p>
+            </div>
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() =>
+                setAuthors((prev) => [
+                  ...prev,
+                  { name: "", bindABAccount: true },
+                ])
+              }
+            >
+              <PlusIcon size={15} weight="bold" />
+              添加作者
+            </Button>
+          </div>
 
-                <Table.ColumnHeaderCell>
-                  关联 AstroBox 账号
-                </Table.ColumnHeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {authors.map((author, index) => (
-                <Table.Row key={`author-${index}`}>
-                  <Table.RowHeaderCell width="40px" justify="center" px="0">
-                    {authors.length > 1 && (
-                      <button
-                        className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
-                        onClick={() =>
-                          setAuthors((prev) =>
-                            prev.filter((_, idx) => idx !== index),
-                          )
-                        }
-                      >
-                        <MinusIcon size={16} weight="bold" />
-                      </button>
-                    )}
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <TextField.Root
-                      placeholder="作者名称"
-                      value={author.name}
-                      radius="large"
-                      onChange={(e) =>
+          <div className="flex flex-col gap-2">
+            {authors.map((author, index) => (
+              <div
+                key={`author-${index}`}
+                className="grid gap-2 rounded-lg border border-white/10 bg-black/20 p-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+              >
+                <TextField.Root
+                  placeholder="作者名称"
+                  value={author.name}
+                  radius="large"
+                  onChange={(e) =>
+                    setAuthors((prev) =>
+                      prev.map((item, idx) =>
+                        idx === index ? { ...item, name: e.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-white/80">
+                    <Switch
+                      checked={author.bindABAccount}
+                      onCheckedChange={(checked) =>
                         setAuthors((prev) =>
                           prev.map((item, idx) =>
                             idx === index
-                              ? { ...item, name: e.target.value }
+                              ? { ...item, bindABAccount: Boolean(checked) }
                               : item,
                           ),
                         )
                       }
                     />
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <label className="flex items-center gap-2 text-sm text-white/80 h-full">
-                      <Switch
-                        checked={author.bindABAccount}
-                        onCheckedChange={(checked) =>
-                          setAuthors((prev) =>
-                            prev.map((item, idx) =>
-                              idx === index
-                                ? {
-                                    ...item,
-                                    bindABAccount: Boolean(checked),
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  </Table.RowHeaderCell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        {/*<div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-white pt-1.5 px-2">
-            外部链接列表
-          </p>
-        </div>*/}
-        <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
-          <Table.Root className="table-fixed w-full min-w-lg">
-            <Table.Header>
-              <Table.Row>
-                <Table.ColumnHeaderCell
-                  width="40px"
-                  justify="center"
-                  p="0"
-                  className="h-full flex justify-center items-center"
-                >
-                  <button
-                    className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px]"
+                    关联 AstroBox 账号
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    color="red"
+                    disabled={authors.length <= 1}
                     onClick={() =>
-                      setLinks((prev) => [
-                        ...prev,
-                        { icon: "", title: "", url: "" },
-                      ])
+                      setAuthors((prev) => prev.filter((_, idx) => idx !== index))
                     }
                   >
-                    <PlusIcon size={16} weight="bold" />
-                  </button>
-                </Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>外部链接标题</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>
-                  图标
-                  <span className="text-xs text-white/60">（可选）</span>
-                </Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>网址</Table.ColumnHeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
+                    <MinusIcon size={15} weight="bold" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">外部链接</p>
+              <p className="text-xs text-white/55">
+                标题、图标、网址为必填项；如果其中任意一项有值，另外两项也必须填写。
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() =>
+                setLinks((prev) => [
+                  ...prev,
+                  { icon: "", title: "", url: "" },
+                ])
+              }
+            >
+              <PlusIcon size={15} weight="bold" />
+              添加链接
+            </Button>
+          </div>
+
+          {links.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+              还未添加外部链接
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
               {links.map((link, index) => {
                 const linkError = validateLink(link);
                 return (
-                <Table.Row key={`links-${index}`} className={linkError ? "outline outline-1 outline-red-400/70" : ""}>
-                  <Table.RowHeaderCell width="40px" justify="center" px="0">
-                    {links.length > 0 && (
-                      <button
-                        className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
-                        onClick={() =>
-                          setLinks((prev) =>
-                            prev.filter((_, idx) => idx !== index),
-                          )
-                        }
-                      >
-                        <MinusIcon size={16} weight="bold" />
-                      </button>
-                    )}
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <label className="flex items-center gap-2 text-sm text-white/80 h-full">
+                  <div
+                    key={`link-${index}`}
+                    className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2.5"
+                  >
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_minmax(0,1.5fr)_auto] md:items-start">
                       <TextField.Root
-                        placeholder="anything..."
+                        placeholder="标题"
                         value={link.title}
                         radius="large"
                         onChange={(e) =>
@@ -192,79 +155,76 @@ export function AuthorsLinksSection({
                           )
                         }
                       />
-                    </label>
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <TextField.Root
-                      placeholder="...Icon"
-                      value={link.icon}
-                      radius="large"
-                      onChange={(e) =>
-                        setLinks((prev) =>
-                          prev.map((item, idx) =>
-                            idx === index
-                              ? { ...item, icon: e.target.value }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <label className="flex items-center gap-2 text-sm text-white/80 h-full">
-                       <TextField.Root
-                         type="url"
-                         placeholder="https://example.com"
-                         color={linkError ? "red" : undefined}
-                         value={link.url}
+                      <TextField.Root
+                        placeholder="图标（必填）"
+                        value={link.icon}
                         radius="large"
                         onChange={(e) =>
                           setLinks((prev) =>
                             prev.map((item, idx) =>
                               idx === index
-                                ? { ...item, url: e.target.value }
+                                ? { ...item, icon: e.target.value }
                                 : item,
                             ),
                           )
                         }
-                       />
-                     </label>
-                     {linkError && <p className="mt-1 text-xs text-red-400">{linkError}</p>}
-                   </Table.RowHeaderCell>
-                 </Table.Row>
-               );
+                      />
+                      <TextField.Root
+                        type="url"
+                        placeholder="https://example.com"
+                        value={link.url}
+                        radius="large"
+                        color={linkError ? "red" : undefined}
+                        onChange={(e) =>
+                          setLinks((prev) =>
+                            prev.map((item, idx) =>
+                              idx === index
+                                ? {
+                                    ...item,
+                                    url: normalizeLinkUrl(e.target.value),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        color="red"
+                        onClick={() =>
+                          setLinks((prev) =>
+                            prev.filter((_, idx) => idx !== index),
+                          )
+                        }
+                      >
+                        <MinusIcon size={15} weight="bold" />
+                      </Button>
+                    </div>
+                    {linkError && (
+                      <p className="text-xs text-red-400">{linkError}</p>
+                    )}
+                  </div>
+                );
               })}
-               {links.length === 0 && (
-                <Table.Row key={`links-0`}>
-                  <Table.RowHeaderCell
-                    width="40px"
-                    justify="center"
-                    px="0"
-                  ></Table.RowHeaderCell>
-                  <Table.RowHeaderCell>
-                    <span className="text-white/60">还未添加外部链接</span>
-                  </Table.RowHeaderCell>
-                  <Table.RowHeaderCell />
-                  <Table.RowHeaderCell />
-                </Table.Row>
-              )}
-            </Table.Body>
-          </Table.Root>
-        </div>
-        <div className="flex justify-between gap-1.5 px-1.5 pt-1.5 w-full flex-wrap">
-          <p className="text-sm text-white/70 flex gap-1 items-center leading-4.5">
-            <InfoIcon size={18} className="shrink-0" />
-            你可以使用 Phosphor Icon 作为外部链接图标。
-          </p>
-          <a
-            href="https://phosphoricons.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-fit text-size-medium rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-1 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-          >
-            <BinocularsIcon size={18} className="shrink-0" />
-            浏览全部图标
-          </a>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-white/65">
+            <p className="flex items-center gap-1.5">
+              <InfoIcon size={16} />
+              图标请使用 Phosphor Icon 名称。
+            </p>
+            <a
+              href="https://phosphoricons.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-blue-400 transition hover:bg-white/10 hover:text-blue-300"
+            >
+              <BinocularsIcon size={16} />
+              浏览全部图标
+            </a>
+          </div>
         </div>
       </div>
     </SectionCard>

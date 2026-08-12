@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import {
+  normalizeLinkUrl,
   readRpkPackage,
   validateLink,
   validatePublish,
@@ -82,9 +83,12 @@ describe("publish validation", () => {
 
   test("reports invalid links without blocking publishing", () => {
     expect(validateLink({ icon: "", title: "", url: "" })).toBeNull();
-    expect(validateLink({ icon: "Link", title: "", url: "" })).toContain("URL");
-    expect(validateLink({ icon: "", title: "Site", url: "http://example.com" })).toContain("HTTPS");
-    expect(validateLink({ icon: "", title: "Site", url: "https://example.com" })).toBeNull();
+    expect(validateLink({ icon: "Link", title: "", url: "" })).toContain("标题、网址");
+    expect(validateLink({ icon: "", title: "Site", url: "https://example.com" })).toContain("图标");
+    expect(validateLink({ icon: "Link", title: "Site", url: "http://example.com" })).toContain("HTTPS");
+    expect(validateLink({ icon: "Link", title: "Site", url: "https://example.com" })).toBeNull();
+    expect(validateLink({ icon: "Link", title: "Site", url: "`https://example.com`" })).toBeNull();
+    expect(normalizeLinkUrl("`https://example.com`")).toBe("https://example.com");
     const result = validatePublish({
       ...validInput,
       links: [{ icon: "Link", title: "Site", url: "http://example.com" }],
