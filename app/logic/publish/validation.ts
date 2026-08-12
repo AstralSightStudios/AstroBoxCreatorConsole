@@ -201,6 +201,6 @@ export async function validateRpkPackage(
 ): Promise<void> {
   const packageName = await readRpkPackage(file);
   if (packageName !== resourceId) {
-    throw new Error(`RPK package 必须与资源 ID 精确一致：${resourceId}`);
+    throw new Error("RPK包名和资源ID不一致，将无法使用自动检查更新的功能。");
   }
 }

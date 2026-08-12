@@ -314,6 +314,7 @@ export function MediaSection({
               尚未上传预览图，点击选择文件
             </button>
           ) : (
+            <>
             <div
               ref={previewScrollerRef}
               className={`scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1 transition-transform duration-150 ${
@@ -459,6 +460,24 @@ export function MediaSection({
                 添加预览图
               </button>
             </div>
+            {previews.length > 1 && (
+              <div className="flex justify-center gap-1.5 pt-1">
+                {previews.map((_, index) => (
+                  <button
+                    key={`preview-dot-${index}`}
+                    type="button"
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === activeIndex
+                        ? "w-5 bg-white/80"
+                        : "w-2 bg-white/25 hover:bg-white/45"
+                    }`}
+                    onClick={() => scrollPreviewTo(index)}
+                    aria-label={`跳转到第 ${index + 1} 张预览图`}
+                  />
+                ))}
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>

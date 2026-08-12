@@ -1641,7 +1641,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                          const info = await readRpkManifestInfo(file);
                          if (info.packageName !== itemId) {
                            throw new Error(
-                             `RPK package 必须与资源 ID 精确一致：${itemId}`,
+                             `RPK包名和资源ID不一致，将无法使用自动检查更新的功能。`,
                            );
                          }
                          return info;
@@ -1671,7 +1671,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                          const info = await readRpkManifestInfo(file);
                          if (info.packageName !== itemId) {
                            throw new Error(
-                             `RPK package 必须与资源 ID 精确一致：${itemId}`,
+                             `RPK包名和资源ID不一致，将无法使用自动检查更新的功能。`,
                            );
                          }
                          return info;
