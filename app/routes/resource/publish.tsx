@@ -87,6 +87,7 @@ export default function ResourcePublish() {
       prHead: resource.prHead,
       reviewState: resource.status,
       needs: resource.needs,
+      submission: resource.submission,
     };
     navigate("/publish/edit", { state: { editContext } });
   };
