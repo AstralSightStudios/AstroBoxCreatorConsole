@@ -273,7 +273,7 @@ export function DownloadsSection({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
-                  <div className="min-w-[160px] flex-1 md:min-w-0">
+                  <div className="min-w-[220px] flex-[2] md:min-w-0">
                     <Select.Root
                       value={item.platformId || undefined}
                       onValueChange={(value) =>
@@ -286,7 +286,7 @@ export function DownloadsSection({
                       <Select.Trigger
                         radius="large"
                         placeholder="请选择设备"
-                        className="w-full"
+                        className="w-full whitespace-normal"
                       />
                       <Select.Content position="popper">
                         {sortedDeviceOptions.map((opt) => {
@@ -309,7 +309,7 @@ export function DownloadsSection({
                     </Select.Root>
                   </div>
 
-                  <div className="min-w-[160px] flex-1 md:min-w-0">
+                  <div className="min-w-[90px] flex-1 md:min-w-0">
                     <TextField.Root
                       placeholder="版本号"
                       value={item.version}
