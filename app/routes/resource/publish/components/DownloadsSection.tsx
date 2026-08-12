@@ -350,6 +350,7 @@ export function DownloadsSection({
 
                   {isVip && allowEncryption && (
                     <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/65">加密上传</span>
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
                         disabled={Boolean(item.existingFileName)}
@@ -364,6 +365,11 @@ export function DownloadsSection({
                         <EncryptConfigDialog
                           resourceId={resourceId || ""}
                           deviceId={item.platformId}
+                          deviceName={
+                            sortedDeviceOptions.find(
+                              (opt) => opt.id === item.platformId,
+                            )?.name || item.platformId
+                          }
                           triggerDisabled={!item.encryptOnUpload}
                           allDeviceIds={downloads
                             .map((d) => d.platformId)

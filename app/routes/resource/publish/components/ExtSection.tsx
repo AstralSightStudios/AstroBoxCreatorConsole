@@ -1,4 +1,4 @@
-import { Switch, TextArea } from "@radix-ui/themes";
+import { Switch } from "@radix-ui/themes";
 import { SectionCard } from "./shared";
 
 interface ExtSectionProps {
@@ -37,24 +37,6 @@ export function ExtSection({
           />
         </div>
       </div>
-      <TextArea
-        rows={4}
-        placeholder='例如 {"theme":"dark"}'
-        value={extRaw}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {extError && <p className="text-sm text-amber-400">{extError}</p>}
-      {!extError && (
-        <div className="flex flex-col px-1.5 py-1 w-full">
-          <p className="text-xs text-white/60">
-            提交时会与结构化字段自动合并后写入
-            <code className="mx-1 rounded bg-white/10 px-1.5 py-0.5 text-[11px]">
-              manifest_v2.json
-            </code>
-            。
-          </p>
-        </div>
-      )}
     </SectionCard>
   );
 }

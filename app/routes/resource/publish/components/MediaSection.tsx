@@ -9,7 +9,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
 
@@ -316,7 +316,9 @@ export function MediaSection({
           ) : (
             <div
               ref={previewScrollerRef}
-              className="scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1"
+              className={`scrollbar-none flex flex-nowrap gap-2 overflow-x-auto pb-1 transition-transform duration-150 ${
+                draggingId ? "scale-90" : ""
+              }`}
               onWheel={(event) => {
                 const node = previewScrollerRef.current;
                 if (!node || node.scrollWidth <= node.clientWidth + 1) return;
@@ -326,13 +328,28 @@ export function MediaSection({
               onScroll={syncActivePreview}
             >
               {previews.map((item, index) => (
+                <Fragment key={item.id}>
+                  {insertIndex === index && draggingId && (
+                    <div className="w-0.5 shrink-0 self-stretch rounded-full bg-blue-400" />
+                  )}
                 <div
                   key={item.id}
                   data-preview-index={index}
-                  className={`group relative shrink-0 rounded-xl border border-white/10 bg-white/[0.03] p-2 transition-transform duration-150 ${
-                    draggingId ? "scale-90 shadow-2xl" : ""
-                  }`}
+                  draggable
+                  className="group relative shrink-0 cursor-grab rounded-xl border border-white/10 bg-white/[0.03] p-2 active:cursor-grabbing"
                   style={{ width: previewWidthFor(item) }}
+                  onDragStart={(event) => {
+                    draggedPreviewIdRef.current = item.id;
+                    setDraggingId(item.id);
+                    setInsertIndex(index);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", item.id);
+                  }}
+                  onDragEnd={() => {
+                    draggedPreviewIdRef.current = null;
+                    setDraggingId(null);
+                    setInsertIndex(null);
+                  }}
                   onDragOver={(event) => {
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
@@ -395,16 +412,7 @@ export function MediaSection({
                   <div className="mt-2 flex items-center gap-1">
                     <button
                       type="button"
-                      draggable
-                      className="cursor-grab rounded p-1 text-white/40 transition hover:bg-white/10 hover:text-white active:cursor-grabbing"
-                      onDragStart={(event) => {
-                        draggedPreviewIdRef.current = item.id;
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", item.id);
-                      }}
-                      onDragEnd={() => {
-                        draggedPreviewIdRef.current = null;
-                      }}
+                      className="pointer-events-none rounded p-1 text-white/40"
                       aria-label="拖拽排序"
                     >
                       <DotsSixVerticalIcon size={15} weight="bold" />
@@ -440,6 +448,7 @@ export function MediaSection({
                     </button>
                   </div>
                 </div>
+                </Fragment>
               ))}
               <button
                 type="button"
