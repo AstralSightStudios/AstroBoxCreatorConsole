@@ -1,6 +1,6 @@
 [package]
 name = "astrobox-creator-console"
-version = "0.1.0"
+version = "0.2.1"
 description = "把复杂统统留在背后"
 authors = ["AstroSightStudios"]
 license = ""

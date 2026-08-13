@@ -56,8 +56,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: "0.1.0"
+        CFBundleShortVersionString: 0.2.1
+        CFBundleVersion: "0.2.1"
     entitlements:
       path: astrobox-creator-console_iOS/astrobox-creator-console_iOS.entitlements
     scheme:
