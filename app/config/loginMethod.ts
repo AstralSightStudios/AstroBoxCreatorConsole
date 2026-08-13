@@ -37,7 +37,7 @@ export const LOGIN_METHODS: Record<AstroboxLoginMethod, LoginMethodDefinition> =
 const STORAGE_KEY = "ABCC_ASTROBOX_LOGIN_METHOD_V1";
 
 // Fallback used before the platform can be probed (e.g. server snapshot).
-const FALLBACK_METHOD: AstroboxLoginMethod = "deeplink";
+const FALLBACK_METHOD: AstroboxLoginMethod = "webview";
 
 type Subscriber = () => void;
 const subscribers = new Set<Subscriber>();
@@ -48,18 +48,9 @@ function isBrowser() {
     return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
 
-// iOS runs in a WKWebView, so `navigator.userAgent` reports iPhone/iPad.
-// iPadOS in desktop mode masquerades as "MacIntel" but exposes touch points,
-// which distinguishes it from a real Mac desktop build.
-function isIOS() {
-    if (typeof navigator === "undefined") return false;
-    if (/iPad|iPhone|iPod/.test(navigator.userAgent)) return true;
-    return navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1;
-}
-
-// Built-in webpage login is the default on iOS; deep link elsewhere.
+// 新版本默认使用内置网页登录。
 function getDefaultMethod(): AstroboxLoginMethod {
-    return isIOS() ? "webview" : FALLBACK_METHOD;
+    return "webview";
 }
 
 function readMethodFromStorage(): AstroboxLoginMethod {

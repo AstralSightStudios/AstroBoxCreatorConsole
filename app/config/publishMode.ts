@@ -23,14 +23,9 @@ const SUBMIT_MODE_KEY = "ABCC_SUBMIT_MODE_V1";
 const REVIEW_MODE_KEY = "ABCC_REVIEW_MODE_V1";
 const LEGACY_MODE_KEY = "ABCC_PUBLISH_MODE_V1";
 
-function defaultMode(): PublishMode {
-    return loadRepoEnvId() === "testenv" ? "staging" : "legacy";
-}
-
 type Subscriber = () => void;
 const subscribers = new Set<Subscriber>();
 let storageListenerAttached = false;
-let cachedSubmitMode: PublishMode | undefined;
 let cachedReviewMode: PublishMode | undefined;
 
 function isBrowser() {
@@ -51,9 +46,6 @@ function notifySubscribers() {
 function attachStorageListener() {
     if (!isBrowser() || storageListenerAttached) return;
     window.addEventListener("storage", (event) => {
-        if (!event.key || event.key === SUBMIT_MODE_KEY) {
-            cachedSubmitMode = readModeFromStorage(SUBMIT_MODE_KEY);
-        }
         if (!event.key || event.key === REVIEW_MODE_KEY) {
             cachedReviewMode = readModeFromStorage(REVIEW_MODE_KEY);
         }
@@ -62,18 +54,12 @@ function attachStorageListener() {
     storageListenerAttached = true;
 }
 
+// 新版本提交统一走新流程（staging），旧流程入口在设置中禁用。
 export function loadSubmitMode(): PublishMode {
-    if (!cachedSubmitMode) {
-        cachedSubmitMode =
-            readModeFromStorage(SUBMIT_MODE_KEY) ??
-            readModeFromStorage(LEGACY_MODE_KEY) ??
-            defaultMode();
-    }
-    return cachedSubmitMode;
+    return "staging";
 }
 
 export function saveSubmitMode(mode: PublishMode) {
-    cachedSubmitMode = mode;
     if (isBrowser()) localStorage.setItem(SUBMIT_MODE_KEY, mode);
     notifySubscribers();
 }
@@ -86,7 +72,7 @@ export function useSubmitMode(): PublishMode {
             return () => subscribers.delete(listener);
         },
         loadSubmitMode,
-        defaultMode,
+        () => "staging" as PublishMode,
     );
 }
 
@@ -95,7 +81,7 @@ export function loadReviewMode(): PublishMode {
         cachedReviewMode =
             readModeFromStorage(REVIEW_MODE_KEY) ??
             readModeFromStorage(LEGACY_MODE_KEY) ??
-            defaultMode();
+            (loadRepoEnvId() === "testenv" ? "staging" : "legacy");
     }
     return cachedReviewMode;
 }
@@ -114,6 +100,6 @@ export function useReviewMode(): PublishMode {
             return () => subscribers.delete(listener);
         },
         loadReviewMode,
-        defaultMode,
+        () => (loadRepoEnvId() === "testenv" ? "staging" : "legacy"),
     );
 }

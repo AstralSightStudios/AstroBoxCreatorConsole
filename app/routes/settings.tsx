@@ -49,6 +49,7 @@ function OptionCard({
   title,
   description,
   meta,
+  disabled,
 }: {
   selected: boolean;
   pending?: boolean;
@@ -56,18 +57,22 @@ function OptionCard({
   title: string;
   description: string;
   meta?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       aria-pressed={selected}
       className={`group flex items-start gap-3 rounded-xl border px-4 py-3.5 text-left transition ${
-        selected
-          ? "border-emerald-400/40 bg-emerald-400/[0.07]"
-          : pending
-            ? "border-amber-300/45 bg-amber-300/[0.07]"
-            : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.045]"
+        disabled
+          ? "cursor-not-allowed border-white/[0.06] bg-white/[0.01] opacity-45"
+          : selected
+            ? "border-emerald-400/40 bg-emerald-400/[0.07]"
+            : pending
+              ? "border-amber-300/45 bg-amber-300/[0.07]"
+              : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.045]"
       }`}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -240,7 +245,7 @@ export default function Settings() {
         {/* 提交模式 */}
         <SectionCard
           title="提交模式"
-          description={`当前：${PUBLISH_MODES[currentSubmitMode].label}`}
+          description={`当前：${PUBLISH_MODES[currentSubmitMode].label}（新版本统一使用新流程提交）`}
         >
           <div className="grid gap-2.5 md:grid-cols-2">
             {(
@@ -252,6 +257,7 @@ export default function Settings() {
                 key={mode.id}
                 selected={mode.id === currentSubmitMode}
                 onClick={() => handleSelectSubmitMode(mode.id)}
+                disabled={mode.id === "legacy"}
                 title={mode.label}
                 description={mode.description}
               />
