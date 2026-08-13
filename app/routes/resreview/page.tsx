@@ -67,7 +67,7 @@ export default function ResourceReviewPage() {
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
-  const [prStateFilter, setPrStateFilter] = useState<"all" | "open" | "closed">("all");
+  const [prStateFilter, setPrStateFilter] = useState<"all" | "open" | "closed">("open");
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
