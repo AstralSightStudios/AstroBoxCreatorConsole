@@ -57,6 +57,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: "--max-old-space-size=6144"
         with:
           projectPath: .
           args: ''
@@ -114,6 +115,7 @@ jobs:
         run: npx tauri android build --target aarch64
         env:
           ORG_GRADLE_JAVA_HOME: ${{ env.JAVA_HOME }}
+          NODE_OPTIONS: "--max-old-space-size=6144"
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
