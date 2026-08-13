@@ -278,28 +278,37 @@ async function fetchMyReviewPullRequests(
         }
     })();
 
-    const openPulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${owner}/${repo}/pulls?state=open&per_page=50`,
+    // REST state=all 同时承担：回退数据源、head 信息（含分支是否已删除）、
+    // 以及兜底 search 索引延迟时最新创建的 open PR。
+    const allPulls = await githubFetch<any[]>(
+        `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=100`,
         { headers },
+    );
+    const validPulls = allPulls.filter(
+        (pull) => !pull.merged_at && Boolean(pull.head?.repo),
     );
     const searchItems = await searchPromise;
     if (searchItems === null) {
-        const allPulls = await githubFetch<any[]>(
-            `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=50`,
-            { headers },
-        );
-        return allPulls.filter((pull) => !pull.merged_at);
+        return validPulls;
     }
 
+    const headByNumber = new Map<number, any>();
+    for (const pull of allPulls) {
+        headByNumber.set(pull.number, pull.head);
+    }
     const byNumber = new Map<number, MyReviewPullRequest>();
     for (const item of searchItems) {
+        const head = headByNumber.get(item.number);
+        // REST 里能查到该 PR 且 head 分支已被删除 → 不显示（无法重开/更新）。
+        if (headByNumber.has(item.number) && !head?.repo) continue;
         byNumber.set(item.number, item);
+        if (head?.repo) {
+            byNumber.set(item.number, { ...item, head });
+        }
     }
     // search 索引延迟时，把刚刚创建的 open PR 补进来。
-    for (const pull of openPulls) {
-        if (!pull.number || pull.merged_at || !sameUser(pull.user?.login)) {
-            continue;
-        }
+    for (const pull of validPulls) {
+        if (!sameUser(pull.user?.login)) continue;
         if (!byNumber.has(pull.number)) {
             byNumber.set(pull.number, {
                 number: pull.number,

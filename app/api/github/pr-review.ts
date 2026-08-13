@@ -132,7 +132,10 @@ export async function listReviewPullRequests(
     repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
     { headers: headers() },
   );
-  return pulls.filter((pull) => !pull.merged_at);
+  // 已合并或 head 分支已被删除的 PR 无法再处理，不展示。
+  return pulls.filter(
+    (pull) => !pull.merged_at && Boolean(pull.head?.repo),
+  );
 }
 
 export async function getPullRequest(prNumber: number) {
