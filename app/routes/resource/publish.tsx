@@ -6,7 +6,7 @@ import {
   PencilSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
-import { Button, Table, Callout, Spinner } from "@radix-ui/themes";
+import { AlertDialog, Button, Table, Callout, Spinner } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -63,20 +63,17 @@ export default function ResourcePublish() {
   const navigate = useNavigate();
   const [refreshTick, setRefreshTick] = useState(0);
   const [reopening, setReopening] = useState<number | null>(null);
+  const [refuseTarget, setRefuseTarget] = useState<PublishingResource | null>(
+    null,
+  );
   const { data, loading, error } = useInProgressResources(refreshTick);
 
   const statusRender = (resource: PublishingResource) => {
     if (resource.refused) {
       return (
-        <span className="flex flex-col gap-1">
-          <span className="flex items-center gap-1 text-purple-300">
-            <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
-          </span>
-          {resource.refuseReason && (
-            <span className="max-w-[320px] whitespace-normal break-words text-xs leading-5 text-white/45">
-              {resource.refuseReason}
-            </span>
-          )}
+        <span className="flex items-center gap-1 text-purple-300">
+          <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
+          <span className="text-xs text-white/35">（点击查看原因）</span>
         </span>
       );
     }
@@ -116,7 +113,11 @@ export default function ResourcePublish() {
   };
 
   const handleSelect = (resource: PublishingResource) => {
-    if (resource.prState === "merged" || resource.refused) return;
+    if (resource.refused) {
+      setRefuseTarget(resource);
+      return;
+    }
+    if (resource.prState === "merged") return;
     const editContext: ResourceEditContext = {
       mode: "in_progress",
       catalog: resource.catalog,
@@ -208,7 +209,7 @@ export default function ResourcePublish() {
                 <Table.Row
                   key={`${item.prNumber}-${item.id}`}
                 className={
-                  item.prState !== "merged" && !item.refused
+                  item.prState !== "merged"
                     ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
                     : ""
                 }
@@ -252,6 +253,40 @@ export default function ResourcePublish() {
 
   return (
     <Page>
+      <AlertDialog.Root
+        open={refuseTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRefuseTarget(null);
+        }}
+      >
+        <AlertDialog.Content maxWidth="440px">
+          <AlertDialog.Title>PR 已被拒绝</AlertDialog.Title>
+          <AlertDialog.Description size="2" className="text-white/60">
+            {refuseTarget?.prTitle || "资源更新"} · PR #
+            {refuseTarget?.prNumber ?? ""}
+          </AlertDialog.Description>
+          <div className="mt-3 rounded-md border border-purple-400/25 bg-purple-400/5 p-3 text-sm leading-6 text-white/80">
+            {refuseTarget?.refuseReason || "（未填写拒绝原因）"}
+          </div>
+          {refuseTarget?.prUrl && (
+            <a
+              href={refuseTarget.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-block text-sm text-blue-400 transition hover:text-blue-300"
+            >
+              在 GitHub 查看该 PR
+            </a>
+          )}
+          <div className="mt-4 flex justify-end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                知道了
+              </Button>
+            </AlertDialog.Cancel>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       <SectionCard
         title="审核列表"
         description="查看你已上传资源的审核状态"
