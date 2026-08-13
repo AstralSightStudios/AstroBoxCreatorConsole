@@ -227,6 +227,23 @@ export async function approvePullRequest(prNumber: number, body?: string) {
   );
 }
 
+export async function requestChangesPullRequest(
+  prNumber: number,
+  body?: string,
+) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/reviews`),
+    {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        event: "REQUEST_CHANGES",
+        body: body || "Changes requested from AstroBox Creator Console.",
+      }),
+    },
+  );
+}
+
 export async function deletePullRequestComment(commentId: number) {
   return githubFetch<unknown>(
     repoPath(`/issues/comments/${commentId}`),

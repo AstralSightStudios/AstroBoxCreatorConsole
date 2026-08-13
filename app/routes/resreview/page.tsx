@@ -24,6 +24,7 @@ import {
   mergePullRequest,
   closePullRequest,
   reopenPullRequest,
+  requestChangesPullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
@@ -321,18 +322,35 @@ export default function ResourceReviewPage() {
   const submitComment = async (body: string) => {
     if (!openNumber || !body || submittingComment) return;
     const number = openNumber;
+    const isNewNeedFix =
+      !editingTarget && /^\s*\[ABCC_NEEDFIX/i.test(body.trim());
     setSubmittingComment(true);
     try {
       if (editingTarget) {
         await updatePullRequestComment(editingTarget.comment.id, body);
       } else {
         await createPullRequestComment(number, body);
+        if (isNewNeedFix) {
+          try {
+            await requestChangesPullRequest(number, body);
+          } catch (reviewError) {
+            toast.warning(
+              `评论已发送，但标记 Changes Requested 失败：${getErrorMessage(reviewError)}`,
+            );
+          }
+        }
       }
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
       await loadDetail(number);
-      toast.success(editingTarget ? "评论已更新" : "评论已发送");
+      toast.success(
+        editingTarget
+          ? "评论已更新"
+          : isNewNeedFix
+            ? "评论已发送，PR 已标记为需要修改"
+            : "评论已发送",
+      );
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
