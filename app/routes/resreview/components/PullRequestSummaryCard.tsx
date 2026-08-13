@@ -88,14 +88,14 @@ export function PullRequestSummaryCard({
             }}
           >
             <GithubLogo size={16} weight="duotone" />
-            在 GitHub 打开
+            GitHub
           </Button>
           <Button color="green" onClick={onApprove} disabled={approving}>
-            {approving ? "Approving..." : "Approve"}
+            {approving ? "通过中..." : "通过"}
           </Button>
           {canMerge && (
             <Button color="blue" onClick={onMerge} disabled={merging}>
-              {merging ? "Merging..." : "合入"}
+              {merging ? "合入中..." : "合入"}
             </Button>
           )}
           {openPull.state === "open" && (
@@ -105,7 +105,7 @@ export function PullRequestSummaryCard({
               disabled={closing}
               onClick={() => setCloseDialogOpen(true)}
             >
-              {closing ? "关闭中..." : "关闭 PR"}
+              {closing ? "关闭中..." : "关闭"}
             </Button>
           )}
           {openPull.state === "open" && (
