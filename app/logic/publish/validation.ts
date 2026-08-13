@@ -37,19 +37,36 @@ export interface PublishValidationInput {
 /** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
 export const COVER_RATIO = 1.5;
 export const COVER_RATIO_TOLERANCE = 0.02;
-export const COVER_MAX_BYTES = 1024 * 1024;
+export const COVER_MAX_BYTES = 600 * 1024;
 
 export interface PublishValidationResult {
   errors: string[];
   linkErrors: Array<string | null>;
 }
 
+export function normalizeLinkUrl(raw: string): string {
+    let value = raw.trim();
+    while (value.startsWith("`") && value.endsWith("`")) {
+        value = value.slice(1, -1).trim();
+    }
+    if (value.startsWith("<") && value.endsWith(">")) {
+        value = value.slice(1, -1).trim();
+    }
+    return value;
+}
+
 export function validateLink(link: ValidationLinkInput): string | null {
   if (![link.icon, link.title, link.url].some((value) => value.trim())) return null;
-  if (!link.url.trim()) return "请填写 URL";
+  const missing = [
+    !link.icon.trim() && "图标",
+    !link.title.trim() && "标题",
+    !link.url.trim() && "网址",
+  ].filter(Boolean);
+  if (missing.length) return `请填写：${missing.join("、")}`;
+  const url = normalizeLinkUrl(link.url);
   try {
-    const url = new URL(link.url.trim());
-    if (url.protocol !== "https:" || !url.hostname) return "仅支持有效 HTTPS URL";
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !parsed.hostname) return "仅支持有效 HTTPS URL";
   } catch {
     return "URL 格式无效";
   }
@@ -118,6 +135,10 @@ export function validatePublish(
   errors.push(...validateDownloadRows(input.downloads, "正式下载"));
   errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));
   const linkErrors = input.links.map(validateLink);
+  const linkErrorText = linkErrors.filter(Boolean).join("；");
+  if (linkErrorText) {
+    errors.push(`外部链接填写不完整：${linkErrorText}`);
+  }
   return { errors, linkErrors };
 }
 
@@ -144,12 +165,46 @@ export async function readRpkPackage(file: Blob): Promise<string> {
   }
 }
 
+export interface RpkManifestInfo {
+    packageName: string;
+    versionName: string;
+}
+
+export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> {
+    let entries: Record<string, Uint8Array>;
+    try {
+        entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    } catch {
+        throw new Error("RPK 文件无法解压。");
+    }
+    const manifestName = Object.keys(entries).find(
+        (name) => name.split(/[\\/]/).pop() === "manifest.json",
+    );
+    if (!manifestName) throw new Error("RPK 包内缺少 manifest.json。");
+    let manifest: Record<string, unknown>;
+    try {
+        manifest = JSON.parse(new TextDecoder().decode(entries[manifestName]));
+    } catch {
+        throw new Error("RPK manifest.json 不是有效 JSON。");
+    }
+    const packageName =
+        typeof manifest.package === "string" ? manifest.package.trim() : "";
+    const versionName =
+        typeof manifest.versionName === "string"
+            ? manifest.versionName.trim()
+            : typeof manifest.version_name === "string"
+              ? manifest.version_name.trim()
+              : "";
+    if (!packageName) throw new Error("RPK manifest.json 缺少 package 字段。");
+    return { packageName, versionName };
+}
+
 export async function validateRpkPackage(
   file: Blob,
   resourceId: string,
 ): Promise<void> {
   const packageName = await readRpkPackage(file);
   if (packageName !== resourceId) {
-    throw new Error(`RPK package 必须与资源 ID 精确一致：${resourceId}`);
+    throw new Error("RPK包名和资源ID不一致，将无法使用自动检查更新的功能。");
   }
 }

@@ -3,6 +3,8 @@ export type ReviewState = "waiting_review" | "changes_requested" | "fixed_waitin
 export interface NeedFixItem {
     id: string;
     message: string;
+    commentId?: number;
+    commentBody?: string;
     fixedMessage?: string;
     fixed: boolean;
     createdAt?: string;
@@ -16,10 +18,64 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED)_([^\]]+)\]\s*(.*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
 
-export function deriveReviewStatus(comments: Array<{ body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
+export type TagAction = "close" | "reopen";
+
+/**
+ * 一个 PR 上可能同时存在 CLOSE 与 REOPEN 标签评论（例如关闭后又被创作者重开）。
+ * 只取最新一条决定动作，避免 CLOSE/REOPEN 互相触发形成循环；
+ * 评论正文里引用（blockquote）中的标签不会被计算。
+ */
+export function resolveLatestTagAction(
+    comments: Array<{ body?: string; created_at?: string }>,
+): TagAction | null {
+    const actionComments = comments
+        .filter((comment) =>
+            /^\s*\[ABCC_(CLOSE|REOPEN)\]/i.test(comment.body?.trim() || ""),
+        )
+        .sort((a, b) =>
+            (a.created_at || "").localeCompare(b.created_at || ""),
+        );
+    const latest = actionComments[actionComments.length - 1];
+    if (!latest) return null;
+    return /^\s*\[ABCC_REOPEN\]/i.test(latest.body || "") ? "reopen" : "close";
+}
+
+export function filterReviewTagComments<T extends {
+    id?: number;
+    body?: string;
+    created_at?: string;
+    user?: { login: string; avatar_url?: string };
+} = {
+    id?: number;
+    body?: string;
+    created_at?: string;
+    user?: { login: string; avatar_url?: string };
+}>(
+    comments: T[],
+    allowedAuthors?: Set<string>,
+    prAuthor?: string,
+): T[] {
+    if (!allowedAuthors || allowedAuthors.size === 0) return comments;
+    return comments.filter((comment) => {
+        const body = comment.body?.trim();
+        if (!body || !COMMENT_PATTERN.test(body)) return true;
+        const login = comment.user?.login;
+        const isMember = Boolean(login && allowedAuthors.has(login));
+        const isAuthor = Boolean(prAuthor && login && login === prAuthor);
+        // FIXED / REOPEN 由 PR 创建者通过工具发送，属于合法流程；
+        // 其余标签（NEEDFIX/CLOSE/REFUSE）只能由组织 member 发送。
+        const isAuthorFlowTag =
+            /^\s*\[ABCC_(?:FIXED|REOPEN)(?:_[^\]]+)?\]/i.test(body);
+        return isMember || (isAuthor && isAuthorFlowTag);
+    });
+}
+
+export function deriveReviewStatus(comments: Array<{ id?: number; body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
     const needFixes = new Map<string, string>();
+    const needFixCommentIds = new Map<string, number>();
+    const needFixCommentBodies = new Map<string, string>();
     const needFixCreatedAt = new Map<string, string>();
     const needFixAuthor = new Map<string, { login: string; avatar_url?: string }>();
     const fixed = new Set<string>();
@@ -33,11 +89,15 @@ export function deriveReviewStatus(comments: Array<{ body?: string; created_at?:
         const match = body.match(COMMENT_PATTERN);
         if (!match) continue;
         const kind = match[1].toUpperCase();
-        const id = match[2].trim();
+        const id = (match[2] || "").trim();
         const message = (match[3] || "").trim();
 
         if (kind === "NEEDFIX") {
             needFixes.set(id, message);
+            if (typeof comment.id === "number") {
+                needFixCommentIds.set(id, comment.id);
+            }
+            needFixCommentBodies.set(id, body);
             if (comment.created_at) {
                 needFixCreatedAt.set(id, comment.created_at);
             }
@@ -68,6 +128,8 @@ export function deriveReviewStatus(comments: Array<{ body?: string; created_at?:
         ([id, message]) => ({
             id,
             message,
+            commentId: needFixCommentIds.get(id),
+            commentBody: needFixCommentBodies.get(id),
             fixedMessage: fixed.has(id) ? fixedMessages.get(id) : undefined,
             fixed: fixed.has(id),
             createdAt: needFixCreatedAt.get(id),

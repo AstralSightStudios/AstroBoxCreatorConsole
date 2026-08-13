@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import {
+  normalizeLinkUrl,
   readRpkPackage,
   validateLink,
   validatePublish,
@@ -82,14 +83,17 @@ describe("publish validation", () => {
 
   test("reports invalid links without blocking publishing", () => {
     expect(validateLink({ icon: "", title: "", url: "" })).toBeNull();
-    expect(validateLink({ icon: "Link", title: "", url: "" })).toContain("URL");
-    expect(validateLink({ icon: "", title: "Site", url: "http://example.com" })).toContain("HTTPS");
-    expect(validateLink({ icon: "", title: "Site", url: "https://example.com" })).toBeNull();
+    expect(validateLink({ icon: "Link", title: "", url: "" })).toContain("标题、网址");
+    expect(validateLink({ icon: "", title: "Site", url: "https://example.com" })).toContain("图标");
+    expect(validateLink({ icon: "Link", title: "Site", url: "http://example.com" })).toContain("HTTPS");
+    expect(validateLink({ icon: "Link", title: "Site", url: "https://example.com" })).toBeNull();
+    expect(validateLink({ icon: "Link", title: "Site", url: "`https://example.com`" })).toBeNull();
+    expect(normalizeLinkUrl("`https://example.com`")).toBe("https://example.com");
     const result = validatePublish({
       ...validInput,
       links: [{ icon: "Link", title: "Site", url: "http://example.com" }],
     });
-    expect(result.errors).toEqual([]);
+    expect(result.errors.join(" ")).toContain("外部链接填写不完整");
     expect(result.linkErrors[0]).toContain("HTTPS");
   });
 });
@@ -107,6 +111,8 @@ describe("RPK validation", () => {
 
   test("rejects mismatched package", async () => {
     const file = rpk({ "manifest.json": JSON.stringify({ package: "com.other.app" }) });
-    await expect(validateRpkPackage(file, "com.example.app")).rejects.toThrow("精确一致");
+    await expect(validateRpkPackage(file, "com.example.app")).rejects.toThrow(
+      "无法使用自动检查更新",
+    );
   });
 });

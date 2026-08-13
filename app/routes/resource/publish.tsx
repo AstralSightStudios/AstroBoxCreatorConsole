@@ -1,19 +1,32 @@
 import {
+  ArrowClockwiseIcon,
   CheckCircleIcon,
   ClockIcon,
   FileArrowUpIcon,
   PencilSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
-import { Button, Table, Callout, Spinner } from "@radix-ui/themes";
+import { AlertDialog, Button, Table, Callout, Spinner } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import Page from "~/layout/page";
+import {
+  createPullRequestComment,
+  getPullRequest,
+  reopenPullRequest,
+} from "~/api/github/pr-review";
+import { loadAccountState } from "~/logic/account/store";
+import { decodeCatalogContent, getFileContent } from "~/logic/publish/catalog";
 import {
   loadInProgressResourcesForCurrentUser,
   type PublishingResource,
   type ResourceEditContext,
 } from "~/logic/publish/resources";
+import {
+  parseSubmissionRequestJson,
+  submissionRequestPath,
+} from "~/logic/publish/submission-protocol";
 
 import { SectionCard } from "./publish/components/shared";
 
@@ -23,7 +36,7 @@ function formatRestype(restype: string) {
   return restype || "未知";
 }
 
-function useInProgressResources() {
+function useInProgressResources(refreshTick: number) {
   const [data, setData] = useState<PublishingResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,16 +61,44 @@ function useInProgressResources() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshTick]);
 
   return { data, loading, error };
 }
 
 export default function ResourcePublish() {
   const navigate = useNavigate();
-  const { data, loading, error } = useInProgressResources();
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [reopening, setReopening] = useState<number | null>(null);
+  const [selectingPr, setSelectingPr] = useState<number | null>(null);
+  const [refuseTarget, setRefuseTarget] = useState<PublishingResource | null>(
+    null,
+  );
+  const { data, loading, error } = useInProgressResources(refreshTick);
 
   const statusRender = (resource: PublishingResource) => {
+    if (resource.refused) {
+      return (
+        <span className="flex items-center gap-1 text-purple-300">
+          <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
+          <span className="text-xs text-white/35">（点击查看原因）</span>
+        </span>
+      );
+    }
+    if (resource.prState === "merged") {
+      return (
+        <span className="flex items-center gap-1 text-white/45">
+          <CheckCircleIcon size={18} weight="fill" /> 已合入
+        </span>
+      );
+    }
+    if (resource.prState === "closed") {
+      return (
+        <span className="flex items-center gap-1 text-red-300">
+          <WarningOctagonIcon size={18} weight="fill" /> 已关闭
+        </span>
+      );
+    }
     if (resource.status === "changes_requested") {
       return (
         <span className="flex items-center gap-1 text-amber-300">
@@ -79,16 +120,82 @@ export default function ResourcePublish() {
     );
   };
 
-  const handleSelect = (resource: PublishingResource) => {
-    const editContext: ResourceEditContext = {
-      mode: "in_progress",
-      catalog: resource.catalog,
-      prNumber: resource.prNumber,
-      prHead: resource.prHead,
-      reviewState: resource.status,
-      needs: resource.needs,
-    };
-    navigate("/publish/edit", { state: { editContext } });
+  const handleSelect = async (resource: PublishingResource) => {
+    if (resource.refused) {
+      setRefuseTarget(resource);
+      return;
+    }
+    if (resource.prState === "merged") return;
+    setSelectingPr(resource.prNumber);
+    try {
+      const token = loadAccountState().github?.token;
+      if (!token) throw new Error("请先登录 GitHub 账号。");
+      // 列表不再预载 head / request.json，进入编辑时再拉取最新信息。
+      const full = await getPullRequest(resource.prNumber);
+      const headRepo = full.head?.repo;
+      const prHead = headRepo
+        ? {
+            owner: headRepo.owner?.login || "",
+            repo: headRepo.name,
+            ref: full.head.ref,
+          }
+        : resource.prHead;
+
+      let submission: ResourceEditContext["submission"];
+      if (resource.submission?.path) {
+        if (!prHead) {
+          throw new Error("缺少 PR 分支信息，无法载入提交明细。");
+        }
+        const requestFile = await getFileContent(
+          token,
+          prHead.owner,
+          prHead.repo,
+          submissionRequestPath(resource.submission.path),
+          prHead.ref,
+        );
+        submission = {
+          path: resource.submission.path,
+          request: parseSubmissionRequestJson(
+            decodeCatalogContent(requestFile.content),
+          ),
+        };
+      }
+
+      const editContext: ResourceEditContext = {
+        mode: "in_progress",
+        catalog: resource.catalog,
+        prNumber: resource.prNumber,
+        prUrl: resource.prUrl,
+        prState: resource.prState,
+        prHead,
+        reviewState: resource.status,
+        needs: resource.needs,
+        submission,
+      };
+      navigate("/publish/edit", { state: { editContext } });
+    } catch (err) {
+      toast.error((err as Error).message || "进入编辑失败");
+    } finally {
+      setSelectingPr(null);
+    }
+  };
+
+  const handleReopen = async (resource: PublishingResource) => {
+    if (reopening !== null) return;
+    setReopening(resource.prNumber);
+    try {
+      await reopenPullRequest(resource.prNumber);
+      await createPullRequestComment(
+        resource.prNumber,
+        "[ABCC_REOPEN] 创作者已重新打开此 PR。",
+      );
+      toast.success("PR 已重新打开，并已记录 REOPEN 标签。");
+      setRefreshTick((prev) => prev + 1);
+    } catch (err) {
+      toast.error((err as Error).message || "重新打开 PR 失败");
+    } finally {
+      setReopening(null);
+    }
   };
 
   const content = useMemo(() => {
@@ -104,7 +211,7 @@ export default function ResourcePublish() {
             <Spinner size="2" />
           </Callout.Icon>
           <Callout.Text className="font-semibold text-white/45">
-            <p>正在载入申请列表...</p>
+            <span>正在载入申请列表...</span>
           </Callout.Text>
         </Callout.Root>
       );
@@ -120,7 +227,7 @@ export default function ResourcePublish() {
             <WarningOctagonIcon size={16} weight="fill" />
           </Callout.Icon>
           <Callout.Text className="font-semibold">
-            <p>加载失败：{error}</p>
+            <span>加载失败：{error}</span>
           </Callout.Text>
         </Callout.Root>
       );
@@ -128,7 +235,7 @@ export default function ResourcePublish() {
     if (data.length === 0) {
       return (
         <p className="px-3 text-sm text-white/70">
-          暂无进行中的发布申请，点击下方按钮开始新的提交。
+          暂无发布申请，点击下方按钮开始新的提交。
         </p>
       );
     }
@@ -142,14 +249,19 @@ export default function ResourcePublish() {
               <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>提交日期</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
             </Table.Row>
           </Table.Header>
           <Table.Body>
             {data.map((item) => (
-              <Table.Row
-                key={`${item.prNumber}-${item.id}`}
-                className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
-                onClick={() => handleSelect(item)}
+                <Table.Row
+                  key={`${item.prNumber}-${item.id}`}
+                className={
+                  item.prState !== "merged"
+                    ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
+                    : ""
+                }
+                onClick={() => void handleSelect(item)}
               >
                 <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
                 <Table.Cell>{item.name}</Table.Cell>
@@ -162,6 +274,28 @@ export default function ResourcePublish() {
                     ? new Date(item.createdAt).toLocaleDateString("zh-CN")
                     : "--"}
                 </Table.Cell>
+                <Table.Cell>
+                  {selectingPr === item.prNumber ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-white/50">
+                      <Spinner size="1" /> 载入中...
+                    </span>
+                  ) : null}
+                  {item.prState === "closed" && !item.refused ? (
+                    <Button
+                      size="1"
+                      variant="soft"
+                      color="blue"
+                      disabled={reopening === item.prNumber}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleReopen(item);
+                      }}
+                    >
+                      <ArrowClockwiseIcon size={14} weight="bold" />
+                      {reopening === item.prNumber ? "重新打开中..." : "重新打开"}
+                    </Button>
+                  ) : null}
+                </Table.Cell>
               </Table.Row>
             ))}
           </Table.Body>
@@ -172,6 +306,40 @@ export default function ResourcePublish() {
 
   return (
     <Page>
+      <AlertDialog.Root
+        open={refuseTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRefuseTarget(null);
+        }}
+      >
+        <AlertDialog.Content maxWidth="440px">
+          <AlertDialog.Title>PR 已被拒绝</AlertDialog.Title>
+          <AlertDialog.Description size="2" className="text-white/60">
+            {refuseTarget?.prTitle || "资源更新"} · PR #
+            {refuseTarget?.prNumber ?? ""}
+          </AlertDialog.Description>
+          <div className="mt-3 rounded-md border border-purple-400/25 bg-purple-400/5 p-3 text-sm leading-6 text-white/80">
+            {refuseTarget?.refuseReason || "（未填写拒绝原因）"}
+          </div>
+          {refuseTarget?.prUrl && (
+            <a
+              href={refuseTarget.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-block text-sm text-blue-400 transition hover:text-blue-300"
+            >
+              在 GitHub 查看该 PR
+            </a>
+          )}
+          <div className="mt-4 flex justify-end">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                知道了
+              </Button>
+            </AlertDialog.Cancel>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       <SectionCard
         title="审核列表"
         description="查看你已上传资源的审核状态"

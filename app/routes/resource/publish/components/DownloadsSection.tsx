@@ -3,6 +3,7 @@ import {
   PlusIcon,
   MinusIcon,
   WarningDiamondIcon,
+  InfoIcon,
   ListChecksIcon,
   CopyIcon,
   ChecksIcon,
@@ -18,6 +19,7 @@ import {
   Checkbox,
   Text,
   AlertDialog,
+  Dialog,
 } from "@radix-ui/themes";
 import { useMemo, useRef, useState } from "react";
 import { createUploadItem } from "./uploadUtils";
@@ -38,7 +40,15 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
-  validateFile?: (file: File) => Promise<void>;
+  validateFile?: (
+    file: File,
+  ) => Promise<
+    | {
+        versionName?: string;
+        warning?: { packageName: string; resourceId: string };
+      }
+    | void
+  >;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -73,6 +83,13 @@ export function DownloadsSection({
   );
   const [batchSelectOpen, setBatchSelectOpen] = useState(false);
   const [fillAllOpen, setFillAllOpen] = useState(false);
+  const [fileWarnings, setFileWarnings] = useState<
+    Record<string, { packageName: string; resourceId: string }>
+  >({});
+  const [warningDialog, setWarningDialog] = useState<{
+    packageName: string;
+    resourceId: string;
+  } | null>(null);
 
   const selectedDeviceIds = useMemo(
     () => new Set(downloads.map((d) => d.platformId).filter(Boolean)),
@@ -122,7 +139,6 @@ export function DownloadsSection({
     <SectionCard
       title={title}
       description={description}
-      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
     >
       {deviceError && (
         <Callout.Root color="amber">
@@ -140,7 +156,7 @@ export function DownloadsSection({
           <Callout.Text>设备列表不可用，请稍后重试</Callout.Text>
         </Callout.Root>
       )}
-      <div className="flex flex-col gap-3 max-w-full overflow-x-auto">
+      <div className="flex flex-col gap-3 max-w-full">
         <div className="flex items-center gap-1.5 px-1">
           {onBatchSetDevices && (
             <Popover.Root
@@ -208,115 +224,158 @@ export function DownloadsSection({
               </AlertDialog.Content>
             </AlertDialog.Root>
           )}
+          <Button
+            size="1"
+            variant="soft"
+            radius="large"
+            className="text-xs! md:hidden"
+            disabled={sortedDeviceOptions.length === 0 || isDeviceLoading}
+            onClick={onAddRow}
+          >
+            <PlusIcon size={14} weight="bold" />
+            添加设备
+          </Button>
         </div>
-        <Table.Root className="table-fixed w-full min-w-lg">
-          <Table.Header>
-            <Table.Row>
-              <Table.ColumnHeaderCell
-                width="40px"
-                justify="center"
-                p="0"
-                className="h-full flex justify-center items-center"
+        <div className="flex flex-col gap-2">
+          {downloads.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+              {emptyMessage}
+            </p>
+          ) : (
+            downloads.map((item, index) => (
+              <div
+                key={item.uid || `download-${index}`}
+                className="rounded-lg border border-white/10 bg-black/20 p-2.5"
               >
-                <button
-                  className="text-white/60 transition hover:text-blue-400 flex items-center justify-center h-[30px] w-[30px] disabled:text-white/30 disabled:pointer-events-none"
-                  onClick={onAddRow}
-                  disabled={sortedDeviceOptions.length === 0 || isDeviceLoading}
-                >
-                  <PlusIcon size={16} weight="bold" />
-                </button>
-              </Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>设备</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>版本号</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>包体</Table.ColumnHeaderCell>
-              {isVip && allowEncryption && (
-                <Table.ColumnHeaderCell>加密上传</Table.ColumnHeaderCell>
-              )}
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {downloads.map((item, index) => (
-              <Table.Row key={`links-${index}`}>
-                <Table.RowHeaderCell width="40px" justify="center" px="0">
-                  {downloads.length > 0 && (
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-white/55">
+                    设备 {index + 1}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {fileWarnings[item.uid] && (
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-lg text-yellow-300 transition hover:bg-yellow-400/10 hover:text-yellow-200"
+                        onClick={() =>
+                          setWarningDialog(fileWarnings[item.uid] || null)
+                        }
+                        aria-label="查看 RPK 包名提示"
+                      >
+                        <InfoIcon size={16} weight="bold" />
+                      </button>
+                    )}
                     <button
-                      className="text-white/60 transition hover:text-red-400 flex items-center justify-center h-[30px] w-[30px] m-auto"
+                      className="rounded-lg p-1 text-white/60 transition hover:bg-red-500/10 hover:text-red-300"
                       onClick={() => onRemoveRow(item.uid)}
                     >
                       <MinusIcon size={16} weight="bold" />
                     </button>
-                  )}
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <Select.Root
-                    value={item.platformId || undefined}
-                    onValueChange={(value) =>
-                      onUpdateRow(item.uid, (row) => ({
-                        ...row,
-                        platformId: value,
-                      }))
-                    }
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
+                  <div
+                    className="min-w-[120px] flex-1 md:min-w-0"
+                    style={{
+                      minWidth: `${Math.min(
+                        260,
+                        110 +
+                          (
+                            sortedDeviceOptions.find(
+                              (opt) => opt.id === item.platformId,
+                            )?.name || item.platformId || ""
+                          ).length *
+                            7,
+                      )}px`,
+                    }}
                   >
-                    <Select.Trigger radius="large" placeholder="请选择设备" />
+                    <Select.Root
+                      value={item.platformId || undefined}
+                      onValueChange={(value) =>
+                        onUpdateRow(item.uid, (row) => ({
+                          ...row,
+                          platformId: value,
+                        }))
+                      }
+                    >
+                      <Select.Trigger
+                        radius="large"
+                        placeholder="请选择设备"
+                        className="w-full whitespace-normal"
+                      />
+                      <Select.Content position="popper">
+                        {sortedDeviceOptions.map((opt) => {
+                          const usedElsewhere = downloads.some(
+                            (row, idx) =>
+                              idx !== index && row.platformId === opt.id,
+                          );
+                          return (
+                            <Select.Item
+                              key={opt.id}
+                              value={opt.id}
+                              disabled={usedElsewhere}
+                            >
+                              {opt.name}
+                              {usedElsewhere ? "（已使用）" : ""}
+                            </Select.Item>
+                          );
+                        })}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
 
-                    <Select.Content position="popper">
-                      {sortedDeviceOptions.map((opt) => {
-                        const usedElsewhere = downloads.some(
-                          (row, idx) =>
-                            idx !== index && row.platformId === opt.id,
-                        );
+                  <div className="min-w-[100px] max-md:w-28 max-md:shrink-0 md:min-w-0">
+                    <TextField.Root
+                      placeholder="版本号"
+                      value={item.version}
+                      radius="large"
+                      className="min-w-0 w-full"
+                      onChange={(e) =>
+                        onUpdateRow(item.uid, (row) => ({
+                          ...row,
+                          version: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
 
-                        return (
-                          <Select.Item
-                            key={opt.id}
-                            value={opt.id}
-                            disabled={usedElsewhere}
-                          >
-                            {opt.name}
-                            {usedElsewhere ? "（已使用）" : ""}
-                          </Select.Item>
-                        );
-                      })}
-                    </Select.Content>
-                  </Select.Root>
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <TextField.Root
-                    placeholder="版本号"
-                    value={item.version}
-                    radius="large"
-                    onChange={(e) =>
-                      onUpdateRow(item.uid, (row) => ({
-                        ...row,
-                        version: e.target.value,
-                      }))
-                    }
-                  />
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <div className="flex flex-wrap items-center gap-2 h-full w-fit">
+                  <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
                     <input
                       type="file"
                       className="hidden"
                       ref={(node) => {
                         downloadFileInputs.current[item.uid] = node;
                       }}
-                       onChange={async (e) => {
-                         const file = e.target.files?.[0];
-                         e.target.value = "";
-                         if (!file) return;
-                         try {
-                           await validateFile?.(file);
-                           const uploadItem = createUploadItem(file);
-                           onUpdateRow(item.uid, (row) => ({
-                             ...row,
-                             file: uploadItem,
-                             existingFileName: undefined,
-                           }));
-                         } catch (error) {
-                           toast.error((error as Error).message);
-                         }
-                       }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        try {
+                          const meta = await validateFile?.(file);
+                          const uploadItem = createUploadItem(file);
+                          onUpdateRow(item.uid, (row) => ({
+                            ...row,
+                            file: uploadItem,
+                            existingFileName: undefined,
+                            ...(meta?.versionName
+                              ? { version: meta.versionName }
+                              : {}),
+                          }));
+                          if (meta?.warning) {
+                            setFileWarnings((prev) => ({
+                              ...prev,
+                              [item.uid]: meta.warning!,
+                            }));
+                          } else {
+                            setFileWarnings((prev) => {
+                              const next = { ...prev };
+                              delete next[item.uid];
+                              return next;
+                            });
+                          }
+                        } catch (error) {
+                          toast.error((error as Error).message);
+                        }
+                      }}
                     />
                     {item.file ? (
                       <>
@@ -327,7 +386,9 @@ export function DownloadsSection({
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
                         </Button>
-                        <span className=" text-white/80">{item.file.name}</span>
+                        <span className="min-w-0 truncate text-white/80">
+                          {item.file.name}
+                        </span>
                       </>
                     ) : item.existingFileName ? (
                       <>
@@ -338,27 +399,24 @@ export function DownloadsSection({
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
                         </Button>
-                        <span className=" text-emerald-100">
+                        <span className="min-w-0 truncate text-emerald-100">
                           当前: {item.existingFileName}
                         </span>
                       </>
                     ) : (
-                      <>
-                        <Button
-                          radius="large"
-                          onClick={() => pickDownloadFile(item.uid)}
-                          className="-mx-1"
-                        >
-                          <UploadSimpleIcon size={16} weight="bold" />
-                          请上传文件
-                        </Button>
-                      </>
+                      <Button
+                        radius="large"
+                        onClick={() => pickDownloadFile(item.uid)}
+                      >
+                        <UploadSimpleIcon size={16} weight="bold" />
+                        请上传文件
+                      </Button>
                     )}
                   </div>
-                </Table.RowHeaderCell>
-                {isVip && allowEncryption && (
-                  <Table.RowHeaderCell>
-                    <div className="flex items-center gap-2">
+
+                  {isVip && allowEncryption && (
+                    <div className="flex w-full items-center gap-2 md:w-auto">
+                      <span className="text-xs text-white/65">加密上传</span>
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
                         disabled={Boolean(item.existingFileName)}
@@ -373,6 +431,11 @@ export function DownloadsSection({
                         <EncryptConfigDialog
                           resourceId={resourceId || ""}
                           deviceId={item.platformId}
+                          deviceName={
+                            sortedDeviceOptions.find(
+                              (opt) => opt.id === item.platformId,
+                            )?.name || item.platformId
+                          }
                           triggerDisabled={!item.encryptOnUpload}
                           allDeviceIds={downloads
                             .map((d) => d.platformId)
@@ -380,32 +443,38 @@ export function DownloadsSection({
                         />
                       )}
                     </div>
-                  </Table.RowHeaderCell>
-                )}
-              </Table.Row>
-            ))}
-
-            {downloads.length === 0 && (
-              <Table.Row key={`links-0`}>
-                <Table.RowHeaderCell
-                  width="40px"
-                  justify="center"
-                  px="0"
-                ></Table.RowHeaderCell>
-                <Table.RowHeaderCell>
-                  <span className="text-white/60">{emptyMessage}</span>
-                </Table.RowHeaderCell>
-                <Table.RowHeaderCell />
-                <Table.RowHeaderCell />
-                {isVip && allowEncryption && <Table.RowHeaderCell />}
-              </Table.Row>
-            )}
-          </Table.Body>
-        </Table.Root>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
+      <Dialog.Root
+        open={warningDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setWarningDialog(null);
+        }}
+      >
+        <Dialog.Content maxWidth="420px">
+          <Dialog.Title>RPK 包名提示</Dialog.Title>
+          <Dialog.Description size="2">
+            RPK包名（{warningDialog?.packageName ?? ""}）和资源ID（
+            {warningDialog?.resourceId ?? ""}）不一致，将无法使用自动检查更新功能。
+          </Dialog.Description>
+          <div className="mt-4 flex justify-end">
+            <Dialog.Close>
+              <Button variant="soft" color="gray">
+                关闭
+              </Button>
+            </Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+
       <div className="flex flex-col px-1.5 py-1 w-full">
-        <p className="text-xs text-white/60">{helperText}</p>
+        {helperText && <p className="text-xs text-white/60">{helperText}</p>}
       </div>
     </SectionCard>
   );

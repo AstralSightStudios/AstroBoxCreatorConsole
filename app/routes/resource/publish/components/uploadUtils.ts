@@ -1,8 +1,6 @@
 import imageCompression from "browser-image-compression";
 import type { UploadItem } from "./shared";
 
-const COMPRESS_TARGET_HEIGHT = 720;
-
 export function getImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -24,34 +22,36 @@ export function getImageDimensions(file: Blob): Promise<{ width: number; height:
  * aspect ratio, then compress with minimal quality loss. PNG/WebP stay lossless;
  * JPEG is re-encoded at high quality.
  */
-export async function compressImageFile(file: File): Promise<File> {
+export async function compressImageFile(
+    file: File,
+    targetBytes: number,
+    useWorker = true,
+): Promise<File> {
+    if (file.size <= targetBytes) return file;
+
     const { width, height } = await getImageDimensions(file);
+    try {
+        const compressed = await imageCompression(file, {
+            maxSizeMB: Math.max(0.01, targetBytes / (1024 * 1024)),
+            maxWidthOrHeight: Math.max(width, height),
+            alwaysKeepResolution: true,
+            initialQuality: 0.95,
+            preserveExif: false,
+            fileType: file.type || "image/jpeg",
+            useWebWorker: useWorker,
+        });
 
-    // browser-image-compression limits the larger side via maxWidthOrHeight.
-    // To make the output height exactly target height (only downscale, never upscale),
-    // derive the matching larger-side limit.
-    let maxWidthOrHeight: number;
-    if (height > COMPRESS_TARGET_HEIGHT) {
-        maxWidthOrHeight = Math.max(
-            COMPRESS_TARGET_HEIGHT,
-            Math.round((COMPRESS_TARGET_HEIGHT * width) / height),
-        );
-    } else {
-        maxWidthOrHeight = Math.max(width, height);
+        return new File([compressed], file.name, { type: compressed.type });
+    } catch (error) {
+        if (useWorker) {
+            console.warn(
+                "image compression worker failed, falling back to main thread",
+                error,
+            );
+            return compressImageFile(file, targetBytes, false);
+        }
+        throw error;
     }
-
-    const compressed = await imageCompression(file, {
-        maxWidthOrHeight,
-        initialQuality: 0.92,
-        preserveExif: false,
-        fileType: file.type || "image/jpeg",
-        // Web workers can be flaky inside Tauri's webview; target size is small
-        // enough that main-thread processing is fine.
-        useWebWorker: false,
-    });
-
-    // Keep original filename; imageCompression may rename the output.
-    return new File([compressed], file.name, { type: compressed.type });
 }
 
 export const createUploadItem = (file: File): UploadItem => ({

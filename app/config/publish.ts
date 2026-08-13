@@ -10,6 +10,9 @@ interface PublishConfig {
     targetPrRepoOwner: string;
     targetPrRepoName: string;
     catalogFilePath: string;
+    submissionRootPath: string;
+    submissionCsvFileName: string;
+    submissionRequestFileName: string;
     upstreamRepoOwner: string;
     upstreamRepoName: string;
     defaultPrTitle: string;
@@ -22,6 +25,9 @@ const STATIC_CONFIG = {
     trialDownloadsDirectory: "downloads/trial",
     repoNamePrefix: "astrobox-resource-",
     catalogFilePath: "index_v2.csv",
+    submissionRootPath: "tmp",
+    submissionCsvFileName: "resource.csv",
+    submissionRequestFileName: "request.json",
     defaultPrTitle: "[ABCC] Add new resource",
 } as const;
 
@@ -37,6 +43,9 @@ export const PUBLISH_CONFIG: PublishConfig = new Proxy(
                 case "trialDownloadsDirectory":
                 case "repoNamePrefix":
                 case "catalogFilePath":
+                case "submissionRootPath":
+                case "submissionCsvFileName":
+                case "submissionRequestFileName":
                 case "defaultPrTitle":
                     return STATIC_CONFIG[prop];
                 case "defaultBranch":
@@ -62,6 +71,9 @@ export const PUBLISH_CONFIG: PublishConfig = new Proxy(
                 "targetPrRepoOwner",
                 "targetPrRepoName",
                 "catalogFilePath",
+                "submissionRootPath",
+                "submissionCsvFileName",
+                "submissionRequestFileName",
                 "upstreamRepoOwner",
                 "upstreamRepoName",
                 "defaultPrTitle",

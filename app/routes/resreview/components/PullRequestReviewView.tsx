@@ -33,7 +33,14 @@ export interface PullRequestReviewViewProps {
   onEditComment: (comment: GithubIssueComment) => void;
   submittingComment: boolean;
   approving: boolean;
+  merging: boolean;
+  closing: boolean;
+  refusing: boolean;
+  canMerge: boolean;
   onApprove: () => void;
+  onMerge: () => void;
+  onClose: (reason: string) => void;
+  onRefuse: (reason: string) => void;
   summaryCardRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -58,7 +65,14 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     onEditComment,
     submittingComment,
     approving,
+    merging,
+    closing,
+    refusing,
+    canMerge,
     onApprove,
+    onMerge,
+    onClose,
+    onRefuse,
     summaryCardRef,
   } = props;
 
@@ -84,6 +98,13 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           openStatus={openStatus}
           onApprove={onApprove}
           approving={approving}
+          merging={merging}
+          closing={closing}
+          refusing={refusing}
+          canMerge={canMerge}
+          onMerge={onMerge}
+          onClose={onClose}
+          onRefuse={onRefuse}
         />
       </div>
 
@@ -251,5 +272,3 @@ function RepoFileChangesTab({ repoFileChanges, onFileComment }: { repoFileChange
     </div>
   );
 }
-
-

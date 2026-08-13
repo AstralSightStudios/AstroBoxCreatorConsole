@@ -134,7 +134,18 @@ export function PullRequestSwitcher({
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 text-xs text-white/50">
                     <span className="truncate">{pull.user?.login}</span>
-                    <ReviewStatusBadgeMini state={status.state} />
+                    <span className="inline-flex shrink-0 items-center gap-1.5">
+                      {pull.state === "closed" && (
+                        <span
+                          className={`text-[10px] ${
+                            pull.merged_at ? "text-purple-300/80" : "text-red-300/80"
+                          }`}
+                        >
+                          {pull.merged_at ? "Merged" : "Closed"}
+                        </span>
+                      )}
+                      <ReviewStatusBadgeMini state={status.state} />
+                    </span>
                   </div>
                 </div>
               )}

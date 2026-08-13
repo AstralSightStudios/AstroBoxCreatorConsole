@@ -15,7 +15,8 @@ interface BasicInfoSectionProps {
   itemId: string;
   itemName: string;
   description: string;
-  tagsInput: string;
+  tags: string[];
+  tagInput: string;
   paidType: string;
   paidTypeDisabled?: boolean;
   resourceType: ResourceType;
@@ -24,7 +25,9 @@ interface BasicInfoSectionProps {
   onItemIdChange: (value: string) => void;
   onItemNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
-  onTagsChange: (value: string) => void;
+  onAddTag: () => void;
+  onRemoveTag: (index: number) => void;
+  onTagInputChange: (value: string) => void;
   onPaidTypeChange: (value: string) => void;
   onResourceTypeChange: (value: ResourceType) => void;
   onGenerateId?: () => void;
@@ -34,7 +37,8 @@ export function BasicInfoSection({
   itemId,
   itemName,
   description,
-  tagsInput,
+  tags,
+  tagInput,
   paidType,
   paidTypeDisabled,
   resourceType,
@@ -43,7 +47,9 @@ export function BasicInfoSection({
   onItemIdChange,
   onItemNameChange,
   onDescriptionChange,
-  onTagsChange,
+  onAddTag,
+  onRemoveTag,
+  onTagInputChange,
   onPaidTypeChange,
   onResourceTypeChange,
   onGenerateId,
@@ -52,7 +58,6 @@ export function BasicInfoSection({
     <SectionCard
       title="基本信息"
       description="用于标识与展示的核心信息，务必认真填写。"
-      className="border-x-0! border-t-0! bg-transparent! rounded-none! shadow-none!"
     >
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2 px-1.5 pt-1.5">
@@ -176,15 +181,55 @@ export function BasicInfoSection({
           radius="large"
         />
       </Field>
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Field label="标签" hint="使用分号分隔，例如 客户端;视频;社区">
-          <TextField.Root
-            placeholder="客户端;视频;社区"
-            value={tagsInput}
-            onChange={(e) => onTagsChange(e.target.value)}
-            radius="large"
-          />
-        </Field>
+      <Field label="标签">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag, index) => (
+              <span
+                key={`${tag}-${index}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs text-white"
+              >
+                {tag}
+                <button
+                  type="button"
+                  className="grid size-5 place-items-center rounded-full text-white/60 transition hover:bg-white/15 hover:text-white"
+                  onClick={() => onRemoveTag(index)}
+                  aria-label={`移除标签 ${tag}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {tags.length === 0 && (
+              <span className="text-sm text-white/40">暂无标签</span>
+            )}
+          </div>
+          <div className="flex gap-2 max-w-md">
+            <TextField.Root
+              placeholder="输入标签后回车或点击添加"
+              value={tagInput}
+              onChange={(e) => onTagInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onAddTag();
+                }
+              }}
+              radius="large"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="soft"
+              onClick={onAddTag}
+              className="shrink-0"
+            >
+              添加标签
+            </Button>
+          </div>
+        </div>
+      </Field>
+      <div className="grid gap-3 lg:grid-cols-1">
         <Field label="付费类型">
           <Select.Root
             value={paidType || undefined}

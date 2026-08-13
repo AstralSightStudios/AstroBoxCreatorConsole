@@ -8,22 +8,38 @@ import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState } from "~/logic/account/store";
 import { useRepoEnv } from "~/config/repoEnv";
-import { deriveReviewStatus } from "~/logic/publish/review-status";
+import { useReviewMode } from "~/config/publishMode";
+import {
+  deriveReviewStatus,
+  filterReviewTagComments,
+  resolveLatestTagAction,
+} from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
-  listOpenPullRequests,
+  getPullRequest,
+  listReviewPullRequests,
   listPullRequestComments,
   listPullRequestFiles,
   approvePullRequest,
+  mergePullRequest,
+  closePullRequest,
+  reopenPullRequest,
+  requestChangesPullRequest,
   createPullRequestComment,
   deletePullRequestComment,
   updatePullRequestComment,
+  listOrganizationMembers,
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
-import { loadPrResourcePreviews, getErrorMessage, extractOldCatalogEntriesFromFiles } from "./utils";
+import {
+  loadPrResourcePreviews,
+  loadStagingPrResourcePreviews,
+  getErrorMessage,
+  extractOldCatalogEntriesFromFiles,
+} from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
 import { parseReviewCommentBody } from "./utils/comment";
@@ -33,12 +49,14 @@ import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAc
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
+  const publishMode = useReviewMode();
   const setHeaderActions = useSetHeaderActions();
   const { isDesktop } = useNavVisibility();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const [permission, setPermission] = useState("");
+  const [orgMembers, setOrgMembers] = useState<Set<string>>(new Set());
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionError, setPermissionError] = useState("");
   const [pulls, setPulls] = useState<GithubPullRequest[]>([]);
@@ -50,6 +68,7 @@ export default function ResourceReviewPage() {
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
+  const [prStateFilter, setPrStateFilter] = useState<"all" | "open" | "closed">("open");
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
@@ -59,6 +78,9 @@ export default function ResourceReviewPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [refusing, setRefusing] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
   const canReview = ["admin", "maintain", "write"].includes(permission);
@@ -69,6 +91,22 @@ export default function ResourceReviewPage() {
 
   const repoFileChanges = useMemo(() => {
     if (files.length === 0 || resourcePreviews.length === 0) return [];
+    if (publishMode === "staging") {
+      return resourcePreviews.map((preview) => {
+        const oldEntry = preview.baseEntry;
+        const isNew = !oldEntry || !oldEntry.repo_commit_hash;
+        return {
+          entryId: preview.entry.id,
+          resourceName: preview.entry.name,
+          isNew,
+          owner: preview.entry.repo_owner,
+          repo: preview.entry.repo_name,
+          commitHash: preview.entry.repo_commit_hash || preview.ref,
+          baseCommitHash: isNew ? undefined : oldEntry!.repo_commit_hash,
+          manifest: preview.manifest,
+        };
+      });
+    }
     const oldEntries = extractOldCatalogEntriesFromFiles(files);
     const oldById = new Map<string, CatalogEntry>();
     for (const entry of oldEntries) oldById.set(entry.id, entry);
@@ -87,7 +125,7 @@ export default function ResourceReviewPage() {
         manifest: preview.manifest,
       };
     });
-  }, [files, resourcePreviews]);
+  }, [files, resourcePreviews, publishMode]);
 
   const loadPermission = async () => {
     setCheckingPermission(true);
@@ -103,21 +141,48 @@ export default function ResourceReviewPage() {
     }
   };
 
+  useEffect(() => {
+    void listOrganizationMembers(COMMUNITY_REPO_CONFIG.owner)
+      .then(setOrgMembers)
+      .catch(() => setOrgMembers(new Set()));
+  }, []);
+
   const loadPulls = async () => {
     setLoadingPulls(true);
     try {
-      const list = await listOpenPullRequests();
-      setPulls(list);
+      const list = await listReviewPullRequests("all");
       const commentEntries = await Promise.all(
         list.map(async (pull) => {
           try {
-            return [pull.number, await listPullRequestComments(pull.number)] as const;
+            return [
+              pull.number,
+              filterReviewTagComments(
+                await listPullRequestComments(pull.number),
+                orgMembers,
+                pull.user?.login,
+              ),
+            ] as const;
           } catch {
             return [pull.number, []] as const;
           }
         }),
       );
-      setCommentsByPr(Object.fromEntries(commentEntries));
+      const commentMap = Object.fromEntries(commentEntries);
+      const commentsByNumber = commentMap as Record<
+        number,
+        import("~/api/github/pr-review").GithubIssueComment[]
+      >;
+      const refusedNumbers = new Set(
+        list
+          .filter((pull) =>
+            (commentsByNumber[pull.number] ?? []).some((comment) =>
+              /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+            ),
+          )
+          .map((pull) => pull.number),
+      );
+      setPulls(list.filter((pull) => !refusedNumbers.has(pull.number)));
+      setCommentsByPr(commentsByNumber);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -132,18 +197,57 @@ export default function ResourceReviewPage() {
     setResourcePreviews([]);
     try {
       const [nextComments, nextFiles] = await Promise.all([
-        listPullRequestComments(number),
+        listPullRequestComments(number).then((comments) =>
+          filterReviewTagComments(comments, orgMembers, openPull?.user?.login),
+        ),
         listPullRequestFiles(number),
       ]);
       if (callId !== loadDetailRef.current) return;
-      const nextResourcePreviews = await loadPrResourcePreviews(
-        nextFiles,
-        accountState.github?.token || "",
-      );
+      const nextResourcePreviews =
+        publishMode === "staging" && openPull
+          ? await loadStagingPrResourcePreviews(
+              nextFiles,
+              accountState.github?.token || "",
+              openPull,
+            )
+          : await loadPrResourcePreviews(
+              nextFiles,
+              accountState.github?.token || "",
+            );
       if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
+      const refuseComment = nextComments.find((comment) =>
+        /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+      );
+      if (refuseComment) {
+        const fresh = await getPullRequest(number);
+        if (fresh.state === "open") {
+          await closePullRequest(number);
+          toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
+          await loadPulls();
+          navigate("/resreview", { replace: true });
+        }
+      } else {
+        // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
+        // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
+        const latestAction = resolveLatestTagAction(nextComments);
+        if (latestAction) {
+          const fresh = await getPullRequest(number);
+          if (latestAction === "reopen") {
+            if (fresh.state === "closed" && !fresh.merged_at) {
+              await reopenPullRequest(number);
+              toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+              await loadPulls();
+            }
+          } else if (fresh.state === "open") {
+            await closePullRequest(number);
+            toast.success("检测到 CLOSE 标签，PR 已关闭。");
+            await loadPulls();
+          }
+        }
+      }
     } catch (err) {
       if (callId === loadDetailRef.current) {
         toast.error(getErrorMessage(err));
@@ -161,7 +265,7 @@ export default function ResourceReviewPage() {
 
   useEffect(() => {
     if (canReview) void loadPulls();
-  }, [canReview, refreshTick]);
+  }, [canReview, refreshTick, orgMembers]);
 
   useEffect(() => {
     setGeneralComment("");
@@ -175,15 +279,21 @@ export default function ResourceReviewPage() {
       setResourcePreviews([]);
       setLoadingDetail(false);
     }
-  }, [openNumber, accountState.github?.token]);
+  }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
 
   const visiblePulls = useMemo(() => {
-    if (stateFilter === "all") return pulls;
-    return pulls.filter((pull) => {
+    let list = pulls;
+    if (prStateFilter === "open") {
+      list = list.filter((pull) => pull.state !== "closed");
+    } else if (prStateFilter === "closed") {
+      list = list.filter((pull) => pull.state === "closed");
+    }
+    if (stateFilter === "all") return list;
+    return list.filter((pull) => {
       const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
       return status.state === stateFilter;
     });
-  }, [commentsByPr, pulls, stateFilter]);
+  }, [commentsByPr, pulls, stateFilter, prStateFilter]);
 
   const refreshDetail = () => {
     if (!openNumber) return;
@@ -212,18 +322,35 @@ export default function ResourceReviewPage() {
   const submitComment = async (body: string) => {
     if (!openNumber || !body || submittingComment) return;
     const number = openNumber;
+    const isNewNeedFix =
+      !editingTarget && /^\s*\[ABCC_NEEDFIX/i.test(body.trim());
     setSubmittingComment(true);
     try {
       if (editingTarget) {
         await updatePullRequestComment(editingTarget.comment.id, body);
       } else {
         await createPullRequestComment(number, body);
+        if (isNewNeedFix) {
+          try {
+            await requestChangesPullRequest(number, body);
+          } catch (reviewError) {
+            toast.warning(
+              `评论已发送，但标记 Changes Requested 失败：${getErrorMessage(reviewError)}`,
+            );
+          }
+        }
       }
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
       await loadDetail(number);
-      toast.success(editingTarget ? "评论已更新" : "评论已发送");
+      toast.success(
+        editingTarget
+          ? "评论已更新"
+          : isNewNeedFix
+            ? "评论已发送，PR 已标记为需要修改"
+            : "评论已发送",
+      );
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -242,6 +369,64 @@ export default function ResourceReviewPage() {
       toast.error(getErrorMessage(err));
     } finally {
       setApproving(false);
+    }
+  };
+
+  const merge = async () => {
+    if (!openNumber || merging) return;
+    const number = openNumber;
+    setMerging(true);
+    try {
+      await mergePullRequest(number);
+      toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
+      await loadPulls();
+      if (openNumber === number) {
+        navigate("/resreview", { replace: true });
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const closePr = async (reason: string) => {
+    if (!openNumber || closing) return;
+    const number = openNumber;
+    setClosing(true);
+    try {
+      await closePullRequest(number);
+      const commentBody = reason
+        ? `[ABCC_CLOSE] ${reason}`
+        : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
+      await createPullRequestComment(number, commentBody);
+      toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
+      await loadPulls();
+      await loadDetail(number);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  const refusePr = async (reason: string) => {
+    if (!openNumber || refusing) return;
+    const number = openNumber;
+    setRefusing(true);
+    try {
+      await closePullRequest(number);
+      const commentBody = reason
+        ? `[ABCC_REFUSE] ${reason}`
+        : "[ABCC_REFUSE] 该 PR 已被审核成员拒绝。";
+      await createPullRequestComment(number, commentBody);
+      toast.success("PR 已拒绝，不再显示在审核列表中。");
+      await loadPulls();
+      navigate("/resreview", { replace: true });
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRefusing(false);
     }
   };
 
@@ -309,6 +494,10 @@ export default function ResourceReviewPage() {
                 isSwitcherCollapsed={isWorkbenchSidebarCollapsed}
                 submittingComment={submittingComment}
                 approving={approving}
+                merging={merging}
+                closing={closing}
+                refusing={refusing}
+                canMerge={publishMode === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
                 onRefreshList={() => {
@@ -323,6 +512,9 @@ export default function ResourceReviewPage() {
                 onDeleteComment={deleteComment}
                 onEditComment={editComment}
                 onApprove={approve}
+                onMerge={merge}
+                onClose={closePr}
+                onRefuse={refusePr}
               />
             </LayoutGroup>
           </motion.div>
@@ -341,7 +533,23 @@ export default function ResourceReviewPage() {
                   {env.owner}/{env.repoName}
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                    <div className="min-w-0 flex-1">
+                      <Select.Root
+                        value={prStateFilter}
+                        onValueChange={(val) =>
+                          setPrStateFilter(val as "all" | "open" | "closed")
+                        }
+                      >
+                        <Select.Trigger radius="large" className="w-full" />
+                        <Select.Content position="popper">
+                          <Select.Item value="all">全部 PR</Select.Item>
+                          <Select.Item value="open">进行中</Select.Item>
+                          <Select.Item value="closed">已关闭</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                    <div className="min-w-0 flex-1">
                     <Select.Root
                       value={stateFilter}
                       onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
@@ -354,6 +562,7 @@ export default function ResourceReviewPage() {
                         <Select.Item value="fixed_waiting">已修复待复核</Select.Item>
                       </Select.Content>
                     </Select.Root>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
@@ -373,7 +582,7 @@ export default function ResourceReviewPage() {
               <section className="flex min-h-0 flex-1 flex-col">
                 <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-3 no-scrollbar">
                   {visiblePulls.length === 0 ? (
-                    <div className="py-16 text-center text-sm text-white/45">暂无 open PR</div>
+                    <div className="py-16 text-center text-sm text-white/45">暂无 PR</div>
                   ) : (
                     <LayoutGroup>
                       <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">

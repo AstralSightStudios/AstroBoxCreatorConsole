@@ -1,4 +1,13 @@
-import { Badge, Button, Callout, Spinner, Popover, Text, AlertDialog } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Callout,
+  Checkbox,
+  Spinner,
+  Popover,
+  Text,
+  AlertDialog,
+} from "@radix-ui/themes";
 import {
   FileXIcon,
   UploadIcon,
@@ -14,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { loadSubmitMode } from "~/config/publishMode";
 import {
   buildManifest,
   type ManifestBuildResult,
@@ -25,7 +35,11 @@ import {
   uploadManifestAndAssets,
   type RepoInfo,
 } from "~/logic/publish/submission";
-import { loadAccountState, useDisplayAccount } from "~/logic/account/store";
+import {
+  loadAccountState,
+  useAccountState,
+  useDisplayAccount,
+} from "~/logic/account/store";
 import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
 import { listSellerResourceFileKeys } from "~/api/astrobox/order";
 import {
@@ -33,6 +47,16 @@ import {
   updateCatalogCsv,
   updateCatalogEntryOnBranch,
 } from "~/logic/publish/catalog";
+import {
+  createSubmissionBranch,
+  createSubmissionPullRequest,
+  updateSubmissionEntryOnBranch,
+} from "~/logic/publish/staging-submission";
+import {
+  createPullRequestComment,
+  reopenPullRequest,
+} from "~/api/github/pr-review";
+import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
 import { StepList, type UploadItem } from "./components/shared";
 import {
@@ -40,6 +64,7 @@ import {
   createExistingUploadItem,
   createImageUploadItem,
   createUploadItem,
+  getImageDimensions,
   revokeUrl,
 } from "./components/uploadUtils";
 import {
@@ -62,7 +87,13 @@ import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection } from "./components/RepoStepSection";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
-import { validatePublish, validateRpkPackage } from "~/logic/publish/validation";
+import {
+  COVER_MAX_BYTES,
+  COVER_RATIO,
+  COVER_RATIO_TOLERANCE,
+  readRpkManifestInfo,
+  validatePublish,
+} from "~/logic/publish/validation";
 import {
   buildRawFileUrl,
   fetchManifestForCatalogEntry,
@@ -78,6 +109,7 @@ import {
   clearAutoSavedDraft,
   type PublishDraft,
   type PublishDraftFormData,
+  type DraftMediaItem,
 } from "~/logic/publish/publish-drafts";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
@@ -121,9 +153,132 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
   return next;
 }
 
+function parseTagText(raw: string): string[] {
+    return raw
+        .split(/[;；,，]/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}`;
+}
+
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [meta, base64] = dataUrl.split(",");
+  const type = meta?.replace("data:", "").split(";")[0] || "application/octet-stream";
+  const bytes = Uint8Array.from(atob(base64 || ""), (c) => c.charCodeAt(0));
+  return new File([bytes], name, { type });
+}
+
+async function serializeMediaItem(
+  item: UploadItem | null,
+): Promise<DraftMediaItem | null> {
+  if (!item) return null;
+  if (item.skipUpload || !item.file?.size) {
+    return {
+      id: item.id,
+      name: item.name,
+      url: item.url,
+      pathOverride: item.pathOverride,
+      skipUpload: true,
+      source: "existing",
+      width: item.width,
+      height: item.height,
+    };
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    dataUrl: await fileToDataUrl(item.file),
+    pathOverride: item.pathOverride,
+    skipUpload: item.skipUpload,
+    source: "upload",
+    width: item.width,
+    height: item.height,
+  };
+}
+
+function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
+  if (!item) return null;
+  if (item.dataUrl) {
+    const file = dataUrlToFile(item.dataUrl, item.name);
+    const restored = createUploadItem(file);
+    return {
+      ...restored,
+      pathOverride: item.pathOverride,
+      width: item.width,
+      height: item.height,
+    };
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    url: item.url || "",
+    file: new File([], item.name),
+    pathOverride: item.pathOverride,
+    skipUpload: true,
+    source: "existing",
+    width: item.width,
+    height: item.height,
+  };
+}
+
+function imageMimeFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const mimes: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+    avif: "image/avif",
+  };
+  return mimes[ext] || "application/octet-stream";
+}
+
+async function loadRemoteMediaItem(
+  path: string,
+  url: string,
+): Promise<UploadItem> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const file = new File(
+      [blob],
+      path.split("/").pop() || "image",
+      { type: blob.type || imageMimeFromPath(path) },
+    );
+    const item = await createImageUploadItem(file);
+    return {
+      ...item,
+      pathOverride: path,
+      skipUpload: true,
+      source: "existing",
+    };
+  } catch (error) {
+    console.warn("[edit-media] failed to download remote image", path, error);
+    return createExistingUploadItem(
+      path.split("/").pop() || "image",
+      url,
+      path,
+    );
+  }
+}
+
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const accountState = useAccountState();
   const displayAccount = useDisplayAccount();
   const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
@@ -141,10 +296,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   >(null);
 
   const [previews, setPreviews] = useState<UploadItem[]>([]);
+  const [previewUploading, setPreviewUploading] = useState(false);
+  const [previewProcessingId, setPreviewProcessingId] = useState<string | null>(
+    null,
+  );
   const [icon, setIcon] = useState<UploadItem | null>(null);
+  const [iconUploading, setIconUploading] = useState(false);
   const [cover, setCover] = useState<UploadItem | null>(null);
-  const [usePreviewAsCover, setUsePreviewAsCover] = useState(true);
-  const [coverPreviewId, setCoverPreviewId] = useState<string | null>(null);
 
   const [authors, setAuthors] = useState<AuthorInput[]>([
     { name: "", bindABAccount: true },
@@ -155,14 +313,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [trialDownloads, setTrialDownloads] =
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [tagsInput, setTagsInput] = useState("");
+  const [tagInput, setTagInput] = useState("");
   const [paidType, setPaidType] = useState("");
   const [enableAstroBoxCreatorFeatures, setEnableAstroBoxCreatorFeatures] =
     useState(false);
-  const hasEncryptedUpload = useMemo(
-    () => downloads.some((d) => Boolean(d.encryptOnUpload)),
-    [downloads],
-  );
-  const effectivePaidType = hasEncryptedUpload ? "force_paid" : paidType;
+  const effectivePaidType = paidType;
+  const tags = useMemo(() => parseTagText(tagsInput), [tagsInput]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
@@ -214,6 +370,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const isEditing = isEditMode || Boolean(editContext);
   const missingEditContext = isEditMode && !editContext;
+
+  useEffect(() => {
+    if (mode !== "new") return;
+    const username = accountState.astrobox?.username?.trim();
+    if (!username) return;
+    setAuthors((prev) => {
+      if (prev.length === 1 && !prev[0].name.trim()) {
+        return [{ name: username, bindABAccount: true }];
+      }
+      return prev;
+    });
+  }, [accountState.astrobox?.username, mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -298,18 +466,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [resourceType, itemId, existingCatalogIds]);
 
   useEffect(() => {
-    if (resourceType !== "watchface") {
+    const trimmed = itemId.trim();
+    if (!trimmed) {
       setIdError("");
       return;
     }
-    const formatError = validateWatchfaceIdFormat(itemId);
-    if (formatError) {
-      setIdError(formatError);
-      return;
-    }
     const ownedId = editContext?.catalog.entry.id.trim();
-    const existingName = existingCatalogIds?.get(itemId.trim());
-    if (existingName && itemId.trim() !== ownedId) {
+    if (resourceType === "watchface") {
+      const formatError = validateWatchfaceIdFormat(trimmed);
+      if (formatError) {
+        setIdError(formatError);
+        return;
+      }
+    }
+    const existingName = existingCatalogIds?.get(trimmed);
+    if (existingName && trimmed !== ownedId) {
       setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
       return;
     }
@@ -371,49 +542,41 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           })) || [],
         );
 
-        const previewItems: UploadItem[] =
-          manifest.item.preview?.map((path, index) =>
-            createExistingUploadItem(
-              path.split("/").pop() || `preview-${index + 1}`,
-              buildRawFileUrl(repo.owner, repo.name, ref, path),
+        const previewItems: UploadItem[] = await Promise.all(
+          (manifest.item.preview || []).map((path, index) =>
+            loadRemoteMediaItem(
               path,
+              buildRawFileUrl(repo.owner, repo.name, ref, path),
+            ).catch(() =>
+              createExistingUploadItem(
+                path.split("/").pop() || `preview-${index + 1}`,
+                buildRawFileUrl(repo.owner, repo.name, ref, path),
+                path,
+              ),
             ),
-          ) || [];
+          ),
+        );
         setPreviews(previewItems);
 
         const iconPath = manifest.item.icon;
         setIcon(
           iconPath
-            ? createExistingUploadItem(
-                iconPath.split("/").pop() || "icon",
-                buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
+            ? await loadRemoteMediaItem(
                 iconPath,
+                buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
               )
             : null,
         );
 
         const coverPath = manifest.item.cover;
-        const matchedCover = previewItems.find(
-          (item) => (item.pathOverride || item.name) === coverPath,
+        setCover(
+          coverPath
+            ? await loadRemoteMediaItem(
+                coverPath,
+                buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
+              )
+            : null,
         );
-        if (matchedCover) {
-          setUsePreviewAsCover(true);
-          setCoverPreviewId(matchedCover.id);
-          setCover(null);
-        } else if (coverPath) {
-          setUsePreviewAsCover(false);
-          setCover(
-            createExistingUploadItem(
-              coverPath.split("/").pop() || "cover",
-              buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
-              coverPath,
-            ),
-          );
-        } else {
-          setUsePreviewAsCover(true);
-          setCoverPreviewId(previewItems[0]?.id ?? null);
-          setCover(null);
-        }
 
         const ext = isManifestExtObject(manifest.ext) ? manifest.ext : {};
         setDownloads(
@@ -485,8 +648,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         previews,
         icon,
         cover,
-        usePreviewAsCover,
-        coverPreviewId,
+        usePreviewAsCover: false,
+        coverPreviewId: null,
         authors,
         links,
         downloads,
@@ -497,7 +660,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [
       authors,
       cover,
-      coverPreviewId,
       description,
       downloads,
       enableAstroBoxCreatorFeatures,
@@ -509,7 +671,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       previews,
       resourceType,
       trialDownloads,
-      usePreviewAsCover,
     ],
   );
 
@@ -521,63 +682,147 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         previews,
         icon,
         cover,
-        usePreviewAsCover,
-        coverPreviewId,
+        usePreviewAsCover: false,
+        coverPreviewId: null,
         downloads,
         trialDownloads,
         links,
       }),
-    [itemId, itemName, previews, icon, cover, usePreviewAsCover, coverPreviewId, downloads, trialDownloads, links],
+    [itemId, itemName, previews, icon, cover, downloads, trialDownloads, links],
   );
 
   const handlePreviewUpload = async (files: FileList | null) => {
     if (!files?.length) return;
-    const processed = await Promise.all(
-      Array.from(files).map(async (file) => {
+    const fileList = Array.from(files);
+    console.log("[preview-upload] start", fileList.length, fileList.map((f) => f.name));
+    setPreviewUploading(true);
+    try {
+      const initialItems = fileList.map((file) => ({
+        ...createUploadItem(file),
+        processing: true,
+        progress: 0,
+      }));
+      setPreviews((prev) => [...prev, ...initialItems]);
+
+      for (let index = 0; index < fileList.length; index++) {
+        const file = fileList[index];
+        const itemId = initialItems[index].id;
+        let progressTimer: number | undefined;
         try {
-          return await compressImageFile(file);
+          console.log("[preview-upload] compress", index + 1, file.name, file.size);
+          setPreviewProcessingId(itemId);
+          progressTimer = window.setInterval(() => {
+            setPreviews((prev) =>
+              prev.map((item) =>
+                item.id === itemId && item.processing
+                  ? { ...item, progress: Math.min(90, (item.progress || 0) + 8 + Math.random() * 12) }
+                  : item,
+              ),
+            );
+          }, 160);
+          const processed = await compressImageFile(file, 500 * 1024);
+          console.log("[preview-upload] read dimensions", file.name, processed.size);
+          const item = await createImageUploadItem(processed);
+          console.log("[preview-upload] ready", file.name, item.width, item.height);
+          if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...item, processing: false, progress: 100 } : old,
+            ),
+          );
         } catch (err) {
+          if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
+          console.error("[preview-upload] failed", file.name, err);
           toast.error(`图片处理失败：${file.name}`);
-          console.error("compress preview failed:", err);
-          return file;
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...old, processing: false, progress: 100 } : old,
+            ),
+          );
         }
-      }),
-    );
-    const newItems = await Promise.all(processed.map(createImageUploadItem));
-    setPreviews((prev) => [...prev, ...newItems]);
-    if (usePreviewAsCover && !coverPreviewId) {
-      setCoverPreviewId(newItems[0]?.id ?? null);
+      }
+      console.log("[preview-upload] done");
+    } finally {
+      setPreviewProcessingId(null);
+      setPreviewUploading(false);
     }
   };
 
   const handleIconUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
-    let processed = file;
-    try {
-      processed = await compressImageFile(file);
-    } catch (err) {
-      toast.error("图标处理失败，将使用原图");
-      console.error("compress icon failed:", err);
+    const originalDims = await getImageDimensions(file);
+    if (
+      !originalDims.width ||
+      !originalDims.height ||
+      originalDims.width !== originalDims.height
+    ) {
+      toast.error("图标宽高比必须为 1:1，请重新选择。");
+      return;
     }
-    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
-    setIcon((prev) => {
-      revokeUrl(prev);
-      return next;
-    });
+    if (originalDims.width > 500 || originalDims.height > 500) {
+      toast.error("图标尺寸过大，请重新选择。");
+      return;
+    }
+    setIconUploading(true);
+    try {
+      let processed = file;
+      try {
+        processed = await compressImageFile(file, 100 * 1024);
+      } catch (err) {
+        toast.error("图标处理失败，将使用原图");
+        console.error("compress icon failed:", err);
+      }
+      const next = await createImageUploadItem(processed).catch(() =>
+        createUploadItem(processed),
+      );
+      setIcon((prev) => {
+        revokeUrl(prev);
+        return next;
+      });
+    } finally {
+      setIconUploading(false);
+    }
   };
 
   const handleCoverUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    const originalDims = await getImageDimensions(file);
+    const originalRatio =
+      originalDims.width && originalDims.height
+        ? originalDims.width / originalDims.height
+        : null;
+    if (
+      !originalDims.width ||
+      !originalDims.height ||
+      !originalRatio ||
+      Math.abs(originalRatio - COVER_RATIO) > COVER_RATIO_TOLERANCE
+    ) {
+      toast.error(
+        `封面宽高比必须为 3:2，当前 ${
+          originalRatio ? originalRatio.toFixed(2) : "未知"
+        }。`,
+      );
+      return;
+    }
     let processed = file;
     try {
-      processed = await compressImageFile(file);
+      processed = await compressImageFile(file, 600 * 1024);
     } catch (err) {
       toast.error("封面处理失败，将使用原图");
       console.error("compress cover failed:", err);
     }
-    const next = await createImageUploadItem(processed).catch(() => createUploadItem(processed));
+    const next = await createImageUploadItem(processed).catch(() =>
+      createUploadItem(processed),
+    );
+    if (next.file.size > COVER_MAX_BYTES) {
+      toast.error("封面体积过大，请压缩后重新上传。");
+      revokeUrl(next);
+      return;
+    }
     setCover((prev) => {
       revokeUrl(prev);
       return next;
@@ -600,15 +845,34 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [resourceType, idGenerating]);
 
+  const addTag = () => {
+    const nextTag = tagInput.trim();
+    if (!nextTag) return;
+    if (tags.some((tag) => tag.toLowerCase() === nextTag.toLowerCase())) {
+      setTagInput("");
+      return;
+    }
+    setTagsInput((prev) => {
+      const existing = parseTagText(prev);
+      return [...existing, nextTag].join(";");
+    });
+    setTagInput("");
+  };
+
+  const removeTag = (index: number) => {
+    setTagsInput((prev) => {
+      const next = parseTagText(prev);
+      next.splice(index, 1);
+      return next.join(";");
+    });
+  };
+
   const handleRemovePreview = (id: string) => {
     setPreviews((prev) => {
       const toRemove = prev.find((item) => item.id === id);
       revokeUrl(toRemove);
       return prev.filter((item) => item.id !== id);
     });
-    if (coverPreviewId === id) {
-      setCoverPreviewId(null);
-    }
   };
 
   const handleReorderPreview = (fromId: string, toId: string) => {
@@ -645,13 +909,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setIcon((item) => item?.id === id ? { ...item, width, height } : item);
     } else {
       setCover((item) => item?.id === id ? { ...item, width, height } : item);
-    }
-  };
-
-  const handleUsePreviewAsCover = (checked: boolean) => {
-    setUsePreviewAsCover(Boolean(checked));
-    if (checked && previews[0]) {
-      setCoverPreviewId(previews[0].id);
     }
   };
 
@@ -716,14 +973,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
        if (publishValidation.errors.length) {
          throw new Error(publishValidation.errors[0]);
        }
-       if (resourceType === "quick_app") {
-         for (const download of [...downloads, ...trialDownloads]) {
-           if (download.file && !download.file.skipUpload) {
-             await validateRpkPackage(download.file.file, itemId);
-           }
-         }
-       }
-
        if (!manifestResult.manifestJson) {
         throw new Error("缺少 manifest 数据，请先填写必要字段。");
       }
@@ -852,7 +1101,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         .map((t) => t.trim())
         .filter(Boolean);
       if (tags.length === 0) {
-        throw new Error("请至少填写一个标签（用分号分隔）。");
+        throw new Error("请至少添加一个标签。");
       }
 
       const deviceMap = new Map(deviceOptions.map((d) => [d.id, d]));
@@ -864,10 +1113,43 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }));
 
       const manifestForCatalog = lastManifest ?? manifestResult;
+      const useStaging = loadSubmitMode() === "staging";
+      const prBodyContent = [
+        prBody.trim(),
+        "欢迎加入 [AstroBox 资源开发者官方 QQ 群](https://qm.qq.com/q/4YVntKbEMo)",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const catalogEntry = {
+        id: itemId.trim(),
+        name: itemName.trim(),
+        restype: resourceType,
+        repo_owner: repoInfo.owner,
+        repo_name: repoInfo.name,
+        repo_commit_hash: repoInfo.commitSha.slice(0, 7),
+        icon: manifestForCatalog.iconPath,
+        cover: manifestForCatalog.coverPath,
+        tags: tags.join(";"),
+        device_vendors: Array.from(
+          new Set(selectedDevices.map((d) => d.vendor).filter(Boolean)),
+        ).join(";"),
+        devices: Array.from(new Set(selectedDevices.map((d) => d.id))).join(
+          ";",
+        ),
+        paid_type: effectivePaidType?.trim() ?? "",
+      };
 
       if (mode === "in_progress") {
         if (!editContext?.prHead) {
           throw new Error("缺少 PR 分支信息，无法更新。");
+        }
+
+        if (editContext.prState === "closed" && editContext.prNumber) {
+          await reopenPullRequest(editContext.prNumber);
+          await createPullRequestComment(
+            editContext.prNumber,
+            "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。",
+          );
         }
 
         await syncBranchWithUpstream({
@@ -877,34 +1159,59 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           targetBranch: editContext.prHead.ref,
         });
 
-        await updateCatalogEntryOnBranch({
-          token,
-          owner: editContext.prHead.owner,
-          repo: editContext.prHead.repo,
-          branch: editContext.prHead.ref,
-          intent: {
-            mode: "edit",
-            originalId: editContext.catalog.entry.id,
-          },
-          entry: {
-            id: itemId.trim(),
-            name: itemName.trim(),
-            restype: resourceType,
-            repo_owner: repoInfo.owner,
-            repo_name: repoInfo.name,
-            repo_commit_hash: repoInfo.commitSha.slice(0, 7),
-            icon: manifestForCatalog.iconPath,
-            cover: manifestForCatalog.coverPath,
-            tags: tags.join(";"),
-            device_vendors: Array.from(
-              new Set(selectedDevices.map((d) => d.vendor).filter(Boolean)),
-            ).join(";"),
-            devices: Array.from(new Set(selectedDevices.map((d) => d.id))).join(
-              ";",
-            ),
-            paid_type: effectivePaidType?.trim() ?? "",
-          },
-        });
+        if (useStaging) {
+          if (!editContext.submission) {
+            throw new Error("缺少新流程提交信息，无法更新现有 PR。");
+          }
+          await updateSubmissionEntryOnBranch({
+            token,
+            owner: editContext.prHead.owner,
+            repo: editContext.prHead.repo,
+            branch: editContext.prHead.ref,
+            entry: catalogEntry,
+            request: editContext.submission.request,
+            submissionPath: editContext.submission.path,
+          });
+        } else {
+          await updateCatalogEntryOnBranch({
+            token,
+            owner: editContext.prHead.owner,
+            repo: editContext.prHead.repo,
+            branch: editContext.prHead.ref,
+            intent: {
+              mode: "edit",
+              originalId: editContext.catalog.entry.id,
+            },
+            entry: catalogEntry,
+          });
+        }
+
+        if (editContext.mode === "in_progress" && editContext.prNumber) {
+          for (const item of needFixItems) {
+            if (!fixedSelections[item.id]) continue;
+            const note = (fixedNotes[item.id] || "").trim();
+            const tag = `[ABCC_FIXED_${item.id}] ${note}`.trim();
+            let body = tag;
+            if (item.commentId || item.commentBody) {
+              const quoted = (
+                item.commentBody ||
+                item.message ||
+                ""
+              )
+                .trim()
+                .split("\n")
+                .map((line) => `> ${line}`)
+                .join("\n");
+              body = `${tag}\n\n> @${item.author?.login || "reviewer"} · 评论 #${
+                item.commentId || "?"
+              }\n${quoted}`;
+            }
+            await createPullRequestComment(
+              editContext.prNumber,
+              body,
+            );
+          }
+        }
 
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
@@ -912,29 +1219,58 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         return;
       }
 
-      const branchInfo = await updateCatalogCsv({
-        repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
-        iconPath: manifestForCatalog.iconPath,
-        coverPath: manifestForCatalog.coverPath,
-        tags,
-        devices: selectedDevices,
-        itemId,
-        itemName,
-        restype: resourceType,
-        paidType: effectivePaidType,
-        intent: editContext
-          ? { mode: "edit", originalId: editContext.catalog.entry.id }
-          : { mode: "create" },
-      });
+      if (useStaging) {
+        const branchInfo = await createSubmissionBranch({
+          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
+          iconPath: manifestForCatalog.iconPath,
+          coverPath: manifestForCatalog.coverPath,
+          tags,
+          devices: selectedDevices,
+          itemId,
+          itemName,
+          restype: resourceType,
+          paidType: effectivePaidType,
+          intent: editContext
+            ? { mode: "edit", originalId: editContext.catalog.entry.id }
+            : { mode: "create" },
+        });
+        await createSubmissionPullRequest({
+          forkOwner: branchInfo.forkOwner,
+          forkRepo: branchInfo.forkRepo,
+          branch: branchInfo.branch,
+          token,
+          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+            itemName || itemId || "资源"
+          }`,
+          body: prBodyContent || undefined,
+        });
+      } else {
+        const branchInfo = await updateCatalogCsv({
+          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
+          iconPath: manifestForCatalog.iconPath,
+          coverPath: manifestForCatalog.coverPath,
+          tags,
+          devices: selectedDevices,
+          itemId,
+          itemName,
+          restype: resourceType,
+          paidType: effectivePaidType,
+          intent: editContext
+            ? { mode: "edit", originalId: editContext.catalog.entry.id }
+            : { mode: "create" },
+        });
 
-      await createCatalogPullRequest({
-        forkOwner: branchInfo.forkOwner,
-        forkRepo: branchInfo.forkRepo,
-        branch: branchInfo.branch,
-        token,
-        title: `${PUBLISH_CONFIG.defaultPrTitle}: ${itemName || itemId || "新资源"}`,
-        body: prBody.trim() || undefined,
-      });
+        await createCatalogPullRequest({
+          forkOwner: branchInfo.forkOwner,
+          forkRepo: branchInfo.forkRepo,
+          branch: branchInfo.branch,
+          token,
+          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+            itemName || itemId || "资源"
+          }`,
+          body: prBodyContent || undefined,
+        });
+      }
 
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");
@@ -1075,6 +1411,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const goToStep = (index: number) => {
     const target = Math.max(0, Math.min(2, index));
+    if (target > 0 && tags.length === 0) {
+      toast.error("请至少添加一个标签。");
+      setActiveStepIndex(0);
+      return;
+    }
     if (target > 0 && publishValidation.errors.length) {
       toast.error(publishValidation.errors[0]);
       setActiveStepIndex(0);
@@ -1100,20 +1441,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   } | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const buildFormData = useCallback((): PublishDraftFormData => ({
-    itemId,
-    itemName,
-    description,
-    resourceType,
-    tagsInput,
-    paidType,
-    authors,
-    links,
-    downloads: downloads.map((d) => ({ ...d, file: null })),
-    trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
-    enableAstroBoxCreatorFeatures,
-    extRaw,
-  }), [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw]);
+  const buildFormData = useCallback(async (): Promise<PublishDraftFormData> => {
+    const [serializedPreviews, serializedIcon, serializedCover] = await Promise.all([
+      Promise.all(previews.map(serializeMediaItem)).then((items) =>
+        items.filter((item): item is DraftMediaItem => item !== null),
+      ),
+      serializeMediaItem(icon),
+      serializeMediaItem(cover),
+    ]);
+    return {
+      itemId,
+      itemName,
+      description,
+      resourceType,
+      tagsInput,
+      paidType,
+      authors,
+      links,
+      previews: serializedPreviews,
+      icon: serializedIcon,
+      cover: serializedCover,
+      downloads: downloads.map((d) => ({ ...d, file: null })),
+      trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
+      enableAstroBoxCreatorFeatures,
+      extRaw,
+    };
+  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover]);
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
@@ -1124,6 +1477,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setPaidType(data.paidType);
     setAuthors(data.authors);
     setLinks(data.links);
+    setPreviews(
+      (data.previews ?? [])
+        .map(restoreMediaItem)
+        .filter((item): item is UploadItem => Boolean(item)),
+    );
+    setIcon(restoreMediaItem(data.icon));
+    setCover(restoreMediaItem(data.cover));
     setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
@@ -1132,32 +1492,34 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   // Auto-save debounce
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || previewUploading) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      autoSaveDraft(buildFormData());
-    }, 3000);
+      void buildFormData().then(autoSaveDraft);
+    }, 1000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [buildFormData, isEditMode]);
+  }, [buildFormData, isEditMode, previewUploading]);
 
   // Check for auto-saved draft on mount
   useEffect(() => {
     if (isEditMode) return;
-    const saved = loadAutoSavedDraft();
-    if (saved && saved.formData.itemName) {
-      setAutoSavedData(saved);
-      setAutoSavePromptOpen(true);
-    }
+    void loadAutoSavedDraft().then((saved) => {
+      if (saved && saved.formData.itemName) {
+        setAutoSavedData(saved);
+        setAutoSavePromptOpen(true);
+      }
+    });
   }, [isEditMode]);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     const name = draftName.trim() || itemName || "未命名草稿";
-    saveDraft(name, buildFormData());
+    const data = await buildFormData();
+    await saveDraft(name, data);
     setDraftName("");
     setSaveDraftOpen(false);
-    setDraftList(listDrafts());
+    setDraftList(await listDrafts());
   };
 
   const handleRestoreDraft = (draft: PublishDraft) => {
@@ -1165,22 +1527,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setDraftPopoverOpen(false);
   };
 
-  const handleDeleteDraft = (id: string) => {
-    deleteDraft(id);
-    setDraftList(listDrafts());
+  const handleDeleteDraft = async (id: string) => {
+    await deleteDraft(id);
+    setDraftList(await listDrafts());
   };
 
-  const handleRestoreAutoSave = () => {
+  const handleRestoreAutoSave = async () => {
     if (autoSavedData) {
       restoreFormData(autoSavedData.formData);
     }
     setAutoSavePromptOpen(false);
-    clearAutoSavedDraft();
+    await clearAutoSavedDraft();
   };
 
-  const handleDismissAutoSave = () => {
+  const handleDismissAutoSave = async () => {
     setAutoSavePromptOpen(false);
-    clearAutoSavedDraft();
+    await clearAutoSavedDraft();
   };
 
   const formatDraftTime = (ts: number) => {
@@ -1197,18 +1559,37 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const repoStepMode: "new" | "edit" =
     isEditMode || Boolean(editContext) ? "edit" : "new";
-  const prStepMode: "new" | "update" =
-    editContext?.mode === "in_progress" ? "update" : "new";
+  const prStepMode: "new" | "update" | "reopen" =
+    editContext?.mode === "in_progress"
+      ? editContext.prState === "closed"
+        ? "reopen"
+        : "update"
+      : "new";
   const needFixItems = useMemo(
     () =>
-      editContext?.mode === "in_progress" ? (editContext.needs ?? []) : [],
+      editContext?.mode === "in_progress"
+        ? (editContext.needs ?? []).filter((item) => !item.fixed)
+        : [],
     [editContext],
   );
-  const needFixProgressText = useMemo(() => {
-    if (needFixItems.length === 0) return "";
-    const finished = needFixItems.filter((item) => item.fixed).length;
-    return `（已完成 ${finished}/${needFixItems.length}）`;
-  }, [needFixItems]);
+  const [fixedSelections, setFixedSelections] = useState<Record<string, boolean>>({});
+  const [fixedNotes, setFixedNotes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (editContext?.mode !== "in_progress") {
+      setFixedSelections({});
+      setFixedNotes({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    const notes: Record<string, string> = {};
+    for (const item of needFixItems) {
+      next[item.id] = false;
+      notes[item.id] = "";
+    }
+    setFixedSelections(next);
+    setFixedNotes(notes);
+  }, [editContext, needFixItems]);
 
   const stepsCard = (
     <div className="flex flex-wrap flex-col gap-6">
@@ -1285,7 +1666,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
         <Popover.Root open={draftPopoverOpen} onOpenChange={(open) => {
           setDraftPopoverOpen(open);
-          if (open) setDraftList(listDrafts());
+          if (open) void listDrafts().then(setDraftList);
         }}>
           <Popover.Trigger>
             <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
@@ -1341,6 +1722,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       </div>
     </div>
   ) : null;
+
+  if (mode === "new" && !accountState.astrobox?.username?.trim()) {
+    return (
+      <Page>
+        <div className="mx-auto max-w-2xl px-2 py-10">
+          <Callout.Root color="amber">
+            <Callout.Icon>
+              <WarningOctagonIcon size={18} weight="fill" />
+            </Callout.Icon>
+            <Callout.Text>
+              发布新资源前需要先登录 AstroBox 账号，以便自动读取作者用户名。
+            </Callout.Text>
+          </Callout.Root>
+        </div>
+      </Page>
+    );
+  }
 
   return (
     <Page>
@@ -1404,6 +1802,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               )}
               {editContext.mode === "in_progress" &&
                 editContext.reviewState === "changes_requested" &&
+                activeStepIndex !== 2 &&
                 needFixItems.length > 0 && (
                   <div className="mt-2.5 rounded-md border border-amber-400/30 bg-amber-400/5 p-2.5">
                     <div className="mb-2 flex items-center gap-2">
@@ -1413,27 +1812,41 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                         className="text-amber-300"
                       />
                       <p className="text-sm font-semibold text-amber-200">
-                        需要修改项{needFixProgressText}
+                        需要修改下面{needFixItems.length}项
                       </p>
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col divide-y divide-white/10">
                       {needFixItems.map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-center gap-2 text-sm text-white/85"
+                          className="min-w-0 py-2 text-sm leading-6 text-white/85 first:pt-0 last:pb-0"
                         >
-                          <Badge
-                            color={item.fixed ? "green" : "yellow"}
-                            variant="soft"
-                          >
-                            {item.id}
-                          </Badge>
-                          <span className="text-white/85">
-                            {item.message || "（无附加说明）"}
-                          </span>
+                          <div
+                            className="min-w-0 break-words [&_code]:font-mono [&_code]:text-xs [&_code]:text-amber-300"
+                            dangerouslySetInnerHTML={{
+                              __html: renderCommentMarkdownInlineHtml(
+                                `\`${item.id}\`　${item.message || "（无附加说明）"}`,
+                              ),
+                            }}
+                          />
                         </div>
                       ))}
                     </div>
+                    {editContext.prNumber && (
+                      <div className="mt-2 flex justify-end">
+                        <a
+                          href={
+                            editContext.prUrl ||
+                            `https://github.com/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pull/${editContext.prNumber}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-400 transition hover:text-blue-300"
+                        >
+                          到 GitHub 查看审核和评论
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
             </Callout.Root>
@@ -1448,38 +1861,39 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           )}
 
           {activeStepIndex === 0 && (
-            <div className="border border-white/10 bg-nav-item shadow-[0_18px_36px_rgba(0,0,0,0.32)] rounded-[14px]">
+            <div className="flex flex-col gap-3">
               <BasicInfoSection
                 itemId={itemId}
                 itemName={itemName}
                 description={description}
-                tagsInput={tagsInput}
+                tags={tags}
+                tagInput={tagInput}
                 paidType={effectivePaidType}
-                paidTypeDisabled={hasEncryptedUpload}
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
                 onItemIdChange={setItemId}
                 onItemNameChange={setItemName}
                 onDescriptionChange={setDescription}
-                onTagsChange={setTagsInput}
+                onAddTag={addTag}
+                onRemoveTag={removeTag}
+                onTagInputChange={setTagInput}
                 onPaidTypeChange={setPaidType}
                 onResourceTypeChange={setResourceType}
                 onGenerateId={handleGenerateId}
               />
               <MediaSection
                 previews={previews}
+                previewUploading={previewUploading}
+                previewProcessingId={previewProcessingId}
                 icon={icon}
+                iconUploading={iconUploading}
                 cover={cover}
-                usePreviewAsCover={usePreviewAsCover}
-                coverPreviewId={coverPreviewId}
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}
                 onReorderPreview={handleReorderPreview}
                 onIconUpload={handleIconUpload}
                 onCoverUpload={handleCoverUpload}
-                onSelectCoverPreview={setCoverPreviewId}
-                onToggleUsePreviewAsCover={handleUsePreviewAsCover}
                  onRemoveIcon={handleRemoveIcon}
                  onRemoveCover={handleRemoveCover}
                  onMediaDimensions={handleMediaDimensions}
@@ -1497,7 +1911,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                  resourceId={itemId}
-                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 validateFile={
+                   resourceType === "quick_app"
+                     ? async (file) => {
+                         const info = await readRpkManifestInfo(file);
+                         return {
+                           versionName: info.versionName,
+                           warning:
+                             info.packageName !== itemId
+                               ? {
+                                   packageName: info.packageName,
+                                   resourceId: itemId,
+                                 }
+                               : undefined,
+                         };
+                       }
+                     : undefined
+                 }
                  onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
@@ -1506,16 +1936,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               />
               <DownloadsSection
                 title="试用版下载配置"
-                description="可选。结构与下载配置一致，但不允许加密上传。"
+                description="可选。结构与下载配置一致，但不允许加密上传。如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
                 emptyMessage="还未添加任何试用下载设备"
-                helperText="如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
+                helperText=""
                 downloads={trialDownloads}
                 sortedDeviceOptions={sortedDeviceOptions}
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
                  allowEncryption={false}
-                 validateFile={resourceType === "quick_app" ? (file) => validateRpkPackage(file, itemId) : undefined}
+                 validateFile={
+                   resourceType === "quick_app"
+                     ? async (file) => {
+                         const info = await readRpkManifestInfo(file);
+                         return {
+                           versionName: info.versionName,
+                           warning:
+                             info.packageName !== itemId
+                               ? {
+                                   packageName: info.packageName,
+                                   resourceId: itemId,
+                                 }
+                               : undefined,
+                         };
+                       }
+                     : undefined
+                 }
                  onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
@@ -1531,7 +1977,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
-              <div className="flex flex-row justify-end gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
+              <div className="flex flex-row justify-end gap-2 pt-1">
                 <Button
                   className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
                   radius="large"
@@ -1569,6 +2015,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               onSubmit={handleCreatePR}
               onBack={() => goToStep(1)}
               mode={prStepMode}
+              needFixItems={needFixItems}
+              fixedSelections={fixedSelections}
+              fixedNotes={fixedNotes}
+              onFixedToggle={(id) =>
+                setFixedSelections((prev) => ({ ...prev, [id]: !prev[id] }))
+              }
+              onFixedNoteChange={(id, value) =>
+                setFixedNotes((prev) => ({ ...prev, [id]: value }))
+              }
             />
           )}
         </div>

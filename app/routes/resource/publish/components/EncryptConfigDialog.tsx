@@ -81,6 +81,7 @@ function buildInitialFormState(
 interface EncryptConfigDialogProps {
   resourceId: string;
   deviceId: string;
+  deviceName?: string;
   triggerDisabled?: boolean;
   allDeviceIds?: string[];
   onBatchSaved?: () => void;
@@ -89,6 +90,7 @@ interface EncryptConfigDialogProps {
 export function EncryptConfigDialog({
   resourceId,
   deviceId,
+  deviceName,
   triggerDisabled,
   allDeviceIds,
   onBatchSaved,
@@ -286,12 +288,13 @@ export function EncryptConfigDialog({
           className="ml-2"
         >
           <PencilSimpleIcon size={14} />
+          配置付费平台映射
         </Button>
       </Dialog.Trigger>
       <Dialog.Content maxWidth="520px">
         <Dialog.Title>配置付费平台映射</Dialog.Title>
         <Dialog.Description size="2" className="mb-3">
-          设备：{deviceId}
+          设备：{deviceName || deviceId}
         </Dialog.Description>
 
         {loading && (

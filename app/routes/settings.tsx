@@ -15,6 +15,14 @@ import {
   type RepoEnvId,
 } from "~/config/repoEnv";
 import {
+  PUBLISH_MODES,
+  saveReviewMode,
+  saveSubmitMode,
+  useReviewMode,
+  useSubmitMode,
+  type PublishMode,
+} from "~/config/publishMode";
+import {
   LOGIN_METHODS,
   saveLoginMethod,
   useLoginMethod,
@@ -122,6 +130,8 @@ function LinkRow({
 
 export default function Settings() {
   const currentEnv = useRepoEnvId();
+  const currentSubmitMode = useSubmitMode();
+  const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -150,6 +160,18 @@ export default function Settings() {
   const handleSelect = (id: RepoEnvId) => {
     if (id === currentEnv) return;
     setPending(id);
+  };
+
+  const handleSelectSubmitMode = (id: PublishMode) => {
+    if (id === currentSubmitMode) return;
+    saveSubmitMode(id);
+    toast.success(`提交已切换到 ${PUBLISH_MODES[id].label}`);
+  };
+
+  const handleSelectReviewMode = (id: PublishMode) => {
+    if (id === currentReviewMode) return;
+    saveReviewMode(id);
+    toast.success(`审核已切换到 ${PUBLISH_MODES[id].label}`);
   };
 
   const confirmSwitch = () => {
@@ -213,6 +235,50 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </SectionCard>
+
+        {/* 提交模式 */}
+        <SectionCard
+          title="提交模式"
+          description={`当前：${PUBLISH_MODES[currentSubmitMode].label}`}
+        >
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {(
+              Object.values(PUBLISH_MODES) as Array<
+                (typeof PUBLISH_MODES)[PublishMode]
+              >
+            ).map((mode) => (
+              <OptionCard
+                key={mode.id}
+                selected={mode.id === currentSubmitMode}
+                onClick={() => handleSelectSubmitMode(mode.id)}
+                title={mode.label}
+                description={mode.description}
+              />
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* 审核模式 */}
+        <SectionCard
+          title="审核模式"
+          description={`当前：${PUBLISH_MODES[currentReviewMode].label}`}
+        >
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {(
+              Object.values(PUBLISH_MODES) as Array<
+                (typeof PUBLISH_MODES)[PublishMode]
+              >
+            ).map((mode) => (
+              <OptionCard
+                key={mode.id}
+                selected={mode.id === currentReviewMode}
+                onClick={() => handleSelectReviewMode(mode.id)}
+                title={mode.label}
+                description={mode.description}
+              />
+            ))}
+          </div>
         </SectionCard>
 
         {/* AstroBox 登录方式 */}

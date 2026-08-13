@@ -41,7 +41,7 @@ export interface CatalogUpdateRequest {
     intent: CatalogWriteIntent;
 }
 
-const CATALOG_CSV_COLUMNS = [
+export const CATALOG_CSV_COLUMNS = [
     "id",
     "name",
     "restype",
@@ -56,7 +56,7 @@ const CATALOG_CSV_COLUMNS = [
     "paid_type",
 ] as const satisfies ReadonlyArray<keyof CatalogEntry>;
 
-const CATALOG_CSV_HEADER = CATALOG_CSV_COLUMNS.join(",");
+export const CATALOG_CSV_HEADER = CATALOG_CSV_COLUMNS.join(",");
 const CSV_STRUCTURAL_CHAR_PATTERN = /[,\r\n\0]/;
 
 export function normalizeCatalogPaidType(paidType?: string) {
@@ -64,7 +64,7 @@ export function normalizeCatalogPaidType(paidType?: string) {
     return normalized.toLowerCase() === "free" ? "" : normalized;
 }
 
-function normalizeCatalogEntryForCsv(entry: CatalogEntry): CatalogEntry {
+export function normalizeCatalogEntryForCsv(entry: CatalogEntry): CatalogEntry {
     return {
         ...entry,
         paid_type: normalizeCatalogPaidType(entry.paid_type),
@@ -83,6 +83,12 @@ export function validateCatalogEntryForCsv(entry: CatalogEntry) {
             );
         }
     }
+}
+
+export function serializeCatalogEntry(entry: CatalogEntry) {
+    const normalizedEntry = normalizeCatalogEntryForCsv(entry);
+    validateCatalogEntryForCsv(normalizedEntry);
+    return CATALOG_CSV_COLUMNS.map((column) => normalizedEntry[column]).join(",");
 }
 
 export function decodeCatalogContent(encoded?: string) {
@@ -157,7 +163,7 @@ async function waitForForkReady(
     );
 }
 
-async function getOrCreateFork(token: string, owner: string, repo: string) {
+export async function getOrCreateFork(token: string, owner: string, repo: string) {
     const fork = await githubFetch<any>(
         `https://api.github.com/repos/${owner}/${repo}/forks`,
         {
@@ -183,7 +189,7 @@ async function getOrCreateFork(token: string, owner: string, repo: string) {
     };
 }
 
-async function getRefSha(token: string, owner: string, repo: string, ref: string) {
+export async function getRefSha(token: string, owner: string, repo: string, ref: string) {
     const data = await githubFetch<any>(
         `https://api.github.com/repos/${owner}/${repo}/git/ref/${ref}`,
         {
@@ -196,7 +202,7 @@ async function getRefSha(token: string, owner: string, repo: string, ref: string
     return data.object.sha as string;
 }
 
-async function createBranch(
+export async function createBranch(
     token: string,
     owner: string,
     repo: string,

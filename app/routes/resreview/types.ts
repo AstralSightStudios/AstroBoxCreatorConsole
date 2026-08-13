@@ -24,7 +24,13 @@ export interface ResourcePackagePreview {
 
 export interface PrResourcePreview {
   entry: CatalogEntry;
+  baseEntry?: CatalogEntry;
   ref: string;
+  request?: {
+    mode: "create" | "edit";
+    originalId?: string | null;
+  };
+  predictedAction?: string;
   manifest?: ManifestV2;
   manifestError?: string;
   iconUrl: string;

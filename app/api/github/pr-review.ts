@@ -6,6 +6,8 @@ export interface GithubPullRequest {
   number: number;
   title: string;
   html_url: string;
+  state?: "open" | "closed";
+  merged_at?: string;
   user?: {
     login: string;
     avatar_url?: string;
@@ -21,7 +23,10 @@ export interface GithubPullRequest {
   };
   base: {
     ref: string;
+    sha?: string;
   };
+  mergeable?: boolean | null;
+  mergeable_state?: string;
   labels?: Array<{ name: string; color?: string }>;
   changed_files?: number;
   additions?: number;
@@ -94,10 +99,88 @@ export async function getCurrentGithubPermission() {
   );
 }
 
-export async function listOpenPullRequests() {
-  return githubFetch<GithubPullRequest[]>(
-    repoPath("/pulls?state=open&per_page=80&sort=updated&direction=desc"),
+let orgMembersCache: { expiresAt: number; members: Set<string> } | null = null;
+
+export async function listOrganizationMembers(org: string): Promise<Set<string>> {
+  if (orgMembersCache && orgMembersCache.expiresAt > Date.now()) {
+    return new Set(orgMembersCache.members);
+  }
+  const members = new Set<string>();
+  for (let page = 1; page <= 10; page += 1) {
+    const data = await githubFetch<
+      Array<{ login?: string }>
+    >(
+      `https://api.github.com/orgs/${encodeURIComponent(org)}/members?per_page=100&page=${page}`,
+      { headers: headers() },
+    );
+    for (const user of data) {
+      if (user.login) members.add(user.login);
+    }
+    if (data.length < 100) break;
+  }
+  orgMembersCache = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    members,
+  };
+  return members;
+}
+
+export async function listReviewPullRequests(
+  state: "open" | "closed" | "all" = "open",
+) {
+  const pulls = await githubFetch<GithubPullRequest[]>(
+    repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
     { headers: headers() },
+  );
+  // 已合并或 head 分支已被删除的 PR 无法再处理，不展示。
+  return pulls.filter(
+    (pull) => !pull.merged_at && Boolean(pull.head?.repo),
+  );
+}
+
+export async function getPullRequest(prNumber: number) {
+  return githubFetch<GithubPullRequest>(
+    repoPath(`/pulls/${prNumber}`),
+    { headers: headers() },
+  );
+}
+
+export async function mergePullRequest(prNumber: number) {
+  const latest = await getPullRequest(prNumber);
+  if (latest.mergeable === false) {
+    throw new Error(
+      `PR #${prNumber} 当前不可合并（mergeable_state: ${latest.mergeable_state || "unknown"}），请先更新分支。`,
+    );
+  }
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/merge`),
+    {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({ merge_method: "merge" }),
+    },
+  );
+}
+
+export async function closePullRequest(prNumber: number) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ state: "closed" }),
+    },
+  );
+}
+
+export async function reopenPullRequest(prNumber: number) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ state: "open" }),
+    },
   );
 }
 
@@ -140,6 +223,23 @@ export async function approvePullRequest(prNumber: number, body?: string) {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ event: "APPROVE", body: body || "Approved from AstroBox Creator Console." }),
+    },
+  );
+}
+
+export async function requestChangesPullRequest(
+  prNumber: number,
+  body?: string,
+) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/reviews`),
+    {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        event: "REQUEST_CHANGES",
+        body: body || "Changes requested from AstroBox Creator Console.",
+      }),
     },
   );
 }
