@@ -21,6 +21,7 @@ export const PUBLISH_MODES: Record<
 
 const SUBMIT_MODE_KEY = "ABCC_SUBMIT_MODE_V1";
 const REVIEW_MODE_KEY = "ABCC_REVIEW_MODE_V1";
+const LEGACY_MODE_KEY = "ABCC_PUBLISH_MODE_V1";
 
 function defaultMode(): PublishMode {
     return loadRepoEnvId() === "testenv" ? "staging" : "legacy";
@@ -63,7 +64,10 @@ function attachStorageListener() {
 
 export function loadSubmitMode(): PublishMode {
     if (!cachedSubmitMode) {
-        cachedSubmitMode = readModeFromStorage(SUBMIT_MODE_KEY) ?? defaultMode();
+        cachedSubmitMode =
+            readModeFromStorage(SUBMIT_MODE_KEY) ??
+            readModeFromStorage(LEGACY_MODE_KEY) ??
+            defaultMode();
     }
     return cachedSubmitMode;
 }
@@ -88,7 +92,10 @@ export function useSubmitMode(): PublishMode {
 
 export function loadReviewMode(): PublishMode {
     if (!cachedReviewMode) {
-        cachedReviewMode = readModeFromStorage(REVIEW_MODE_KEY) ?? defaultMode();
+        cachedReviewMode =
+            readModeFromStorage(REVIEW_MODE_KEY) ??
+            readModeFromStorage(LEGACY_MODE_KEY) ??
+            defaultMode();
     }
     return cachedReviewMode;
 }
