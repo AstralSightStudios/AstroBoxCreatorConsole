@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG } from "~/config/publish";
-import { loadPublishMode } from "~/config/publishMode";
+import { loadSubmitMode } from "~/config/publishMode";
 import {
   buildManifest,
   type ManifestBuildResult,
@@ -1113,7 +1113,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }));
 
       const manifestForCatalog = lastManifest ?? manifestResult;
-      const useStaging = loadPublishMode() === "staging";
+      const useStaging = loadSubmitMode() === "staging";
       const prBodyContent = [
         prBody.trim(),
         "欢迎加入 [AstroBox 资源开发者官方 QQ 群](https://qm.qq.com/q/4YVntKbEMo)",

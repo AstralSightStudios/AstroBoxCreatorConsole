@@ -13,7 +13,6 @@ import {
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { PUBLISH_CONFIG } from "~/config/publish";
-import { loadPublishMode } from "~/config/publishMode";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile } from "~/logic/publish/github-actions";
 import {

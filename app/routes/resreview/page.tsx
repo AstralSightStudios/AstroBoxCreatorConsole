@@ -8,7 +8,7 @@ import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState } from "~/logic/account/store";
 import { useRepoEnv } from "~/config/repoEnv";
-import { usePublishMode } from "~/config/publishMode";
+import { useReviewMode } from "~/config/publishMode";
 import {
   deriveReviewStatus,
   filterReviewTagComments,
@@ -49,7 +49,7 @@ import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAc
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
   const env = useRepoEnv();
-  const publishMode = usePublishMode();
+  const publishMode = useReviewMode();
   const setHeaderActions = useSetHeaderActions();
   const { isDesktop } = useNavVisibility();
   const navigate = useNavigate();
