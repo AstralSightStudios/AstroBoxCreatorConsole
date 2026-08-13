@@ -2,8 +2,8 @@ name: tauri-ci
 
 on:
   push:
-    branches:
-      - '**'
+    tags:
+      - 'v*'
 
 jobs:
   build-tauri:
