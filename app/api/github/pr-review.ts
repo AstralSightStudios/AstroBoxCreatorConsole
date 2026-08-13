@@ -99,7 +99,12 @@ export async function getCurrentGithubPermission() {
   );
 }
 
+let orgMembersCache: { expiresAt: number; members: Set<string> } | null = null;
+
 export async function listOrganizationMembers(org: string): Promise<Set<string>> {
+  if (orgMembersCache && orgMembersCache.expiresAt > Date.now()) {
+    return new Set(orgMembersCache.members);
+  }
   const members = new Set<string>();
   for (let page = 1; page <= 10; page += 1) {
     const data = await githubFetch<
@@ -113,6 +118,10 @@ export async function listOrganizationMembers(org: string): Promise<Set<string>>
     }
     if (data.length < 100) break;
   }
+  orgMembersCache = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    members,
+  };
   return members;
 }
 

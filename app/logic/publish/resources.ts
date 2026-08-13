@@ -4,18 +4,13 @@ import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
 import { listOrganizationMembers } from "~/api/github/pr-review";
 import {
-    decodeCatalogContent,
     fetchCatalogEntries,
-    getFileContent,
     parseCatalogCsv,
     type CatalogEntry,
 } from "./catalog";
 import {
     extractSubmissionPathFromFilePath,
     parseSubmissionCsv,
-    parseSubmissionRequestJson,
-    submissionCsvPath,
-    submissionRequestPath,
     type SubmissionRequest,
 } from "./submission-protocol";
 import {
@@ -46,11 +41,11 @@ export interface PublishingResource {
     prState: "open" | "closed" | "merged";
     refused?: boolean;
     refuseReason?: string;
-    prHead: { owner: string; repo: string; ref: string };
+    prHead?: { owner: string; repo: string; ref: string };
     catalog: ResourceCatalogContext;
     submission?: {
         path: string;
-        request: SubmissionRequest;
+        request?: SubmissionRequest;
     };
 }
 
@@ -131,6 +126,28 @@ async function fetchPullFiles(
     );
 }
 
+async function mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    async function run() {
+        while (next < items.length) {
+            const index = next;
+            next += 1;
+            results[index] = await worker(items[index]);
+        }
+    }
+    await Promise.all(
+        Array.from({ length: Math.min(concurrency, items.length) }, () =>
+            run(),
+        ),
+    );
+    return results;
+}
+
 const CATALOG_CSV_HEADER =
     "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
 
@@ -188,17 +205,151 @@ function extractCatalogEntriesFromPullFiles(
     return Array.from(byId.values());
 }
 
+interface MyReviewPullRequest {
+    number: number;
+    title: string;
+    state?: string;
+    user?: { login?: string };
+    created_at?: string;
+    updated_at?: string;
+    html_url?: string;
+    merged_at?: string | null;
+    head?: {
+        ref: string;
+        sha?: string;
+        repo?: { owner?: { login?: string }; name: string } | null;
+    } | null;
+}
+
+/**
+ * 优先用 search API 只拉当前用户自己的 PR（不受仓库前 50 条限制）；
+ * search 失败时回退到 pulls API。search 索引可能有几秒延迟，
+ * 所以额外合并一次 state=open 的 pulls 结果保证最新提交立即可见。
+ */
+async function fetchMyReviewPullRequests(
+    token: string,
+    username: string,
+): Promise<MyReviewPullRequest[]> {
+    const owner = PUBLISH_CONFIG.targetPrRepoOwner;
+    const repo = PUBLISH_CONFIG.targetPrRepoName;
+    const headers = { Authorization: `Bearer ${token}` };
+    const sameUser = (login?: string) =>
+        Boolean(login && login.toLowerCase() === username.toLowerCase());
+
+    const searchPromise = (async () => {
+        try {
+            const query = `repo:${owner}/${repo} type:pr author:${username}`;
+            const data = await githubFetch<{
+                items?: Array<{
+                    number?: number;
+                    title?: string;
+                    state?: string;
+                    user?: { login?: string };
+                    created_at?: string;
+                    updated_at?: string;
+                    html_url?: string;
+                    merged_at?: string | null;
+                    pull_request?: { merged_at?: string | null };
+                }>;
+            }>(
+                `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`,
+                { headers },
+            );
+            return (data.items || [])
+                .filter(
+                    (item) =>
+                        item.number != null &&
+                        !item.merged_at &&
+                        !item.pull_request?.merged_at,
+                )
+                .map((item) => ({
+                    number: item.number!,
+                    title: item.title || "",
+                    state: item.state || "open",
+                    user: item.user,
+                    created_at: item.created_at,
+                    updated_at: item.updated_at,
+                    html_url: item.html_url,
+                    merged_at: null,
+                }));
+        } catch (error) {
+            console.error("search API 不可用，回退到 pulls API", error);
+            return null;
+        }
+    })();
+
+    const openPulls = await githubFetch<any[]>(
+        `https://api.github.com/repos/${owner}/${repo}/pulls?state=open&per_page=50`,
+        { headers },
+    );
+    const searchItems = await searchPromise;
+    if (searchItems === null) {
+        const allPulls = await githubFetch<any[]>(
+            `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=50`,
+            { headers },
+        );
+        return allPulls.filter((pull) => !pull.merged_at);
+    }
+
+    const byNumber = new Map<number, MyReviewPullRequest>();
+    for (const item of searchItems) {
+        byNumber.set(item.number, item);
+    }
+    // search 索引延迟时，把刚刚创建的 open PR 补进来。
+    for (const pull of openPulls) {
+        if (!pull.number || pull.merged_at || !sameUser(pull.user?.login)) {
+            continue;
+        }
+        if (!byNumber.has(pull.number)) {
+            byNumber.set(pull.number, {
+                number: pull.number,
+                title: pull.title || "",
+                state: pull.state || "open",
+                user: pull.user,
+                created_at: pull.created_at,
+                updated_at: pull.updated_at,
+                html_url: pull.html_url,
+                merged_at: null,
+                head: pull.head,
+            });
+        }
+    }
+    return Array.from(byNumber.values()).sort((a, b) =>
+        (b.updated_at || "").localeCompare(a.updated_at || ""),
+    );
+}
+
+function submissionEntryFromPullFiles(
+    files: Array<{ filename?: string; patch?: string }>,
+): Map<string, CatalogEntry> {
+    const byPath = new Map<string, CatalogEntry>();
+    for (const file of files) {
+        const path = extractSubmissionPathFromFilePath(file.filename);
+        if (!path || !file.patch) continue;
+        let dataRow = "";
+        for (const line of file.patch.split(/\r?\n/)) {
+            if (!line.startsWith("+") || line.startsWith("+++")) continue;
+            const row = line.slice(1).trim();
+            if (!row || row === CATALOG_CSV_HEADER) continue;
+            dataRow = row;
+        }
+        if (!dataRow) continue;
+        try {
+            byPath.set(
+                path,
+                parseSubmissionCsv(`${CATALOG_CSV_HEADER}\n${dataRow}`),
+            );
+        } catch (error) {
+            console.error("解析 submission CSV patch 失败", path, error);
+        }
+    }
+    return byPath;
+}
+
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
     const mode = loadPublishMode() === "staging" ? "staging" : "legacy";
-    const { token } = requireGithubAccount();
-    const pulls = (
-        await githubFetch<any[]>(
-            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
-            {
-                headers: { Authorization: `Bearer ${token}` },
-            },
-        )
-    ).filter((pull) => !pull.merged_at);
+    const { token, username } = requireGithubAccount();
+    const pulls = await fetchMyReviewPullRequests(token, username);
     const signature = pulls
         .map(
             (pull) =>
@@ -210,36 +361,24 @@ export async function loadInProgressResourcesForCurrentUser(): Promise<Publishin
     }
     const result =
         mode === "staging"
-            ? await loadInProgressStagingResourcesForCurrentUser()
-            : await loadInProgressLegacyResourcesForCurrentUser();
+            ? await loadInProgressStagingResourcesForCurrentUser(pulls)
+            : await loadInProgressLegacyResourcesForCurrentUser(pulls);
     inProgressCache = { signature, mode, data: result };
     return result;
 }
 
-async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
-    PublishingResource[]
-> {
+async function loadInProgressLegacyResourcesForCurrentUser(
+    pulls: MyReviewPullRequest[],
+): Promise<PublishingResource[]> {
     const { token, username } = requireGithubAccount();
     const orgMembers = await listOrganizationMembers(
         PUBLISH_CONFIG.upstreamRepoOwner,
     ).catch(() => new Set<string>());
 
-    const pulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        },
-    );
-
-    const resources: PublishingResource[] = [];
-
-    for (const pr of pulls) {
-        const headRepo = pr.head?.repo;
-        if (!headRepo) continue;
-
-        const isAuthor = Boolean(pr.user?.login && pr.user.login === username);
-        if (!isAuthor) continue;
-
+    const results = await mapWithConcurrency(pulls, 5, async (pr) => {
+        if (!pr.user?.login || pr.user.login.toLowerCase() !== username.toLowerCase()) {
+            return [] as PublishingResource[];
+        }
         try {
             const [comments, files] = await Promise.all([
                 fetchIssueComments(
@@ -271,6 +410,8 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                 : "";
             const review = deriveReviewStatus(filteredComments);
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
+            const headRepo = pr.head?.repo;
+            const out: PublishingResource[] = [];
 
             for (const entry of relatedEntries) {
                 const prState: "open" | "closed" | "merged" =
@@ -279,7 +420,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                             ? "merged"
                             : "closed"
                         : "open";
-                resources.push({
+                out.push({
                     id: entry.id,
                     name: entry.name,
                     restype: entry.restype,
@@ -288,57 +429,50 @@ async function loadInProgressLegacyResourcesForCurrentUser(): Promise<
                     createdAt: pr.created_at,
                     prNumber: pr.number,
                     prTitle: pr.title,
-                    prUrl: pr.html_url,
+                    prUrl: pr.html_url || "",
                     prState,
                     refused: refused || undefined,
                     refuseReason: refuseReason || undefined,
-                    prHead: {
-                        owner: headRepo.owner?.login,
-                        repo: headRepo.name,
-                        ref: pr.head.ref,
-                    },
+                    prHead: headRepo
+                        ? {
+                              owner: headRepo.owner?.login || "",
+                              repo: headRepo.name,
+                              ref: pr.head?.ref || "",
+                          }
+                        : undefined,
                     catalog: {
                         entry,
-                        owner: headRepo.owner?.login || "",
-                        repo: headRepo.name,
-                        ref: pr.head.ref,
-                        sha: pr.head.sha,
+                        owner: headRepo?.owner?.login || entry.repo_owner || "",
+                        repo: headRepo?.name || entry.repo_name || "",
+                        ref: pr.head?.ref || entry.repo_commit_hash || "",
+                        sha: pr.head?.sha,
                     },
                 });
             }
+            return out;
         } catch (error) {
             console.error("Failed to process PR", pr.number, error);
+            return [] as PublishingResource[];
         }
-    }
+    });
 
-    return resources.sort((a, b) =>
+    return results.flat().sort((a, b) =>
         (b.createdAt || "").localeCompare(a.createdAt || ""),
     );
 }
 
-async function loadInProgressStagingResourcesForCurrentUser(): Promise<
-    PublishingResource[]
-> {
+async function loadInProgressStagingResourcesForCurrentUser(
+    pulls: MyReviewPullRequest[],
+): Promise<PublishingResource[]> {
     const { token, username } = requireGithubAccount();
     const orgMembers = await listOrganizationMembers(
         PUBLISH_CONFIG.upstreamRepoOwner,
     ).catch(() => new Set<string>());
-    const pulls = (
-        await githubFetch<any[]>(
-            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=all&per_page=50`,
-            {
-                headers: { Authorization: `Bearer ${token}` },
-            },
-        )
-    ).filter((pull) => !pull.merged_at);
 
-    const resources: PublishingResource[] = [];
-
-    for (const pr of pulls) {
-        const headRepo = pr.head?.repo;
-        if (!headRepo) continue;
-        if (!pr.user?.login || pr.user.login !== username) continue;
-
+    const results = await mapWithConcurrency(pulls, 5, async (pr) => {
+        if (!pr.user?.login || pr.user.login.toLowerCase() !== username.toLowerCase()) {
+            return [] as PublishingResource[];
+        }
         try {
             const [comments, files] = await Promise.all([
                 fetchIssueComments(
@@ -369,35 +503,11 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                       .trim()
                 : "";
             const review = deriveReviewStatus(filteredComments);
-            const submissionPaths = Array.from(
-                new Set(
-                    files
-                        .map((file) => extractSubmissionPathFromFilePath(file.filename))
-                        .filter((path): path is string => Boolean(path)),
-                ),
-            );
+            const entriesByPath = submissionEntryFromPullFiles(files);
+            const headRepo = pr.head?.repo;
+            const out: PublishingResource[] = [];
 
-            for (const submissionPath of submissionPaths) {
-                const csvFile = await getFileContent(
-                    token,
-                    headRepo.owner?.login || "",
-                    headRepo.name,
-                    submissionCsvPath(submissionPath),
-                    pr.head.ref,
-                );
-                const requestFile = await getFileContent(
-                    token,
-                    headRepo.owner?.login || "",
-                    headRepo.name,
-                    submissionRequestPath(submissionPath),
-                    pr.head.ref,
-                );
-                const entry = parseSubmissionCsv(
-                    decodeCatalogContent(csvFile.content),
-                );
-                const request = parseSubmissionRequestJson(
-                    decodeCatalogContent(requestFile.content),
-                );
+            for (const [submissionPath, entry] of entriesByPath) {
                 const prState: "open" | "closed" | "merged" =
                     pr.state === "closed"
                         ? pr.merged_at
@@ -405,7 +515,7 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                             : "closed"
                         : "open";
 
-                resources.push({
+                out.push({
                     id: entry.id,
                     name: entry.name,
                     restype: entry.restype,
@@ -414,34 +524,38 @@ async function loadInProgressStagingResourcesForCurrentUser(): Promise<
                     createdAt: pr.created_at,
                     prNumber: pr.number,
                     prTitle: pr.title,
-                    prUrl: pr.html_url,
+                    prUrl: pr.html_url || "",
                     prState,
                     refused: refused || undefined,
                     refuseReason: refuseReason || undefined,
-                    prHead: {
-                        owner: headRepo.owner?.login,
-                        repo: headRepo.name,
-                        ref: pr.head.ref,
-                    },
+                    prHead: headRepo
+                        ? {
+                              owner: headRepo.owner?.login || "",
+                              repo: headRepo.name,
+                              ref: pr.head?.ref || "",
+                          }
+                        : undefined,
                     catalog: {
                         entry,
-                        owner: headRepo.owner?.login || "",
-                        repo: headRepo.name,
-                        ref: pr.head.ref,
-                        sha: pr.head.sha,
+                        owner: headRepo?.owner?.login || entry.repo_owner || "",
+                        repo: headRepo?.name || entry.repo_name || "",
+                        ref: pr.head?.ref || entry.repo_commit_hash || "",
+                        sha: pr.head?.sha,
                     },
                     submission: {
                         path: submissionPath,
-                        request,
+                        request: undefined,
                     },
                 });
             }
+            return out;
         } catch (error) {
             console.error("Failed to process staging PR", pr.number, error);
+            return [] as PublishingResource[];
         }
-    }
+    });
 
-    return resources.sort((a, b) =>
+    return results.flat().sort((a, b) =>
         (b.createdAt || "").localeCompare(a.createdAt || ""),
     );
 }

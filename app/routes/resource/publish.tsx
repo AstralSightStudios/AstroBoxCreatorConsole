@@ -13,13 +13,20 @@ import { toast } from "sonner";
 import Page from "~/layout/page";
 import {
   createPullRequestComment,
+  getPullRequest,
   reopenPullRequest,
 } from "~/api/github/pr-review";
+import { loadAccountState } from "~/logic/account/store";
+import { decodeCatalogContent, getFileContent } from "~/logic/publish/catalog";
 import {
   loadInProgressResourcesForCurrentUser,
   type PublishingResource,
   type ResourceEditContext,
 } from "~/logic/publish/resources";
+import {
+  parseSubmissionRequestJson,
+  submissionRequestPath,
+} from "~/logic/publish/submission-protocol";
 
 import { SectionCard } from "./publish/components/shared";
 
@@ -63,6 +70,7 @@ export default function ResourcePublish() {
   const navigate = useNavigate();
   const [refreshTick, setRefreshTick] = useState(0);
   const [reopening, setReopening] = useState<number | null>(null);
+  const [selectingPr, setSelectingPr] = useState<number | null>(null);
   const [refuseTarget, setRefuseTarget] = useState<PublishingResource | null>(
     null,
   );
@@ -112,24 +120,64 @@ export default function ResourcePublish() {
     );
   };
 
-  const handleSelect = (resource: PublishingResource) => {
+  const handleSelect = async (resource: PublishingResource) => {
     if (resource.refused) {
       setRefuseTarget(resource);
       return;
     }
     if (resource.prState === "merged") return;
-    const editContext: ResourceEditContext = {
-      mode: "in_progress",
-      catalog: resource.catalog,
-      prNumber: resource.prNumber,
-      prUrl: resource.prUrl,
-      prState: resource.prState,
-      prHead: resource.prHead,
-      reviewState: resource.status,
-      needs: resource.needs,
-      submission: resource.submission,
-    };
-    navigate("/publish/edit", { state: { editContext } });
+    setSelectingPr(resource.prNumber);
+    try {
+      const token = loadAccountState().github?.token;
+      if (!token) throw new Error("请先登录 GitHub 账号。");
+      // 列表不再预载 head / request.json，进入编辑时再拉取最新信息。
+      const full = await getPullRequest(resource.prNumber);
+      const headRepo = full.head?.repo;
+      const prHead = headRepo
+        ? {
+            owner: headRepo.owner?.login || "",
+            repo: headRepo.name,
+            ref: full.head.ref,
+          }
+        : resource.prHead;
+
+      let submission: ResourceEditContext["submission"];
+      if (resource.submission?.path) {
+        if (!prHead) {
+          throw new Error("缺少 PR 分支信息，无法载入提交明细。");
+        }
+        const requestFile = await getFileContent(
+          token,
+          prHead.owner,
+          prHead.repo,
+          submissionRequestPath(resource.submission.path),
+          prHead.ref,
+        );
+        submission = {
+          path: resource.submission.path,
+          request: parseSubmissionRequestJson(
+            decodeCatalogContent(requestFile.content),
+          ),
+        };
+      }
+
+      const editContext: ResourceEditContext = {
+        mode: "in_progress",
+        catalog: resource.catalog,
+        prNumber: resource.prNumber,
+        prUrl: resource.prUrl,
+        prState: resource.prState,
+        prHead,
+        reviewState: resource.status,
+        needs: resource.needs,
+        submission,
+      };
+      navigate("/publish/edit", { state: { editContext } });
+    } catch (err) {
+      toast.error((err as Error).message || "进入编辑失败");
+    } finally {
+      setSelectingPr(null);
+    }
   };
 
   const handleReopen = async (resource: PublishingResource) => {
@@ -213,7 +261,7 @@ export default function ResourcePublish() {
                     ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
                     : ""
                 }
-                onClick={() => handleSelect(item)}
+                onClick={() => void handleSelect(item)}
               >
                 <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
                 <Table.Cell>{item.name}</Table.Cell>
@@ -227,6 +275,11 @@ export default function ResourcePublish() {
                     : "--"}
                 </Table.Cell>
                 <Table.Cell>
+                  {selectingPr === item.prNumber ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-white/50">
+                      <Spinner size="1" /> 载入中...
+                    </span>
+                  ) : null}
                   {item.prState === "closed" && !item.refused ? (
                     <Button
                       size="1"
