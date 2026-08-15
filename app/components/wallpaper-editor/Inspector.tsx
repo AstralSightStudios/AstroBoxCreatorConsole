@@ -1,5 +1,7 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { HexColorPicker } from "react-colorful";
 import {
     ArrowCounterClockwiseIcon,
     ArrowRightIcon,
@@ -287,6 +289,12 @@ export function Inspector({
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const maskInputRef = useRef<HTMLInputElement | null>(null);
     const fontInputRef = useRef<HTMLInputElement | null>(null);
+    const [picker, setPicker] = useState<{
+        mode: "add" | "replace";
+        color: string;
+        x: number;
+        y: number;
+    } | null>(null);
 
     if (mode === "canvas" && canvas) {
         return (
@@ -357,6 +365,77 @@ export function Inspector({
         onLayerPatch({ textBox: { ...(layer.textBox ?? {}), ...patch } });
     };
 
+    const patchColor = (patch: Partial<WallpaperColorControlConfig>) => {
+        const base: WallpaperColorControlConfig = colorControl ?? {
+            default: "#ffffff",
+            options: [],
+            adjustable: false,
+            allowCustom: true,
+        };
+        onLayerPatch({ color: { ...base, ...patch } });
+    };
+    const addColor = (newColor: string) => {
+        const base: WallpaperColorControlConfig = colorControl ?? {
+            default: newColor,
+            options: [],
+            adjustable: false,
+            allowCustom: true,
+        };
+        const options = base.options?.includes(newColor)
+            ? base.options
+            : [...(base.options ?? []), newColor];
+        onLayerPatch({ color: { ...base, default: newColor, options } });
+    };
+    const replaceColor = (newColor: string) => {
+        if (!colorControl) return;
+        const options = Array.from(
+            new Set(
+                (colorControl.options ?? []).some((color) => color === newColor)
+                    ? colorControl.options
+                    : (colorControl.options ?? [])
+                          .map((color) => (color === colorControl.default ? newColor : color))
+                          .concat(newColor),
+            ),
+        );
+        onLayerPatch({ color: { ...colorControl, default: newColor, options } });
+    };
+    const removeColor = () => {
+        if (!colorControl) return;
+        const options = (colorControl.options ?? []).filter((color) => color !== colorControl.default);
+        onLayerPatch({
+            color: { ...colorControl, default: options[0] ?? colorControl.default, options },
+        });
+    };
+    const canRemoveColor = Boolean(colorControl && (colorControl.options?.length ?? 0) > 1);
+    const hexColor =
+        colorControl && /^#[0-9a-fA-F]{6}$/.test(colorControl.default)
+            ? colorControl.default
+            : "#ffffff";
+
+    const applyPickerColor = (color: string) => {
+        const match = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(color);
+        if (!match) return undefined;
+        return match[1].length === 3
+            ? `#${match[1].split("").map((ch) => ch + ch).join("")}`
+            : color.toLowerCase();
+    };
+    const openPicker = (mode: "add" | "replace", rect: DOMRect) => {
+        setPicker({
+            mode,
+            color: hexColor,
+            x: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 228)),
+            y: Math.min(Math.max(8, rect.bottom + 6), Math.max(8, window.innerHeight - 268)),
+        });
+    };
+    const applyPicker = () => {
+        if (!picker) return;
+        const color = applyPickerColor(picker.color);
+        if (!color) return;
+        if (picker.mode === "add") addColor(color);
+        else replaceColor(color);
+        setPicker(null);
+    };
+
     const blendValue =
         typeof layer.blendMode === "string"
             ? layer.blendMode
@@ -383,7 +462,7 @@ export function Inspector({
                 <div className="flex flex-col">
                     <span className="text-[13px] leading-[18px] text-white/85">多设备同步</span>
                     <span className="text-[11px] leading-4 text-white/45">
-                        仅本图层：透明度 / 模糊 / 背景模糊 / 混合模式 / 文字样式 应用于所有设备
+                        仅本图层：透明度 / 模糊 / 背景模糊 / 混合模式 / 文字样式 / 位置 / 旋转 应用于所有设备
                     </span>
                 </div>
                 <EditorSwitch
@@ -770,24 +849,82 @@ export function Inspector({
                     />
 
                     {/* 着色 (asset tint / text color) */}
-                    {(isAsset || isText) && colorControl && (
+                    {(isAsset || isText) && (
                         <EditorField label="着色">
-                            <EditorColorDots
-                                colors={colorControl.options?.length ? colorControl.options : [colorControl.default]}
-                                selected={colorControl.default}
-                                allowCustom={colorControl.allowCustom}
-                                onSelect={(color) =>
-                                    onLayerPatch({
-                                        color: {
-                                            ...colorControl,
-                                            default: color,
-                                            options: colorControl.options?.includes(color)
-                                                ? colorControl.options
-                                                : [...(colorControl.options ?? []), color],
-                                        },
-                                    })
-                                }
-                            />
+                            {colorControl ? (
+                                <div className="flex w-full flex-col" style={{ gap: 6 }}>
+                                    <EditorColorDots
+                                        colors={colorControl.options?.length ? colorControl.options : [colorControl.default]}
+                                        selected={colorControl.default}
+                                        onSelect={(color) => patchColor({ default: color })}
+                                    />
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center" style={{ gap: 6 }}>
+                                            <button
+                                                type="button"
+                                                title="修改所选颜色"
+                                                onClick={(e) => openPicker("replace", e.currentTarget.getBoundingClientRect())}
+                                                className="flex cursor-pointer items-center gap-1.5 px-2"
+                                                style={{
+                                                    height: "var(--editor-control-height)",
+                                                    borderRadius: "var(--editor-control-radius)",
+                                                    background: "var(--color-editor-control)",
+                                                }}
+                                            >
+                                                <span
+                                                    className="block rounded-full"
+                                                    style={{
+                                                        width: 14,
+                                                        height: 14,
+                                                        background: hexColor,
+                                                        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
+                                                    }}
+                                                />
+                                                <span className="text-[11px] text-white/60">修改</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                title="添加颜色"
+                                                onClick={(e) => openPicker("add", e.currentTarget.getBoundingClientRect())}
+                                                className="grid cursor-pointer place-items-center text-white/60 transition hover:text-white"
+                                                style={{ width: 28, height: 28 }}
+                                            >
+                                                <PlusIcon size={14} weight="regular" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                title="移除所选颜色"
+                                                disabled={!canRemoveColor}
+                                                onClick={removeColor}
+                                                className="grid place-items-center text-white/60 transition hover:text-white disabled:opacity-30"
+                                                style={{ width: 28, height: 28 }}
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                        <AdjustableToggle
+                                            checked={colorControl.adjustable === true}
+                                            onToggle={(v) => patchColor({ adjustable: v })}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    title="添加着色"
+                                    onClick={(e) => openPicker("add", e.currentTarget.getBoundingClientRect())}
+                                    className="flex cursor-pointer items-center gap-1.5 px-2 text-sm text-white/70 transition hover:text-white"
+                                    style={{
+                                        height: "var(--editor-control-height)",
+                                        borderRadius: "var(--editor-control-radius)",
+                                        background: "var(--color-editor-control)",
+                                        width: "100%",
+                                    }}
+                                >
+                                    <PlusIcon size={14} weight="regular" />
+                                    添加着色
+                                </button>
+                            )}
                         </EditorField>
                     )}
 
@@ -835,6 +972,64 @@ export function Inspector({
                     </EditorSection>
                 </div>
             </div>
+            {picker &&
+                createPortal(
+                    <>
+                        <div className="fixed inset-0 z-[60]" onClick={() => setPicker(null)} />
+                        <div
+                            className="fixed z-[61] flex flex-col"
+                            style={{
+                                left: picker.x,
+                                top: picker.y,
+                                width: 204,
+                                gap: 8,
+                                padding: 10,
+                                borderRadius: 10,
+                                background: "var(--color-editor-bg)",
+                                border: "1px solid var(--color-editor-divider)",
+                                boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                            }}
+                        >
+                            <HexColorPicker
+                                color={picker.color}
+                                onChange={(color) => setPicker({ ...picker, color })}
+                                style={{ width: "100%", height: 150 }}
+                            />
+                            <input
+                                type="text"
+                                value={picker.color}
+                                onChange={(e) => setPicker({ ...picker, color: e.target.value })}
+                                className="w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-white/30"
+                                style={{
+                                    height: "var(--editor-control-height)",
+                                    borderRadius: "var(--editor-control-radius)",
+                                    background: "var(--color-editor-control)",
+                                }}
+                            />
+                            <div className="flex justify-end" style={{ gap: 6 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setPicker(null)}
+                                    className="cursor-pointer rounded px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={applyPicker}
+                                    className="cursor-pointer rounded px-2 py-1 text-xs font-medium"
+                                    style={{
+                                        background: "var(--color-editor-blue-bg)",
+                                        color: "var(--color-editor-blue-fg)",
+                                    }}
+                                >
+                                    确定
+                                </button>
+                            </div>
+                        </div>
+                    </>,
+                    document.body,
+                )}
         </aside>
     );
 }

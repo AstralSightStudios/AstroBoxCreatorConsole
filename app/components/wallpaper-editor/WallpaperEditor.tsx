@@ -366,7 +366,7 @@ export function WallpaperEditor({
         [],
     );
 
-    // 多设备同步的图层属性：常见样式 + 文字样式（文字框 textBox 按设备单独摆放，不参与同步）。
+    // 多设备同步的图层属性：常见样式 + 文字样式 + 位置/旋转（含文字框）。
     const SYNC_LAYER_KEYS = new Set([
         "opacity",
         "blur",
@@ -382,6 +382,8 @@ export function WallpaperEditor({
         "lineHeight",
         "textAlign",
         "verticalAlign",
+        "transform",
+        "textBox",
     ]);
 
     const handleLayerPatch = useCallback(
