@@ -43,10 +43,12 @@ import {
 import type {
     WallpaperAssetFile,
     WallpaperConfigRaw,
+    WallpaperControlValue,
     WallpaperLayerConfig,
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
+import { controlDefault } from "~/logic/wallpaper/control";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
 import { CanvasStage } from "./CanvasStage";
@@ -139,6 +141,7 @@ export function WallpaperEditor({
     const assetInputRef = useRef<HTMLInputElement | null>(null);
     const importInputRef = useRef<HTMLInputElement | null>(null);
     const transformTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const resetTransformOnChangeRef = useRef(false);
     const pendingAssetLayerRef = useRef<null | { kind: "asset" }>(null);
     const lastValidResolvedRef = useRef<ResolvedWallpaperTemplate[]>([]);
 
@@ -190,12 +193,15 @@ export function WallpaperEditor({
     // Keep editor states in sync with resolved templates (preserve live transform).
     useEffect(() => {
         if (!config) return;
+        // 通过侧边栏整体缩放/旋转编辑默认值时，需要把实时变换重置到新默认值，实时刷新预览。
+        const shouldReset = resetTransformOnChangeRef.current;
+        resetTransformOnChangeRef.current = false;
         setTemplateStates((prev) => {
             const next: Record<string, WallpaperEditorState> = {};
             for (const template of resolved) {
                 try {
                     const fresh = getInitialWallpaperEditorState(template, baseImage ?? undefined);
-                    if (prev[template.id]) {
+                    if (prev[template.id] && !shouldReset) {
                         fresh.transform = prev[template.id].transform;
                     }
                     next[template.id] = fresh;
@@ -297,7 +303,13 @@ export function WallpaperEditor({
                     if (transform?.rotation && typeof transform.rotation === "object") {
                         patch.rotation = { ...transform.rotation, default: round(transform.rotation.default ?? 0) };
                     }
-                    return Object.keys(patch).length ? updateWallpaperTransform(prev, index, patch) : prev;
+                    if (Object.keys(patch).length === 0) return prev;
+                    // 整体缩放/旋转默认值对所有设备一致
+                    let next = prev;
+                    for (let i = 0; i < next.templates.length; i++) {
+                        next = updateWallpaperTransform(next, i, patch);
+                    }
+                    return next;
                 });
             }, 800);
         },
@@ -520,7 +532,28 @@ export function WallpaperEditor({
     const handleTransformPatch = useCallback(
         (patch: Record<string, unknown>) => {
             if (!config) return;
-            setConfig((prev) => (prev ? updateWallpaperTransform(prev, activeIndex, patch) : prev));
+            // 仅当默认值改变时重置实时预览；改区间/步长/可调不影响当前视图。
+            const patchScale = patch.scale;
+            const patchRotation = patch.rotation;
+            const current = getExpandedTemplate(config, activeIndex)?.wallpaperTransform ?? {};
+            const scaleDefaultChanged =
+                controlDefault(patchScale as WallpaperControlValue, 1) !==
+                controlDefault(current.scale, 1);
+            const rotationDefaultChanged =
+                controlDefault(patchRotation as WallpaperControlValue, 0) !==
+                controlDefault(current.rotation, 0);
+            if (scaleDefaultChanged || rotationDefaultChanged) {
+                resetTransformOnChangeRef.current = true;
+            }
+            // 整体缩放/旋转为全局设置：应用到所有设备。
+            setConfig((prev) => {
+                if (!prev) return prev;
+                let next = prev;
+                for (let index = 0; index < next.templates.length; index++) {
+                    next = updateWallpaperTransform(next, index, patch);
+                }
+                return next;
+            });
         },
         [activeIndex, config],
     );

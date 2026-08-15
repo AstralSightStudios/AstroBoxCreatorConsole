@@ -19,10 +19,8 @@ import {
 } from "~/logic/wallpaper/control";
 import {
     EditorActionButton,
-    EditorField,
     EditorIconButton,
     EditorNumberField,
-    EditorSection,
     EditorSwitch,
 } from "./controls";
 
@@ -201,28 +199,49 @@ export function Sidebar({
         });
     };
 
-    const transformRow = (label: string, control: WallpaperControlValue | undefined, onChange: (patch: never) => void, hint: string) => {
+    const transformRow = (
+        label: string,
+        control: WallpaperControlValue | undefined,
+        onChange: (patch: never) => void,
+    ) => {
         const patch = (key: string, value: number | boolean) => {
             onChange({ [key]: value } as never);
         };
         return (
-            <div className="flex w-full items-end gap-2">
-                <div className="min-w-0 flex-1">
-                    <EditorField label={label}>
-                        <EditorNumberField
-                            value={controlDefault(control, 0)}
-                            min={controlMin(control, 0)}
-                            max={controlMax(control, 100)}
-                            step={controlStep(control, 0.01)}
-                            onChange={(v) => patch("default", v)}
+            <div className="flex w-full flex-col" style={{ gap: 4 }}>
+                <div className="flex items-center justify-between px-1.5">
+                    <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-white/40">可调</span>
+                        <EditorSwitch
+                            checked={controlAdjustable(control)}
+                            onCheckedChange={(v) => patch("adjustable", v)}
                         />
-                    </EditorField>
+                    </div>
                 </div>
-                <div className="pb-1 text-[11px] text-white/40">{hint}</div>
-                <div className="pb-1">
-                    <EditorSwitch
-                        checked={controlAdjustable(control)}
-                        onCheckedChange={(v) => patch("adjustable", v)}
+                <div className="flex w-full items-center" style={{ gap: 2 }}>
+                    <EditorNumberField
+                        value={controlDefault(control, 0)}
+                        step={controlStep(control, 0.01)}
+                        onChange={(v) => patch("default", v)}
+                    />
+                    <div
+                        className="grid min-w-0 grid-cols-2"
+                        style={{ gap: "var(--editor-control-gap)" }}
+                    >
+                        <EditorNumberField
+                            value={controlMin(control, 0)}
+                            onChange={(v) => patch("min", v)}
+                        />
+                        <EditorNumberField
+                            value={controlMax(control, 100)}
+                            onChange={(v) => patch("max", v)}
+                        />
+                    </div>
+                    <EditorNumberField
+                        value={controlStep(control, 0.01)}
+                        step={0.01}
+                        onChange={(v) => patch("step", v)}
                     />
                 </div>
             </div>
@@ -252,7 +271,7 @@ export function Sidebar({
             <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
 
             {/* Top actions */}
-            <div className="flex w-full shrink-0 flex-col px-[9px] pt-[9px]" style={{ gap: 6 }}>
+            <div className="flex w-full shrink-0 flex-col px-[9px] pt-[9px] pb-[9px]" style={{ gap: 6 }}>
                 <EditorActionButton
                     icon={<UploadIcon size={15} weight="regular" />}
                     selected
@@ -283,16 +302,14 @@ export function Sidebar({
                 )}
             </div>
 
-            {/* 壁纸属性编辑区域 */}
+            {/* 壁纸属性编辑区域（无标题，仅缩放/旋转控件） */}
             {hasConfig && (
                 <div className="flex w-full shrink-0 flex-col">
                     <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
-                    <EditorSection title="壁纸属性编辑区域" className="pt-[9px]">
-                        <div className="flex w-full flex-col px-[9px] pt-[9px]" style={{ gap: "var(--editor-field-group-gap)" }}>
-                            {transformRow("整体缩放", transform.scale, transform.onScaleChange as never, "可调")}
-                            {transformRow("整体旋转", transform.rotation, transform.onRotationChange as never, "可调")}
-                        </div>
-                    </EditorSection>
+                    <div className="flex w-full flex-col px-[9px] py-[9px]" style={{ gap: "var(--editor-field-group-gap)" }}>
+                        {transformRow("整体缩放", transform.scale, transform.onScaleChange as never)}
+                        {transformRow("整体旋转", transform.rotation, transform.onRotationChange as never)}
+                    </div>
                 </div>
             )}
 
