@@ -29,6 +29,7 @@ import {
     moveLayerToIndex,
     removeLayer,
     removeTemplate,
+    syncLayerAcrossTemplates,
     updateLayer,
     updateTemplate,
     updateWallpaperTransform,
@@ -312,17 +313,20 @@ export function WallpaperEditor({
             const isSyncFlagPatch =
                 patchKeys.length === 1 && patchKeys[0] === "syncAcrossDevices";
 
-            // 多设备同步按图层独立配置。同步开关本身应用到所有设备，保证
-            // 同一图层在各设备上的开关一致；开启时透明度/模糊/背景模糊/混合模式
-            // 也会同步到所有设备。
+            // 多设备同步按图层独立配置。同步开关/样式改动应用到所有设备；
+            // 某设备缺少该图层时自动复制创建（仅在开启同步时）。
             if (isSyncFlagPatch) {
+                const enabling = patch.syncAcrossDevices === true;
+                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
-                    let next = prev;
-                    for (let index = 0; index < next.templates.length; index++) {
-                        next = updateLayer(next, index, selectedLayerId, patch);
-                    }
-                    return next;
+                    return syncLayerAcrossTemplates(
+                        prev,
+                        selectedLayerId,
+                        sourceLayer,
+                        patch,
+                        enabling,
+                    );
                 });
                 return;
             }
@@ -333,13 +337,16 @@ export function WallpaperEditor({
             const layerSync =
                 getLayer(config, activeIndex, selectedLayerId)?.syncAcrossDevices === true;
             if (layerSync && isSyncPatch) {
+                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
-                    let next = prev;
-                    for (let index = 0; index < next.templates.length; index++) {
-                        next = updateLayer(next, index, selectedLayerId, patch);
-                    }
-                    return next;
+                    return syncLayerAcrossTemplates(
+                        prev,
+                        selectedLayerId,
+                        sourceLayer,
+                        patch,
+                        true,
+                    );
                 });
                 return;
             }

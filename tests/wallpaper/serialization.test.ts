@@ -3,11 +3,13 @@ import { normalizeWallpaperConfig } from "@claralight-design/wallpaper-engine";
 import { createWallpaperConfig, WALLPAPER_DEVICE_PRESETS } from "../../app/logic/wallpaper/presets";
 import {
     addLayer,
+    duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
     moveLayer,
     moveLayerToIndex,
     removeLayer,
+    syncLayerAcrossTemplates,
     updateLayer,
     updateWallpaperTransform,
 } from "../../app/logic/wallpaper/json-tree";import {
@@ -201,5 +203,45 @@ describe("wallpaper defensive edge cases", () => {
         config.shared = { a: { extends: "b" }, b: { extends: "a" } };
         config.templates[0].extends = "a";
         expect(() => flattenAllTemplates(config)).not.toThrow();
+    });
+
+    test("syncLayerAcrossTemplates creates missing layers on other devices", () => {
+        let cfg = validConfig();
+        cfg = duplicateTemplateAt(cfg, 0);
+        cfg.templates[1].id = "t2";
+
+        const glass: WallpaperLayerConfig = {
+            id: "glass",
+            name: "玻璃",
+            type: "asset",
+            src: "./assets/glass.png",
+            syncAcrossDevices: true,
+            blendMode: "normal",
+        };
+        cfg = addLayer(cfg, 0, glass);
+
+        const after = syncLayerAcrossTemplates(cfg, "glass", glass, { syncAcrossDevices: true }, true);
+        const t0 = getExpandedTemplate(after, 0).layers ?? [];
+        const t1 = getExpandedTemplate(after, 1).layers ?? [];
+        expect(t0.some((l) => l.id === "glass")).toBe(true);
+        const t1Glass = t1.find((l) => l.id === "glass");
+        expect(t1Glass).toBeDefined();
+        expect(t1Glass?.syncAcrossDevices).toBe(true);
+        expect(() => normalizeWallpaperConfig(after, "")).not.toThrow();
+
+        // createMissing=false 时不创建缺失图层
+        let cfg2 = validConfig();
+        cfg2 = duplicateTemplateAt(cfg2, 0);
+        cfg2.templates[1].id = "t2";
+        cfg2 = addLayer(cfg2, 0, glass);
+        const afterNoCreate = syncLayerAcrossTemplates(
+            cfg2,
+            "glass",
+            glass,
+            { syncAcrossDevices: false },
+            false,
+        );
+        const t1b = getExpandedTemplate(afterNoCreate, 1).layers ?? [];
+        expect(t1b.some((l) => l.id === "glass")).toBe(false);
     });
 });

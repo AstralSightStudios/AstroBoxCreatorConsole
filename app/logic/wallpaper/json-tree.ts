@@ -101,6 +101,33 @@ export function getLayer(
     return template.layers?.find((layer) => layer.id === layerId);
 }
 
+function cloneLayer(layer: WallpaperLayerConfig): WallpaperLayerConfig {
+    return JSON.parse(JSON.stringify(layer)) as WallpaperLayerConfig;
+}
+
+/**
+ * 把某图层同步到所有模板：已存在的原地应用 patch；不存在的（且 createMissing 为真）
+ * 从 sourceLayer 复制一份创建后再应用 patch。用于多设备同步。
+ */
+export function syncLayerAcrossTemplates(
+    config: WallpaperConfigRaw,
+    layerId: string,
+    sourceLayer: WallpaperLayerConfig | undefined,
+    patch: Partial<WallpaperLayerConfig>,
+    createMissing: boolean,
+): WallpaperConfigRaw {
+    let next = config;
+    for (let index = 0; index < next.templates.length; index++) {
+        if (getLayer(next, index, layerId)) {
+            next = updateLayer(next, index, layerId, patch);
+        } else if (createMissing && sourceLayer) {
+            next = addLayer(next, index, cloneLayer(sourceLayer));
+            next = updateLayer(next, index, layerId, patch);
+        }
+    }
+    return next;
+}
+
 export function updateLayer(
     config: WallpaperConfigRaw,
     templateIndex: number,
