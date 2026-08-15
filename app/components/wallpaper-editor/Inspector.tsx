@@ -451,15 +451,11 @@ export function Inspector({
                     {/* 明暗层 */}
                     {isTint && (
                         <>
-                            <EditorField label="明暗程度">
-                                <EditorNumberField
-                                    value={controlDefault(layer.amount, 0)}
-                                    min={-1}
-                                    max={1}
-                                    step={0.01}
-                                    onChange={(v) => patchControl("amount", "default", v)}
-                                />
-                            </EditorField>
+                            <ControlTriple
+                                label="明暗程度"
+                                control={layer.amount}
+                                onChange={(patch) => patchControl("amount", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                            />
                             <TwoColumnGrid>
                                 <EditorField label="亮色">
                                     <EditorTextInput value={layer.lightColor ?? "#ffffff"} onChange={(v) => onLayerPatch({ lightColor: v })} />
@@ -533,6 +529,9 @@ export function Inspector({
                                     { key: "opacity", label: "透明度" },
                                     { key: "blur", label: "模糊" },
                                     { key: "backdropBlur", label: "背景模糊" },
+                                    ...(isTint
+                                        ? ([{ key: "amount", label: "明暗程度" }] as const)
+                                        : []),
                                 ] as const
                             ).map(({ key, label }) => (
                                 <div
