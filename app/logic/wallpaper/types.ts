@@ -37,11 +37,22 @@ export interface WallpaperTransformConfig {
     rotation?: number;
 }
 
+export interface WallpaperFontAxisConfig {
+    /** 4 字符轴标签，如 "wght"、"wdth"、"slnt"、"ital"、"opsz"、"GRAD"。 */
+    tag: string;
+    name?: string;
+    min: number;
+    max: number;
+    /** 创作者选择的默认值（初始 = 字体设计默认值）。 */
+    default: number;
+}
+
 export interface WallpaperFontOptionConfig {
     id: string;
     name?: string;
     family?: string;
     src?: string;
+    axes?: WallpaperFontAxisConfig[];
 }
 
 export interface WallpaperFontControlConfig {

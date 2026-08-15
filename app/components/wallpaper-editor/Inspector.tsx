@@ -6,6 +6,7 @@ import {
     ArrowCounterClockwiseIcon,
     ArrowRightIcon,
     BoundingBoxIcon,
+    CaretDownIcon,
     ImageIcon,
     PlusIcon,
 } from "@phosphor-icons/react";
@@ -18,7 +19,7 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { controlAdjustable, patchControlValue } from "~/logic/wallpaper/control";
+import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
 import {
     EditorColorDots,
     EditorField,
@@ -26,6 +27,7 @@ import {
     EditorNumberField,
     EditorSection,
     EditorSelect,
+    EditorSlider,
     EditorSwitch,
     EditorTextInput,
     NumericControlEditor,
@@ -90,6 +92,16 @@ function readOptionDefault(
 
 function readBoxNumber(value: WallpaperControlValue | undefined, fallback: number): number {
     return typeof value === "number" ? value : (value?.default ?? fallback);
+}
+
+function clampAxis(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function axisStep(axis: { min: number; max: number }): number {
+    const range = axis.max - axis.min;
+    if (range <= 0) return 1;
+    return range > 20 ? 1 : Math.max(0.01, range / 100);
 }
 
 function patchOption(
@@ -295,6 +307,7 @@ export function Inspector({
         x: number;
         y: number;
     } | null>(null);
+    const [axesOpen, setAxesOpen] = useState(false);
 
     if (mode === "canvas" && canvas) {
         return (
@@ -342,6 +355,27 @@ export function Inspector({
     const showsTransformBox = isAsset || isText;
     const textContentValue =
         typeof layer.content === "string" ? layer.content : (layer.content?.default ?? "");
+
+    const fontDefault = typeof layer.font === "string" ? layer.font : (layer.font?.default ?? "sans-serif");
+    const fontOptions = fontOptionList(layer.font);
+    const currentFont = fontOptions.find((option) => option.id === fontDefault) ?? fontOptions[0];
+    const currentFontAxes = currentFont?.axes ?? [];
+    const hasWghtAxis = currentFontAxes.some((axis) => axis.tag === "wght");
+    const nonWghtAxes = currentFontAxes.filter((axis) => axis.tag !== "wght");
+    const patchAxisDefault = (tag: string, value: number) => {
+        if (typeof layer.font !== "object" || !layer.font) return;
+        const fontControl = layer.font;
+        const options = (fontControl.options ?? []).map((option) => {
+            if (option.id !== fontControl.default) return option;
+            return {
+                ...option,
+                axes: (option.axes ?? []).map((axis) =>
+                    axis.tag === tag ? { ...axis, default: clampAxis(value, axis.min, axis.max) } : axis,
+                ),
+            };
+        });
+        onLayerPatch({ font: { ...fontControl, options } });
+    };
 
     const patchControl = (
         field: "opacity" | "blur" | "backdropBlur" | "amount" | "fontSize" | "fontWeight" | "letterSpacing" | "lineHeight",
@@ -613,18 +647,87 @@ export function Inspector({
                                         />
                                     }
                                 />
-                                <ControlTriple
-                                    label="字重"
-                                    control={layer.fontWeight}
-                                    onChange={(patch) => patchControl("fontWeight", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
-                                    onDragStateChange={onRenderSimplifyChange}
-                                    headerRight={
-                                        <AdjustableToggle
-                                            checked={controlAdjustable(layer.fontWeight)}
-                                            onToggle={(v) => patchControl("fontWeight", "adjustable", v)}
-                                        />
-                                    }
-                                />
+                                {hasWghtAxis ? (
+                                    <ControlTriple
+                                        label="字重"
+                                        control={layer.fontWeight}
+                                        onChange={(patch) => patchControl("fontWeight", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                        headerRight={
+                                            <AdjustableToggle
+                                                checked={controlAdjustable(layer.fontWeight)}
+                                                onToggle={(v) => patchControl("fontWeight", "adjustable", v)}
+                                            />
+                                        }
+                                    />
+                                ) : (
+                                    <EditorField label="字重">
+                                        <div
+                                            className="flex items-center gap-1.5 px-2"
+                                            style={{
+                                                height: "var(--editor-control-height)",
+                                                borderRadius: "var(--editor-control-radius)",
+                                                background: "var(--color-editor-control)",
+                                            }}
+                                        >
+                                            <span className="text-sm text-white/45">
+                                                {controlDefault(layer.fontWeight, 400)}
+                                            </span>
+                                            <span className="text-[11px] text-white/30">
+                                                当前字体无字重轴，不可调整
+                                            </span>
+                                        </div>
+                                    </EditorField>
+                                )}
+                                {nonWghtAxes.length > 0 && (
+                                    <div className="flex w-full flex-col" style={{ gap: 6 }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAxesOpen((open) => !open)}
+                                            className="flex cursor-pointer items-center justify-between px-1.5 py-0.5"
+                                        >
+                                            <span className="text-[13px] leading-[18px] text-white/75">
+                                                可变属性
+                                            </span>
+                                            <CaretDownIcon
+                                                size={14}
+                                                weight="regular"
+                                                className={`text-white/60 transition-transform ${axesOpen ? "" : "-rotate-90"}`}
+                                            />
+                                        </button>
+                                        {axesOpen && (
+                                            <div className="flex w-full flex-col" style={{ gap: 16 }}>
+                                                {nonWghtAxes.map((axis) => (
+                                                    <div
+                                                        key={axis.tag}
+                                                        className="flex w-full flex-col"
+                                                        style={{ gap: 6 }}
+                                                    >
+                                                        <span className="px-1.5 text-[13px] leading-[18px] text-white/75">
+                                                            {axis.name ?? axis.tag}
+                                                            <span className="ml-1 text-[11px] text-white/35">{axis.tag}</span>
+                                                        </span>
+                                                        <EditorSlider
+                                                            value={axis.default}
+                                                            min={axis.min}
+                                                            max={axis.max}
+                                                            step={axisStep(axis)}
+                                                            onChange={(v) => patchAxisDefault(axis.tag, v)}
+                                                            onDragStateChange={onRenderSimplifyChange}
+                                                        />
+                                                        <EditorNumberField
+                                                            value={axis.default}
+                                                            min={axis.min}
+                                                            max={axis.max}
+                                                            step={axisStep(axis)}
+                                                            onChange={(v) => patchAxisDefault(axis.tag, v)}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <ControlTriple
                                     label="字距"
                                     control={layer.letterSpacing}
@@ -704,7 +807,24 @@ export function Inspector({
                                                     value: option.id,
                                                     label: option.name ?? option.id,
                                                 }))}
-                                                onChange={(value) => onLayerPatch({ font: patchFont(layer.font, { default: value }) })}
+                                                onChange={(value) => {
+                                                    const nextFont = patchFont(layer.font, { default: value });
+                                                    const nextWght = fontOptionList(layer.font)
+                                                        .find((option) => option.id === value)
+                                                        ?.axes?.find((axis) => axis.tag === "wght");
+                                                    onLayerPatch({
+                                                        font: nextFont,
+                                                        fontWeight: nextWght
+                                                            ? {
+                                                                  default: clampAxis(nextWght.default, nextWght.min, nextWght.max),
+                                                                  min: nextWght.min,
+                                                                  max: nextWght.max,
+                                                                  step: 1,
+                                                                  adjustable: true,
+                                                              }
+                                                            : { default: 400, min: 400, max: 400, step: 1, adjustable: false },
+                                                    });
+                                                }}
                                             />
                                         </div>
                                         <EditorIconButton title="导入字体" onClick={() => fontInputRef.current?.click()}>

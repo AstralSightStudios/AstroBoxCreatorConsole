@@ -15,7 +15,7 @@
   "dependencies": {
     "@antv/l7": "^2.23.2",
     "@antv/l7-maps": "^2.23.2",
-    "@claralight-design/wallpaper-engine": "^0.1.2",
+    "@claralight-design/wallpaper-engine": "^0.1.4",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/themes": "^3.2.1",

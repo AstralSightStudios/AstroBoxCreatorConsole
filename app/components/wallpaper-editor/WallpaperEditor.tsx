@@ -44,6 +44,7 @@ import type {
     WallpaperAssetFile,
     WallpaperConfigRaw,
     WallpaperControlValue,
+    WallpaperFontAxisConfig,
     WallpaperFontControlConfig,
     WallpaperFontOptionConfig,
     WallpaperLayerConfig,
@@ -51,6 +52,7 @@ import type {
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
+import { parseFontAxes } from "~/logic/wallpaper/font-axes";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
 import { CanvasStage } from "./CanvasStage";
@@ -99,6 +101,10 @@ function measureTextSize(
         const width = Math.ceil(content.length * fontSize * 0.6 + letterSpacing * Math.max(0, content.length - 1));
         return { width, height: Math.ceil(fontSize * lineHeight) };
     }
+}
+
+function clampAxis(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
 }
 
 function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
@@ -481,7 +487,7 @@ export function WallpaperEditor({
                                   options: [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }],
                               },
                               fontSize: { default: fontSize, min: 8, max: 120, step: 1, adjustable: true },
-                              fontWeight: { default: 400, min: 100, max: 900, step: 100, adjustable: true },
+                              fontWeight: { default: 400, min: 400, max: 400, step: 1, adjustable: false },
                               color: { default: "#ffffff", adjustable: true, allowCustom: true },
                               textAlign: { default: "center", adjustable: true, options: ["left", "center", "right"] },
                               verticalAlign: { default: "middle", adjustable: true, options: ["top", "middle", "bottom"] },
@@ -590,11 +596,28 @@ export function WallpaperEditor({
                 ...prev,
                 [configPath]: assetFileForRepoPath(configPathToRepoPath(configPath), url, file),
             }));
+            let axes: WallpaperFontAxisConfig[] = [];
+            try {
+                axes = parseFontAxes(await file.arrayBuffer());
+            } catch (error) {
+                console.warn("[wallpaper] 字体轴解析失败", file.name, error);
+            }
+            const wghtAxis = axes.find((axis) => axis.tag === "wght");
+            const fontWeight: WallpaperControlValue = wghtAxis
+                ? {
+                      default: clampAxis(wghtAxis.default, wghtAxis.min, wghtAxis.max),
+                      min: wghtAxis.min,
+                      max: wghtAxis.max,
+                      step: 1,
+                      adjustable: true,
+                  }
+                : { default: 400, min: 400, max: 400, step: 1, adjustable: false };
             const option: WallpaperFontOptionConfig = {
                 id: `font-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
                 name: file.name,
                 family: file.name.replace(/\.[^.]+$/, ""),
                 src: configPath,
+                axes,
             };
             setConfig((prev) => {
                 if (!prev) return prev;
@@ -611,6 +634,7 @@ export function WallpaperEditor({
                 const options = [...(fontControl.options ?? []).filter((entry) => entry.id !== option.id), option];
                 const patch = {
                     font: { ...fontControl, default: option.id, options },
+                    fontWeight,
                 } as Partial<WallpaperLayerConfig>;
                 return sourceLayer?.syncAcrossDevices === true
                     ? syncLayerAcrossTemplates(prev, selectedLayerId, sourceLayer, patch, true)

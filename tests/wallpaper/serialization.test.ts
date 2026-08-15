@@ -95,7 +95,24 @@ describe("wallpaper json-tree", () => {
                 font: {
                     default: "sans-serif",
                     adjustable: true,
-                    options: [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }],
+                    options: [
+                        {
+                            id: "sans-serif",
+                            name: "默认字体",
+                            family: "sans-serif",
+                            axes: [],
+                        },
+                        {
+                            id: "var",
+                            name: "可变字体",
+                            family: "Variable",
+                            src: "./assets/var.ttf",
+                            axes: [
+                                { tag: "wght", name: "字重", min: 100, max: 900, default: 400 },
+                                { tag: "wdth", name: "宽度", min: 50, max: 200, default: 100 },
+                            ],
+                        },
+                    ],
                 },
                 fontSize: { default: 32, min: 8, max: 120, step: 1, adjustable: true },
                 fontWeight: { default: 400, min: 100, max: 900, step: 100, adjustable: true },
@@ -117,6 +134,10 @@ describe("wallpaper json-tree", () => {
         expect(layer?.text?.box.width.default).toBe(120);
         expect(layer?.text?.box.height.default).toBe(40);
         expect(layer?.text?.font.default).toBe("sans-serif");
+        expect(layer?.text?.font.options.find((o) => o.id === "var")?.axes).toEqual([
+            { tag: "wght", name: "字重", min: 100, max: 900, default: 400 },
+            { tag: "wdth", name: "宽度", min: 50, max: 200, default: 100 },
+        ]);
         expect(layer?.text?.fontSize.default).toBe(32);
         expect(layer?.text?.align.default).toBe("center");
         expect(layer?.text?.verticalAlign.default).toBe("middle");
