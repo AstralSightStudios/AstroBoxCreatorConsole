@@ -87,8 +87,8 @@ export function collectTemplateAssetPaths(
         if (layer.mask) {
             out.push({ path: layer.mask, usedBy: layer.id, kind: "mask" });
         }
-        if (layer.text?.font && typeof layer.text.font !== "string") {
-            for (const option of layer.text.font.options ?? []) {
+        if (layer.font && typeof layer.font !== "string") {
+            for (const option of layer.font.options ?? []) {
                 if (option.src) {
                     out.push({ path: option.src, usedBy: layer.id, kind: "font" });
                 }

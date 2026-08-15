@@ -44,6 +44,8 @@ import type {
     WallpaperAssetFile,
     WallpaperConfigRaw,
     WallpaperControlValue,
+    WallpaperFontControlConfig,
+    WallpaperFontOptionConfig,
     WallpaperLayerConfig,
     WallpaperLayerKind,
     WallpaperTemplateConfig,
@@ -70,6 +72,35 @@ function genId(prefix: string): string {
     return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 }
 
+function measureTextSize(
+    content: string,
+    fontSize: number,
+    fontWeight: number,
+    fontFamily: string,
+    letterSpacing: number,
+    lineHeight: number,
+): { width: number; height: number } {
+    try {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no 2d context");
+        ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+        const lines = content.split("\n");
+        let width = 0;
+        for (const line of lines) {
+            let lineWidth = 0;
+            for (const ch of line) {
+                lineWidth += ctx.measureText(ch).width + letterSpacing;
+            }
+            width = Math.max(width, lineWidth);
+        }
+        return { width: Math.ceil(width), height: Math.ceil(fontSize * lineHeight * lines.length) };
+    } catch {
+        const width = Math.ceil(content.length * fontSize * 0.6 + letterSpacing * Math.max(0, content.length - 1));
+        return { width, height: Math.ceil(fontSize * lineHeight) };
+    }
+}
+
 function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
     const next = cloneConfig(config);
     const base = baseUrl?.replace(/\/+$/, "");
@@ -81,8 +112,8 @@ function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: stri
         for (const layer of template.layers ?? []) {
             if (layer.type === "asset" && layer.src) layer.src = toRelative(layer.src);
             if (layer.mask) layer.mask = toRelative(layer.mask);
-            if (layer.text?.font && typeof layer.text.font !== "string") {
-                for (const option of layer.text.font.options ?? []) {
+            if (layer.font && typeof layer.font !== "string") {
+                for (const option of layer.font.options ?? []) {
                     if (option.src) option.src = toRelative(option.src);
                 }
             }
@@ -335,7 +366,23 @@ export function WallpaperEditor({
         [],
     );
 
-    const SYNC_LAYER_KEYS = new Set(["opacity", "blur", "backdropBlur", "blendMode"]);
+    // 多设备同步的图层属性：常见样式 + 文字样式（文字框 textBox 按设备单独摆放，不参与同步）。
+    const SYNC_LAYER_KEYS = new Set([
+        "opacity",
+        "blur",
+        "backdropBlur",
+        "blendMode",
+        "color",
+        "content",
+        "maxLength",
+        "font",
+        "fontSize",
+        "fontWeight",
+        "letterSpacing",
+        "lineHeight",
+        "textAlign",
+        "verticalAlign",
+    ]);
 
     const handleLayerPatch = useCallback(
         (patch: Partial<WallpaperLayerConfig>) => {
@@ -396,25 +443,50 @@ export function WallpaperEditor({
             }
             const layer: WallpaperLayerConfig =
                 kind === "text"
-                    ? {
-                          id: genId("text"),
-                          name: "文字",
-                          type: "text",
-                          clip: "frame",
-                          opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
-                          blendMode: "normal",
-                          text: {
-                              content: { default: "AstroBox", adjustable: true },
+                    ? (() => {
+                          const template = getExpandedTemplate(config, activeIndex);
+                          const canvasW = template.canvas?.width ?? 0;
+                          const canvasH = template.canvas?.height ?? 0;
+                          const content = "AstroBox";
+                          const fontSize = 32;
+                          const { width: boxW, height: boxH } = measureTextSize(
+                              content,
+                              fontSize,
+                              400,
+                              "sans-serif",
+                              0,
+                              1.2,
+                          );
+                          const textBox = {
+                              x: Math.max(0, Math.round((canvasW - boxW) / 2)),
+                              y: Math.max(0, Math.round((canvasH - boxH) / 2)),
+                              width: Math.max(1, Math.round(boxW)),
+                              height: Math.max(1, Math.round(boxH)),
+                          };
+                          return {
+                              id: genId("text"),
+                              name: "文字",
+                              type: "text",
+                              clip: "frame",
+                              opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
+                              blendMode: "normal",
+                              content: { default: content, adjustable: true },
                               maxLength: 20,
-                              fontSize: { default: 32, min: 8, max: 120, step: 1, adjustable: true },
+                              textBox,
+                              font: {
+                                  default: "sans-serif",
+                                  adjustable: true,
+                                  options: [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }],
+                              },
+                              fontSize: { default: fontSize, min: 8, max: 120, step: 1, adjustable: true },
                               fontWeight: { default: 400, min: 100, max: 900, step: 100, adjustable: true },
                               color: { default: "#ffffff", adjustable: true, allowCustom: true },
                               textAlign: { default: "center", adjustable: true, options: ["left", "center", "right"] },
                               verticalAlign: { default: "middle", adjustable: true, options: ["top", "middle", "bottom"] },
                               letterSpacing: { default: 0, min: -4, max: 20, step: 1, adjustable: true },
                               lineHeight: { default: 1.2, min: 0.5, max: 3, step: 0.05, adjustable: true },
-                          },
-                      }
+                          };
+                      })()
                     : kind === "wallpaper"
                       ? {
                             id: genId("photo"),
@@ -506,6 +578,74 @@ export function WallpaperEditor({
         },
         [activeIndex, config, selectedLayerId],
     );
+
+    const handleFontUpload = useCallback(
+        async (file: File) => {
+            if (!config || !selectedLayerId) return;
+            const configPath = `./assets/${file.name}`;
+            const url = URL.createObjectURL(file);
+            setAssetFiles((prev) => ({
+                ...prev,
+                [configPath]: assetFileForRepoPath(configPathToRepoPath(configPath), url, file),
+            }));
+            const option: WallpaperFontOptionConfig = {
+                id: `font-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+                name: file.name,
+                family: file.name.replace(/\.[^.]+$/, ""),
+                src: configPath,
+            };
+            setConfig((prev) => {
+                if (!prev) return prev;
+                const sourceLayer = getLayer(prev, activeIndex, selectedLayerId);
+                const current = sourceLayer?.font;
+                const fontControl: WallpaperFontControlConfig =
+                    current && typeof current !== "string"
+                        ? current
+                        : {
+                              default: "sans-serif",
+                              adjustable: true,
+                              options: [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }],
+                          };
+                const options = [...(fontControl.options ?? []).filter((entry) => entry.id !== option.id), option];
+                const patch = {
+                    font: { ...fontControl, default: option.id, options },
+                } as Partial<WallpaperLayerConfig>;
+                return sourceLayer?.syncAcrossDevices === true
+                    ? syncLayerAcrossTemplates(prev, selectedLayerId, sourceLayer, patch, true)
+                    : updateLayer(prev, activeIndex, selectedLayerId, patch);
+            });
+        },
+        [activeIndex, config, selectedLayerId],
+    );
+
+    // 文字框自适应内容：按当前内容/字号/字重/字体重新测量并把文字框居中。
+    const handleFitTextBox = useCallback(() => {
+        if (!config || !selectedLayerId) return;
+        const layer = getLayer(config, activeIndex, selectedLayerId);
+        if (!layer || layer.type !== "text") return;
+        const template = getExpandedTemplate(config, activeIndex);
+        const canvasW = template.canvas?.width ?? 0;
+        const canvasH = template.canvas?.height ?? 0;
+        const content = typeof layer.content === "string" ? layer.content : (layer.content?.default ?? "");
+        const fontSize = controlDefault(layer.fontSize, 32);
+        const fontWeight = controlDefault(layer.fontWeight, 400);
+        const letterSpacing = controlDefault(layer.letterSpacing, 0);
+        const lineHeight = controlDefault(layer.lineHeight, 1.2);
+        const fontControl = typeof layer.font === "string" ? undefined : layer.font;
+        const fontFamily =
+            typeof layer.font === "string"
+                ? layer.font
+                : (fontControl?.options?.find((option) => option.id === fontControl?.default)?.family ??
+                  "sans-serif");
+        const { width, height } = measureTextSize(content, fontSize, fontWeight, fontFamily, letterSpacing, lineHeight);
+        const textBox = {
+            x: Math.max(0, Math.round((canvasW - width) / 2)),
+            y: Math.max(0, Math.round((canvasH - height) / 2)),
+            width: Math.max(1, Math.round(width)),
+            height: Math.max(1, Math.round(height)),
+        };
+        setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, { textBox }) : prev));
+    }, [activeIndex, config, selectedLayerId]);
 
     const handleRemoveLayer = useCallback(
         (id: string) => {
@@ -767,6 +907,7 @@ export function WallpaperEditor({
                                 resources={resources}
                                 baseImage={baseImage}
                                 activeTemplate={activeIndex}
+                                selectedLayerId={selectedLayerId}
                                 simplify={renderSimplify}
                                 onActiveTemplateChange={setActiveTemplate}
                                 onSelectCanvas={handleSelectCanvas}
@@ -782,6 +923,8 @@ export function WallpaperEditor({
                             onLayerPatch={handleLayerPatch}
                             onAssetUpload={(file) => void handleAssetReplace(file)}
                             onMaskUpload={(file) => void handleMaskUpload(file)}
+                            onFontUpload={(file) => void handleFontUpload(file)}
+                            onFitTextBox={() => void handleFitTextBox()}
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}

@@ -1,12 +1,17 @@
 import { useRef } from "react";
+import type { ReactNode } from "react";
 import {
     ArrowCounterClockwiseIcon,
     ArrowRightIcon,
+    BoundingBoxIcon,
     ImageIcon,
+    PlusIcon,
 } from "@phosphor-icons/react";
 import type {
     WallpaperColorControlConfig,
     WallpaperControlValue,
+    WallpaperFontControlConfig,
+    WallpaperFontOptionConfig,
     WallpaperLayerConfig,
     WallpaperLayerKind,
     WallpaperTemplateConfig,
@@ -31,6 +36,8 @@ export interface InspectorProps {
     onLayerPatch: (patch: Partial<WallpaperLayerConfig>) => void;
     onAssetUpload: (file: File) => void;
     onMaskUpload: (file: File) => void;
+    onFontUpload: (file: File) => void;
+    onFitTextBox: () => void;
     onClearMask: () => void;
     canvas: WallpaperTemplateConfig | null;
     onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
@@ -72,16 +79,103 @@ function readColorControl(value: WallpaperLayerConfig["color"] | undefined): Wal
     return undefined;
 }
 
+function readOptionDefault(
+    value: string | { default?: string; adjustable?: boolean; options?: string[] } | undefined,
+    fallback: string,
+): string {
+    return typeof value === "string" ? value : (value?.default ?? fallback);
+}
+
+function readBoxNumber(value: WallpaperControlValue | undefined, fallback: number): number {
+    return typeof value === "number" ? value : (value?.default ?? fallback);
+}
+
+function patchOption(
+    value: string | { default?: string; adjustable?: boolean; options?: string[] } | undefined,
+    fallbackOptions: string[],
+    patch: Partial<{ default: string; adjustable: boolean }>,
+): { default: string; adjustable: boolean; options: string[] } {
+    const current: { default?: string; adjustable?: boolean; options?: string[] } =
+        typeof value === "string" ? { default: value } : value ?? {};
+    const options = Array.isArray(current.options) && current.options.length > 0 ? current.options : fallbackOptions;
+    const defaultValue = patch.default ?? current.default ?? fallbackOptions[0];
+    return {
+        default: options.includes(defaultValue) ? defaultValue : (options[0] ?? fallbackOptions[0]),
+        adjustable: patch.adjustable ?? current.adjustable === true,
+        options,
+    };
+}
+
+function fontOptionList(value: WallpaperLayerConfig["font"]): WallpaperFontOptionConfig[] {
+    if (typeof value === "string") return [{ id: value, name: value, family: value }];
+    const options = value?.options ?? [];
+    return options.length > 0 ? options : [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }];
+}
+
+function patchFont(
+    value: WallpaperLayerConfig["font"],
+    patch: Partial<Pick<WallpaperFontControlConfig, "default" | "adjustable">>,
+): WallpaperFontControlConfig {
+    const options = fontOptionList(value);
+    const current: Partial<WallpaperFontControlConfig> =
+        typeof value === "object" && value !== null ? value : {};
+    const defaultValue = patch.default ?? (typeof value === "string" ? value : current.default ?? "sans-serif");
+    return {
+        default: options.some((option) => option.id === defaultValue) ? defaultValue : (options[0]?.id ?? "sans-serif"),
+        adjustable: patch.adjustable ?? current.adjustable === true,
+        options,
+    };
+}
+
+function AdjustableToggle({
+    checked,
+    onToggle,
+}: {
+    checked: boolean;
+    onToggle: (value: boolean) => void;
+}) {
+    return (
+        <span className="flex shrink-0 items-center gap-1.5">
+            <span className="text-[11px] leading-4 text-white/45">用户可修改</span>
+            <EditorSwitch checked={checked} onCheckedChange={onToggle} />
+        </span>
+    );
+}
+
+function AdjustableField({
+    label,
+    adjustable,
+    onAdjustableChange,
+    children,
+}: {
+    label: string;
+    adjustable: boolean;
+    onAdjustableChange: (value: boolean) => void;
+    children: ReactNode;
+}) {
+    return (
+        <div className="flex w-full flex-col" style={{ gap: 6 }}>
+            <div className="flex items-center justify-between px-1.5">
+                <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+                <AdjustableToggle checked={adjustable} onToggle={onAdjustableChange} />
+            </div>
+            {children}
+        </div>
+    );
+}
+
 function ControlTriple({
     label,
     control,
     onChange,
     onDragStateChange,
+    headerRight,
 }: {
     label: string;
     control: WallpaperControlValue | undefined;
     onChange: (patch: Partial<{ default: number; min: number; max: number; step: number }>) => void;
     onDragStateChange?: (dragging: boolean) => void;
+    headerRight?: ReactNode;
 }) {
     return (
         <NumericControlEditor
@@ -89,6 +183,7 @@ function ControlTriple({
             control={control}
             onChange={onChange}
             onDragStateChange={onDragStateChange}
+            headerRight={headerRight}
         />
     );
 }
@@ -182,6 +277,8 @@ export function Inspector({
     onLayerPatch,
     onAssetUpload,
     onMaskUpload,
+    onFontUpload,
+    onFitTextBox,
     onClearMask,
     canvas,
     onCanvasPatch,
@@ -189,6 +286,7 @@ export function Inspector({
 }: InspectorProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const maskInputRef = useRef<HTMLInputElement | null>(null);
+    const fontInputRef = useRef<HTMLInputElement | null>(null);
 
     if (mode === "canvas" && canvas) {
         return (
@@ -234,9 +332,11 @@ export function Inspector({
     const isText = layer.type === "text";
     const isTint = layer.type === "tint";
     const showsTransformBox = isAsset || isText;
+    const textContentValue =
+        typeof layer.content === "string" ? layer.content : (layer.content?.default ?? "");
 
     const patchControl = (
-        field: "opacity" | "blur" | "backdropBlur" | "amount",
+        field: "opacity" | "blur" | "backdropBlur" | "amount" | "fontSize" | "fontWeight" | "letterSpacing" | "lineHeight",
         key: "default" | "min" | "max" | "step" | "adjustable",
         value: number | boolean,
     ) => {
@@ -247,8 +347,14 @@ export function Inspector({
         onLayerPatch({ transform: { ...transform, ...patch } });
     };
 
-    const patchText = (patch: Partial<NonNullable<WallpaperLayerConfig["text"]>>) => {
-        onLayerPatch({ text: { ...(layer.text ?? {}), ...patch } });
+    const textBox = {
+        x: readBoxNumber(layer.textBox?.x, 0),
+        y: readBoxNumber(layer.textBox?.y, 0),
+        width: readBoxNumber(layer.textBox?.width, 100),
+        height: readBoxNumber(layer.textBox?.height, 40),
+    };
+    const patchTextBox = (patch: Partial<{ x: number; y: number; width: number; height: number }>) => {
+        onLayerPatch({ textBox: { ...(layer.textBox ?? {}), ...patch } });
     };
 
     const blendValue =
@@ -277,7 +383,7 @@ export function Inspector({
                 <div className="flex flex-col">
                     <span className="text-[13px] leading-[18px] text-white/85">多设备同步</span>
                     <span className="text-[11px] leading-4 text-white/45">
-                        仅本图层：透明度 / 模糊 / 背景模糊 / 混合模式 应用于所有设备
+                        仅本图层：透明度 / 模糊 / 背景模糊 / 混合模式 / 文字样式 应用于所有设备
                     </span>
                 </div>
                 <EditorSwitch
@@ -382,19 +488,204 @@ export function Inspector({
                         </EditorField>
                     )}
 
-                    {/* 内容 (text) */}
+                    {/* 文字图层专属设置 */}
                     {isText && (
-                        <EditorField label="内容">
-                            <EditorTextInput
-                                value={
-                                    typeof layer.text?.content === "string"
-                                        ? layer.text.content
-                                        : layer.text?.content?.default ?? ""
-                                }
-                                placeholder="输入文字"
-                                onChange={(v) => patchText({ content: { default: v, adjustable: true } })}
-                            />
-                        </EditorField>
+                        <EditorSection title="文字" className="pt-[9px]">
+                            <div className="flex w-full flex-col" style={{ gap: 22 }}>
+                                <AdjustableField
+                                    label="内容"
+                                    adjustable={typeof layer.content === "object" ? layer.content.adjustable === true : false}
+                                    onAdjustableChange={(v) =>
+                                        onLayerPatch({
+                                            content: {
+                                                ...(typeof layer.content === "object"
+                                                    ? layer.content
+                                                    : { default: textContentValue }),
+                                                adjustable: v,
+                                            },
+                                        })
+                                    }
+                                >
+                                    <EditorTextInput
+                                        value={textContentValue}
+                                        placeholder="输入文字"
+                                        onChange={(v) =>
+                                            onLayerPatch({
+                                                content: {
+                                                    default: v,
+                                                    adjustable:
+                                                        typeof layer.content === "object"
+                                                            ? layer.content.adjustable === true
+                                                            : false,
+                                                },
+                                            })
+                                        }
+                                    />
+                                </AdjustableField>
+                                <ControlTriple
+                                    label="字号"
+                                    control={layer.fontSize}
+                                    onChange={(patch) => patchControl("fontSize", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                    onDragStateChange={onRenderSimplifyChange}
+                                    headerRight={
+                                        <AdjustableToggle
+                                            checked={controlAdjustable(layer.fontSize)}
+                                            onToggle={(v) => patchControl("fontSize", "adjustable", v)}
+                                        />
+                                    }
+                                />
+                                <ControlTriple
+                                    label="字重"
+                                    control={layer.fontWeight}
+                                    onChange={(patch) => patchControl("fontWeight", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                    onDragStateChange={onRenderSimplifyChange}
+                                    headerRight={
+                                        <AdjustableToggle
+                                            checked={controlAdjustable(layer.fontWeight)}
+                                            onToggle={(v) => patchControl("fontWeight", "adjustable", v)}
+                                        />
+                                    }
+                                />
+                                <ControlTriple
+                                    label="字距"
+                                    control={layer.letterSpacing}
+                                    onChange={(patch) => patchControl("letterSpacing", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                    onDragStateChange={onRenderSimplifyChange}
+                                    headerRight={
+                                        <AdjustableToggle
+                                            checked={controlAdjustable(layer.letterSpacing)}
+                                            onToggle={(v) => patchControl("letterSpacing", "adjustable", v)}
+                                        />
+                                    }
+                                />
+                                <ControlTriple
+                                    label="行高"
+                                    control={layer.lineHeight}
+                                    onChange={(patch) => patchControl("lineHeight", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                    onDragStateChange={onRenderSimplifyChange}
+                                    headerRight={
+                                        <AdjustableToggle
+                                            checked={controlAdjustable(layer.lineHeight)}
+                                            onToggle={(v) => patchControl("lineHeight", "adjustable", v)}
+                                        />
+                                    }
+                                />
+                                <AdjustableField
+                                    label="对齐"
+                                    adjustable={typeof layer.textAlign === "object" ? layer.textAlign.adjustable === true : false}
+                                    onAdjustableChange={(v) =>
+                                        onLayerPatch({ textAlign: patchOption(layer.textAlign, ["left", "center", "right"], { adjustable: v }) })
+                                    }
+                                >
+                                    <EditorSelect
+                                        value={readOptionDefault(layer.textAlign, "left")}
+                                        options={[
+                                            { value: "left", label: "左对齐" },
+                                            { value: "center", label: "居中" },
+                                            { value: "right", label: "右对齐" },
+                                        ]}
+                                        onChange={(value) =>
+                                            onLayerPatch({ textAlign: patchOption(layer.textAlign, ["left", "center", "right"], { default: value }) })
+                                        }
+                                    />
+                                </AdjustableField>
+                                <AdjustableField
+                                    label="垂直对齐"
+                                    adjustable={typeof layer.verticalAlign === "object" ? layer.verticalAlign.adjustable === true : false}
+                                    onAdjustableChange={(v) =>
+                                        onLayerPatch({ verticalAlign: patchOption(layer.verticalAlign, ["top", "middle", "bottom"], { adjustable: v }) })
+                                    }
+                                >
+                                    <EditorSelect
+                                        value={readOptionDefault(layer.verticalAlign, "top")}
+                                        options={[
+                                            { value: "top", label: "顶部" },
+                                            { value: "middle", label: "居中" },
+                                            { value: "bottom", label: "底部" },
+                                        ]}
+                                        onChange={(value) =>
+                                            onLayerPatch({ verticalAlign: patchOption(layer.verticalAlign, ["top", "middle", "bottom"], { default: value }) })
+                                        }
+                                    />
+                                </AdjustableField>
+                                <AdjustableField
+                                    label="字体"
+                                    adjustable={typeof layer.font === "object" ? layer.font.adjustable === true : false}
+                                    onAdjustableChange={(v) => onLayerPatch({ font: patchFont(layer.font, { adjustable: v }) })}
+                                >
+                                    <div className="flex items-center" style={{ gap: "var(--editor-control-gap)" }}>
+                                        <div className="min-w-0 flex-1">
+                                            <EditorSelect
+                                                value={
+                                                    typeof layer.font === "string"
+                                                        ? layer.font
+                                                        : (layer.font?.default ?? fontOptionList(layer.font)[0]?.id ?? "sans-serif")
+                                                }
+                                                options={fontOptionList(layer.font).map((option) => ({
+                                                    value: option.id,
+                                                    label: option.name ?? option.id,
+                                                }))}
+                                                onChange={(value) => onLayerPatch({ font: patchFont(layer.font, { default: value }) })}
+                                            />
+                                        </div>
+                                        <EditorIconButton title="导入字体" onClick={() => fontInputRef.current?.click()}>
+                                            <PlusIcon size={14} weight="regular" />
+                                        </EditorIconButton>
+                                    </div>
+                                    <input
+                                        ref={fontInputRef}
+                                        type="file"
+                                        accept=".ttf,.otf,.woff,.woff2,font/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) onFontUpload(file);
+                                            e.target.value = "";
+                                        }}
+                                    />
+                                </AdjustableField>
+                                <div className="flex w-full flex-col" style={{ gap: 6 }}>
+                                    <div className="flex items-center justify-between px-1.5">
+                                        <span className="text-[13px] leading-[18px] text-white/75">文字框</span>
+                                        <EditorIconButton title="自适应内容" onClick={onFitTextBox}>
+                                            <BoundingBoxIcon size={14} weight="regular" />
+                                            <span className="text-xs">自适应</span>
+                                        </EditorIconButton>
+                                    </div>
+                                    <TwoColumnGrid>
+                                        <EditorField label="位置 X">
+                                            <EditorNumberField value={textBox.x} onChange={(v) => patchTextBox({ x: v })} />
+                                        </EditorField>
+                                        <EditorField label="位置 Y">
+                                            <EditorNumberField value={textBox.y} onChange={(v) => patchTextBox({ y: v })} />
+                                        </EditorField>
+                                    </TwoColumnGrid>
+                                    <TwoColumnGrid>
+                                        <EditorField label="宽 (W)">
+                                            <EditorNumberField
+                                                value={textBox.width}
+                                                min={1}
+                                                onChange={(v) => patchTextBox({ width: Math.max(1, v) })}
+                                            />
+                                        </EditorField>
+                                        <EditorField label="高 (H)">
+                                            <EditorNumberField
+                                                value={textBox.height}
+                                                min={1}
+                                                onChange={(v) => patchTextBox({ height: Math.max(1, v) })}
+                                            />
+                                        </EditorField>
+                                    </TwoColumnGrid>
+                                </div>
+                                <EditorField label="最大长度">
+                                    <EditorNumberField
+                                        value={layer.maxLength ?? 20}
+                                        min={1}
+                                        onChange={(v) => onLayerPatch({ maxLength: Math.max(1, Math.floor(v)) })}
+                                    />
+                                </EditorField>
+                            </div>
+                        </EditorSection>
                     )}
 
                     {/* 位置 / 旋转 / 尺寸 */}

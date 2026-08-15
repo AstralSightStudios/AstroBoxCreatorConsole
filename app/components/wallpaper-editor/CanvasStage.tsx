@@ -31,6 +31,8 @@ export interface CanvasStageProps {
     resources: Record<string, WallpaperResources>;
     baseImage?: HTMLImageElement | null;
     activeTemplate: number;
+    /** 当前选中的图层（用于在画布上叠加定界框）。 */
+    selectedLayerId?: string | null;
     /** 外部（如滑块拖动）要求临时简化渲染（暂停模糊/混合模式）。 */
     simplify?: boolean;
     onActiveTemplateChange: (index: number) => void;
@@ -79,6 +81,7 @@ export function CanvasStage({
     resources,
     baseImage,
     activeTemplate,
+    selectedLayerId,
     simplify,
     onActiveTemplateChange,
     onSelectCanvas,
@@ -131,6 +134,11 @@ export function CanvasStage({
                     const canDelete = resolved.length > 1;
                     const { width: previewW, height: previewH, radius: previewR } =
                         previewDisplaySize(template);
+                    const selectedTextLayer = selectedLayerId
+                        ? (template.layers.find(
+                              (layer) => layer.id === selectedLayerId && layer.type === "text",
+                          ) ?? null)
+                        : null;
                     return (
                         <div
                             key={template.id}
@@ -178,7 +186,7 @@ export function CanvasStage({
                                     gestureCountRef.current += 1;
                                     setGestureActive(true);
                                 }}
-                                className="block overflow-hidden transition"
+                                className="relative block overflow-hidden transition"
                                 style={{
                                     width: previewW,
                                     height: previewH,
@@ -205,6 +213,41 @@ export function CanvasStage({
                                         />
                                     </div>
                                 )}
+                                {selectedTextLayer?.text && (() => {
+                                    const box = selectedTextLayer.text.box;
+                                    const layerTransform = selectedTextLayer.transform;
+                                    const canvasW = template.canvas?.width ?? 1;
+                                    const s = canvasW > 0 ? previewW / canvasW : 1;
+                                    return (
+                                        <div
+                                            className="pointer-events-none absolute"
+                                            style={{
+                                                left: box.x.default * s,
+                                                top: box.y.default * s,
+                                                width: Math.max(1, box.width.default * s),
+                                                height: Math.max(1, box.height.default * s),
+                                                border: "1px dashed var(--color-editor-blue-fg)",
+                                                borderRadius: 2,
+                                                transform: `translate(${layerTransform.x * s}px, ${layerTransform.y * s}px) rotate(${layerTransform.rotation}deg) scale(${layerTransform.scale})`,
+                                                transformOrigin: "center",
+                                                zIndex: 1,
+                                            }}
+                                        >
+                                            <span
+                                                className="absolute top-0 select-none whitespace-nowrap text-[10px] leading-[14px] text-white"
+                                                style={{
+                                                    left: 0,
+                                                    transform: "translateY(-100%)",
+                                                    background: "var(--color-editor-blue-bg)",
+                                                    padding: "0 4px",
+                                                    borderRadius: 3,
+                                                }}
+                                            >
+                                                {selectedTextLayer.name || "文字"}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                             </button>
                         </div>
                     );

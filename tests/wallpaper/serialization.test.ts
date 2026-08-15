@@ -82,6 +82,46 @@ describe("wallpaper json-tree", () => {
         expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
     });
 
+    test("flat text layer schema renders real text (content/box/font/style)", () => {
+        const config = validConfig();
+        config.templates[0].layers = [
+            {
+                id: "txt-1",
+                name: "文字",
+                type: "text",
+                content: { default: "Hello", adjustable: true },
+                maxLength: 20,
+                textBox: { x: 10, y: 20, width: 120, height: 40 },
+                font: {
+                    default: "sans-serif",
+                    adjustable: true,
+                    options: [{ id: "sans-serif", name: "默认字体", family: "sans-serif" }],
+                },
+                fontSize: { default: 32, min: 8, max: 120, step: 1, adjustable: true },
+                fontWeight: { default: 400, min: 100, max: 900, step: 100, adjustable: true },
+                color: { default: "#ffffff", adjustable: true, allowCustom: true },
+                letterSpacing: { default: 0, min: -4, max: 20, step: 1, adjustable: true },
+                lineHeight: { default: 1.2, min: 0.5, max: 3, step: 0.05, adjustable: true },
+                textAlign: { default: "center", adjustable: true, options: ["left", "center", "right"] },
+                verticalAlign: { default: "middle", adjustable: true, options: ["top", "middle", "bottom"] },
+            },
+        ];
+        const resolved = normalizeWallpaperConfig(config, "");
+        const layer = resolved[0].layers.find((l) => l.id === "txt-1");
+        expect(layer?.type).toBe("text");
+        expect(layer?.text?.content.default).toBe("Hello");
+        expect(layer?.text?.content.adjustable).toBe(true);
+        expect(layer?.text?.maxLength).toBe(20);
+        expect(layer?.text?.box.x.default).toBe(10);
+        expect(layer?.text?.box.y.default).toBe(20);
+        expect(layer?.text?.box.width.default).toBe(120);
+        expect(layer?.text?.box.height.default).toBe(40);
+        expect(layer?.text?.font.default).toBe("sans-serif");
+        expect(layer?.text?.fontSize.default).toBe(32);
+        expect(layer?.text?.align.default).toBe("center");
+        expect(layer?.text?.verticalAlign.default).toBe("middle");
+    });
+
     test("moveLayerToIndex relocates to absolute position", () => {
         const withIds = (ids: string[]) => {
             const cfg = flattenAllTemplates(validConfig());

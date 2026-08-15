@@ -239,8 +239,12 @@ export function Sidebar({
                     <ArrowLeftIcon size={18} weight="regular" />
                 </button>
                 <div className="flex flex-col" style={{ gap: 1, paddingTop: 2 }}>
-                    <span className="text-[13px] leading-[18px] text-white/85">壁纸编辑器</span>
-                    <span className="text-[13px] leading-[18px] text-white/45">{title}</span>
+                    <span className="max-w-[200px] truncate text-[13px] leading-[18px] text-white/85">
+                        {title || "壁纸编辑器"}
+                    </span>
+                    {title && (
+                        <span className="text-[13px] leading-[18px] text-white/45">壁纸编辑器</span>
+                    )}
                 </div>
             </div>
             <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />

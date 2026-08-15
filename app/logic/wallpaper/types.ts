@@ -57,20 +57,6 @@ export interface WallpaperTextBoxConfig {
     height?: WallpaperControlValue;
 }
 
-export interface WallpaperTextConfig {
-    content?: string | { default: string; adjustable?: boolean };
-    maxLength?: number;
-    textBox?: WallpaperTextBoxConfig;
-    font?: string | WallpaperFontControlConfig;
-    fontSize?: WallpaperControlValue;
-    fontWeight?: WallpaperControlValue;
-    color?: string | WallpaperColorControlConfig;
-    letterSpacing?: WallpaperControlValue;
-    lineHeight?: WallpaperControlValue;
-    textAlign?: string | { default: string; adjustable?: boolean; options?: string[] };
-    verticalAlign?: string | { default: string; adjustable?: boolean; options?: string[] };
-}
-
 export interface WallpaperRecolorGroupConfig {
     id: string;
     name?: string;
@@ -100,7 +86,17 @@ export interface WallpaperLayerConfig {
     lightColor?: string;
     darkColor?: string;
     color?: string | WallpaperColorControlConfig;
-    text?: WallpaperTextConfig;
+    /** 文字图层（平铺字段，与引擎解析一致）。 */
+    content?: string | { default: string; adjustable?: boolean };
+    maxLength?: number;
+    textBox?: WallpaperTextBoxConfig;
+    font?: string | WallpaperFontControlConfig;
+    fontSize?: WallpaperControlValue;
+    fontWeight?: WallpaperControlValue;
+    letterSpacing?: WallpaperControlValue;
+    lineHeight?: WallpaperControlValue;
+    textAlign?: string | { default: string; adjustable?: boolean; options?: string[] };
+    verticalAlign?: string | { default: string; adjustable?: boolean; options?: string[] };
     recolor?: {
         enabled?: boolean;
         groups?: WallpaperRecolorGroupConfig[];
