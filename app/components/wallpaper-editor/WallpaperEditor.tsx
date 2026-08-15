@@ -18,21 +18,22 @@ import { DownloadSimpleIcon, FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons
 import {
     WALLPAPER_DEVICE_PRESETS,
     createWallpaperConfig,
-    generateTemplateId,
 } from "~/logic/wallpaper/presets";
 import {
     addLayer,
     cloneConfig,
+    duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
     moveLayer,
     removeLayer,
+    removeTemplate,
     updateLayer,
+    updateTemplate,
     updateWallpaperTransform,
 } from "~/logic/wallpaper/json-tree";
 import {
     assetFileForRepoPath,
-    collectTemplateAssetPaths,
     configPathToRepoPath,
     loadTemplateResources,
     repoPathToConfigPath,
@@ -42,6 +43,7 @@ import type {
     WallpaperConfigRaw,
     WallpaperLayerConfig,
     WallpaperLayerKind,
+    WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
@@ -120,7 +122,12 @@ export function WallpaperEditor({
     });
     const [viewMode, setViewMode] = useState<"visual" | "json">("visual");
     const [activeTemplate, setActiveTemplate] = useState(0);
-    const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+    const [selection, setSelection] = useState<
+        | { kind: "layer"; layerId: string }
+        | { kind: "canvas" }
+        | null
+    >(null);
+    const [syncAcrossDevices, setSyncAcrossDevices] = useState(false);
     const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
     const [templateStates, setTemplateStates] = useState<Record<string, WallpaperEditorState>>({});
     const [resources, setResources] = useState<Record<string, WallpaperResources>>({});
@@ -160,7 +167,11 @@ export function WallpaperEditor({
     const layers = Array.isArray(expandedActiveTemplate?.layers)
         ? (expandedActiveTemplate!.layers ?? [])
         : [];
-    const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? null;
+    const selectedLayerId = selection?.kind === "layer" ? selection.layerId : null;
+    const selectedLayer = selectedLayerId
+        ? layers.find((layer) => layer.id === selectedLayerId) ?? null
+        : null;
+    const inspectorMode: "layer" | "canvas" = selectedLayer ? "layer" : "canvas";
     const transformControls = expandedActiveTemplate?.wallpaperTransform ?? {};
 
     // Emit serialized payload whenever config / assets change.
@@ -292,12 +303,27 @@ export function WallpaperEditor({
         [],
     );
 
+    const SYNC_LAYER_KEYS = new Set(["opacity", "blur", "backdropBlur", "blendMode"]);
+
     const handleLayerPatch = useCallback(
         (patch: Partial<WallpaperLayerConfig>) => {
             if (!config || !selectedLayerId) return;
+            const patchKeys = Object.keys(patch);
+            const isSyncPatch = patchKeys.length > 0 && patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
+            if (syncAcrossDevices && isSyncPatch) {
+                setConfig((prev) => {
+                    if (!prev) return prev;
+                    let next = prev;
+                    for (let index = 0; index < next.templates.length; index++) {
+                        next = updateLayer(next, index, selectedLayerId, patch);
+                    }
+                    return next;
+                });
+                return;
+            }
             setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, patch) : prev));
         },
-        [activeIndex, config, selectedLayerId],
+        [activeIndex, config, selectedLayerId, syncAcrossDevices],
     );
 
     const handleAddLayer = useCallback(
@@ -350,10 +376,18 @@ export function WallpaperEditor({
                         };
             const next = addLayer(config, activeIndex, layer);
             setConfig(next);
-            setSelectedLayerId(layer.id);
+            setSelection({ kind: "layer", layerId: layer.id });
         },
         [activeIndex, config],
     );
+
+    const handleSelectCanvas = useCallback(() => {
+        setSelection({ kind: "canvas" });
+    }, []);
+
+    const handleSelectLayer = useCallback((layerId: string) => {
+        setSelection({ kind: "layer", layerId });
+    }, []);
 
     const handleAssetChosen = useCallback(
         async (file: File) => {
@@ -380,7 +414,7 @@ export function WallpaperEditor({
                 blendMode: { default: "normal", adjustable: true },
             };
             setConfig((prev) => (prev ? addLayer(prev, activeIndex, layer) : prev));
-            setSelectedLayerId(layer.id);
+            setSelection({ kind: "layer", layerId: layer.id });
         },
         [activeIndex, config],
     );
@@ -417,7 +451,7 @@ export function WallpaperEditor({
         (id: string) => {
             if (!config) return;
             setConfig((prev) => (prev ? removeLayer(prev, activeIndex, id) : prev));
-            if (selectedLayerId === id) setSelectedLayerId(null);
+            if (selectedLayerId === id) setSelection({ kind: "canvas" });
         },
         [activeIndex, config, selectedLayerId],
     );
@@ -428,6 +462,30 @@ export function WallpaperEditor({
             setConfig((prev) => (prev ? moveLayer(prev, activeIndex, id, direction) : prev));
         },
         [activeIndex, config],
+    );
+
+    const handleCanvasPatch = useCallback(
+        (patch: Partial<WallpaperTemplateConfig>) => {
+            if (!config) return;
+            setConfig((prev) => (prev ? updateTemplate(prev, activeIndex, patch) : prev));
+        },
+        [activeIndex, config],
+    );
+
+    const handleDuplicateTemplate = useCallback(
+        (index: number) => {
+            if (!config) return;
+            setConfig((prev) => (prev ? duplicateTemplateAt(prev, index) : prev));
+        },
+        [config],
+    );
+
+    const handleRemoveTemplate = useCallback(
+        (index: number) => {
+            if (!config || config.templates.length <= 1) return;
+            setConfig((prev) => (prev ? removeTemplate(prev, index) : prev));
+        },
+        [config],
     );
 
     const handleTransformPatch = useCallback(
@@ -444,7 +502,7 @@ export function WallpaperEditor({
         const created = createWallpaperConfig(preset);
         setConfig(created);
         setActiveTemplate(0);
-        setSelectedLayerId(null);
+        setSelection({ kind: "canvas" });
         setBaseImage(null);
     }, []);
 
@@ -457,7 +515,7 @@ export function WallpaperEditor({
         }
         setConfig(normalizeAssetPathsForEditor(parsed, baseUrl));
         setActiveTemplate(0);
-        setSelectedLayerId(null);
+        setSelection({ kind: "canvas" });
         setApplyError("");
     }, [baseUrl]);
 
@@ -605,7 +663,7 @@ export function WallpaperEditor({
                             onExport={() => void handleExport()}
                             layers={layers}
                             selectedLayerId={selectedLayerId}
-                            onSelectLayer={setSelectedLayerId}
+                            onSelectLayer={handleSelectLayer}
                             onAddLayer={handleAddLayer}
                             onRemoveLayer={handleRemoveLayer}
                             onMoveLayer={handleMoveLayer}
@@ -628,16 +686,24 @@ export function WallpaperEditor({
                                 baseImage={baseImage}
                                 activeTemplate={activeIndex}
                                 onActiveTemplateChange={setActiveTemplate}
+                                onSelectCanvas={handleSelectCanvas}
                                 onTransformChange={handleTransformChange}
+                                onDuplicateTemplate={handleDuplicateTemplate}
+                                onRemoveTemplate={handleRemoveTemplate}
                             />
                         </main>
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
                         <Inspector
+                            mode={inspectorMode}
                             layer={selectedLayer}
                             onLayerPatch={handleLayerPatch}
                             onAssetUpload={(file) => void handleAssetReplace(file)}
                             onMaskUpload={(file) => void handleMaskUpload(file)}
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
+                            syncAcrossDevices={syncAcrossDevices}
+                            onSyncAcrossDevicesChange={setSyncAcrossDevices}
+                            canvas={expandedActiveTemplate}
+                            onCanvasPatch={handleCanvasPatch}
                         />
                     </WallpaperEditorErrorBoundary>
                 ) : (

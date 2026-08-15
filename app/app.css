@@ -138,10 +138,9 @@
 }
 
 .wallpaper-preview-fit canvas {
-    max-width: var(--editor-preview-width);
-    max-height: var(--editor-preview-height);
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .dashboard-tabs-list {

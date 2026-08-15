@@ -9,6 +9,7 @@ import type {
     WallpaperControlValue,
     WallpaperLayerConfig,
     WallpaperLayerKind,
+    WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, controlMax, controlMin, controlStep, patchControlValue } from "~/logic/wallpaper/control";
 import {
@@ -25,11 +26,16 @@ import {
 } from "./controls";
 
 export interface InspectorProps {
+    mode: "layer" | "canvas";
     layer: WallpaperLayerConfig | null;
     onLayerPatch: (patch: Partial<WallpaperLayerConfig>) => void;
     onAssetUpload: (file: File) => void;
     onMaskUpload: (file: File) => void;
     onClearMask: () => void;
+    syncAcrossDevices: boolean;
+    onSyncAcrossDevicesChange: (value: boolean) => void;
+    canvas: WallpaperTemplateConfig | null;
+    onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
 }
 
 const BLEND_MODES = [
@@ -100,9 +106,121 @@ function ControlTriple({
     );
 }
 
-export function Inspector({ layer, onLayerPatch, onAssetUpload, onMaskUpload, onClearMask }: InspectorProps) {
+function CanvasInspector({ canvas, onCanvasPatch }: { canvas: WallpaperTemplateConfig; onCanvasPatch: InspectorProps["onCanvasPatch"] }) {
+    const patchCanvas = (patch: Partial<WallpaperTemplateConfig>) => onCanvasPatch(patch);
+    const canvasSize = canvas.canvas ?? {};
+    const frame = canvas.frame ?? {};
+    const preview = canvas.preview ?? {};
+    const aliases = Array.isArray(canvas.aliases) ? canvas.aliases : [];
+
+    return (
+        <div className="wallpaper-layer-scroll min-h-0 flex-1 overflow-y-auto px-[9px] py-[9px]">
+            <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                <EditorField label="设备型号">
+                    <EditorTextInput
+                        value={canvas.deviceKey ?? ""}
+                        placeholder="例如 o67 / band-pro"
+                        onChange={(v) => patchCanvas({ deviceKey: v })}
+                    />
+                </EditorField>
+                <EditorField label="设备别名（逗号分隔）">
+                    <EditorTextInput
+                        value={aliases.join(", ")}
+                        placeholder="例如 M2551B1, M2553B1"
+                        onChange={(v) =>
+                            patchCanvas({
+                                aliases: v
+                                    .split(/[,，]/)
+                                    .map((token) => token.trim())
+                                    .filter(Boolean),
+                            })
+                        }
+                    />
+                </EditorField>
+                <TwoColumnGrid>
+                    <EditorField label="画布宽">
+                        <EditorNumberField
+                            value={canvasSize.width ?? 0}
+                            min={1}
+                            onChange={(v) => patchCanvas({ canvas: { ...canvasSize, width: Math.max(1, v) } })}
+                        />
+                    </EditorField>
+                    <EditorField label="画布高">
+                        <EditorNumberField
+                            value={canvasSize.height ?? 0}
+                            min={1}
+                            onChange={(v) => patchCanvas({ canvas: { ...canvasSize, height: Math.max(1, v) } })}
+                        />
+                    </EditorField>
+                </TwoColumnGrid>
+                <EditorField label="画布背景">
+                    <EditorTextInput
+                        value={canvasSize.background ?? "transparent"}
+                        onChange={(v) => patchCanvas({ canvas: { ...canvasSize, background: v } })}
+                    />
+                </EditorField>
+                <TwoColumnGrid>
+                    <EditorField label="边框圆角">
+                        <EditorNumberField
+                            value={frame.radius ?? 0}
+                            min={0}
+                            onChange={(v) => patchCanvas({ frame: { ...frame, radius: Math.max(0, v) } })}
+                        />
+                    </EditorField>
+                    <EditorField label="预览圆角">
+                        <EditorNumberField
+                            value={preview.radius ?? 0}
+                            min={0}
+                            onChange={(v) => patchCanvas({ preview: { ...preview, radius: Math.max(0, v) } })}
+                        />
+                    </EditorField>
+                </TwoColumnGrid>
+                <p className="px-1 text-[11px] leading-4 text-white/45">
+                    边框圆角决定设备屏幕形状，编辑器预览与此一致；预览圆角为客户端展示用元数据。
+                </p>
+                <EditorField label="模板 ID">
+                    <EditorTextInput
+                        value={canvas.id ?? ""}
+                        onChange={(v) => patchCanvas({ id: v })}
+                    />
+                </EditorField>
+            </div>
+        </div>
+    );
+}
+
+export function Inspector({
+    mode,
+    layer,
+    onLayerPatch,
+    onAssetUpload,
+    onMaskUpload,
+    onClearMask,
+    syncAcrossDevices,
+    onSyncAcrossDevicesChange,
+    canvas,
+    onCanvasPatch,
+}: InspectorProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const maskInputRef = useRef<HTMLInputElement | null>(null);
+
+    if (mode === "canvas" && canvas) {
+        return (
+            <aside
+                className="flex h-full w-[300px] shrink-0 flex-col"
+                style={{ background: "var(--color-editor-bg)" }}
+            >
+                <div className="flex shrink-0 items-center gap-2 px-2 pt-2 pb-3">
+                    <span className="grid shrink-0 place-items-center text-white/70">
+                        <ImageIcon size={15} weight="regular" />
+                    </span>
+                    <span className="text-[13px] leading-[18px] text-white/85">画布属性</span>
+                </div>
+                <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
+                <CanvasInspector canvas={canvas} onCanvasPatch={onCanvasPatch} />
+            </aside>
+        );
+    }
 
     if (!layer) {
         return (
@@ -110,7 +228,9 @@ export function Inspector({ layer, onLayerPatch, onAssetUpload, onMaskUpload, on
                 className="flex h-full w-[300px] shrink-0 flex-col items-center justify-center"
                 style={{ background: "var(--color-editor-bg)" }}
             >
-                <p className="px-6 text-center text-sm text-white/40">在左侧选择图层以编辑属性</p>
+                <p className="px-6 text-center text-sm text-white/40">
+                    点击左侧图层或上方设备画布以编辑
+                </p>
             </aside>
         );
     }
@@ -159,12 +279,26 @@ export function Inspector({ layer, onLayerPatch, onAssetUpload, onMaskUpload, on
         >
             {/* Header */}
             <div className="flex shrink-0 items-center gap-2 px-2 pt-2 pb-3">
-                            <span className="grid shrink-0 place-items-center text-white/70">
-                                <ImageIcon size={15} weight="regular" />
-                            </span>
+                <span className="grid shrink-0 place-items-center text-white/70">
+                    <ImageIcon size={15} weight="regular" />
+                </span>
                 <span className="text-[13px] leading-[18px] text-white/85">{layer.name || layer.id}</span>
             </div>
             <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
+
+            {/* 多设备同步 */}
+            <div className="flex shrink-0 items-center justify-between border-b px-3 py-2" style={{ borderColor: "var(--color-editor-divider)" }}>
+                <div className="flex flex-col">
+                    <span className="text-[13px] leading-[18px] text-white/85">多设备同步</span>
+                    <span className="text-[11px] leading-4 text-white/45">
+                        透明度 / 模糊 / 背景模糊 / 混合模式 应用于所有设备
+                    </span>
+                </div>
+                <EditorSwitch
+                    checked={syncAcrossDevices}
+                    onCheckedChange={onSyncAcrossDevicesChange}
+                />
+            </div>
 
             <div className="wallpaper-layer-scroll min-h-0 flex-1 overflow-y-auto px-[9px] py-[9px]">
                 <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
@@ -375,13 +509,6 @@ export function Inspector({ layer, onLayerPatch, onAssetUpload, onMaskUpload, on
                                                 : [...(colorControl.options ?? []), color],
                                         },
                                     })
-                                }
-                                onAdd={
-                                    colorControl.allowCustom
-                                        ? () => {
-                                              // 自定义颜色通过 color input 直接替换 default
-                                          }
-                                        : undefined
                                 }
                             />
                         </EditorField>

@@ -84,7 +84,9 @@ export function addTemplate(
 
 export function duplicateTemplateAt(config: WallpaperConfigRaw, index: number): WallpaperConfigRaw {
     if (index < 0 || index >= config.templates.length) return config;
-    const copy = JSON.parse(JSON.stringify(config.templates[index])) as WallpaperTemplateConfig;
+    const source = config.templates[index];
+    const copy = JSON.parse(JSON.stringify(source)) as WallpaperTemplateConfig;
+    copy.id = `${source.id}-copy-${Date.now().toString(36)}`;
     const next = cloneConfig(config);
     next.templates.splice(index + 1, 0, copy);
     return next;
