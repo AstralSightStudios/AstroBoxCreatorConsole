@@ -146,6 +146,29 @@ function isEmptyRepoError(error: unknown): boolean {
   return isGithubStatus(error, 404, 409);
 }
 
+/** Append `wallpaper/wallpaper.json` + its assets to the upload list. */
+async function appendWallpaperAssets(
+  allAssets: PreparedAsset[],
+  manifest: ManifestBuildResult,
+  onProgress?: (msg: string) => void,
+) {
+  if (!manifest.wallpaperConfigJson) return;
+  allAssets.push(
+    await prepareTextAsset(
+      manifest.wallpaperConfigPath || "wallpaper/wallpaper.json",
+      manifest.wallpaperConfigJson,
+    ),
+  );
+  for (const asset of manifest.wallpaperAssets) {
+    if (asset.skipUpload) continue;
+    const prepared = await prepareFileAsset(asset);
+    if (prepared) allAssets.push(prepared);
+  }
+  onProgress?.(
+    `壁纸配置与 ${manifest.wallpaperAssets.length} 个素材文件已加入上传队列`,
+  );
+}
+
 /**
  * Resolve all assets to base64, handle encryption pre-processing,
  * then upload everything in a single Git Data API commit.
@@ -377,6 +400,8 @@ export async function uploadManifestAndAssets({
     if (prepared) allAssets.push(prepared);
   }
 
+  await appendWallpaperAssets(allAssets, manifest, onProgress);
+
   // --- Single commit upload ---
   onProgress?.(`批量上传 ${allAssets.length} 个文件...`);
   const commitSha = await batchUpload(
@@ -474,6 +499,8 @@ export async function upsertManifestAndAssets({
     const prepared = await prepareFileAsset(asset);
     if (prepared) allAssets.push(prepared);
   }
+
+  await appendWallpaperAssets(allAssets, manifest, onProgress);
 
   // --- Single commit upload ---
   onProgress?.(`批量更新 ${allAssets.length} 个文件...`);

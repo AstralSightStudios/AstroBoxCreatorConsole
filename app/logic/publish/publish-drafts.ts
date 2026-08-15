@@ -25,6 +25,13 @@ export interface DraftMediaItem {
   height?: number;
 }
 
+export interface DraftWallpaperAsset {
+  path: string;
+  url?: string;
+  dataUrl?: string;
+  skipUpload?: boolean;
+}
+
 export interface PublishDraftFormData {
   itemId: string;
   itemName: string;
@@ -41,6 +48,8 @@ export interface PublishDraftFormData {
   trialDownloads: DownloadInput[];
   enableAstroBoxCreatorFeatures: boolean;
   extRaw: string;
+  wallpaperConfigJson: string;
+  wallpaperAssets: DraftWallpaperAsset[];
 }
 
 function isBrowser() {

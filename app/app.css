@@ -34,6 +34,39 @@
     --text-size-medium: 14px;
     --text-size-large: 16px;
     --font-mono-sarasa: "Sarasa Mono SC", monospace;
+
+    /* ---- Wallpaper editor (measured from design reference, do not "normalize") ---- */
+    --editor-sidebar-width: 300px;
+    --editor-inspector-width: 300px;
+    --editor-divider-width: 1px;
+    --editor-panel-padding-x: 9px;
+    --editor-control-height: 34px;
+    --editor-control-radius: 6px;
+    --editor-control-gap: 2px;
+    --editor-label-size: 13px;
+    --editor-label-line-height: 18px;
+    --editor-label-control-gap: 4px;
+    --editor-field-group-gap: 9px;
+    --editor-field-group-pitch: 65px;
+    --editor-layer-row-height: 35px;
+    --editor-layer-row-gap: 4px;
+    --editor-layer-row-radius: 6px;
+    --editor-preview-width: 252px;
+    --editor-preview-height: 360px;
+    --editor-preview-radius: 34px;
+    --editor-preview-gap: 60px;
+    --editor-color-dot-size: 22px;
+    --editor-switch-width: 48px;
+    --editor-switch-height: 24px;
+    --editor-switch-radius: 12px;
+
+    --color-editor-bg: #070707;
+    --color-editor-canvas: #191919;
+    --color-editor-divider: #393939;
+    --color-editor-control: #202020;
+    --color-editor-blue-bg: #053155;
+    --color-editor-blue-fg: #53b4ff;
+    --color-editor-accent: #3e63dd;
 }
 
 .corner-rounded {
@@ -66,6 +99,49 @@
 
 .no-scrollbar::-webkit-scrollbar {
     display: none;
+}
+
+/* ---- Wallpaper editor ---- */
+.wallpaper-canvas-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-editor-divider) transparent;
+}
+
+.wallpaper-layer-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-editor-divider) transparent;
+}
+
+.wallpaper-canvas-scroll::-webkit-scrollbar,
+.wallpaper-layer-scroll::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+.wallpaper-canvas-scroll::-webkit-scrollbar-thumb,
+.wallpaper-layer-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-editor-divider);
+    border-radius: 2px;
+}
+
+.wallpaper-canvas-scroll::-webkit-scrollbar-track,
+.wallpaper-layer-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.wallpaper-preview-fit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.wallpaper-preview-fit canvas {
+    max-width: var(--editor-preview-width);
+    max-height: var(--editor-preview-height);
+    width: auto;
+    height: auto;
 }
 
 .dashboard-tabs-list {

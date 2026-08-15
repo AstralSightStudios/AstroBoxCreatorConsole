@@ -12,6 +12,7 @@ import CloudControl from "~/routes/cloudcontrol";
 import ResourceEncrypt from "~/routes/resource/encrypt";
 import ResourceManage from "~/routes/resource/manage";
 import ResourcePublish from "~/routes/resource/publish";
+import WallpaperEditorPage from "~/routes/resource/wallpaper";
 import Settings from "~/routes/settings";
 import AdminAccountsPage from "~/routes/admin/accounts";
 import AdminInboxPage from "~/routes/admin/inbox";
@@ -54,6 +55,7 @@ const router = createBrowserRouter([
       { path: "admin/hotupdate", element: <AdminHotUpdatePage /> },
       { path: "publish/new", element: <NewResourcePublishPage /> },
       { path: "publish/edit", element: <ResourceEditPage /> },
+      { path: "publish/wallpaper", element: <WallpaperEditorPage /> },
       { path: "manage/edit", element: <ResourceEditPage /> },
     ],
   },

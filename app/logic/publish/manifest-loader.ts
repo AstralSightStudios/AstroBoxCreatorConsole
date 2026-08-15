@@ -6,6 +6,13 @@ import type {
     ManifestDownloadInfo,
     ManifestExtObject,
 } from "./manifest";
+import { resolveWallpaperUrl } from "@claralight-design/wallpaper-engine";
+import {
+    assetFileForRepoPath,
+    collectConfigAssetPaths,
+    configPathToRepoPath,
+} from "~/logic/wallpaper/load-resources";
+import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
 
 export interface ManifestV2 {
     item: {
@@ -67,4 +74,57 @@ export async function fetchManifestForCatalogEntry(options: {
     }
 
     return { manifest, raw, repo, sha: response.sha as string | undefined };
+}
+
+export function getWallpaperConfigUrl(manifest: ManifestV2): string | undefined {
+    const generator = (manifest.ext as
+        | { wallpaperGenerator?: { configUrl?: string } }
+        | undefined)?.wallpaperGenerator;
+    return generator?.configUrl;
+}
+
+export interface WallpaperConfigFile {
+    config: WallpaperConfigRaw;
+    assets: WallpaperAssetFile[];
+    baseUrl: string;
+}
+
+/**
+ * Fetch the wallpaper config (`wallpaper/wallpaper.json`) of a resource repo
+ * together with the resolved absolute urls of every referenced asset.
+ */
+export async function fetchWallpaperConfigForCatalogEntry(options: {
+    entry: CatalogEntry;
+    token: string;
+    ref?: string;
+}): Promise<WallpaperConfigFile> {
+    const { entry, token, ref } = options;
+    const repo: RepoInfo = {
+        owner: entry.repo_owner,
+        name: entry.repo_name,
+        branch: MAIN_RESOURCE_BRANCH,
+    };
+    const fetchRef = ref || entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
+
+    const response = await getRepoFile({
+        repo,
+        path: "wallpaper/wallpaper.json",
+        tokenOverride: token,
+        ref: fetchRef,
+    });
+    const raw = decodeBase64(response.content);
+    const config = JSON.parse(raw) as WallpaperConfigRaw;
+
+    const baseUrl = buildRawFileUrl(repo.owner, repo.name, fetchRef, "wallpaper/");
+    const assets: WallpaperAssetFile[] = [];
+    for (const path of collectConfigAssetPaths(config)) {
+        assets.push(
+            assetFileForRepoPath(
+                configPathToRepoPath(path),
+                resolveWallpaperUrl(path, baseUrl),
+            ),
+        );
+    }
+
+    return { config, assets, baseUrl };
 }

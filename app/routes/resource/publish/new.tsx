@@ -22,8 +22,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { PUBLISH_CONFIG } from "~/config/publish";
+import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import { loadSubmitMode } from "~/config/publishMode";
+import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
+import {
+  saveWizardSession,
+  takeWizardSession,
+  type WizardSession,
+} from "~/logic/wallpaper/wizard-session";
 import {
   buildManifest,
   type ManifestBuildResult,
@@ -58,7 +64,7 @@ import {
 } from "~/api/github/pr-review";
 import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
-import { StepList, type UploadItem } from "./components/shared";
+import { StepList, SectionCard, type UploadItem } from "./components/shared";
 import {
   compressImageFile,
   createExistingUploadItem,
@@ -97,6 +103,8 @@ import {
 import {
   buildRawFileUrl,
   fetchManifestForCatalogEntry,
+  fetchWallpaperConfigForCatalogEntry,
+  getWallpaperConfigUrl,
 } from "~/logic/publish/manifest-loader";
 import { syncBranchWithUpstream } from "~/logic/publish/fork";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
@@ -110,6 +118,7 @@ import {
   type PublishDraft,
   type PublishDraftFormData,
   type DraftMediaItem,
+  type DraftWallpaperAsset,
 } from "~/logic/publish/publish-drafts";
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
@@ -150,6 +159,7 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
   const next: ManifestExtObject = { ...ext };
   delete next.enableAstroBoxCreatorFeatures;
   delete next.trialDownloads;
+  delete next.wallpaperGenerator;
   return next;
 }
 
@@ -228,6 +238,24 @@ function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
     width: item.width,
     height: item.height,
   };
+}
+
+async function serializeWallpaperAsset(
+  asset: WallpaperAssetFile,
+): Promise<DraftWallpaperAsset> {
+  if (asset.file?.size) {
+    return { path: asset.path, dataUrl: await fileToDataUrl(asset.file), skipUpload: false };
+  }
+  return { path: asset.path, url: asset.url, skipUpload: true };
+}
+
+function restoreWallpaperAsset(item: DraftWallpaperAsset): WallpaperAssetFile {
+  if (item.dataUrl) {
+    const name = item.path.split("/").pop() || "asset";
+    const file = dataUrlToFile(item.dataUrl, name);
+    return { path: item.path, url: URL.createObjectURL(file), file };
+  }
+  return { path: item.path, url: item.url || "", skipUpload: true };
 }
 
 function imageMimeFromPath(path: string): string {
@@ -360,6 +388,22 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [lastManifest, setLastManifest] = useState<ManifestBuildResult | null>(
     null,
   );
+  const [wallpaperPayload, setWallpaperPayload] = useState<{
+    configJson: string;
+    assets: WallpaperAssetFile[];
+  }>({ configJson: "", assets: [] });
+  const [wallpaperInitial, setWallpaperInitial] = useState<{
+    config: WallpaperConfigRaw;
+    assets: WallpaperAssetFile[];
+    baseUrl: string;
+  } | null>(null);
+  const wallpaperResultRef = useRef<{
+    configJson: string;
+    assets: WallpaperAssetFile[];
+    config: WallpaperConfigRaw;
+    baseUrl: string;
+  } | null>(null);
+  const restoredFromSessionRef = useRef(false);
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -367,6 +411,46 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       (location.state as { editContext?: ResourceEditContext } | null) || null;
     setEditContext(state?.editContext ?? null);
   }, [isEditMode, location.state]);
+
+  // Restore wizard form + wallpaper config after returning from the wallpaper editor page.
+  useEffect(() => {
+    const state = (location.state as { wallpaperResult?: { configJson: string; assets: WallpaperAssetFile[]; config: WallpaperConfigRaw; baseUrl: string } } | null) || null;
+    const result = state?.wallpaperResult;
+    if (result) {
+      wallpaperResultRef.current = result;
+      setWallpaperPayload({ configJson: result.configJson, assets: result.assets });
+      setWallpaperInitial({
+        config: result.config,
+        assets: result.assets,
+        baseUrl: result.baseUrl,
+      });
+    }
+    const session = takeWizardSession();
+    if (session?.wallpaperPayload && !result) {
+      setWallpaperPayload(session.wallpaperPayload);
+    }
+    if (session?.form) {
+      restoredFromSessionRef.current = true;
+      const form = session.form;
+      setItemId(form.itemId);
+      setItemName(form.itemName);
+      setDescription(form.description);
+      setResourceType(form.resourceType);
+      setTagsInput(form.tagsInput);
+      setPaidType(form.paidType);
+      setAuthors(form.authors);
+      setLinks(form.links);
+      setPreviews(form.previews);
+      setIcon(form.icon);
+      setCover(form.cover);
+      setDownloads(form.downloads);
+      setTrialDownloads(form.trialDownloads);
+      setEnableAstroBoxCreatorFeatures(form.enableAstroBoxCreatorFeatures);
+      setExtRaw(form.extRaw);
+      if (!isEditMode) void clearAutoSavedDraft();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, isEditMode]);
 
   const isEditing = isEditMode || Boolean(editContext);
   const missingEditContext = isEditMode && !editContext;
@@ -489,6 +573,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   useEffect(() => {
     if (!isEditMode || !editContext) return;
+    if (restoredFromSessionRef.current) return;
     let active = true;
     const load = async () => {
       setEditLoading(true);
@@ -497,6 +582,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setRepoStatus("idle");
       setPrStatus("idle");
       setLastManifest(null);
+      if (!wallpaperResultRef.current) {
+        setWallpaperPayload({ configJson: "", assets: [] });
+        setWallpaperInitial(null);
+      }
       try {
         const token = loadAccountState().github?.token;
         if (!token) {
@@ -602,6 +691,27 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setExtRaw(JSON.stringify(extractCustomExt(ext), null, 2));
         setRepoInfo({ ...repo });
         setRepoNameInput(repo.name);
+
+        const wallpaperConfigUrl = getWallpaperConfigUrl(manifest);
+        if (wallpaperConfigUrl && !wallpaperResultRef.current) {
+          try {
+            const wallpaperFile = await fetchWallpaperConfigForCatalogEntry({
+              entry: catalogEntry,
+              token,
+              ref,
+            });
+            if (!active) return;
+            setWallpaperInitial({
+              config: wallpaperFile.config,
+              assets: wallpaperFile.assets,
+              baseUrl: wallpaperFile.baseUrl,
+            });
+          } catch (error) {
+            console.warn("[edit-wallpaper] 壁纸配置加载失败", error);
+            setWallpaperInitial(null);
+          }
+        }
+
         setActiveStepIndex(0);
       } catch (error) {
         if (!active) return;
@@ -638,6 +748,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [extRaw]);
 
+  const wallpaperConfigUrl = useMemo(() => {
+    if (!wallpaperPayload.configJson.trim()) return "";
+    const entry = editContext?.catalog.entry;
+    if (entry?.repo_owner && entry?.repo_name) {
+      return `https://raw.githubusercontent.com/${entry.repo_owner}/${entry.repo_name}/${MAIN_RESOURCE_BRANCH}/wallpaper/wallpaper.json`;
+    }
+    const username = accountState.github?.username?.trim() || "";
+    const repoName = buildRepoName(itemId || itemName || "resource");
+    return `https://raw.githubusercontent.com/${username}/${repoName}/${MAIN_RESOURCE_BRANCH}/wallpaper/wallpaper.json`;
+  }, [
+    accountState.github?.username,
+    editContext?.catalog.entry,
+    itemId,
+    itemName,
+    wallpaperPayload.configJson,
+  ]);
+
   const manifestResult: ManifestBuildResult = useMemo(
     () =>
       buildManifest({
@@ -656,6 +783,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         trialDownloads,
         enableAstroBoxCreatorFeatures,
         ext: parsedExt,
+        wallpaper: wallpaperPayload.configJson.trim()
+          ? {
+              configJson: wallpaperPayload.configJson,
+              configUrl: wallpaperConfigUrl,
+              assets: wallpaperPayload.assets,
+            }
+          : undefined,
       }),
     [
       authors,
@@ -671,6 +805,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       previews,
       resourceType,
       trialDownloads,
+      wallpaperConfigUrl,
+      wallpaperPayload,
     ],
   );
 
@@ -911,6 +1047,69 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setCover((item) => item?.id === id ? { ...item, width, height } : item);
     }
   };
+
+  const wallpaperTemplateCount = useMemo(() => {
+    if (!wallpaperPayload.configJson.trim()) return 0;
+    try {
+      const parsed = JSON.parse(wallpaperPayload.configJson) as { templates?: unknown[] };
+      return Array.isArray(parsed.templates) ? parsed.templates.length : 0;
+    } catch {
+      return 0;
+    }
+  }, [wallpaperPayload.configJson]);
+
+  const handleOpenWallpaperEditor = useCallback(async () => {
+    const session: WizardSession = {
+      form: {
+        itemId,
+        itemName,
+        description,
+        resourceType,
+        tagsInput,
+        paidType,
+        authors,
+        links,
+        previews,
+        icon,
+        cover,
+        downloads,
+        trialDownloads,
+        enableAstroBoxCreatorFeatures,
+        extRaw,
+      },
+      wallpaperPayload,
+    };
+    saveWizardSession(session);
+    navigate("/publish/wallpaper", {
+      state: {
+        wallpaperInitial,
+        title: itemName,
+        returnPath: isEditMode ? "/publish/edit" : "/publish/new",
+        editContext,
+      },
+    });
+  }, [
+    authors,
+    cover,
+    description,
+    downloads,
+    editContext,
+    enableAstroBoxCreatorFeatures,
+    extRaw,
+    icon,
+    isEditMode,
+    itemId,
+    itemName,
+    links,
+    navigate,
+    paidType,
+    previews,
+    resourceType,
+    tagsInput,
+    trialDownloads,
+    wallpaperInitial,
+    wallpaperPayload,
+  ]);
 
   const steps = useMemo(() => {
     const step1Done = repoStatus === "success" || prStatus === "success";
@@ -1465,8 +1664,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
       enableAstroBoxCreatorFeatures,
       extRaw,
+      wallpaperConfigJson: wallpaperPayload.configJson,
+      wallpaperAssets: await Promise.all(
+        wallpaperPayload.assets.map(serializeWallpaperAsset),
+      ),
     };
-  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover]);
+  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperPayload]);
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
@@ -1488,6 +1691,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
     setExtRaw(data.extRaw);
+    setWallpaperPayload({
+      configJson: data.wallpaperConfigJson ?? "",
+      assets: (data.wallpaperAssets ?? []).map(restoreWallpaperAsset),
+    });
   }, []);
 
   // Auto-save debounce
@@ -1505,6 +1712,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   // Check for auto-saved draft on mount
   useEffect(() => {
     if (isEditMode) return;
+    if (restoredFromSessionRef.current) return;
     void loadAutoSavedDraft().then((saved) => {
       if (saved && saved.formData.itemName) {
         setAutoSavedData(saved);
@@ -1977,6 +2185,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
+              {resourceType === "watchface" && (
+                <SectionCard
+                  title="壁纸编辑器"
+                  description="为表盘配置可编辑壁纸（可选）。在独立页面中设计图层与可调参数，配置会随资源一起发布。"
+                >
+                  <div className="flex items-center justify-between gap-3 px-2 pt-1">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium text-white">表盘壁纸配置</p>
+                      <p className="text-xs text-white/50">
+                        {wallpaperTemplateCount > 0
+                          ? `已配置 ${wallpaperTemplateCount} 个设备模板`
+                          : "尚未配置，点击右侧按钮进入编辑器"}
+                      </p>
+                    </div>
+                    <Button
+                      size="2"
+                      variant="soft"
+                      radius="large"
+                      onClick={() => void handleOpenWallpaperEditor()}
+                    >
+                      <PencilSimpleLineIcon size={16} weight="fill" />
+                      {wallpaperTemplateCount > 0 ? "编辑壁纸" : "配置壁纸"}
+                    </Button>
+                  </div>
+                </SectionCard>
+              )}
               <div className="flex flex-row justify-end gap-2 pt-1">
                 <Button
                   className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"

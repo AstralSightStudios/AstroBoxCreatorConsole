@@ -36,6 +36,19 @@ export interface ManifestDownloadInfo {
 export interface ManifestExtObject extends Record<string, unknown> {
     enableAstroBoxCreatorFeatures?: boolean;
     trialDownloads?: Record<string, ManifestDownloadInfo>;
+    wallpaperGenerator?: {
+        configUrl: string;
+    };
+}
+
+export interface ManifestWallpaperInput {
+    configJson: string;
+    configUrl: string;
+    assets: Array<{
+        path: string;
+        file?: File;
+        skipUpload?: boolean;
+    }>;
 }
 
 export interface ManifestBuildInput {
@@ -54,6 +67,7 @@ export interface ManifestBuildInput {
     trialDownloads: DownloadUploadInput[];
     ext: ManifestExtObject;
     enableAstroBoxCreatorFeatures: boolean;
+    wallpaper?: ManifestWallpaperInput;
 }
 
 export interface AssetDescriptor {
@@ -78,6 +92,9 @@ export interface ManifestBuildResult {
     iconPath: string;
     coverPath: string;
     previewPaths: string[];
+    wallpaperConfigJson?: string;
+    wallpaperConfigPath?: string;
+    wallpaperAssets: AssetDescriptor[];
 }
 
 function buildDownloadsObject(
@@ -210,6 +227,24 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         delete ext.trialDownloads;
     }
 
+    let wallpaperConfigJson: string | undefined;
+    let wallpaperConfigPath: string | undefined;
+    const wallpaperAssets: AssetDescriptor[] = [];
+    if (input.wallpaper && input.wallpaper.configJson.trim()) {
+        wallpaperConfigJson = input.wallpaper.configJson;
+        wallpaperConfigPath = "wallpaper/wallpaper.json";
+        ext.wallpaperGenerator = { configUrl: input.wallpaper.configUrl };
+        const seen = new Set<string>();
+        for (const asset of input.wallpaper.assets) {
+            if (!asset.file || asset.skipUpload) continue;
+            if (seen.has(asset.path)) continue;
+            seen.add(asset.path);
+            wallpaperAssets.push({ path: asset.path, file: asset.file });
+        }
+    } else {
+        delete ext.wallpaperGenerator;
+    }
+
     const manifest = {
         item: {
             id: input.itemId.trim(),
@@ -247,5 +282,8 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         iconPath: iconAsset?.path || "",
         coverPath,
         previewPaths,
+        wallpaperConfigJson,
+        wallpaperConfigPath,
+        wallpaperAssets,
     };
 }
