@@ -157,6 +157,25 @@ export function moveLayer(
     return next;
 }
 
+/** Move a layer so it lands at `toIndex` (insertion index of the resulting array). */
+export function moveLayerToIndex(
+    config: WallpaperConfigRaw,
+    templateIndex: number,
+    layerId: string,
+    toIndex: number,
+): WallpaperConfigRaw {
+    const next = withFlattened(config, templateIndex);
+    const template = next.templates[templateIndex];
+    const layers = [...(template.layers ?? [])];
+    const from = layers.findIndex((layer) => layer.id === layerId);
+    if (from < 0) return config;
+    const [moved] = layers.splice(from, 1);
+    const insertAt = Math.max(0, Math.min(toIndex, layers.length));
+    layers.splice(insertAt, 0, moved);
+    template.layers = layers;
+    return next;
+}
+
 export function updateWallpaperTransform(
     config: WallpaperConfigRaw,
     templateIndex: number,

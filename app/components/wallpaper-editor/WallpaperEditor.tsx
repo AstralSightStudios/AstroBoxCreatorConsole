@@ -25,7 +25,8 @@ import {
     duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
-    moveLayer,
+    getLayer,
+    moveLayerToIndex,
     removeLayer,
     removeTemplate,
     updateLayer,
@@ -127,7 +128,6 @@ export function WallpaperEditor({
         | { kind: "canvas" }
         | null
     >(null);
-    const [syncAcrossDevices, setSyncAcrossDevices] = useState(false);
     const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
     const [templateStates, setTemplateStates] = useState<Record<string, WallpaperEditorState>>({});
     const [resources, setResources] = useState<Record<string, WallpaperResources>>({});
@@ -309,8 +309,30 @@ export function WallpaperEditor({
         (patch: Partial<WallpaperLayerConfig>) => {
             if (!config || !selectedLayerId) return;
             const patchKeys = Object.keys(patch);
-            const isSyncPatch = patchKeys.length > 0 && patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
-            if (syncAcrossDevices && isSyncPatch) {
+            const isSyncFlagPatch =
+                patchKeys.length === 1 && patchKeys[0] === "syncAcrossDevices";
+
+            // 多设备同步按图层独立配置。同步开关本身应用到所有设备，保证
+            // 同一图层在各设备上的开关一致；开启时透明度/模糊/背景模糊/混合模式
+            // 也会同步到所有设备。
+            if (isSyncFlagPatch) {
+                setConfig((prev) => {
+                    if (!prev) return prev;
+                    let next = prev;
+                    for (let index = 0; index < next.templates.length; index++) {
+                        next = updateLayer(next, index, selectedLayerId, patch);
+                    }
+                    return next;
+                });
+                return;
+            }
+
+            const isSyncPatch =
+                patchKeys.length > 0 &&
+                patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
+            const layerSync =
+                getLayer(config, activeIndex, selectedLayerId)?.syncAcrossDevices === true;
+            if (layerSync && isSyncPatch) {
                 setConfig((prev) => {
                     if (!prev) return prev;
                     let next = prev;
@@ -323,7 +345,7 @@ export function WallpaperEditor({
             }
             setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, patch) : prev));
         },
-        [activeIndex, config, selectedLayerId, syncAcrossDevices],
+        [activeIndex, config, selectedLayerId],
     );
 
     const handleAddLayer = useCallback(
@@ -456,10 +478,10 @@ export function WallpaperEditor({
         [activeIndex, config, selectedLayerId],
     );
 
-    const handleMoveLayer = useCallback(
-        (id: string, direction: -1 | 1) => {
+    const handleMoveLayerTo = useCallback(
+        (layerId: string, toIndex: number) => {
             if (!config) return;
-            setConfig((prev) => (prev ? moveLayer(prev, activeIndex, id, direction) : prev));
+            setConfig((prev) => (prev ? moveLayerToIndex(prev, activeIndex, layerId, toIndex) : prev));
         },
         [activeIndex, config],
     );
@@ -666,7 +688,7 @@ export function WallpaperEditor({
                             onSelectLayer={handleSelectLayer}
                             onAddLayer={handleAddLayer}
                             onRemoveLayer={handleRemoveLayer}
-                            onMoveLayer={handleMoveLayer}
+                            onMoveLayerTo={handleMoveLayerTo}
                             transform={{
                                 scale: transformControls.scale,
                                 rotation: transformControls.rotation,
@@ -700,8 +722,6 @@ export function WallpaperEditor({
                             onAssetUpload={(file) => void handleAssetReplace(file)}
                             onMaskUpload={(file) => void handleMaskUpload(file)}
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
-                            syncAcrossDevices={syncAcrossDevices}
-                            onSyncAcrossDevicesChange={setSyncAcrossDevices}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
                         />

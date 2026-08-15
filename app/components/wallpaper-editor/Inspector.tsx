@@ -32,8 +32,6 @@ export interface InspectorProps {
     onAssetUpload: (file: File) => void;
     onMaskUpload: (file: File) => void;
     onClearMask: () => void;
-    syncAcrossDevices: boolean;
-    onSyncAcrossDevicesChange: (value: boolean) => void;
     canvas: WallpaperTemplateConfig | null;
     onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
 }
@@ -196,8 +194,6 @@ export function Inspector({
     onAssetUpload,
     onMaskUpload,
     onClearMask,
-    syncAcrossDevices,
-    onSyncAcrossDevicesChange,
     canvas,
     onCanvasPatch,
 }: InspectorProps) {
@@ -286,17 +282,17 @@ export function Inspector({
             </div>
             <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
 
-            {/* 多设备同步 */}
+            {/* 多设备同步（按图层） */}
             <div className="flex shrink-0 items-center justify-between border-b px-3 py-2" style={{ borderColor: "var(--color-editor-divider)" }}>
                 <div className="flex flex-col">
                     <span className="text-[13px] leading-[18px] text-white/85">多设备同步</span>
                     <span className="text-[11px] leading-4 text-white/45">
-                        透明度 / 模糊 / 背景模糊 / 混合模式 应用于所有设备
+                        仅本图层：透明度 / 模糊 / 背景模糊 / 混合模式 应用于所有设备
                     </span>
                 </div>
                 <EditorSwitch
-                    checked={syncAcrossDevices}
-                    onCheckedChange={onSyncAcrossDevicesChange}
+                    checked={layer.syncAcrossDevices === true}
+                    onCheckedChange={(v) => onLayerPatch({ syncAcrossDevices: v })}
                 />
             </div>
 

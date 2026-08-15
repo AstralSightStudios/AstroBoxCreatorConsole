@@ -6,6 +6,7 @@ import {
     flattenAllTemplates,
     getExpandedTemplate,
     moveLayer,
+    moveLayerToIndex,
     removeLayer,
     updateLayer,
     updateWallpaperTransform,
@@ -77,6 +78,32 @@ describe("wallpaper json-tree", () => {
         config = removeLayer(config, 0, "tint-1");
         expect(getExpandedTemplate(config, 0).layers?.length).toBe(1);
         expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
+    });
+
+    test("moveLayerToIndex relocates to absolute position", () => {
+        const withIds = (ids: string[]) => {
+            const cfg = flattenAllTemplates(validConfig());
+            cfg.templates[0].layers = ids.map((id) => ({
+                id,
+                name: id,
+                type: "wallpaper" as const,
+                clip: "frame" as const,
+            }));
+            return cfg;
+        };
+        const ids = (cfg: WallpaperConfigRaw) =>
+            (getExpandedTemplate(cfg, 0).layers ?? []).map((layer) => layer.id);
+
+        expect(ids(moveLayerToIndex(withIds(["a", "b", "c"]), 0, "c", 0))).toEqual(["c", "a", "b"]);
+        expect(ids(moveLayerToIndex(withIds(["a", "b", "c"]), 0, "c", 1))).toEqual(["a", "c", "b"]);
+        expect(ids(moveLayerToIndex(withIds(["a", "b", "c"]), 0, "a", 2))).toEqual(["b", "c", "a"]);
+        // 非法目标索引安全钳制
+        expect(ids(moveLayerToIndex(withIds(["a", "b", "c"]), 0, "b", 99))).toEqual(["a", "c", "b"]);
+        // 拖拽映射：展示序（反转）索引 d 对应配置序索引 L-1-d
+        const cfg = withIds(["a", "b", "c"]); // 展示序 [c, b, a]
+        const targetDisplayIndex = 2; // 拖到展示底部（a）
+        const moved = moveLayerToIndex(cfg, 0, "c", cfg.templates[0].layers!.length - 1 - targetDisplayIndex);
+        expect(ids(moved)).toEqual(["c", "a", "b"]); // 展示序变 [b, a, c]
     });
 
     test("flatten inlines shared inheritance", () => {

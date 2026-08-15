@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
     ArrowLeftIcon,
     CircleHalfIcon,
@@ -6,6 +6,7 @@ import {
     ImageIcon,
     ImagesIcon,
     TextTIcon,
+    TrashIcon,
     UploadIcon,
 } from "@phosphor-icons/react";
 import type { WallpaperControlValue, WallpaperLayerConfig, WallpaperLayerKind } from "~/logic/wallpaper/types";
@@ -44,7 +45,8 @@ export interface SidebarProps {
     onSelectLayer: (id: string) => void;
     onAddLayer: (kind: WallpaperLayerKind) => void;
     onRemoveLayer: (id: string) => void;
-    onMoveLayer: (id: string, direction: -1 | 1) => void;
+    /** 拖拽排序：把 layerId 移动到结果数组的 toIndex 位置。 */
+    onMoveLayerTo: (layerId: string, toIndex: number) => void;
     transform: WallpaperTransformEditorProps;
 }
 
@@ -81,10 +83,123 @@ export function Sidebar({
     onSelectLayer,
     onAddLayer,
     onRemoveLayer,
-    onMoveLayer,
+    onMoveLayerTo,
     transform,
 }: SidebarProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const rowElsRef = useRef<Map<string, HTMLElement | null>>(new Map());
+    const suppressClickRef = useRef(false);
+    const dragRef = useRef<{
+        layerId: string;
+        startX: number;
+        startY: number;
+        active: boolean;
+        insertPosition: number;
+        lineTop: number;
+    } | null>(null);
+    const [dragInfo, setDragInfo] = useState<{
+        layerId: string;
+        active: boolean;
+        insertPosition: number;
+        lineTop: number;
+    } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{
+        x: number;
+        y: number;
+        layerId: string;
+    } | null>(null);
+
+    // 图层列表按绘制顺序反转展示：最顶层在最上。
+    const displayLayers = useMemo(() => [...layers].reverse(), [layers]);
+
+    // 计算插入线位置（展示序 0..L，0=最顶，L=最底）。
+    const findInsertPosition = (clientY: number): number => {
+        for (let i = 0; i < displayLayers.length; i++) {
+            const el = rowElsRef.current.get(displayLayers[i].id);
+            const rect = el?.getBoundingClientRect();
+            if (!rect) continue;
+            if (clientY < rect.top + rect.height / 2) return i;
+        }
+        return displayLayers.length;
+    };
+
+    const computeLineTop = (insertPosition: number): number => {
+        const containerTop = scrollRef.current?.getBoundingClientRect().top ?? 0;
+        if (displayLayers.length === 0) return 0;
+        const rectAt = (i: number) =>
+            rowElsRef.current.get(displayLayers[i].id)?.getBoundingClientRect();
+        if (insertPosition <= 0) {
+            return (rectAt(0)?.top ?? containerTop) - containerTop - 2;
+        }
+        if (insertPosition >= displayLayers.length) {
+            return (
+                (rectAt(displayLayers.length - 1)?.bottom ?? containerTop) - containerTop + 2
+            );
+        }
+        const prev = rectAt(insertPosition - 1)?.bottom ?? containerTop;
+        const next = rectAt(insertPosition)?.top ?? containerTop;
+        return (prev + next) / 2 - containerTop;
+    };
+
+    const startDrag = (e: React.PointerEvent, layerId: string) => {
+        if (contextMenu) setContextMenu(null);
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        dragRef.current = {
+            layerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            active: false,
+            insertPosition: findInsertPosition(e.clientY),
+            lineTop: 0,
+        };
+    };
+
+    const moveDrag = (e: React.PointerEvent) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+        if (!drag.active && moved < 5) return;
+        drag.active = true;
+        // 靠近容器上下边缘时自动滚动，方便拖到视口外的行。
+        const container = scrollRef.current;
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            const threshold = 28;
+            if (e.clientY < rect.top + threshold) container.scrollTop -= 8;
+            else if (e.clientY > rect.bottom - threshold) container.scrollTop += 8;
+        }
+        drag.insertPosition = findInsertPosition(e.clientY);
+        drag.lineTop = computeLineTop(drag.insertPosition);
+        setDragInfo({
+            layerId: drag.layerId,
+            active: true,
+            insertPosition: drag.insertPosition,
+            lineTop: drag.lineTop,
+        });
+    };
+
+    const endDrag = () => {
+        const drag = dragRef.current;
+        dragRef.current = null;
+        if (drag?.active) {
+            suppressClickRef.current = true;
+            const toIndex = layers.length - 1 - Math.min(drag.insertPosition, layers.length - 1);
+            onMoveLayerTo(drag.layerId, toIndex);
+        }
+        setDragInfo(null);
+    };
+
+    const openContextMenu = (e: React.MouseEvent, layerId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({
+            x: Math.min(e.clientX, window.innerWidth - 140),
+            y: Math.min(e.clientY, window.innerHeight - 90),
+            layerId,
+        });
+    };
 
     const transformRow = (label: string, control: WallpaperControlValue | undefined, onChange: (patch: never) => void, hint: string) => {
         const patch = (key: string, value: number | boolean) => {
@@ -221,17 +336,35 @@ export function Sidebar({
                     >
                         图层
                     </h3>
-                    <div className="wallpaper-layer-scroll min-h-0 flex-1 overflow-y-auto px-[9px] pt-[9px] pb-2">
+                    <div
+                        ref={scrollRef}
+                        className="wallpaper-layer-scroll relative min-h-0 flex-1 overflow-y-auto px-[9px] pt-[9px] pb-2"
+                    >
                         <div className="flex w-full flex-col" style={{ gap: "var(--editor-layer-row-gap)" }}>
-                            {layers.map((layer, index) => {
+                            {displayLayers.map((layer) => {
                                 const isSelected = layer.id === selectedLayerId;
-                                const canMoveUp = index > 0;
-                                const canMoveDown = index < layers.length - 1;
+                                const isDragging = dragInfo?.layerId === layer.id;
                                 return (
                                     <div
                                         key={layer.id}
-                                        onClick={() => onSelectLayer(layer.id)}
-                                        className="group flex cursor-pointer items-center"
+                                        ref={(el) => {
+                                            rowElsRef.current.set(layer.id, el);
+                                        }}
+                                        onClick={() => {
+                                            if (suppressClickRef.current) {
+                                                suppressClickRef.current = false;
+                                                return;
+                                            }
+                                            onSelectLayer(layer.id);
+                                        }}
+                                        onContextMenu={(e) => openContextMenu(e, layer.id)}
+                                        onPointerDown={(e) => startDrag(e, layer.id)}
+                                        onPointerMove={moveDrag}
+                                        onPointerUp={endDrag}
+                                        onPointerCancel={endDrag}
+                                        className={`flex cursor-pointer items-center select-none ${
+                                            isDragging ? "opacity-50" : ""
+                                        }`}
                                         style={{
                                             height: "var(--editor-layer-row-height)",
                                             borderRadius: "var(--editor-layer-row-radius)",
@@ -247,40 +380,15 @@ export function Sidebar({
                                         <span className="min-w-0 flex-1 truncate pl-2 text-[13px] text-white/85">
                                             {layer.name || layer.id}
                                         </span>
-                                        <span className="flex shrink-0 items-center opacity-0 transition group-hover:opacity-100">
-                                            <EditorIconButton
-                                                title="上移"
-                                                disabled={!canMoveUp}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onMoveLayer(layer.id, -1);
-                                                }}
-                                                style={{ width: 26, height: 26, borderRadius: 6 }}
+                                        {layer.syncAcrossDevices === true && (
+                                            <span
+                                                className="mr-1 shrink-0 rounded-full px-1.5 text-[10px] leading-4 text-[var(--color-editor-blue-fg)]"
+                                                style={{ background: "var(--color-editor-blue-bg)" }}
+                                                title="该图层多设备同步已开启"
                                             >
-                                                ↑
-                                            </EditorIconButton>
-                                            <EditorIconButton
-                                                title="下移"
-                                                disabled={!canMoveDown}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onMoveLayer(layer.id, 1);
-                                                }}
-                                                style={{ width: 26, height: 26, borderRadius: 6 }}
-                                            >
-                                                ↓
-                                            </EditorIconButton>
-                                            <EditorIconButton
-                                                title="删除图层"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onRemoveLayer(layer.id);
-                                                }}
-                                                style={{ width: 26, height: 26, borderRadius: 6 }}
-                                            >
-                                                ×
-                                            </EditorIconButton>
-                                        </span>
+                                                同步
+                                            </span>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -290,7 +398,52 @@ export function Sidebar({
                                 </p>
                             )}
                         </div>
+
+                        {/* 拖拽插入线 */}
+                        {dragInfo?.active && (
+                            <div
+                                className="pointer-events-none absolute left-[9px] right-[9px]"
+                                style={{
+                                    top: dragInfo.lineTop,
+                                    height: 2,
+                                    borderRadius: 1,
+                                    background: "var(--color-editor-blue-fg)",
+                                    boxShadow: "0 0 0 1px rgba(0,0,0,0.6)",
+                                }}
+                            />
+                        )}
                     </div>
+
+                    {/* 右键菜单 */}
+                    {contextMenu && (
+                        <div
+                            className="fixed inset-0 z-50"
+                            onClick={() => setContextMenu(null)}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                setContextMenu(null);
+                            }}
+                        />
+                    )}
+                    {contextMenu && (
+                        <div
+                            className="fixed z-50 flex min-w-[132px] flex-col overflow-hidden rounded-md border border-white/10 bg-[#141414] py-1 shadow-lg"
+                            style={{ left: contextMenu.x, top: contextMenu.y }}
+                            onContextMenu={(e) => e.preventDefault()}
+                        >
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onRemoveLayer(contextMenu.layerId);
+                                    setContextMenu(null);
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 text-left text-[13px] text-red-300 transition hover:bg-white/10"
+                            >
+                                <TrashIcon size={14} weight="regular" />
+                                删除图层
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 

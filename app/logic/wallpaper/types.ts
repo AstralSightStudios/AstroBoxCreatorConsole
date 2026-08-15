@@ -88,6 +88,8 @@ export interface WallpaperLayerConfig {
     src?: string;
     mask?: string;
     clip?: "frame" | "canvas";
+    /** 多设备同步（编辑器专用字段）：透明度/模糊/背景模糊/混合模式 应用到所有设备。 */
+    syncAcrossDevices?: boolean;
     rect?: WallpaperRectConfig;
     transform?: WallpaperTransformConfig;
     opacity?: WallpaperControlValue;
