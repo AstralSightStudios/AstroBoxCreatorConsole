@@ -11,7 +11,7 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { controlAdjustable, controlDefault, controlMax, controlMin, controlStep, patchControlValue } from "~/logic/wallpaper/control";
+import { controlAdjustable, patchControlValue } from "~/logic/wallpaper/control";
 import {
     EditorColorDots,
     EditorField,
@@ -21,7 +21,7 @@ import {
     EditorSelect,
     EditorSwitch,
     EditorTextInput,
-    ThreeColumnGrid,
+    NumericControlEditor,
     TwoColumnGrid,
 } from "./controls";
 
@@ -34,6 +34,8 @@ export interface InspectorProps {
     onClearMask: () => void;
     canvas: WallpaperTemplateConfig | null;
     onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
+    /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
+    onRenderSimplifyChange?: (dragging: boolean) => void;
 }
 
 const BLEND_MODES = [
@@ -74,33 +76,20 @@ function ControlTriple({
     label,
     control,
     onChange,
+    onDragStateChange,
 }: {
     label: string;
     control: WallpaperControlValue | undefined;
-    onChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
+    onChange: (patch: Partial<{ default: number; min: number; max: number; step: number }>) => void;
+    onDragStateChange?: (dragging: boolean) => void;
 }) {
     return (
-        <EditorField label={label}>
-            <ThreeColumnGrid>
-                <EditorNumberField
-                    value={controlDefault(control, 0)}
-                    step={controlStep(control, 0.01)}
-                    onChange={(v) => onChange({ default: v })}
-                />
-                <div
-                    className="grid min-w-0 grid-cols-2"
-                    style={{ gap: "var(--editor-control-gap)" }}
-                >
-                    <EditorNumberField value={controlMin(control, 0)} onChange={(v) => onChange({ min: v })} />
-                    <EditorNumberField value={controlMax(control, 1)} onChange={(v) => onChange({ max: v })} />
-                </div>
-                <EditorNumberField
-                    value={controlStep(control, 0.01)}
-                    step={0.01}
-                    onChange={(v) => onChange({ step: v })}
-                />
-            </ThreeColumnGrid>
-        </EditorField>
+        <NumericControlEditor
+            label={label}
+            control={control}
+            onChange={onChange}
+            onDragStateChange={onDragStateChange}
+        />
     );
 }
 
@@ -196,6 +185,7 @@ export function Inspector({
     onClearMask,
     canvas,
     onCanvasPatch,
+    onRenderSimplifyChange,
 }: InspectorProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const maskInputRef = useRef<HTMLInputElement | null>(null);
@@ -455,6 +445,7 @@ export function Inspector({
                                 label="明暗程度"
                                 control={layer.amount}
                                 onChange={(patch) => patchControl("amount", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                onDragStateChange={onRenderSimplifyChange}
                             />
                             <TwoColumnGrid>
                                 <EditorField label="亮色">
@@ -472,16 +463,19 @@ export function Inspector({
                         label="透明度"
                         control={layer.opacity}
                         onChange={(patch) => patchControl("opacity", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                        onDragStateChange={onRenderSimplifyChange}
                     />
                     <ControlTriple
                         label="模糊"
                         control={layer.blur}
                         onChange={(patch) => patchControl("blur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                        onDragStateChange={onRenderSimplifyChange}
                     />
                     <ControlTriple
                         label="背景模糊"
                         control={layer.backdropBlur}
                         onChange={(patch) => patchControl("backdropBlur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                        onDragStateChange={onRenderSimplifyChange}
                     />
 
                     {/* 着色 (asset tint / text color) */}

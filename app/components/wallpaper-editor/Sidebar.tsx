@@ -10,18 +10,12 @@ import {
     UploadIcon,
 } from "@phosphor-icons/react";
 import type { WallpaperControlValue, WallpaperLayerConfig, WallpaperLayerKind } from "~/logic/wallpaper/types";
-import {
-    controlAdjustable,
-    controlDefault,
-    controlMax,
-    controlMin,
-    controlStep,
-} from "~/logic/wallpaper/control";
+import { controlAdjustable } from "~/logic/wallpaper/control";
 import {
     EditorActionButton,
     EditorIconButton,
-    EditorNumberField,
     EditorSwitch,
+    NumericControlEditor,
 } from "./controls";
 
 export interface WallpaperTransformEditorProps {
@@ -46,6 +40,8 @@ export interface SidebarProps {
     /** 拖拽排序：把 layerId 移动到结果数组的 toIndex 位置。 */
     onMoveLayerTo: (layerId: string, toIndex: number) => void;
     transform: WallpaperTransformEditorProps;
+    /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
+    onRenderSimplifyChange?: (dragging: boolean) => void;
 }
 
 const LAYER_ADD_ITEMS: Array<{ kind: WallpaperLayerKind; label: string; icon: React.ReactNode }> = [
@@ -83,6 +79,7 @@ export function Sidebar({
     onRemoveLayer,
     onMoveLayerTo,
     transform,
+    onRenderSimplifyChange,
 }: SidebarProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -208,9 +205,12 @@ export function Sidebar({
             onChange({ [key]: value } as never);
         };
         return (
-            <div className="flex w-full flex-col" style={{ gap: 4 }}>
-                <div className="flex items-center justify-between px-1.5">
-                    <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+            <NumericControlEditor
+                label={label}
+                control={control}
+                onChange={(p) => onChange(p as never)}
+                onDragStateChange={onRenderSimplifyChange}
+                headerRight={
                     <div className="flex items-center gap-2">
                         <span className="text-[11px] text-white/40">可调</span>
                         <EditorSwitch
@@ -218,33 +218,8 @@ export function Sidebar({
                             onCheckedChange={(v) => patch("adjustable", v)}
                         />
                     </div>
-                </div>
-                <div className="flex w-full items-center" style={{ gap: 2 }}>
-                    <EditorNumberField
-                        value={controlDefault(control, 0)}
-                        step={controlStep(control, 0.01)}
-                        onChange={(v) => patch("default", v)}
-                    />
-                    <div
-                        className="grid min-w-0 grid-cols-2"
-                        style={{ gap: "var(--editor-control-gap)" }}
-                    >
-                        <EditorNumberField
-                            value={controlMin(control, 0)}
-                            onChange={(v) => patch("min", v)}
-                        />
-                        <EditorNumberField
-                            value={controlMax(control, 100)}
-                            onChange={(v) => patch("max", v)}
-                        />
-                    </div>
-                    <EditorNumberField
-                        value={controlStep(control, 0.01)}
-                        step={0.01}
-                        onChange={(v) => patch("step", v)}
-                    />
-                </div>
-            </div>
+                }
+            />
         );
     };
 

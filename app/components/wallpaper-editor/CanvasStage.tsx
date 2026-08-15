@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { WallpaperStage } from "@claralight-design/wallpaper-engine/react";
 import type {
     ResolvedWallpaperTemplate,
@@ -7,12 +8,31 @@ import type {
 } from "@claralight-design/wallpaper-engine";
 import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 
+/**
+ * 拖拽/捏合缩放期间临时去掉模糊、背景模糊与混合模式，避免实时重绘卡顿；
+ * 手势结束后恢复原状态重绘。
+ */
+function simplifyEditorState(state: WallpaperEditorState): WallpaperEditorState {
+    const layers: WallpaperEditorState["layers"] = {};
+    for (const [id, layer] of Object.entries(state.layers)) {
+        layers[id] = {
+            ...layer,
+            blur: 0,
+            backdropBlur: 0,
+            blendMode: "normal",
+        };
+    }
+    return { transform: state.transform, layers };
+}
+
 export interface CanvasStageProps {
     resolved: ResolvedWallpaperTemplate[];
     templateStates: Record<string, WallpaperEditorState>;
     resources: Record<string, WallpaperResources>;
     baseImage?: HTMLImageElement | null;
     activeTemplate: number;
+    /** 外部（如滑块拖动）要求临时简化渲染（暂停模糊/混合模式）。 */
+    simplify?: boolean;
     onActiveTemplateChange: (index: number) => void;
     onSelectCanvas: () => void;
     onTransformChange: (templateId: string, transform: WallpaperTransformState) => void;
@@ -59,12 +79,30 @@ export function CanvasStage({
     resources,
     baseImage,
     activeTemplate,
+    simplify,
     onActiveTemplateChange,
     onSelectCanvas,
     onTransformChange,
     onDuplicateTemplate,
     onRemoveTemplate,
 }: CanvasStageProps) {
+    const gestureCountRef = useRef(0);
+    const [gestureActive, setGestureActive] = useState(false);
+    const simplified = Boolean(simplify) || gestureActive;
+
+    useEffect(() => {
+        const handleUp = () => {
+            gestureCountRef.current = Math.max(0, gestureCountRef.current - 1);
+            setGestureActive(gestureCountRef.current > 0);
+        };
+        window.addEventListener("pointerup", handleUp);
+        window.addEventListener("pointercancel", handleUp);
+        return () => {
+            window.removeEventListener("pointerup", handleUp);
+            window.removeEventListener("pointercancel", handleUp);
+        };
+    }, []);
+
     if (resolved.length === 0) {
         return (
             <div className="flex h-full w-full items-center justify-center px-6">
@@ -136,6 +174,10 @@ export function CanvasStage({
                                     onActiveTemplateChange(index);
                                     onSelectCanvas();
                                 }}
+                                onPointerDown={() => {
+                                    gestureCountRef.current += 1;
+                                    setGestureActive(true);
+                                }}
                                 className="block overflow-hidden transition"
                                 style={{
                                     width: previewW,
@@ -152,7 +194,9 @@ export function CanvasStage({
                                     <div className="wallpaper-preview-fit">
                                         <WallpaperStage
                                             template={template}
-                                            editorState={state}
+                                            editorState={
+                                                simplified ? simplifyEditorState(state) : state
+                                            }
                                             inputImage={baseImage ?? undefined}
                                             resources={resource ?? { assets: {}, masks: {} }}
                                             onTransformChange={(transform) =>

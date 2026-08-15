@@ -134,6 +134,7 @@ export function WallpaperEditor({
     const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
     const [templateStates, setTemplateStates] = useState<Record<string, WallpaperEditorState>>({});
     const [resources, setResources] = useState<Record<string, WallpaperResources>>({});
+    const [renderSimplify, setRenderSimplify] = useState(false);
     const [jsonDraft, setJsonDraft] = useState("");
     const [jsonIssues, setJsonIssues] = useState<string[]>([]);
     const [applyError, setApplyError] = useState("");
@@ -213,6 +214,24 @@ export function WallpaperEditor({
         });
     }, [resolved, baseImage, config]);
 
+    // 素材只与图层 src/mask/font 地址相关；数值/控件改动不触发重新加载素材（滑块拖动更流畅）。
+    const resourceKey = useMemo(() => {
+        return resolved
+            .map((template) =>
+                [
+                    template.id,
+                    ...template.layers.flatMap((layer) => [
+                        layer.type === "asset" ? layer.assetUrl ?? "" : "",
+                        layer.maskUrl ?? "",
+                        ...(layer.text?.font.options
+                            .map((option) => option.fontUrl ?? "")
+                            .filter(Boolean) ?? []),
+                    ]),
+                ].join("|"),
+            )
+            .join(";");
+    }, [resolved]);
+
     // Load per-template resources (assets / masks / fonts) through the engine loaders.
     useEffect(() => {
         if (!config || resolved.length === 0) return;
@@ -237,7 +256,7 @@ export function WallpaperEditor({
         return () => {
             cancelled = true;
         };
-    }, [config, resolved, assetFiles]);
+    }, [config, resolved, resourceKey, assetFiles]);
 
     // JSON view draft sync.
     const openJsonView = useCallback(() => {
@@ -735,6 +754,7 @@ export function WallpaperEditor({
                                 onScaleChange: (patch) => handleTransformPatch({ scale: patchControlMerge(transformControls.scale, patch) }),
                                 onRotationChange: (patch) => handleTransformPatch({ rotation: patchControlMerge(transformControls.rotation, patch) }),
                             }}
+                            onRenderSimplifyChange={setRenderSimplify}
                         />
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
                         <main
@@ -747,6 +767,7 @@ export function WallpaperEditor({
                                 resources={resources}
                                 baseImage={baseImage}
                                 activeTemplate={activeIndex}
+                                simplify={renderSimplify}
                                 onActiveTemplateChange={setActiveTemplate}
                                 onSelectCanvas={handleSelectCanvas}
                                 onTransformChange={handleTransformChange}
@@ -764,6 +785,7 @@ export function WallpaperEditor({
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
+                            onRenderSimplifyChange={setRenderSimplify}
                         />
                     </WallpaperEditorErrorBoundary>
                 ) : (

@@ -5,6 +5,108 @@ import {
 } from "@radix-ui/themes";
 import { PlusIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import type { WallpaperControlValue } from "~/logic/wallpaper/types";
+import {
+  controlDefault,
+  controlMax,
+  controlMin,
+  controlStep,
+} from "~/logic/wallpaper/control";
+
+export function EditorSlider({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  onDragStateChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  onDragStateChange?: (dragging: boolean) => void;
+}) {
+  const lo = Number.isFinite(min) ? min : 0;
+  const hi = Number.isFinite(max) ? Math.max(max, lo) : lo;
+  const stepValue = Number.isFinite(step) && step > 0 ? step : 0.01;
+  const clamped = Number.isFinite(value)
+    ? Math.min(Math.max(value, lo), hi)
+    : lo;
+  return (
+    <input
+      type="range"
+      min={lo}
+      max={hi}
+      step={stepValue}
+      value={clamped}
+      onChange={(e) => onChange(Number(e.target.value))}
+      onPointerDown={() => onDragStateChange?.(true)}
+      onPointerUp={() => onDragStateChange?.(false)}
+      onPointerCancel={() => onDragStateChange?.(false)}
+      className="editor-slider w-full"
+      style={{ accentColor: "var(--color-editor-blue-fg)" }}
+    />
+  );
+}
+
+/** 可调数值控件：当前值 = 滑块 + 输入框并存，区间/步长用小输入框，可调开关放 header 右侧。 */
+export function NumericControlEditor({
+  label,
+  control,
+  onChange,
+  onDragStateChange,
+  headerRight,
+}: {
+  label: string;
+  control: WallpaperControlValue | undefined;
+  onChange: (
+    patch: Partial<{ default: number; min: number; max: number; step: number }>,
+  ) => void;
+  onDragStateChange?: (dragging: boolean) => void;
+  headerRight?: ReactNode;
+}) {
+  const def = controlDefault(control, 0);
+  const min = controlMin(control, 0);
+  const max = controlMax(control, 100);
+  const step = controlStep(control, 0.01);
+  const patch = (key: "default" | "min" | "max" | "step", value: number) =>
+    onChange({ [key]: value });
+  return (
+    <div className="flex w-full flex-col" style={{ gap: 6 }}>
+      <div className="flex items-center justify-between px-1.5">
+        <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+        {headerRight}
+      </div>
+      <EditorSlider
+        value={def}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(v) => patch("default", v)}
+        onDragStateChange={onDragStateChange}
+      />
+      <div
+        className="grid w-full"
+        style={{
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: "var(--editor-control-gap)",
+        }}
+      >
+        <EditorNumberField value={def} step={step} onChange={(v) => patch("default", v)} />
+        <div
+          className="grid min-w-0 grid-cols-2"
+          style={{ gap: "var(--editor-control-gap)" }}
+        >
+          <EditorNumberField value={min} onChange={(v) => patch("min", v)} />
+          <EditorNumberField value={max} onChange={(v) => patch("max", v)} />
+        </div>
+        <EditorNumberField value={step} onChange={(v) => patch("step", v)} />
+      </div>
+    </div>
+  );
+}
 
 export const editorVars = {
     control: {
