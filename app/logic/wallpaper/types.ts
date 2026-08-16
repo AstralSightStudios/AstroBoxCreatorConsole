@@ -93,17 +93,49 @@ export type WallpaperGlassGeometryConfig =
           radius: number;
       };
 
+/** 玻璃高光 / 阴影支持混合模式（CSS 12 模式，与引擎 GLASS_BLEND_MODES 一致）。 */
+export const GLASS_BLEND_MODES = [
+    "normal",
+    "multiply",
+    "screen",
+    "overlay",
+    "darken",
+    "lighten",
+    "color-dodge",
+    "color-burn",
+    "hard-light",
+    "soft-light",
+    "difference",
+    "exclusion",
+] as const;
+
+export type WallpaperGlassBlendMode = (typeof GLASS_BLEND_MODES)[number];
+
 /** 玻璃材质（均为壁纸 document 像素 / 归一化值，与引擎 LiquidGlassMaterialConfig 对齐）。 */
 export interface WallpaperGlassMaterialConfig {
+    /** backdrop blur（UI [0,100]）：映射为 blur radius 与 mix 强度。 */
     blur: number;
+    /** 折射艺术乘子（0=关闭，1=基础光学，2=两倍增强）。 */
     refraction: number;
+    /** 玻璃物理高度 / bevel 高度（document px）。 */
+    thickness: number;
+    /** 色散强度：最强边缘处 R/B 通道分离量（document px）。 */
     dispersion: number;
-    curvature: number;
-    tint: string;
-    tintOpacity: number;
     saturation: number;
+    /** 对比度（(c-0.5)*contrast+0.5）。 */
+    contrast: number;
     highlight: number;
     shadow: number;
+    /** 高光（Fresnel + specular）混合模式（默认 screen）。 */
+    highlightBlendMode: WallpaperGlassBlendMode;
+    /** 内阴影混合模式（默认 multiply）。 */
+    shadowBlendMode: WallpaperGlassBlendMode;
+    /** 打光角度（度，[0,360]）：对共享基线光照绕 Z 轴旋转，默认 0。 */
+    lightAngle: number;
+    tint: string;
+    tintOpacity: number;
+    /** 高级：bevel 宽度覆盖（0=自动 plateau）。 */
+    bezelWidth: number;
 }
 
 
@@ -149,15 +181,20 @@ export interface WallpaperLayerConfig {
 
 /** 玻璃材质默认值（与引擎 config 的 GLASS_MATERIAL_DEFAULTS 一致）。 */
 export const GLASS_MATERIAL_DEFAULTS: WallpaperGlassMaterialConfig = {
-    blur: 10,
-    refraction: 3,
-    dispersion: 0.02,
-    curvature: 0.55,
+    blur: 30,
+    refraction: 2,
+    thickness: 12,
+    dispersion: 0.8,
+    saturation: 1.2,
+    contrast: 1.03,
+    highlight: 0.5,
+    shadow: 0.25,
+    highlightBlendMode: "screen",
+    shadowBlendMode: "multiply",
+    lightAngle: 0,
     tint: "#ffffff",
-    tintOpacity: 0.1,
-    saturation: 1.05,
-    highlight: 0.55,
-    shadow: 0.22,
+    tintOpacity: 0.08,
+    bezelWidth: 0,
 };
 
 export interface WallpaperWatchfaceConfig {

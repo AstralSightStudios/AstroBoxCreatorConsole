@@ -15,13 +15,14 @@ import type {
     WallpaperControlValue,
     WallpaperFontControlConfig,
     WallpaperFontOptionConfig,
+    WallpaperGlassBlendMode,
     WallpaperGlassGeometryConfig,
     WallpaperGlassMaterialConfig,
     WallpaperLayerConfig,
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { GLASS_MATERIAL_DEFAULTS } from "~/logic/wallpaper/types";
+import { GLASS_BLEND_MODES, GLASS_MATERIAL_DEFAULTS } from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
 import {
     EditorColorDots,
@@ -70,6 +71,25 @@ const BLEND_MODES = [
     "color",
     "luminosity",
 ];
+
+const GLASS_BLEND_MODE_LABELS: Record<WallpaperGlassBlendMode, string> = {
+    normal: "正常",
+    multiply: "正片叠底",
+    screen: "滤色",
+    overlay: "叠加",
+    darken: "变暗",
+    lighten: "变亮",
+    "color-dodge": "颜色减淡",
+    "color-burn": "颜色加深",
+    "hard-light": "强光",
+    "soft-light": "柔光",
+    difference: "差值",
+    exclusion: "排除",
+};
+
+const GLASS_BLEND_MODE_OPTIONS: Array<{ value: string; label: string }> = GLASS_BLEND_MODES.map(
+    (mode) => ({ value: mode, label: GLASS_BLEND_MODE_LABELS[mode] }),
+);
 
 const TYPE_OPTIONS: Array<{ value: WallpaperLayerKind; label: string }> = [
     { value: "wallpaper", label: "壁纸" },
@@ -446,9 +466,18 @@ export function Inspector({
             : layer.geometry && layer.geometry.type === "rounded-rect"
               ? layer.geometry
               : { type: "rounded-rect", width: 100, height: 100, radius: 0 };
+    const rawMaterial = layer.material;
+    const legacyCurvature =
+        typeof (rawMaterial as { curvature?: unknown } | undefined)?.curvature === "number"
+            ? (rawMaterial as unknown as { curvature: number }).curvature
+            : undefined;
     const glassMaterial: WallpaperGlassMaterialConfig = {
         ...GLASS_MATERIAL_DEFAULTS,
-        ...(layer.material ?? {}),
+        ...(rawMaterial ?? {}),
+        // 旧版 curvature（0..1）映射为 thickness（与引擎 parseGlassMaterial 一致）。
+        ...(legacyCurvature !== undefined && rawMaterial?.thickness === undefined
+            ? { thickness: GLASS_MATERIAL_DEFAULTS.thickness * (0.9 + 0.2 * legacyCurvature) }
+            : {}),
     };
     const glassTransform = {
         x: layer.transform?.x ?? 0,
@@ -1101,7 +1130,7 @@ export function Inspector({
                                 label="模糊"
                                 value={glassMaterial.blur}
                                 min={0}
-                                max={40}
+                                max={100}
                                 step={1}
                                 onChange={(v) => patchGlassMaterial({ blur: v })}
                                 onDragStateChange={onRenderSimplifyChange}
@@ -1110,27 +1139,36 @@ export function Inspector({
                                 label="折射"
                                 value={glassMaterial.refraction}
                                 min={0}
-                                max={12}
+                                max={4}
                                 step={0.1}
                                 onChange={(v) => patchGlassMaterial({ refraction: v })}
+                                onDragStateChange={onRenderSimplifyChange}
+                            />
+                            <GlassSliderField
+                                label="厚度"
+                                value={glassMaterial.thickness}
+                                min={0}
+                                max={40}
+                                step={0.5}
+                                onChange={(v) => patchGlassMaterial({ thickness: v })}
                                 onDragStateChange={onRenderSimplifyChange}
                             />
                             <GlassSliderField
                                 label="色散"
                                 value={glassMaterial.dispersion}
                                 min={0}
-                                max={0.1}
-                                step={0.005}
+                                max={4}
+                                step={0.05}
                                 onChange={(v) => patchGlassMaterial({ dispersion: v })}
                                 onDragStateChange={onRenderSimplifyChange}
                             />
                             <GlassSliderField
-                                label="曲率"
-                                value={glassMaterial.curvature}
-                                min={0}
-                                max={1}
+                                label="对比度"
+                                value={glassMaterial.contrast}
+                                min={0.5}
+                                max={1.5}
                                 step={0.01}
-                                onChange={(v) => patchGlassMaterial({ curvature: v })}
+                                onChange={(v) => patchGlassMaterial({ contrast: v })}
                                 onDragStateChange={onRenderSimplifyChange}
                             />
                             <EditorField label="着色 Tint">
@@ -1179,6 +1217,13 @@ export function Inspector({
                                 onChange={(v) => patchGlassMaterial({ highlight: v })}
                                 onDragStateChange={onRenderSimplifyChange}
                             />
+                            <EditorField label="高光混合模式">
+                                <EditorSelect
+                                    value={glassMaterial.highlightBlendMode}
+                                    options={GLASS_BLEND_MODE_OPTIONS}
+                                    onChange={(v) => patchGlassMaterial({ highlightBlendMode: v as WallpaperGlassBlendMode })}
+                                />
+                            </EditorField>
                             <GlassSliderField
                                 label="阴影"
                                 value={glassMaterial.shadow}
@@ -1186,6 +1231,31 @@ export function Inspector({
                                 max={1}
                                 step={0.01}
                                 onChange={(v) => patchGlassMaterial({ shadow: v })}
+                                onDragStateChange={onRenderSimplifyChange}
+                            />
+                            <EditorField label="阴影混合模式">
+                                <EditorSelect
+                                    value={glassMaterial.shadowBlendMode}
+                                    options={GLASS_BLEND_MODE_OPTIONS}
+                                    onChange={(v) => patchGlassMaterial({ shadowBlendMode: v as WallpaperGlassBlendMode })}
+                                />
+                            </EditorField>
+                            <GlassSliderField
+                                label="打光角度"
+                                value={glassMaterial.lightAngle}
+                                min={0}
+                                max={360}
+                                step={1}
+                                onChange={(v) => patchGlassMaterial({ lightAngle: v })}
+                                onDragStateChange={onRenderSimplifyChange}
+                            />
+                            <GlassSliderField
+                                label="Bevel 宽度（高级，0=自动）"
+                                value={glassMaterial.bezelWidth}
+                                min={0}
+                                max={40}
+                                step={0.5}
+                                onChange={(v) => patchGlassMaterial({ bezelWidth: v })}
                                 onDragStateChange={onRenderSimplifyChange}
                             />
                             <TwoColumnGrid>
@@ -1220,18 +1290,23 @@ export function Inspector({
                         onChange={(patch) => patchControl("opacity", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
                         onDragStateChange={onRenderSimplifyChange}
                     />
-                    <ControlTriple
-                        label="模糊"
-                        control={layer.blur}
-                        onChange={(patch) => patchControl("blur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
-                        onDragStateChange={onRenderSimplifyChange}
-                    />
-                    <ControlTriple
-                        label="背景模糊"
-                        control={layer.backdropBlur}
-                        onChange={(patch) => patchControl("backdropBlur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
-                        onDragStateChange={onRenderSimplifyChange}
-                    />
+                    {/* 液态玻璃不使用元素通用的模糊 / 背景模糊（引擎强制为 0，模糊由材质 blur 走整帧管线） */}
+                    {!isGlass && (
+                        <>
+                            <ControlTriple
+                                label="模糊"
+                                control={layer.blur}
+                                onChange={(patch) => patchControl("blur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                onDragStateChange={onRenderSimplifyChange}
+                            />
+                            <ControlTriple
+                                label="背景模糊"
+                                control={layer.backdropBlur}
+                                onChange={(patch) => patchControl("backdropBlur", Object.keys(patch)[0] as never, Object.values(patch)[0] as never)}
+                                onDragStateChange={onRenderSimplifyChange}
+                            />
+                        </>
+                    )}
 
                     {/* 着色 (asset tint / text color) */}
                     {(isAsset || isText) && (
@@ -1334,8 +1409,12 @@ export function Inspector({
                             {(
                                 [
                                     { key: "opacity", label: "透明度" },
-                                    { key: "blur", label: "模糊" },
-                                    { key: "backdropBlur", label: "背景模糊" },
+                                    ...(isGlass
+                                        ? []
+                                        : ([
+                                              { key: "blur", label: "模糊" },
+                                              { key: "backdropBlur", label: "背景模糊" },
+                                          ] as const)),
                                     ...(isTint
                                         ? ([{ key: "amount", label: "明暗程度" }] as const)
                                         : []),
