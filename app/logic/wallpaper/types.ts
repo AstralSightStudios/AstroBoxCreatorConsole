@@ -17,6 +17,28 @@ export interface WallpaperColorControlConfig {
     allowCustom?: boolean;
 }
 
+/** 图层通用混合模式（CSS 15 模式，与引擎 BLEND_MODES 一致）。 */
+export const LAYER_BLEND_MODES = [
+    "normal",
+    "multiply",
+    "screen",
+    "overlay",
+    "darken",
+    "lighten",
+    "color-dodge",
+    "color-burn",
+    "hard-light",
+    "soft-light",
+    "difference",
+    "exclusion",
+    "hue",
+    "saturation",
+    "color",
+    "luminosity",
+] as const;
+
+export type WallpaperLayerBlendMode = (typeof LAYER_BLEND_MODES)[number];
+
 export interface WallpaperBlendControlConfig {
     default: string;
     adjustable?: boolean;

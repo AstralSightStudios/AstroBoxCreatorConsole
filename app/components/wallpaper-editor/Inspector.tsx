@@ -22,7 +22,11 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { GLASS_BLEND_MODES, GLASS_MATERIAL_DEFAULTS } from "~/logic/wallpaper/types";
+import {
+    GLASS_BLEND_MODES,
+    GLASS_MATERIAL_DEFAULTS,
+    LAYER_BLEND_MODES,
+} from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
 import {
     EditorColorDots,
@@ -52,25 +56,6 @@ export interface InspectorProps {
     /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
     onRenderSimplifyChange?: (dragging: boolean) => void;
 }
-
-const BLEND_MODES = [
-    "normal",
-    "multiply",
-    "screen",
-    "overlay",
-    "darken",
-    "lighten",
-    "color-dodge",
-    "color-burn",
-    "hard-light",
-    "soft-light",
-    "difference",
-    "exclusion",
-    "hue",
-    "saturation",
-    "color",
-    "luminosity",
-];
 
 const GLASS_BLEND_MODE_LABELS: Record<WallpaperGlassBlendMode, string> = {
     normal: "正常",
@@ -574,6 +559,27 @@ export function Inspector({
             : typeof layer.blendMode?.default === "string"
               ? layer.blendMode.default
               : "normal";
+
+    const blendAdjustable =
+        typeof layer.blendMode === "object" && layer.blendMode.adjustable === true;
+
+    const patchBlendAdjustable = (checked: boolean) => {
+        const current: { default?: string; adjustable?: boolean; options?: string[] } =
+            typeof layer.blendMode === "string" ? {} : layer.blendMode ?? {};
+        onLayerPatch({
+            blendMode: checked
+                ? {
+                      ...current,
+                      default: blendValue,
+                      adjustable: true,
+                      options:
+                          Array.isArray(current.options) && current.options.length > 0
+                              ? current.options
+                              : [...LAYER_BLEND_MODES],
+                  }
+                : { ...current, default: blendValue, adjustable: false },
+        });
+    };
 
     return (
         <aside
@@ -1390,17 +1396,22 @@ export function Inspector({
 
                     {/* 混合模式 */}
                     <EditorField label="混合模式">
-                        <EditorSelect
-                            value={blendValue}
-                            options={BLEND_MODES.map((mode) => ({ value: mode, label: mode }))}
-                            onChange={(value) => {
-                                const current: { default?: string; adjustable?: boolean; options?: string[] } =
-                                    typeof layer.blendMode === "string" ? {} : layer.blendMode ?? {};
-                                onLayerPatch({
-                                    blendMode: { ...current, default: value, adjustable: current.adjustable ?? false },
-                                });
-                            }}
-                        />
+                        <div className="flex w-full items-center" style={{ gap: "var(--editor-control-gap)" }}>
+                            <div className="min-w-0 flex-1">
+                                <EditorSelect
+                                    value={blendValue}
+                                    options={LAYER_BLEND_MODES.map((mode) => ({ value: mode, label: mode }))}
+                                    onChange={(value) => {
+                                        const current: { default?: string; adjustable?: boolean; options?: string[] } =
+                                            typeof layer.blendMode === "string" ? {} : layer.blendMode ?? {};
+                                        onLayerPatch({
+                                            blendMode: { ...current, default: value, adjustable: current.adjustable ?? false },
+                                        });
+                                    }}
+                                />
+                            </div>
+                            <EditorSwitch checked={blendAdjustable} onCheckedChange={patchBlendAdjustable} />
+                        </div>
                     </EditorField>
 
                     {/* 用户可修改 */}

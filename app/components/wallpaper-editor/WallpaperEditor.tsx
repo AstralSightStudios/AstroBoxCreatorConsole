@@ -52,7 +52,7 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { GLASS_MATERIAL_DEFAULTS } from "~/logic/wallpaper/types";
+import { GLASS_MATERIAL_DEFAULTS, LAYER_BLEND_MODES } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
@@ -578,7 +578,7 @@ export function WallpaperEditor({
                 opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
                 blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
                 backdropBlur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
-                blendMode: { default: "normal", adjustable: true },
+                blendMode: { default: "normal", adjustable: true, options: [...LAYER_BLEND_MODES] },
             };
             setConfig((prev) => (prev ? addLayer(prev, activeIndex, layer) : prev));
             setSelection({ kind: "layer", layerId: layer.id });
@@ -810,6 +810,15 @@ export function WallpaperEditor({
         }
     }, [baseUrl, jsonDraft]);
 
+    const handleSwitchToVisual = useCallback(() => {
+        if (viewMode === "json") {
+            // JSON 模式切回可视化时先应用草稿；校验不通过则停留在 JSON 视图保留修改。
+            handleApplyJson();
+            return;
+        }
+        setViewMode("visual");
+    }, [handleApplyJson, viewMode]);
+
     // Reset active template bounds when templates change.
     useEffect(() => {
         if (config && activeTemplate >= config.templates.length) {
@@ -882,7 +891,7 @@ export function WallpaperEditor({
             <div className="flex shrink-0 items-center justify-end gap-1 px-3 py-1.5">
                 <button
                     type="button"
-                    onClick={() => setViewMode("visual")}
+                    onClick={handleSwitchToVisual}
                     className={`rounded-md px-2.5 py-1 text-xs transition ${
                         viewMode === "visual" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"
                     }`}
