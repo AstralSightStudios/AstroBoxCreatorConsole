@@ -589,13 +589,20 @@ export function WallpaperEditor({
     const handleMaskUpload = useCallback(
         async (file: File) => {
             if (!config || !selectedLayerId) return;
-            const configPath = `./assets/${file.name}`;
-            const url = URL.createObjectURL(file);
-            setAssetFiles((prev) => ({
-                ...prev,
-                [configPath]: assetFileForRepoPath(configPathToRepoPath(configPath), url, file),
-            }));
-            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, { mask: configPath }) : prev));
+            try {
+                const configPath = `./assets/${file.name}`;
+                const url = URL.createObjectURL(file);
+                setAssetFiles((prev) => ({
+                    ...prev,
+                    [configPath]: assetFileForRepoPath(configPathToRepoPath(configPath), url, file),
+                }));
+                const updated = updateLayer(config, activeIndex, selectedLayerId, { mask: configPath });
+                setConfig(updated);
+                setApplyError("");
+            } catch (error) {
+                console.error("[wallpaper] 蒙版导入失败", error);
+                setApplyError(`蒙版导入失败：${(error as Error).message ?? "未知错误"}`);
+            }
         },
         [activeIndex, config, selectedLayerId],
     );
@@ -983,6 +990,9 @@ export function WallpaperEditor({
                                 onTransformChange={handleTransformChange}
                                 onDuplicateTemplate={handleDuplicateTemplate}
                                 onRemoveTemplate={handleRemoveTemplate}
+                                onRenderError={(message) =>
+                                    setApplyError(message ? `渲染失败：${message}` : "")
+                                }
                             />
                         </main>
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />

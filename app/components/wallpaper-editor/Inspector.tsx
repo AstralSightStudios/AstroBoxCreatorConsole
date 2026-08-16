@@ -1396,22 +1396,17 @@ export function Inspector({
 
                     {/* 混合模式 */}
                     <EditorField label="混合模式">
-                        <div className="flex w-full items-center" style={{ gap: "var(--editor-control-gap)" }}>
-                            <div className="min-w-0 flex-1">
-                                <EditorSelect
-                                    value={blendValue}
-                                    options={LAYER_BLEND_MODES.map((mode) => ({ value: mode, label: mode }))}
-                                    onChange={(value) => {
-                                        const current: { default?: string; adjustable?: boolean; options?: string[] } =
-                                            typeof layer.blendMode === "string" ? {} : layer.blendMode ?? {};
-                                        onLayerPatch({
-                                            blendMode: { ...current, default: value, adjustable: current.adjustable ?? false },
-                                        });
-                                    }}
-                                />
-                            </div>
-                            <EditorSwitch checked={blendAdjustable} onCheckedChange={patchBlendAdjustable} />
-                        </div>
+                        <EditorSelect
+                            value={blendValue}
+                            options={LAYER_BLEND_MODES.map((mode) => ({ value: mode, label: mode }))}
+                            onChange={(value) => {
+                                const current: { default?: string; adjustable?: boolean; options?: string[] } =
+                                    typeof layer.blendMode === "string" ? {} : layer.blendMode ?? {};
+                                onLayerPatch({
+                                    blendMode: { ...current, default: value, adjustable: current.adjustable ?? false },
+                                });
+                            }}
+                        />
                     </EditorField>
 
                     {/* 用户可修改 */}
@@ -1443,6 +1438,13 @@ export function Inspector({
                                     />
                                 </div>
                             ))}
+                            <div
+                                className="flex items-center justify-between"
+                                style={{ paddingLeft: 17, paddingRight: 19 }}
+                            >
+                                <span className="text-[13px] leading-[18px] text-white/75">混合模式</span>
+                                <EditorSwitch checked={blendAdjustable} onCheckedChange={patchBlendAdjustable} />
+                            </div>
                         </div>
                     </EditorSection>
                 </div>

@@ -158,8 +158,10 @@ export function EditorField({
     children: ReactNode;
     twoColumn?: boolean;
 }) {
+    // 用 div 而非 label：避免浏览器把点击转发给内部的文件 input（蒙版/素材/字体），
+    // 否则 WebKit 下 label 默认行为与程序化 input.click() 叠加会导致选择后 change 事件丢失。
     return (
-        <label className="flex flex-col" style={{ gap: "var(--editor-label-control-gap)" }}>
+        <div className="flex flex-col" style={{ gap: "var(--editor-label-control-gap)" }}>
             <span
                 className="text-[13px] leading-[18px] text-white/75"
                 style={{ fontSize: "var(--editor-label-size)", lineHeight: "var(--editor-label-line-height)" }}
@@ -167,7 +169,7 @@ export function EditorField({
                 {label}
             </span>
             {children}
-        </label>
+        </div>
     );
 }
 

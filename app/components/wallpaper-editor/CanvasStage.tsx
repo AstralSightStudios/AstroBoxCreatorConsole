@@ -35,6 +35,8 @@ export interface CanvasStageProps {
     selectedLayerId?: string | null;
     /** 外部（如滑块拖动）要求临时简化渲染（暂停模糊/混合模式）。 */
     simplify?: boolean;
+    /** 渲染失败回调（蒙版/素材未加载等）；参数为空字符串表示渲染恢复。 */
+    onRenderError?: (message: string) => void;
     onActiveTemplateChange: (index: number) => void;
     onSelectCanvas: () => void;
     onTransformChange: (templateId: string, transform: WallpaperTransformState) => void;
@@ -88,6 +90,7 @@ export function CanvasStage({
     onTransformChange,
     onDuplicateTemplate,
     onRemoveTemplate,
+    onRenderError,
 }: CanvasStageProps) {
     const gestureCountRef = useRef(0);
     const [gestureActive, setGestureActive] = useState(false);
@@ -209,6 +212,9 @@ export function CanvasStage({
                                             resources={resource ?? { assets: {}, masks: {} }}
                                             onTransformChange={(transform) =>
                                                 onTransformChange(template.id, transform)
+                                            }
+                                            onRenderError={(message) =>
+                                                onRenderError?.(message ?? "")
                                             }
                                         />
                                     </div>
