@@ -2,7 +2,6 @@ import type { ResolvedWallpaperTemplate, WallpaperResources } from "@claralight-
 import { loadWallpaperFont, loadWallpaperImage } from "@claralight-design/wallpaper-engine/render";
 import type { WallpaperAssetFile, WallpaperConfigRaw } from "./types";
 import { getExpandedTemplate } from "./json-tree";
-
 export interface WallpaperResourceOptions {
     /** Map a config asset path (e.g. `./assets/foo.png`) to an absolute url (object or raw). */
     resolvePath?: (path: string) => string | undefined;
@@ -35,7 +34,7 @@ async function loadImage(
     }
 }
 
-/** Build the engine `WallpaperResources` (assets + masks) for one resolved template. */
+/** Build the engine `WallpaperResources` (assets + masks + fonts) for one resolved template. */
 export async function loadTemplateResources(
     template: ResolvedWallpaperTemplate,
     options: WallpaperResourceOptions = {},
@@ -43,6 +42,7 @@ export async function loadTemplateResources(
     const cache = new Map<string, HTMLImageElement>();
     const assets: WallpaperResources["assets"] = {};
     const masks: WallpaperResources["masks"] = {};
+    const fonts: WallpaperResources["fonts"] = {};
 
     for (const layer of template.layers) {
         if (layer.type === "asset") {
@@ -62,7 +62,12 @@ export async function loadTemplateResources(
                 const url = pickUrl(font.src, font.fontUrl, options.resolvePath);
                 if (!url) continue;
                 try {
-                    await loadWallpaperFont({ ...font, fontUrl: url });
+                    const loaded = await loadWallpaperFont({ ...font, fontUrl: url });
+                    if (loaded) {
+                        // Typr 解析结果供 outline 主路径使用；缺字回退仍走 FontFace。
+                        fonts[font.id] = loaded;
+                        fonts[url] = fonts[url] ?? loaded;
+                    }
                 } catch (error) {
                     console.warn("[wallpaper] 字体加载失败", font.id, error);
                 }
@@ -70,7 +75,7 @@ export async function loadTemplateResources(
         }
     }
 
-    return { assets, masks };
+    return { assets, masks, fonts };
 }
 
 /** Every config asset path referenced by one template, ready to map to upload files. */

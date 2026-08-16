@@ -1,4 +1,4 @@
-export type WallpaperLayerKind = "wallpaper" | "asset" | "tint" | "text";
+export type WallpaperLayerKind = "wallpaper" | "asset" | "tint" | "text" | "glass";
 
 export interface WallpaperControlConfig {
     default: number;
@@ -34,6 +34,9 @@ export interface WallpaperTransformConfig {
     x?: number;
     y?: number;
     scale?: number;
+    /** 玻璃层专用：非等比缩放。 */
+    scaleX?: number;
+    scaleY?: number;
     rotation?: number;
 }
 
@@ -78,6 +81,32 @@ export interface WallpaperRecolorGroupConfig {
     adjustable?: boolean;
 }
 
+export type WallpaperGlassGeometryConfig =
+    | {
+          type: "rounded-rect";
+          width: number;
+          height: number;
+          radius: number;
+      }
+    | {
+          type: "circle";
+          radius: number;
+      };
+
+/** 玻璃材质（均为壁纸 document 像素 / 归一化值，与引擎 LiquidGlassMaterialConfig 对齐）。 */
+export interface WallpaperGlassMaterialConfig {
+    blur: number;
+    refraction: number;
+    dispersion: number;
+    curvature: number;
+    tint: string;
+    tintOpacity: number;
+    saturation: number;
+    highlight: number;
+    shadow: number;
+}
+
+
 export interface WallpaperLayerConfig {
     id: string;
     name?: string;
@@ -112,7 +141,24 @@ export interface WallpaperLayerConfig {
         enabled?: boolean;
         groups?: WallpaperRecolorGroupConfig[];
     };
+    /** 玻璃层（liquid glass）：字段平铺在图层上（与引擎 parseGlass 读取的原始 JSON 形状一致）。 */
+    visible?: boolean;
+    geometry?: WallpaperGlassGeometryConfig;
+    material?: WallpaperGlassMaterialConfig;
 }
+
+/** 玻璃材质默认值（与引擎 config 的 GLASS_MATERIAL_DEFAULTS 一致）。 */
+export const GLASS_MATERIAL_DEFAULTS: WallpaperGlassMaterialConfig = {
+    blur: 10,
+    refraction: 3,
+    dispersion: 0.02,
+    curvature: 0.55,
+    tint: "#ffffff",
+    tintOpacity: 0.1,
+    saturation: 1.05,
+    highlight: 0.55,
+    shadow: 0.22,
+};
 
 export interface WallpaperWatchfaceConfig {
     name?: string;

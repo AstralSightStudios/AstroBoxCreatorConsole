@@ -6,6 +6,7 @@ import {
 import {
     getInitialWallpaperEditorState,
     loadWallpaperImage,
+    parseWallpaperFont,
     renderWallpaperToBlob,
 } from "@claralight-design/wallpaper-engine/render";
 import type {
@@ -51,8 +52,8 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
+import { GLASS_MATERIAL_DEFAULTS } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
-import { parseFontAxes } from "~/logic/wallpaper/font-axes";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
 import { CanvasStage } from "./CanvasStage";
@@ -390,6 +391,9 @@ export function WallpaperEditor({
         "verticalAlign",
         "transform",
         "textBox",
+        "visible",
+        "geometry",
+        "material",
     ]);
 
     const handleLayerPatch = useCallback(
@@ -504,7 +508,30 @@ export function WallpaperEditor({
                             blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
                             blendMode: "normal",
                         }
-                      : {
+                      : kind === "glass"
+                        ? (() => {
+                              const template = getExpandedTemplate(config, activeIndex);
+                              const canvasW = template.canvas?.width ?? 0;
+                              const canvasH = template.canvas?.height ?? 0;
+                              return {
+                                  id: genId("glass"),
+                                  name: "玻璃",
+                                  type: "glass",
+                                  clip: "frame",
+                                  opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
+                                  blendMode: "normal",
+                                  visible: true,
+                                  transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+                                  geometry: {
+                                      type: "rounded-rect",
+                                      width: Math.max(1, Math.round(canvasW / 2)),
+                                      height: Math.max(1, Math.round(canvasH / 2)),
+                                      radius: Math.max(1, Math.round(Math.min(canvasW, canvasH) / 8)),
+                                  },
+                                  material: { ...GLASS_MATERIAL_DEFAULTS },
+                              };
+                          })()
+                        : {
                             id: genId("tint"),
                             name: "明暗层",
                             type: "tint",
@@ -598,7 +625,14 @@ export function WallpaperEditor({
             }));
             let axes: WallpaperFontAxisConfig[] = [];
             try {
-                axes = parseFontAxes(await file.arrayBuffer());
+                const parsed = parseWallpaperFont(await file.arrayBuffer());
+                axes = (parsed.parsedFont?.axes ?? []).map((axis) => ({
+                    tag: axis.tag,
+                    name: axis.name,
+                    min: axis.min,
+                    default: axis.default,
+                    max: axis.max,
+                }));
             } catch (error) {
                 console.warn("[wallpaper] 字体轴解析失败", file.name, error);
             }

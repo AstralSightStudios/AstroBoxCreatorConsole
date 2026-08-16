@@ -3,6 +3,7 @@ import {
     ArrowLeftIcon,
     CircleHalfIcon,
     DownloadSimpleIcon,
+    DropIcon,
     ImageIcon,
     ImagesIcon,
     TextTIcon,
@@ -47,6 +48,7 @@ export interface SidebarProps {
 const LAYER_ADD_ITEMS: Array<{ kind: WallpaperLayerKind; label: string; icon: React.ReactNode }> = [
     { kind: "text", label: "文字", icon: <TextTIcon size={17} weight="regular" /> },
     { kind: "asset", label: "图片素材", icon: <ImageIcon size={17} weight="regular" /> },
+    { kind: "glass", label: "玻璃", icon: <DropIcon size={17} weight="regular" /> },
     { kind: "wallpaper", label: "壁纸层", icon: <ImagesIcon size={17} weight="regular" /> },
     { kind: "tint", label: "明暗层", icon: <CircleHalfIcon size={17} weight="regular" /> },
 ];
@@ -56,10 +58,11 @@ const LAYER_TYPE_ICONS: Record<WallpaperLayerKind, React.ReactNode> = {
     asset: <ImageIcon size={16} weight="regular" />,
     text: <TextTIcon size={16} weight="regular" />,
     tint: <CircleHalfIcon size={16} weight="regular" />,
+    glass: <DropIcon size={16} weight="regular" />,
 };
 
 function layerTypeIcon(type: WallpaperLayerKind | undefined): React.ReactNode {
-    if (type === "wallpaper" || type === "asset" || type === "text" || type === "tint") {
+    if (type) {
         return LAYER_TYPE_ICONS[type];
     }
     return <ImagesIcon size={16} weight="regular" />;
