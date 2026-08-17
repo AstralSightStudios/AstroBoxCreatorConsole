@@ -18,6 +18,7 @@ export default function PublishedStats() {
     const [paid, setPaid] = useState(0);
     const [watchface, setWatchface] = useState(0);
     const [quickApp, setQuickApp] = useState(0);
+    const [canopus, setCanopus] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -42,6 +43,10 @@ export default function PublishedStats() {
                 );
                 setQuickApp(
                     items.filter((item) => item.entry.restype === "quick_app")
+                        .length,
+                );
+                setCanopus(
+                    items.filter((item) => item.entry.restype === "canopus")
                         .length,
                 );
             } catch (fetchError) {
@@ -71,6 +76,7 @@ export default function PublishedStats() {
                 { label: "已发布付费资源数", value: "..." },
                 { label: "已发布表盘数", value: "..." },
                 { label: "已发布快应用数", value: "..." },
+                { label: "已发布模块数", value: "..." },
             ];
         }
 
@@ -80,6 +86,7 @@ export default function PublishedStats() {
                 { label: "已发布付费资源数", value: "--" },
                 { label: "已发布表盘数", value: "--" },
                 { label: "已发布快应用数", value: "--" },
+                { label: "已发布模块数", value: "--" },
             ];
         }
 
@@ -88,8 +95,9 @@ export default function PublishedStats() {
             { label: "已发布付费资源数", value: paid.toString() },
             { label: "已发布表盘数", value: watchface.toString() },
             { label: "已发布快应用数", value: quickApp.toString() },
+            { label: "已发布模块数", value: canopus.toString() },
         ];
-    }, [error, loading, paid, quickApp, total, watchface]);
+    }, [canopus, error, loading, paid, quickApp, total, watchface]);
 
     return (
         <>

@@ -1,4 +1,4 @@
-import type { ResourceEditContext } from "~/logic/publish/resources";
+import type { ResourceType } from "~/logic/publish/resource-type";
 import type { UploadItem } from "~/routes/resource/publish/components/shared";
 import type {
     AuthorInput,
@@ -11,7 +11,7 @@ export interface WizardFormSnapshot {
     itemId: string;
     itemName: string;
     description: string;
-    resourceType: "quick_app" | "watchface";
+    resourceType: ResourceType;
     tagsInput: string;
     paidType: string;
     authors: AuthorInput[];

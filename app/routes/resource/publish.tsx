@@ -27,14 +27,9 @@ import {
   parseSubmissionRequestJson,
   submissionRequestPath,
 } from "~/logic/publish/submission-protocol";
+import { formatResourceType } from "~/logic/publish/resource-type";
 
 import { SectionCard } from "./publish/components/shared";
-
-function formatRestype(restype: string) {
-  if (restype === "quick_app") return "快应用";
-  if (restype === "watchface") return "表盘";
-  return restype || "未知";
-}
 
 function useInProgressResources(refreshTick: number) {
   const [data, setData] = useState<PublishingResource[]>([]);
@@ -265,7 +260,7 @@ export default function ResourcePublish() {
               >
                 <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
                 <Table.Cell>{item.name}</Table.Cell>
-                <Table.Cell>{formatRestype(item.restype)}</Table.Cell>
+                <Table.Cell>{formatResourceType(item.restype)}</Table.Cell>
                 <Table.Cell className="flex flex-row gap-1 items-center">
                   {statusRender(item)}
                 </Table.Cell>

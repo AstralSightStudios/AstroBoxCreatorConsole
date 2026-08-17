@@ -8,8 +8,7 @@ import {
 import { DiceFiveIcon } from "@phosphor-icons/react";
 import { Field, SectionCard } from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
-
-type ResourceType = "quick_app" | "watchface";
+import type { ResourceType } from "~/logic/publish/resource-type";
 
 interface BasicInfoSectionProps {
   itemId: string;
@@ -89,6 +88,16 @@ export function BasicInfoSection({
           >
             表盘
           </SegmentedControl.Item>
+
+          <SegmentedControl.Item
+            value="canopus"
+            className={`
+              px-3 py-2 text-sm cursor-pointer
+              ${resourceType === "canopus" ? "bg-white/20 font-medium" : ""}
+            `}
+          >
+            模块
+          </SegmentedControl.Item>
         </SegmentedControl.Root>
         {/*<div className="flex flex-wrap gap-3">
           <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-white/5 px-3 py-2 transition hover:bg-white/10">
@@ -125,7 +134,9 @@ export function BasicInfoSection({
           hint={
             resourceType === "quick_app"
               ? "填写快应用包名"
-              : "12位纯数字，以9798开头"
+              : resourceType === "watchface"
+                ? "12位纯数字，以9798开头"
+                : "填写模块 ID"
           }
         >
           <div className="flex gap-2 items-start">
@@ -134,7 +145,9 @@ export function BasicInfoSection({
                 placeholder={
                   resourceType === "quick_app"
                     ? "com.example.quickapp"
-                    : "9798XXXXXXXX"
+                    : resourceType === "watchface"
+                      ? "9798XXXXXXXX"
+                      : "请输入模块 ID"
                 }
                 value={itemId}
                 onChange={(e) => {

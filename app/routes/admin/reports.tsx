@@ -19,6 +19,7 @@ import {
   textareaClass,
 } from "~/components/admin/AdminPage";
 import { useAccountState } from "~/logic/account/store";
+import { formatResourceType } from "~/logic/publish/resource-type";
 import {
   fetchCatalogEntries,
   type CatalogEntry,
@@ -585,7 +586,7 @@ function ResourceContextSection({
                 />
               )}
               <span className="text-base font-semibold text-white">{entry.name}</span>
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{entry.restype}</span>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">{formatResourceType(entry.restype)}</span>
             </div>
             <p className="flex items-center gap-1 text-xs text-white/45">
               ID

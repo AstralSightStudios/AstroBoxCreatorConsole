@@ -1,4 +1,5 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import type { ResourceType } from "./resource-type";
 
 export interface BasicAuthor {
     name: string;
@@ -55,7 +56,7 @@ export interface ManifestBuildInput {
     itemId: string;
     itemName: string;
     description: string;
-    resourceType: "quick_app" | "watchface";
+    resourceType: ResourceType;
     previews: UploadAssetInput[];
     icon: UploadAssetInput | null;
     cover: UploadAssetInput | null;

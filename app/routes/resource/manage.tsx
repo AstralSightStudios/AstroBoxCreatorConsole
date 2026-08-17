@@ -16,12 +16,7 @@ import ResourcePublish from "./publish";
 import { SectionCard } from "./publish/components/shared";
 import { useLayoutEffect, useEffect, useRef, useState } from "react";
 import { useSetHeaderBreadcrumb } from "~/layout/header-actions";
-
-function formatRestype(restype: string) {
-  if (restype === "quick_app") return "快应用";
-  if (restype === "watchface") return "表盘";
-  return restype || "未知";
-}
+import { formatResourceType } from "~/logic/publish/resource-type";
 
 function useElementWidth() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -246,7 +241,7 @@ export default function ResourceManage() {
                           </Table.RowHeaderCell>
                           <Table.Cell>{item.entry.name}</Table.Cell>
                           <Table.Cell>
-                            {formatRestype(item.entry.restype)}
+                            {formatResourceType(item.entry.restype)}
                           </Table.Cell>
                           <Table.Cell>
                             {item.entry.repo_owner}/{item.entry.repo_name}

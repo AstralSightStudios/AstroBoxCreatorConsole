@@ -1,4 +1,5 @@
 import type { AuthorInput, DownloadInput, LinkInput } from "~/routes/resource/publish/components/types";
+import type { ResourceType } from "./resource-type";
 
 const DB_NAME = "abcc-publish-drafts";
 const DB_VERSION = 1;
@@ -36,7 +37,7 @@ export interface PublishDraftFormData {
   itemId: string;
   itemName: string;
   description: string;
-  resourceType: "quick_app" | "watchface";
+  resourceType: ResourceType;
   tagsInput: string;
   paidType: string;
   authors: AuthorInput[];

@@ -86,6 +86,10 @@ import {
   fetchExistingCatalogIds,
 } from "~/logic/publish/watchface-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
+import {
+  normalizeResourceType,
+  type ResourceType,
+} from "~/logic/publish/resource-type";
 import { MediaSection } from "./components/MediaSection";
 import { AuthorsLinksSection } from "./components/AuthorsLinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
@@ -311,7 +315,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
   const [itemId, setItemId] = useState("");
-  const [resourceType, setResourceType] = useState<"quick_app" | "watchface">(
+  const [resourceType, setResourceType] = useState<ResourceType>(
     "quick_app",
   );
   const [itemName, setItemName] = useState("");
@@ -613,7 +617,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setItemName(manifest.item.name || catalogEntry.name || "");
         setDescription(manifest.item.description || "");
         setResourceType(
-          (manifest.item.restype as "quick_app" | "watchface") || "quick_app",
+          normalizeResourceType(manifest.item.restype),
         );
         setTagsInput(catalogEntry.tags || "");
         setPaidType(catalogEntry.paid_type || "");

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Globe, Link as LinkIcon, YoutubeLogo, GithubLogo, TwitterLogo, DiscordLogo, MapPin, Play, ShoppingCart, File, Cube, Storefront } from "@phosphor-icons/react";
 import { useAccountState } from "~/logic/account/store";
+import { formatResourceType } from "~/logic/publish/resource-type";
 import {
   useAuthorsProStatuses,
   hasCreatorPro,
@@ -185,7 +186,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
           <div className="space-y-2">
             <InfoRow label="资源名称" value={manifestItem?.name || entry.name || "-"} />
             <InfoRow label="资源 ID" value={manifestItem?.id || entry.id || "-"} />
-            <InfoRow label="资源类型" value={manifestItem?.restype || entry.restype || "-"} />
+            <InfoRow label="资源类型" value={formatResourceType(manifestItem?.restype || entry.restype)} />
             <InfoRow label="资源描述" value={manifestItem?.description || "-"} />
             <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
             {paidRatioStatus.state === "non-compliant" && (

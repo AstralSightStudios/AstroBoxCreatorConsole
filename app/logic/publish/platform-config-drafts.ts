@@ -46,7 +46,9 @@ export function upsertPlatformConfigDraft(draft: Omit<PlatformConfigDraft, "upda
     (item) =>
       item.resourceId === draft.resourceId &&
       item.deviceId === draft.deviceId &&
-      item.platform === draft.platform,
+      item.platform === draft.platform &&
+      item.externalProductId === draft.externalProductId &&
+      item.externalSkuId === draft.externalSkuId,
   );
   const next: PlatformConfigDraft = { ...draft, updatedAt: Date.now() };
   if (idx >= 0) {
@@ -63,7 +65,9 @@ function removeDraft(target: PlatformConfigDraft) {
       !(
         item.resourceId === target.resourceId &&
         item.deviceId === target.deviceId &&
-        item.platform === target.platform
+        item.platform === target.platform &&
+        item.externalProductId === target.externalProductId &&
+        item.externalSkuId === target.externalSkuId
       ),
   );
   saveAll(drafts);
