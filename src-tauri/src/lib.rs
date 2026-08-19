@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 struct GithubProxyRequest {
@@ -62,6 +63,34 @@ async fn github_request(request: GithubProxyRequest) -> Result<Value, String> {
     Ok(body)
 }
 
+#[tauri::command]
+async fn afdian_request(body: String) -> Result<Value, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("AstroBoxCreatorConsole")
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let response = client
+        .post("https://ifdian.net/api/open/query-order")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| format!("爱发电网络请求失败：{err}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|err| format!("读取爱发电响应失败：{err}"))?;
+    let payload = serde_json::from_str::<Value>(&text)
+        .map_err(|err| format!("爱发电返回了无效 JSON：{err}"))?;
+
+    if !status.is_success() {
+        return Err(format!("爱发电请求失败（HTTP {status}）：{text}"));
+    }
+
+    Ok(payload)
+}
 #[tauri::command]
 async fn encrypt_aes_256_ecb(data_base64: String, key_base64: String) -> Result<String, String> {
     let data = general_purpose::STANDARD
@@ -172,6 +201,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             github_request,
+            afdian_request,
             encrypt_aes_256_ecb,
             write_text_file,
             fetch_media

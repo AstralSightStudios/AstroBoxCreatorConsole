@@ -1,4 +1,5 @@
 import { sendApiRequest } from "./request";
+import type { AfdianOrder } from "~/api/afdian";
 
 export type CommercePlatform = "afd" | "cdk";
 
@@ -240,4 +241,69 @@ export function listSellerCdks(body: ListSellerCdkBody = {}) {
         undefined,
         body,
     );
+}
+
+export interface AfdianReissueCandidate {
+  key: string;
+  externalOrderId: string;
+  externalProductId: string;
+  externalSkuId: string;
+  buyerPlatformUserId: string;
+  buyerUserId: string;
+  resourceId: string;
+  deviceId: string;
+  purchaseTime: string;
+  amount: string;
+  canReissue: boolean;
+  reason: string;
+}
+
+export interface AfdianReconcileResponse {
+  candidates: AfdianReissueCandidate[];
+  skippedOrders: number;
+  matchedItems: number;
+}
+
+export interface AfdianReissueItem {
+  order: AfdianOrder;
+  externalSkuId: string;
+  resourceId: string;
+  deviceId: string;
+}
+
+export interface AfdianReissueResult {
+  key: string;
+  externalOrderId: string;
+  externalSkuId: string;
+  resourceId: string;
+  deviceId: string;
+  ok: boolean;
+  status: string;
+  reason: string;
+  buyerUserId: string;
+}
+
+export interface AfdianReissueResponse {
+  results: AfdianReissueResult[];
+  succeeded: number;
+  skipped: number;
+  failed: number;
+}
+
+export function reconcileAfdianOrders(body: { orders: AfdianOrder[] }) {
+  return sendApiRequest<AfdianReconcileResponse>(
+    "/order/seller/afdian/reconcile",
+    "POST",
+    undefined,
+    body,
+  );
+}
+
+export function reissueAfdianOrders(body: { items: AfdianReissueItem[] }) {
+  return sendApiRequest<AfdianReissueResponse>(
+    "/order/seller/afdian/reissue",
+    "POST",
+    undefined,
+    body,
+  );
 }

@@ -5,7 +5,7 @@
   "identifier": "moe.astralsight.astroboxcc",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:6767",
     "beforeDevCommand": "bun dev",
     "beforeBuildCommand": "bun run build"
   },
