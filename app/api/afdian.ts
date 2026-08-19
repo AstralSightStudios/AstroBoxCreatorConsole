@@ -34,6 +34,38 @@ interface AfdianApiResponse {
   };
 }
 
+export interface AfdianSkuMapping {
+  externalProductId: string;
+  externalSkuId: string;
+  enabled: boolean;
+  isPaid: boolean;
+  validationStatus?: string;
+}
+
+export function filterAfdianOrdersBySku(
+  orders: AfdianOrder[],
+  mappings: AfdianSkuMapping[],
+) {
+  const mappedPairs = new Set(
+    mappings
+      .filter(
+        (mapping) =>
+          mapping.enabled &&
+          mapping.isPaid &&
+          mapping.validationStatus === "active",
+      )
+      .map((mapping) => `${mapping.externalProductId}:${mapping.externalSkuId}`),
+  );
+
+  return orders.filter(
+    (order) =>
+      order.status === 2 &&
+      (order.sku_detail || []).some((sku) =>
+        mappedPairs.has(`${order.plan_id}:${sku.sku_id}`),
+      ),
+  );
+}
+
 export class AfdianApiError extends Error {
   code?: number;
 

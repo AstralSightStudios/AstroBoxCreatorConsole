@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildAfdianSign,
   fetchAfdianOrders,
+  filterAfdianOrdersBySku,
 } from "../../app/api/afdian";
 
 const originalFetch = globalThis.fetch;
@@ -95,6 +96,66 @@ describe("Afdian API client", () => {
     expect(progress).toHaveLength(101);
     expect(orders).toHaveLength(100);
     expect(orders.at(-1)?.out_trade_no).toBe("recent-100");
+  });
+
+  test("only keeps paid orders matching active server SKU mappings", () => {
+    const orders = filterAfdianOrdersBySku(
+      [
+        {
+          out_trade_no: "matched",
+          user_id: "buyer",
+          plan_id: "plan-a",
+          status: 2,
+          sku_detail: [{ sku_id: "sku-a" }, { sku_id: "unmapped" }],
+        },
+        {
+          out_trade_no: "inactive-mapping",
+          user_id: "buyer",
+          plan_id: "plan-b",
+          status: 2,
+          sku_detail: [{ sku_id: "sku-b" }],
+        },
+        {
+          out_trade_no: "unpaid",
+          user_id: "buyer",
+          plan_id: "plan-a",
+          status: 1,
+          sku_detail: [{ sku_id: "sku-a" }],
+        },
+        {
+          out_trade_no: "unmapped",
+          user_id: "buyer",
+          plan_id: "plan-c",
+          status: 2,
+          sku_detail: [{ sku_id: "sku-c" }],
+        },
+      ],
+      [
+        {
+          externalProductId: "plan-a",
+          externalSkuId: "sku-a",
+          enabled: true,
+          isPaid: true,
+          validationStatus: "active",
+        },
+        {
+          externalProductId: "plan-b",
+          externalSkuId: "sku-b",
+          enabled: true,
+          isPaid: true,
+          validationStatus: "pending_resource_review",
+        },
+        {
+          externalProductId: "plan-c",
+          externalSkuId: "sku-c",
+          enabled: false,
+          isPaid: true,
+          validationStatus: "active",
+        },
+      ],
+    );
+
+    expect(orders.map((order) => order.out_trade_no)).toEqual(["matched"]);
   });
 
   test("throws the platform error instead of treating an error response as empty", async () => {

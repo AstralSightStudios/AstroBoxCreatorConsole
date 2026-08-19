@@ -29,6 +29,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   fetchAfdianOrders,
+  filterAfdianOrdersBySku,
   type AfdianOrder,
 } from "~/api/afdian";
 import Page from "~/layout/page";
@@ -768,6 +769,8 @@ function AfdianReissueManager() {
   const [syncing, setSyncing] = useState(false);
   const [reissuing, setReissuing] = useState(false);
   const [error, setError] = useState("");
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidatePage, setCandidatePage] = useState(1);
 
   const { data: resourceConfigs } = useQuery({
     queryKey: ["sellerResourceConfigsForAfdianReissue"],
@@ -787,7 +790,11 @@ function AfdianReissueManager() {
   const afdianSkus = useMemo(
     () =>
       (resourceConfigs?.skus || []).filter(
-        (sku) => sku.platform === "afd" && sku.enabled && sku.isPaid,
+        (sku) =>
+          sku.platform === "afd" &&
+          sku.enabled &&
+          sku.isPaid &&
+          sku.validationStatus === "active",
       ),
     [resourceConfigs],
   );
@@ -800,6 +807,49 @@ function AfdianReissueManager() {
     () => selectableCandidates.filter((candidate) => selectedKeys.has(candidate.key)),
     [selectableCandidates, selectedKeys],
   );
+  const filteredCandidates = useMemo(() => {
+    const query = candidateSearch.trim().toLowerCase();
+    if (!query) return candidates;
+
+    return candidates.filter((candidate) =>
+      [
+        resourceNameMap.get(candidate.resourceId),
+        candidate.resourceId,
+        candidate.deviceId,
+        candidate.buyerUserId,
+        candidate.buyerPlatformUserId,
+        candidate.externalOrderId,
+        candidate.externalProductId,
+        candidate.externalSkuId,
+        afdianReasonLabel(candidate.reason),
+      ].some((value) => value?.toLowerCase().includes(query)),
+    );
+  }, [candidateSearch, candidates, resourceNameMap]);
+  const filteredSelectableCandidates = useMemo(
+    () => filteredCandidates.filter((candidate) => candidate.canReissue),
+    [filteredCandidates],
+  );
+  const candidatePageSize = 50;
+  const candidatePageCount = Math.max(
+    1,
+    Math.ceil(filteredCandidates.length / candidatePageSize),
+  );
+  const visibleCandidates = useMemo(
+    () =>
+      filteredCandidates.slice(
+        (candidatePage - 1) * candidatePageSize,
+        candidatePage * candidatePageSize,
+      ),
+    [candidatePage, filteredCandidates],
+  );
+
+  useEffect(() => {
+    setCandidatePage(1);
+  }, [candidateSearch, candidates]);
+
+  useEffect(() => {
+    setCandidatePage((previous) => Math.min(previous, candidatePageCount));
+  }, [candidatePageCount]);
 
   const toggleSelected = (key: string, checked: boolean) => {
     setSelectedKeys((previous) => {
@@ -811,11 +861,14 @@ function AfdianReissueManager() {
   };
 
   const selectAll = (checked: boolean) => {
-    setSelectedKeys(
-      checked
-        ? new Set(selectableCandidates.map((candidate) => candidate.key))
-        : new Set(),
-    );
+    setSelectedKeys((previous) => {
+      const next = new Set(previous);
+      filteredSelectableCandidates.forEach((candidate) => {
+        if (checked) next.add(candidate.key);
+        else next.delete(candidate.key);
+      });
+      return next;
+    });
   };
 
   const handleSync = async () => {
@@ -842,16 +895,7 @@ function AfdianReissueManager() {
           );
         },
       });
-      const mappedPairs = new Set(
-        afdianSkus.map((sku) => `${sku.externalProductId}:${sku.externalSkuId}`),
-      );
-      const relevantOrders = orders.filter(
-        (order) =>
-          order.status === 2 &&
-          (order.sku_detail || []).some((sku) =>
-            mappedPairs.has(`${order.plan_id}:${sku.sku_id}`),
-          ),
-      );
+      const relevantOrders = filterAfdianOrdersBySku(orders, afdianSkus);
       const orderMap = new Map(
         relevantOrders.map((order) => [order.out_trade_no, order]),
       );
@@ -1045,17 +1089,32 @@ function AfdianReissueManager() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm text-white/75">
                     <Checkbox
-                      checked={selectableCandidates.length > 0 && selectedCandidates.length === selectableCandidates.length}
+                      checked={filteredSelectableCandidates.length > 0 && filteredSelectableCandidates.every((candidate) => selectedKeys.has(candidate.key))}
                       onCheckedChange={(value) => selectAll(value === true)}
-                      disabled={reissuing || selectableCandidates.length === 0}
+                      disabled={reissuing || filteredSelectableCandidates.length === 0}
                     />
                     <span>可补发 {selectableCandidates.length} 项，已选择 {selectedCandidates.length} 项</span>
                   </div>
-                  <Button size="2" onClick={() => void handleReissue()} disabled={reissuing || selectedCandidates.length === 0}>
-                    {reissuing ? <Spinner size="2" /> : <CheckIcon size={16} />}
-                    {reissuing ? (syncProgress || "正在补发...") : `补发已选（${selectedCandidates.length}）`}
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <TextField.Root
+                      size="2"
+                      value={candidateSearch}
+                      onChange={(event) => setCandidateSearch(event.target.value)}
+                      placeholder="搜索资源、设备、买家、订单或 SKU"
+                      radius="large"
+                      disabled={reissuing}
+                    />
+                    <Button size="2" onClick={() => void handleReissue()} disabled={reissuing || selectedCandidates.length === 0}>
+                      {reissuing ? <Spinner size="2" /> : <CheckIcon size={16} />}
+                      {reissuing ? (syncProgress || "正在补发...") : `补发已选（${selectedCandidates.length}）`}
+                    </Button>
+                  </div>
                 </div>
+                {candidateSearch.trim() && (
+                  <div className="text-xs text-white/50">
+                    当前搜索匹配 {filteredCandidates.length} 项
+                  </div>
+                )}
                 <div className="w-full overflow-x-auto">
                   <Table.Root className="w-full min-w-220">
                     <Table.Header>
@@ -1069,7 +1128,7 @@ function AfdianReissueManager() {
                       </Table.Row>
                     </Table.Header>
                     <Table.Body>
-                      {candidates.map((candidate) => (
+                      {visibleCandidates.map((candidate) => (
                         <Table.Row key={candidate.key}>
                           <Table.Cell>
                             <Checkbox
@@ -1111,6 +1170,35 @@ function AfdianReissueManager() {
                       ))}
                     </Table.Body>
                   </Table.Root>
+                </div>
+                {filteredCandidates.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-5 text-center text-sm text-white/60">
+                    没有匹配当前搜索条件的订单。
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-white/55">
+                  <span>
+                    显示 {filteredCandidates.length === 0 ? 0 : (candidatePage - 1) * candidatePageSize + 1}–{Math.min(candidatePage * candidatePageSize, filteredCandidates.length)} / {filteredCandidates.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="1"
+                      variant="soft"
+                      onClick={() => setCandidatePage((previous) => Math.max(1, previous - 1))}
+                      disabled={candidatePage <= 1 || reissuing}
+                    >
+                      上一页
+                    </Button>
+                    <span>第 {candidatePage} / {candidatePageCount} 页</span>
+                    <Button
+                      size="1"
+                      variant="soft"
+                      onClick={() => setCandidatePage((previous) => Math.min(candidatePageCount, previous + 1))}
+                      disabled={candidatePage >= candidatePageCount || reissuing}
+                    >
+                      下一页
+                    </Button>
+                  </div>
                 </div>
               </>
             )}

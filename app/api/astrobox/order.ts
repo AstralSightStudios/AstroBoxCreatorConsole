@@ -36,6 +36,7 @@ export interface SellerResourceSku {
     buyUrl: string;
     isPaid: boolean;
     enabled: boolean;
+    validationStatus?: string;
 }
 
 export interface SellerResourceConfigListResponse {
