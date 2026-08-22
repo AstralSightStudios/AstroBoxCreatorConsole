@@ -23,10 +23,13 @@ import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
 import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
+import { installFrontendLogBridge } from "~/logic/logging";
 import {
   NewResourcePublishPage,
   ResourceEditPage,
 } from "./routes/resource/publish/new";
+
+installFrontendLogBridge();
 
 const queryClient = new QueryClient();
 
