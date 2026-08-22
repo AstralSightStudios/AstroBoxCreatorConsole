@@ -12,6 +12,8 @@ import {
 } from "./owner-pro";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
   checkPaidFreeRatioForAuthor,
   type PaidRatioResult,
@@ -877,6 +879,46 @@ export async function runResourceRuleChecks(options: {
     detail: manifestRestype && csvRestype ? `manifest: ${manifestRestype} / csv: ${csvRestype}` : "缺少可比对字段",
   });
 
+  // --- check: ext.bundledResources 前置资源有效性 ---
+  const bundledRequired = normalizeBundledResources(manifest?.ext?.bundledResources);
+  if (bundledRequired.length > 0) {
+    const selfResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
+    const selfBound = bundledRequired.filter((r) => r.id === selfResourceId);
+    let catalogIdMap: Map<string, string> | null = null;
+    let catalogError = "";
+    try {
+      const result = await fetchCatalogEntries({ token });
+      catalogIdMap = new Map(
+        result.entries
+          .filter((e) => e.id)
+          .map((e) => [e.id, e.name || e.id]),
+      );
+    } catch (err) {
+      catalogError = err instanceof Error ? err.message : String(err);
+    }
+    const missingInCatalog =
+      catalogIdMap != null
+        ? bundledRequired.filter((r) => !catalogIdMap!.has(r.id))
+        : [];
+    checks.push({
+      title: "ext.bundledResources 前置资源有效",
+      status: (() => {
+        if (catalogIdMap == null) return "manual";
+        if (selfBound.length > 0 || missingInCatalog.length > 0) return "fail";
+        return "pass";
+      })(),
+      detail: (() => {
+        if (catalogIdMap == null)
+          return `无法加载资源目录进行校验：${catalogError}`;
+        if (selfBound.length > 0)
+          return `前置资源不能绑定自身：${selfBound.map((r) => r.id).join(", ")}`;
+        if (missingInCatalog.length > 0)
+          return `目录中不存在的前置资源：${missingInCatalog.map((r) => r.id).join(", ")}`;
+        return `前置资源均存在（${bundledRequired.map((r) => catalogIdMap!.get(r.id) || r.id).join("、")}）`;
+      })(),
+    });
+  }
+
   // --- check: manifest downloads 设备标识有效性 ---
   const { full: fullDeviceKeys, trial: trialDeviceKeys } = getManifestDownloadKeys(manifest);
   const allDeviceTokens = [...fullDeviceKeys, ...trialDeviceKeys];
@@ -1242,24 +1284,30 @@ export async function runResourceRuleChecks(options: {
     // 聚合：类型匹配
     const typeMismatch = packageChecks.filter((p) => p.typeMatch === "mismatch");
     const typeInconclusive = packageChecks.filter((p) => p.typeMatch === "inconclusive");
+    const packageDetail =
+      packageChecks
+        .map(
+          (p) =>
+            `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
+              p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
+            }${p.error ? ` [${p.error}]` : ""}`,
+        )
+        .join(" · ") || "无包体";
     checks.push({
       title: "包体类型与资源类别匹配",
       status:
-        typeMismatch.length > 0
-          ? "fail"
-          : typeInconclusive.length > 0
-            ? "manual"
-            : "pass",
+        restype === "canopus"
+          ? "pass"
+          : typeMismatch.length > 0
+            ? "fail"
+            : typeInconclusive.length > 0
+              ? "manual"
+              : "pass",
       detail:
-        (typeInconclusive.length > 0 ? "可能有问题，需要人工复核。" : "") +
-        (packageChecks
-          .map(
-            (p) =>
-              `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
-                p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
-              }${p.error ? ` [${p.error}]` : ""}`,
-          )
-          .join(" · ") || "无包体"),
+        restype === "canopus"
+          ? `模块（canopus）包体不做类型强校验 · ${packageDetail}`
+          : (typeInconclusive.length > 0 ? "可能有问题，需要人工复核。" : "") +
+            packageDetail,
     });
 
     // 聚合：内嵌 ID
@@ -1270,7 +1318,7 @@ export async function runResourceRuleChecks(options: {
       status:
         idMismatch.length > 0
           ? "fail"
-          : restype === "watchface"
+          : restype === "watchface" || restype === "canopus"
             ? "pass"
             : idSkipped.length === packageChecks.length
               ? "warn"
@@ -1278,15 +1326,17 @@ export async function runResourceRuleChecks(options: {
       detail:
         restype === "watchface"
           ? "表盘包体内嵌 ID 不再强制校验（安装时会强制修改为 CSV/manifest 的 ID）"
-          : (resourceId ? `资源 ID: ${resourceId} · ` : "") +
-            packageChecks
-              .map((p) => {
-                const detected = p.detectedId ? `检测到 ${p.detectedId}` : "未检测到";
-                return `${p.fileName}: ${
-                  p.idMatch === "match" ? "匹配" : p.idMatch === "mismatch" ? `不匹配（${detected}）` : "跳过"
-                }${p.error ? ` [${p.error}]` : ""}`;
-              })
-              .join(" · "),
+          : restype === "canopus"
+            ? "模块包体内嵌 ID 不做强制校验"
+            : (resourceId ? `资源 ID: ${resourceId} · ` : "") +
+              packageChecks
+                .map((p) => {
+                  const detected = p.detectedId ? `检测到 ${p.detectedId}` : "未检测到";
+                  return `${p.fileName}: ${
+                    p.idMatch === "match" ? "匹配" : p.idMatch === "mismatch" ? `不匹配（${detected}）` : "跳过"
+                  }${p.error ? ` [${p.error}]` : ""}`;
+                })
+                .join(" · "),
     });
   }
 

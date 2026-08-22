@@ -34,12 +34,49 @@ export interface ManifestDownloadInfo {
     file_name: string;
 }
 
+export interface ManifestBundledResource {
+    type: string;
+    id: string;
+}
+
 export interface ManifestExtObject extends Record<string, unknown> {
     enableAstroBoxCreatorFeatures?: boolean;
     trialDownloads?: Record<string, ManifestDownloadInfo>;
+    bundledResources?: {
+        required?: ManifestBundledResource[];
+    };
     wallpaperGenerator?: {
         configUrl: string;
     };
+}
+
+export function normalizeBundledResources(
+    value: unknown,
+): ManifestBundledResource[] {
+    const container = value as
+        | { required?: unknown }
+        | undefined
+        | null;
+    const required = Array.isArray(container?.required)
+        ? container.required
+        : Array.isArray(value)
+          ? value
+          : [];
+    const seen = new Set<string>();
+    const result: ManifestBundledResource[] = [];
+    for (const item of required) {
+        if (!item || typeof item !== "object") continue;
+        const id = String((item as { id?: unknown }).id ?? "").trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        result.push({
+            type:
+                String((item as { type?: unknown }).type ?? "resource").trim() ||
+                "resource",
+            id,
+        });
+    }
+    return result;
 }
 
 export interface ManifestWallpaperInput {
@@ -66,6 +103,7 @@ export interface ManifestBuildInput {
     links: BasicLink[];
     downloads: DownloadUploadInput[];
     trialDownloads: DownloadUploadInput[];
+    bundledResources?: ManifestBundledResource[];
     ext: ManifestExtObject;
     enableAstroBoxCreatorFeatures: boolean;
     wallpaper?: ManifestWallpaperInput;
@@ -226,6 +264,12 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         ext.trialDownloads = trialDownloadsObject;
     } else {
         delete ext.trialDownloads;
+    }
+
+    const bundledResources = normalizeBundledResources(input.bundledResources);
+    delete ext.bundledResources;
+    if (bundledResources.length > 0) {
+        ext.bundledResources = { required: bundledResources };
     }
 
     let wallpaperConfigJson: string | undefined;

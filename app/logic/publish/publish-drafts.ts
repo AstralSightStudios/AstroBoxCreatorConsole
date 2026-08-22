@@ -1,4 +1,4 @@
-import type { AuthorInput, DownloadInput, LinkInput } from "~/routes/resource/publish/components/types";
+import type { AuthorInput, BundledResourceInput, DownloadInput, LinkInput } from "~/routes/resource/publish/components/types";
 import type { ResourceType } from "./resource-type";
 
 const DB_NAME = "abcc-publish-drafts";
@@ -47,6 +47,7 @@ export interface PublishDraftFormData {
   cover: DraftMediaItem | null;
   downloads: DownloadInput[];
   trialDownloads: DownloadInput[];
+  bundledResources?: BundledResourceInput[];
   enableAstroBoxCreatorFeatures: boolean;
   extRaw: string;
   wallpaperConfigJson: string;

@@ -32,6 +32,7 @@ import {
 } from "~/logic/wallpaper/wizard-session";
 import {
   buildManifest,
+  normalizeBundledResources,
   type ManifestBuildResult,
   type ManifestDownloadInfo,
   type ManifestExtObject,
@@ -75,6 +76,7 @@ import {
 } from "./components/uploadUtils";
 import {
   type AuthorInput,
+  type BundledResourceInput,
   type DeviceOption,
   type DownloadInput,
   type LinkInput,
@@ -163,6 +165,7 @@ function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject
   const next: ManifestExtObject = { ...ext };
   delete next.enableAstroBoxCreatorFeatures;
   delete next.trialDownloads;
+  delete next.bundledResources;
   delete next.wallpaperGenerator;
   return next;
 }
@@ -363,6 +366,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
 
   const [extRaw, setExtRaw] = useState("{}");
+  const [bundledResources, setBundledResources] = useState<
+    BundledResourceInput[]
+  >([]);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [repoStatus, setRepoStatus] = useState<
     "idle" | "loading" | "success" | "error"
@@ -692,6 +698,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setEnableAstroBoxCreatorFeatures(
           Boolean(ext.enableAstroBoxCreatorFeatures),
         );
+        setBundledResources(normalizeBundledResources(ext.bundledResources));
         setExtRaw(JSON.stringify(extractCustomExt(ext), null, 2));
         setRepoInfo({ ...repo });
         setRepoNameInput(repo.name);
@@ -786,6 +793,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         downloads,
         trialDownloads,
         enableAstroBoxCreatorFeatures,
+        bundledResources,
         ext: parsedExt,
         wallpaper: wallpaperPayload.configJson.trim()
           ? {
@@ -797,6 +805,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }),
     [
       authors,
+      bundledResources,
       cover,
       description,
       downloads,
@@ -1633,6 +1642,31 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   // --- Draft system ---
+  const handleAddBundledResources = useCallback(
+    (items: BundledResourceInput[]) => {
+      setBundledResources((prev) => {
+        const seen = new Set(prev.map((item) => item.id));
+        const merged = [...prev];
+        for (const item of items) {
+          const id = item.id.trim();
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          merged.push({
+            type: (item.type || "resource").trim() || "resource",
+            id,
+            name: item.name,
+          });
+        }
+        return merged;
+      });
+    },
+    [],
+  );
+
+  const handleRemoveBundledResource = useCallback((id: string) => {
+    setBundledResources((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
   const [draftList, setDraftList] = useState<PublishDraft[]>([]);
   const [draftPopoverOpen, setDraftPopoverOpen] = useState(false);
   const [saveDraftOpen, setSaveDraftOpen] = useState(false);
@@ -1666,6 +1700,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       cover: serializedCover,
       downloads: downloads.map((d) => ({ ...d, file: null })),
       trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
+      bundledResources,
       enableAstroBoxCreatorFeatures,
       extRaw,
       wallpaperConfigJson: wallpaperPayload.configJson,
@@ -1673,7 +1708,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         wallpaperPayload.assets.map(serializeWallpaperAsset),
       ),
     };
-  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperPayload]);
+  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperPayload]);
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
@@ -1693,6 +1728,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setCover(restoreMediaItem(data.cover));
     setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
+    setBundledResources(
+      Array.isArray(data.bundledResources) ? data.bundledResources : [],
+    );
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
     setExtRaw(data.extRaw);
     setWallpaperPayload({
@@ -2186,6 +2224,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 enableAstroBoxCreatorFeatures={
                   enableAstroBoxCreatorFeatures
                 }
+                bundledResources={bundledResources}
+                selfResourceId={itemId}
+                onAddBundledResources={handleAddBundledResources}
+                onRemoveBundledResource={handleRemoveBundledResource}
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />

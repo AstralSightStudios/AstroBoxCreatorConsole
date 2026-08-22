@@ -12,5 +12,6 @@ export function formatResourceType(restype?: string): string {
   if (restype === "quick_app") return "快应用";
   if (restype === "watchface") return "表盘";
   if (restype === "canopus") return "模块";
+  if (restype === "resource") return "资源";
   return restype || "未知";
 }

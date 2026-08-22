@@ -4,6 +4,8 @@ export type AuthorInput = { name: string; bindABAccount: boolean };
 
 export type LinkInput = { icon: string; title: string; url: string };
 
+export type BundledResourceInput = { type: string; id: string; name?: string };
+
 export type DownloadInput = {
     uid: string;
     platformId: string;
