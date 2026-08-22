@@ -54,13 +54,31 @@ export async function compressImageFile(
     }
 }
 
-export const createUploadItem = (file: File): UploadItem => ({
-    id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36),
-    name: file.name,
-    url: URL.createObjectURL(file),
-    file,
-    source: "upload",
-});
+const URL_UNSAFE_FILENAME_PATTERN = /[#?%]/g;
+
+export function containsUrlUnsafeFilename(name: string): boolean {
+    return /[#?%]/.test(name);
+}
+
+export function sanitizeFileName(name: string): string {
+    return name.replace(URL_UNSAFE_FILENAME_PATTERN, "-");
+}
+
+function ensureSafeFileName(file: File): File {
+    if (!containsUrlUnsafeFilename(file.name)) return file;
+    return new File([file], sanitizeFileName(file.name), { type: file.type });
+}
+
+export const createUploadItem = (rawFile: File): UploadItem => {
+    const file = ensureSafeFileName(rawFile);
+    return {
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36),
+        name: file.name,
+        url: URL.createObjectURL(file),
+        file,
+        source: "upload",
+    };
+};
 
 export const createImageUploadItem = async (file: File): Promise<UploadItem> => ({
     ...createUploadItem(file),

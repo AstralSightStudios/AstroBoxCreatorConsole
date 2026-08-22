@@ -2,6 +2,7 @@ import { unzipSync } from "fflate";
 
 export interface ValidationUploadItem {
   id?: string;
+  name?: string;
   file?: Blob;
   width?: number;
   height?: number;
@@ -89,6 +90,32 @@ function validateDownloadRows(
   });
 }
 
+export function containsUrlUnsafeFilename(name: string): boolean {
+  return /[#?%]/.test(name);
+}
+
+function validateUrlUnsafeFilenames(input: PublishValidationInput): string[] {
+  const offenders: Array<{ label: string; name: string }> = [];
+  const collect = (label: string, name?: string) => {
+    if (name && containsUrlUnsafeFilename(name)) {
+      offenders.push({ label, name });
+    }
+  };
+  input.previews.forEach((item, index) =>
+    collect(`预览图${input.previews.length > 1 ? ` ${index + 1}` : ""}`, item.name),
+  );
+  collect("图标", input.icon?.name);
+  collect("封面", input.cover?.name);
+  input.downloads.forEach((row) => collect("正式包", row.file?.name || row.existingFileName));
+  input.trialDownloads.forEach((row) => collect("试用包", row.file?.name || row.existingFileName));
+  if (offenders.length === 0) return [];
+  return [
+    `以下文件名包含 # ? % 等字符，客户端拼接 URL 时会被截断导致无法加载，请重命名后重新上传：${offenders
+      .map((item) => `${item.label}「${item.name}」`)
+      .join("、")}`,
+  ];
+}
+
 export function validatePublish(
   input: PublishValidationInput,
 ): PublishValidationResult {
@@ -134,6 +161,7 @@ export function validatePublish(
   if (input.downloads.length === 0) errors.push("请至少添加一个正式下载设备。");
   errors.push(...validateDownloadRows(input.downloads, "正式下载"));
   errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));
+  errors.push(...validateUrlUnsafeFilenames(input));
   const linkErrors = input.links.map(validateLink);
   const linkErrorText = linkErrors.filter(Boolean).join("；");
   if (linkErrorText) {

@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import {
+  containsUrlUnsafeFilename,
   normalizeLinkUrl,
   readRpkPackage,
   validateLink,
   validatePublish,
   validateRpkPackage,
 } from "../../app/logic/publish/validation";
+import {
+  createUploadItem,
+  sanitizeFileName,
+} from "../../app/routes/resource/publish/components/uploadUtils";
 
 const image = { file: new Blob(), width: 100, height: 100 };
 const coverImage = { file: new Blob(), width: 150, height: 100 };
@@ -95,6 +100,54 @@ describe("publish validation", () => {
     });
     expect(result.errors.join(" ")).toContain("外部链接填写不完整");
     expect(result.linkErrors[0]).toContain("HTTPS");
+  });
+
+  test("rejects referenced filenames containing URL-unsafe characters", () => {
+    const result = validatePublish({
+      ...validInput,
+      previews: [
+        { ...coverImage, id: "p1", name: "20260817111124#2.png" },
+        { ...coverImage, id: "p2", name: "clean.png" },
+      ],
+      downloads: [
+        { platformId: "device", version: "1.0", file: image, existingFileName: "pkg?1.bin" },
+      ],
+    });
+    const joined = result.errors.join(" ");
+    expect(joined).toContain("重命名后重新上传");
+    expect(joined).toContain("预览图 1「20260817111124#2.png」");
+    expect(joined).toContain("正式包「pkg?1.bin」");
+    expect(joined).not.toContain("clean.png");
+
+    const clean = validatePublish({
+      ...validInput,
+      previews: [{ ...coverImage, id: "p2", name: "clean.png" }],
+      cover: null,
+      usePreviewAsCover: true,
+      coverPreviewId: "p2",
+    });
+    expect(clean.errors.filter((e) => e.includes("重命名"))).toEqual([]);
+  });
+});
+
+describe("filename sanitization", () => {
+  test("detects URL-unsafe characters", () => {
+    expect(containsUrlUnsafeFilename("a#b.png")).toBe(true);
+    expect(containsUrlUnsafeFilename("a?b.png")).toBe(true);
+    expect(containsUrlUnsafeFilename("100%.png")).toBe(true);
+    expect(containsUrlUnsafeFilename("Frame 6-2 1.png")).toBe(false);
+  });
+
+  test("sanitizeFileName replaces unsafe characters with dashes", () => {
+    expect(sanitizeFileName("20260817111124#2.png")).toBe("20260817111124-2.png");
+    expect(sanitizeFileName("a?b%c.png")).toBe("a-b-c.png");
+    expect(sanitizeFileName("clean.png")).toBe("clean.png");
+  });
+
+  test("createUploadItem keeps safe filenames untouched", () => {
+    const item = createUploadItem(new File([new Uint8Array([1])], "shot3.png"));
+    expect(item.name).toBe("shot3.png");
+    expect(containsUrlUnsafeFilename(item.name)).toBe(false);
   });
 });
 
