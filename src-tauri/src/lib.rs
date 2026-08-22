@@ -2,6 +2,9 @@ use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit};
 use aes::Aes256;
 use base64::{engine::general_purpose, Engine as _};
 use ecb::Encryptor;
+mod logs_archive;
+mod logger;
+mod resource_log;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -184,19 +187,17 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // The log plugin is only used for its fern plumbing; the actual logger
+        // is attached manually in `logger::init_logger` so that logging works
+        // in release builds too.
+        .plugin(tauri_plugin_log::Builder::default().skip_logger().build())
         .setup(|app| {
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            logger::init_logger(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -204,7 +205,12 @@ pub fn run() {
             afdian_request,
             encrypt_aes_256_ecb,
             write_text_file,
-            fetch_media
+            fetch_media,
+            logger::frontend_log,
+            resource_log::resource_log_start,
+            resource_log::resource_log_write,
+            logs_archive::get_log_dir_path,
+            logs_archive::export_logs_archive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -30,6 +30,13 @@ aes = "0.8"
 ecb = { version = "0.1", features = ["alloc", "block-padding"] }
 base64 = "0.22"
 tauri-plugin-deep-link = "2"
+anyhow = "1"
+chrono = "0.4"
+flate2 = "1"
+tar = "0.4"
+os_info = "3"
+regex = "1"
+sys-locale = "0.3"
 
 # Patch swift-rs (transitive build-dep of tauri, used for the iOS Swift bridge)
 # to our fork, which fixes cross-compilation pulling in the macOS SDK during
