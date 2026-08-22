@@ -5,7 +5,7 @@ import {
   TrayIcon,
 } from "@phosphor-icons/react";
 import { Button, Table, Callout, Spinner, Tabs } from "@radix-ui/themes";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import Page from "~/layout/page";
 import {
   loadOwnedCatalogResourcesForCurrentUser,
@@ -44,11 +44,14 @@ function useElementWidth() {
 
 export default function ResourceManage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState<ResourceCatalogContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
-  const [tab, setTab] = useState("manage");
+  const [tab, setTab] = useState(
+    searchParams.get("tab") === "publish" ? "publish" : "manage",
+  );
   const setHeaderBreadcrumb = useSetHeaderBreadcrumb();
   const { ref, width } = useElementWidth();
 

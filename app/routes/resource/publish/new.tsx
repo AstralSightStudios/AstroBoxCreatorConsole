@@ -20,7 +20,7 @@ import {
   ClockIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import { loadSubmitMode } from "~/config/publishMode";
@@ -2081,6 +2081,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   {editContext.catalog.entry.name ||
                     editContext.catalog.entry.id}
                   {editContext.mode === "in_progress" && editContext.prNumber
+          {!isEditing && (
+            <div className="mx-3 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">
+              如需修改正在审核中的资源，请前往{" "}
+              <Link
+                to="/manage?tab=publish"
+                className="font-medium underline underline-offset-2 transition hover:text-white"
+              >
+                审核列表
+              </Link>
+              ，避免重复提交新的发布申请。
+            </div>
+          )}
                     ? `（PR #${editContext.prNumber}）`
                     : ""}
                 </Callout.Text>
