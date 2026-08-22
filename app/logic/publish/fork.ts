@@ -1,4 +1,5 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { log } from "~/logic/logging";
 import { githubFetch, isGithubStatus } from "./github-actions";
 
 async function getBranchHeadSha(params: {
@@ -78,10 +79,7 @@ export async function syncForkDefaultBranch(params: {
             },
         );
     } catch (error) {
-        console.warn(
-            `merge-upstream 同步 fork ${forkOwner}/${forkRepo}#${branch} 失败，尝试强制对齐到上游`,
-            error,
-        );
+        log.warn("publish/fork", `merge-upstream 同步 fork ${forkOwner}/${forkRepo}#${branch} 失败，尝试强制对齐到上游`, { data: { error } });
     }
 
     // 2. 校验是否真的追平上游；没追平就强制对齐（丢弃 fork 分支上的分叉提交）。
@@ -103,10 +101,7 @@ export async function syncForkDefaultBranch(params: {
             },
         );
     } catch (error) {
-        console.warn(
-            `强制对齐 fork ${forkOwner}/${forkRepo}#${branch} 到上游失败，将使用 fork 当前状态继续`,
-            error,
-        );
+        log.warn("publish/fork", `强制对齐 fork ${forkOwner}/${forkRepo}#${branch} 到上游失败，将使用 fork 当前状态继续`, { data: { error } });
     }
 }
 

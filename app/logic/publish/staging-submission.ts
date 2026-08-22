@@ -1,4 +1,5 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { log } from "~/logic/logging";
 import { loadAccountState } from "../account/store";
 import {
     createBlob,
@@ -195,6 +196,9 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
     }
 
     const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
+    log.info("publish/fork", `fork 就绪 ${fork.owner}/${fork.name}`, {
+      data: { defaultBranch: fork.default_branch },
+    });
     await syncForkDefaultBranch({
         token,
         forkOwner: fork.owner,
@@ -211,6 +215,9 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
     );
     const branchName = `astrobox-submit-${Date.now()}`;
     await createBranch(token, fork.owner, fork.name, forkHeadSha, branchName);
+    log.info("publish/branch", `提交分支已创建 ${branchName}`, {
+      data: { base: `${fork.owner}/${fork.name}@${forkHeadSha.slice(0, 7)}` },
+    });
 
     let request: SubmissionRequest;
     if (intent.mode === "create") {

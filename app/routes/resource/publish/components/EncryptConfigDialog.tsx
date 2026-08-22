@@ -17,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { parseAfdUrl } from "~/logic/publish/afdian-url";
+import { reportFailure } from "~/logic/logging/feedback";
 import {
   deleteResourceSku,
   listSellerPlatformConfigs,
@@ -432,14 +433,23 @@ export function EncryptConfigDialog({
       try {
         await saveRowsForDevice("afd", validated.rows, targetDeviceId, false);
         successCount += 1;
-      } catch {
-        // Continue applying the remaining devices.
+      } catch (error) {
+        // 单个设备失败不中断整体应用，但必须有可见反馈与日志。
+        reportFailure(
+          "encrypt/batch",
+          `应用到设备 ${targetDeviceId} 失败：${(error as Error).message ?? "未知错误"}`,
+          error,
+        );
       }
     }
 
     setBatchProgress({ done: targetDeviceIds.length, total: targetDeviceIds.length });
     setBatchSaving(false);
-    toast.success(`已将全部映射应用到 ${successCount}/${targetDeviceIds.length} 个设备`);
+    if (successCount === 0) {
+      toast.error("全部设备应用失败，请检查网络后重试");
+    } else {
+      toast.success(`已将全部映射应用到 ${successCount}/${targetDeviceIds.length} 个设备`);
+    }
     onBatchSaved?.();
   };
 

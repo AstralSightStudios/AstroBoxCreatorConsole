@@ -24,6 +24,14 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import { loadSubmitMode } from "~/config/publishMode";
+import { REPO_ENVS, useRepoEnvId } from "~/config/repoEnv";
+import { log } from "~/logic/logging";
+import { reportFailure, reportSuccess } from "~/logic/logging/feedback";
+import {
+  endResourceSession,
+  flowSpan,
+  usePublishFlowSession,
+} from "~/logic/logging/publish-flow";
 import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
 import {
   saveWizardSession,
@@ -324,6 +332,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const displayAccount = useDisplayAccount();
   const isVip = hasCreatorPlusOrAbove(displayAccount.plan);
   const isEditMode = mode === "edit";
+  const repoEnvId = useRepoEnvId();
   const [itemId, setItemId] = useState("");
   const [resourceType, setResourceType] = useState<ResourceType>(
     "quick_app",
@@ -424,6 +433,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     baseUrl: string;
   } | null>(null);
   const restoredFromSessionRef = useRef(false);
+
+  // 资源流程会话日志：进入向导即新建会话文件，离开未完成自动标记 abandoned。
+  usePublishFlowSession({
+    mode: isEditMode ? "edit" : "publish",
+    meta: () => {
+      const context = editContext;
+      return {
+        flow: loadSubmitMode(),
+        repoEnv: `${REPO_ENVS[repoEnvId]?.label ?? repoEnvId}`,
+        itemId: context?.catalog.entry.id,
+        itemName: context?.catalog.entry.name,
+        repoOwner: context?.prHead?.owner,
+        repoName: context?.prHead?.repo,
+        prNumber: context?.prNumber,
+      };
+    },
+  });
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -1212,12 +1238,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       ...prev,
       `${new Date().toLocaleTimeString()} ${message}`,
     ]);
+    log.info("upload/progress", message);
   };
 
   const handleUploadToRepo = async () => {
     if (missingEditContext) {
       setRepoStatus("error");
       setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
+      reportFailure("publish/upload", "缺少编辑上下文，请从资源列表重新进入。");
       return;
     }
     const mode = editContext?.mode ?? "new";
@@ -1226,6 +1254,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       mode === "new" ? "正在创建仓库并上传文件..." : "正在更新仓库文件...",
     );
     setUploadLogs([]);
+    log.info("upload/repo", `开始${mode === "new" ? "创建仓库并上传" : "更新仓库文件"}`, {
+      data: { itemId, itemName, resourceType },
+    });
      try {
        if (extError) {
          throw new Error(extError);
@@ -1266,20 +1297,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
 
       if (mode === "new") {
-        const repo = await uploadManifestAndAssets({
-          manifest: manifestResult,
-          itemId,
-          itemName,
-          description,
-          token,
-          repoNameOverride: repoNameInput.trim() || undefined,
-          onProgress: addLog,
-        });
+        const repo = await flowSpan("upload/repo", "创建仓库并上传 manifest 与资产", () =>
+          uploadManifestAndAssets({
+            manifest: manifestResult,
+            itemId,
+            itemName,
+            description,
+            token,
+            repoNameOverride: repoNameInput.trim() || undefined,
+            onProgress: addLog,
+          }),
+        );
         setRepoInfo(repo);
         setLastManifest(manifestResult);
         setRepoStatus("success");
         setRepoMessage("仓库与文件已就绪，下一步可提交 PR。");
         setActiveStepIndex(2);
+        log.info("upload/repo", "仓库上传完成", {
+          data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
+        });
         return;
       }
 
@@ -1296,20 +1332,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error("未找到可更新的仓库信息。");
       }
 
-      const repo = await upsertManifestAndAssets({
-        manifest: manifestResult,
-        repo: targetRepo,
-        token,
-        onProgress: addLog,
-      });
+      const repo = await flowSpan("upload/repo", "更新仓库 manifest 与资产", () =>
+        upsertManifestAndAssets({
+          manifest: manifestResult,
+          repo: targetRepo,
+          token,
+          onProgress: addLog,
+        }),
+      );
       setRepoInfo(repo);
       setLastManifest(manifestResult);
       setRepoStatus("success");
       setRepoMessage("仓库更新完成，准备提交目录更新。");
       setActiveStepIndex(2);
+      log.info("upload/repo", "仓库更新完成", {
+        data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
+      });
     } catch (error) {
       setRepoStatus("error");
       setRepoMessage((error as Error).message);
+      reportFailure("publish/upload", `上传失败：${(error as Error).message}`, error, {
+        data: { step: "uploadToRepo", itemId, resourceType },
+      });
     }
   };
 
@@ -1317,22 +1361,26 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (missingEditContext) {
       setPrStatus("error");
       setPrMessage("缺少编辑上下文，请从资源列表重新进入。");
+      reportFailure("publish/pr", "缺少编辑上下文，请从资源列表重新进入。");
       return;
     }
      const mode = editContext?.mode ?? "new";
      if (publishValidation.errors.length) {
        setPrStatus("error");
        setPrMessage(publishValidation.errors[0]);
+       reportFailure("publish/pr", publishValidation.errors[0]);
        return;
      }
      if (!repoInfo) {
       setPrStatus("error");
       setPrMessage("请先完成仓库创建与文件上传。");
+      reportFailure("publish/pr", "请先完成仓库创建与文件上传。");
       return;
     }
     if (!repoInfo.commitSha) {
       setPrStatus("error");
       setPrMessage("未获取到仓库提交哈希，请重新执行步骤 2。");
+      reportFailure("publish/pr", "未获取到仓库提交哈希，请重新执行步骤 2。");
       return;
     }
     setPrStatus("loading");
@@ -1341,6 +1389,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         ? "正在更新已有 PR..."
         : "正在创建 Pull Request...",
     );
+    log.info("pr/submit", `开始${mode === "in_progress" ? "更新已有 PR" : "创建 Pull Request"}`, {
+      data: {
+        itemId,
+        itemName,
+        repoOwner: repoInfo.owner,
+        repoName: repoInfo.name,
+        commitSha: repoInfo.commitSha,
+      },
+    });
     try {
       const token = loadAccountState().github?.token;
       if (!token) throw new Error("GitHub 未登录，无法提交 PR。");
@@ -1395,50 +1452,62 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       };
 
       if (mode === "in_progress") {
-        if (!editContext?.prHead) {
+        const prHead = editContext?.prHead;
+        if (!editContext || !prHead) {
           throw new Error("缺少 PR 分支信息，无法更新。");
         }
+        const submission = editContext.submission;
 
         if (editContext.prState === "closed" && editContext.prNumber) {
-          await reopenPullRequest(editContext.prNumber);
-          await createPullRequestComment(
-            editContext.prNumber,
-            "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。",
+          await flowSpan("pr/reopen", "重新打开已关闭的 PR", () =>
+            reopenPullRequest(editContext.prNumber as number),
+          );
+          await flowSpan("pr/comment", "发送 [ABCC_REOPEN] 评论", () =>
+            createPullRequestComment(
+              editContext.prNumber as number,
+              "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。",
+            ),
           );
         }
 
-        await syncBranchWithUpstream({
-          token,
-          forkOwner: editContext.prHead.owner,
-          forkRepo: editContext.prHead.repo,
-          targetBranch: editContext.prHead.ref,
-        });
+        await flowSpan("pr/sync", "同步 PR 分支与上游", () =>
+          syncBranchWithUpstream({
+            token,
+            forkOwner: prHead.owner,
+            forkRepo: prHead.repo,
+            targetBranch: prHead.ref,
+          }),
+        );
 
         if (useStaging) {
-          if (!editContext.submission) {
+          if (!submission) {
             throw new Error("缺少新流程提交信息，无法更新现有 PR。");
           }
-          await updateSubmissionEntryOnBranch({
-            token,
-            owner: editContext.prHead.owner,
-            repo: editContext.prHead.repo,
-            branch: editContext.prHead.ref,
-            entry: catalogEntry,
-            request: editContext.submission.request,
-            submissionPath: editContext.submission.path,
-          });
+          await flowSpan("pr/update-entry", "更新分支上的提交明细", () =>
+            updateSubmissionEntryOnBranch({
+              token,
+              owner: prHead.owner,
+              repo: prHead.repo,
+              branch: prHead.ref,
+              entry: catalogEntry,
+              request: submission.request,
+              submissionPath: submission.path,
+            }),
+          );
         } else {
-          await updateCatalogEntryOnBranch({
-            token,
-            owner: editContext.prHead.owner,
-            repo: editContext.prHead.repo,
-            branch: editContext.prHead.ref,
-            intent: {
-              mode: "edit",
-              originalId: editContext.catalog.entry.id,
-            },
-            entry: catalogEntry,
-          });
+          await flowSpan("pr/update-entry", "更新分支上的目录条目", () =>
+            updateCatalogEntryOnBranch({
+              token,
+              owner: prHead.owner,
+              repo: prHead.repo,
+              branch: prHead.ref,
+              intent: {
+                mode: "edit",
+                originalId: editContext.catalog.entry.id,
+              },
+              entry: catalogEntry,
+            }),
+          );
         }
 
         if (editContext.mode === "in_progress" && editContext.prNumber) {
@@ -1461,78 +1530,113 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 item.commentId || "?"
               }\n${quoted}`;
             }
-            await createPullRequestComment(
-              editContext.prNumber,
-              body,
+            await flowSpan("pr/comment", `发送整改说明评论 [${item.id}]`, () =>
+              createPullRequestComment(editContext.prNumber as number, body),
             );
           }
         }
 
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
+        log.info("pr/submit", "已更新现有 PR", { data: { prNumber: editContext.prNumber } });
+        reportSuccess("publish/pr", "已更新现有 PR。");
+        await endResourceSession("completed", `已更新现有 PR #${editContext.prNumber ?? "?"}`);
         navigate("/manage", { replace: true });
         return;
       }
 
+      const repoSnapshot = { ...repoInfo, commitSha: repoInfo.commitSha };
+      let createdPr: { number?: number; html_url?: string } | undefined;
       if (useStaging) {
-        const branchInfo = await createSubmissionBranch({
-          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
-          iconPath: manifestForCatalog.iconPath,
-          coverPath: manifestForCatalog.coverPath,
-          tags,
-          devices: selectedDevices,
-          itemId,
-          itemName,
-          restype: resourceType,
-          paidType: effectivePaidType,
-          intent: editContext
-            ? { mode: "edit", originalId: editContext.catalog.entry.id }
-            : { mode: "create" },
+        const branchInfo = await flowSpan("pr/branch", "创建提交分支（fork + 同步 + 建分支）", () =>
+          createSubmissionBranch({
+            repoInfo: repoSnapshot,
+            iconPath: manifestForCatalog.iconPath,
+            coverPath: manifestForCatalog.coverPath,
+            tags,
+            devices: selectedDevices,
+            itemId,
+            itemName,
+            restype: resourceType,
+            paidType: effectivePaidType,
+            intent: editContext
+              ? { mode: "edit", originalId: editContext.catalog.entry.id }
+              : { mode: "create" },
+          }),
+        );
+        log.info("pr/branch", "提交分支已创建", {
+          data: {
+            forkOwner: branchInfo.forkOwner,
+            forkRepo: branchInfo.forkRepo,
+            branch: branchInfo.branch,
+          },
         });
-        await createSubmissionPullRequest({
-          forkOwner: branchInfo.forkOwner,
-          forkRepo: branchInfo.forkRepo,
-          branch: branchInfo.branch,
-          token,
-          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
-            itemName || itemId || "资源"
-          }`,
-          body: prBodyContent || undefined,
+        const pr = await flowSpan("pr/create", "创建 Pull Request", () =>
+          createSubmissionPullRequest({
+            forkOwner: branchInfo.forkOwner,
+            forkRepo: branchInfo.forkRepo,
+            branch: branchInfo.branch,
+            token,
+            title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+              itemName || itemId || "资源"
+            }`,
+            body: prBodyContent || undefined,
+          }),
+        );
+        createdPr = pr;
+        log.info("pr/create", `PR 已创建 #${pr?.number ?? "?"}`, {
+          data: { prNumber: pr?.number, prUrl: pr?.html_url, branch: branchInfo.branch },
         });
       } else {
-        const branchInfo = await updateCatalogCsv({
-          repoInfo: { ...repoInfo, commitSha: repoInfo.commitSha },
-          iconPath: manifestForCatalog.iconPath,
-          coverPath: manifestForCatalog.coverPath,
-          tags,
-          devices: selectedDevices,
-          itemId,
-          itemName,
-          restype: resourceType,
-          paidType: effectivePaidType,
-          intent: editContext
-            ? { mode: "edit", originalId: editContext.catalog.entry.id }
-            : { mode: "create" },
-        });
+        const branchInfo = await flowSpan("pr/branch", "创建提交分支（legacy 目录）", () =>
+          updateCatalogCsv({
+            repoInfo: repoSnapshot,
+            iconPath: manifestForCatalog.iconPath,
+            coverPath: manifestForCatalog.coverPath,
+            tags,
+            devices: selectedDevices,
+            itemId,
+            itemName,
+            restype: resourceType,
+            paidType: effectivePaidType,
+            intent: editContext
+              ? { mode: "edit", originalId: editContext.catalog.entry.id }
+              : { mode: "create" },
+          }),
+        );
 
-        await createCatalogPullRequest({
-          forkOwner: branchInfo.forkOwner,
-          forkRepo: branchInfo.forkRepo,
-          branch: branchInfo.branch,
-          token,
-          title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
-            itemName || itemId || "资源"
-          }`,
-          body: prBodyContent || undefined,
+        const pr = await flowSpan("pr/create", "创建目录 PR（legacy）", () =>
+          createCatalogPullRequest({
+            forkOwner: branchInfo.forkOwner,
+            forkRepo: branchInfo.forkRepo,
+            branch: branchInfo.branch,
+            token,
+            title: `${editContext ? "[ABCC] Update resource" : "[ABCC] Add new resource"}: ${
+              itemName || itemId || "资源"
+            }`,
+            body: prBodyContent || undefined,
+          }),
+        );
+        createdPr = pr;
+        log.info("pr/create", `PR 已创建 #${pr?.number ?? "?"}`, {
+          data: { prNumber: pr?.number, prUrl: pr?.html_url, branch: branchInfo.branch },
         });
       }
 
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");
+      reportSuccess("publish/pr", "PR 已创建，可在审核列表中跟踪进度。");
+      await endResourceSession(
+        "pr_created",
+        `PR #${createdPr?.number ?? "?"}${createdPr?.html_url ? ` ${createdPr.html_url}` : ""}`,
+      );
       navigate("/manage", { replace: true });
     } catch (error) {
       setPrStatus("error");
       setPrMessage((error as Error).message);
+      reportFailure("publish/pr", `提交失败：${(error as Error).message}`, error, {
+        data: { step: "createPR", itemId, resourceType, mode },
+      });
     }
   };
 

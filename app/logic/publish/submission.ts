@@ -1,4 +1,6 @@
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
+import { log } from "~/logic/logging";
+import { maskValue } from "~/logic/logging/mask";
 import {
   createBlob,
   createCommit,
@@ -136,6 +138,17 @@ async function encryptDownloadAssets(
     onProgress?.(
       `已加密 ${asset.platformId}：${originalSize} → ${encrypted.encryptedFile.size} 字节`,
     );
+    // 密钥经脱敏后随事件落盘（前4后4），完整密钥只提交给服务端，绝不入日志。
+    log.info("publish/encrypt", `包体加密完成 ${asset.platformId}`, {
+      data: {
+        platformId: asset.platformId,
+        path: packageKey,
+        sizeBefore: originalSize,
+        sizeAfter: encrypted.encryptedFile.size,
+        sha256: encrypted.encryptedHash,
+        keyMasked: maskValue(encrypted.keyBase64),
+      },
+    });
   }
 
   return encryptionInfoMap;
@@ -415,15 +428,30 @@ export async function uploadManifestAndAssets({
   // --- Submit encryption keys (after commit exists) ---
   for (const [platformId, info] of encryptionInfoMap) {
     onProgress?.(`提交加密密钥 ${platformId}`);
-    await submitResourceCryptoInfo({
-      id: itemId,
-      deviceId: platformId,
-      hash: info.hash,
-      key: info.key,
-      repoOwner: normalizedRepo.owner,
-      repoName: normalizedRepo.name,
-      commitSha,
-    });
+    try {
+      await submitResourceCryptoInfo({
+        id: itemId,
+        deviceId: platformId,
+        hash: info.hash,
+        key: info.key,
+        repoOwner: normalizedRepo.owner,
+        repoName: normalizedRepo.name,
+        commitSha,
+      });
+      log.info("publish/crypto", `加密信息已提交服务端 ${platformId}`, {
+        data: {
+          platformId,
+          sha256: info.hash,
+          keyMasked: maskValue(info.key),
+          commitSha,
+        },
+      });
+    } catch (error) {
+      log.error("publish/crypto", `加密信息提交失败 ${platformId}: ${String(error)}`, {
+        data: { platformId, keyMasked: maskValue(info.key), commitSha },
+      });
+      throw error;
+    }
   }
 
   return { ...normalizedRepo, commitSha };
@@ -515,15 +543,30 @@ export async function upsertManifestAndAssets({
   // --- Submit encryption keys ---
   for (const [platformId, info] of encryptionInfoMap) {
     onProgress?.(`提交加密密钥 ${platformId}`);
-    await submitResourceCryptoInfo({
-      id: itemId,
-      deviceId: platformId,
-      hash: info.hash,
-      key: info.key,
-      repoOwner: targetRepo.owner,
-      repoName: targetRepo.name,
-      commitSha,
-    });
+    try {
+      await submitResourceCryptoInfo({
+        id: itemId,
+        deviceId: platformId,
+        hash: info.hash,
+        key: info.key,
+        repoOwner: targetRepo.owner,
+        repoName: targetRepo.name,
+        commitSha,
+      });
+      log.info("publish/crypto", `加密信息已提交服务端 ${platformId}`, {
+        data: {
+          platformId,
+          sha256: info.hash,
+          keyMasked: maskValue(info.key),
+          commitSha,
+        },
+      });
+    } catch (error) {
+      log.error("publish/crypto", `加密信息提交失败 ${platformId}: ${String(error)}`, {
+        data: { platformId, keyMasked: maskValue(info.key), commitSha },
+      });
+      throw error;
+    }
   }
 
   return { ...targetRepo, commitSha };

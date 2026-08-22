@@ -142,7 +142,12 @@ function emit(
   options?: LogOptions,
 ): void {
   try {
-    if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[currentLevel]) return;
+    // 会话文件是专门的排查工件：始终收录 debug 及以上级别，
+    // 不随全局级别收缩，保证链路细节完整。
+    const passesGlobal = LEVEL_WEIGHT[level] >= LEVEL_WEIGHT[currentLevel];
+    const passesSession =
+      !!sessionSink && LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.debug;
+    if (!passesGlobal && !passesSession) return;
 
     const safeScope =
       scope.replace(/[^\w./:-]+/g, "-").replace(/^-+|-+$/g, "") || "app";
@@ -159,7 +164,7 @@ function emit(
     }
 
     // GlobalSink：立即发送，时间戳由 Rust 端统一生成。
-    if (isTauriRuntime()) {
+    if (passesGlobal && isTauriRuntime()) {
       const globalMessage = dataJson ? `${cleanMessage} | ${dataJson}` : cleanMessage;
       void invoke("frontend_log", {
         level,
@@ -169,7 +174,7 @@ function emit(
     }
 
     // SessionSink：带本地毫秒级时间戳的完整行，批量写入会话文件。
-    if (sessionSink && pendingLines.length < 5_000) {
+    if (passesSession && pendingLines.length < 5_000) {
       const ts = formatTimestamp(new Date());
       pendingLines.push(
         dataJson

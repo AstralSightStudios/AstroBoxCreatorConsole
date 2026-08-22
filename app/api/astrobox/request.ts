@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
+import { log } from "~/logic/logging";
 import {
     getAstroboxToken,
     getAstroboxRefreshToken,
@@ -36,6 +37,7 @@ export interface AstroboxTokenPair {
 interface RetryableAxiosRequestConfig extends InternalAxiosRequestConfig {
     _retry?: boolean;
     _autoRefresh?: boolean;
+    _startedAt?: number;
 }
 
 function extractServerMessage(data: unknown, fallback: string): string {
@@ -172,6 +174,60 @@ function processRefreshQueue(result: RefreshResult) {
 const astroboxApi = axios.create({
     baseURL: ASTROBOX_SERVER_CONFIG.serverUrl,
 });
+
+// 请求耗时统计：所有请求记录开始时间，响应侧计算 durationMs。
+astroboxApi.interceptors.request.use((config) => {
+    (config as RetryableAxiosRequestConfig)._startedAt = Date.now();
+    return config;
+});
+
+// 网络层自动留痕（行业规范：request/response 元数据统一在中间件层记录）：
+// 成功记 debug，失败一律 warn；401/403 的自动续期由下方拦截器处理，
+// 重试成功也会留下 WARN 轨迹。错误体只提取简短消息，避免敏感内容入日志。
+astroboxApi.interceptors.response.use(
+    (response) => {
+        const config = response.config as RetryableAxiosRequestConfig;
+        const startedAt = config._startedAt;
+        log.debug("api/astrobox", `${(config.method ?? "get").toUpperCase()} ${config.url} → ${response.status}`, {
+            data: {
+                status: response.status,
+                durationMs: startedAt ? Date.now() - startedAt : undefined,
+            },
+        });
+        return response;
+    },
+    (error: AxiosError) => {
+        const config = error.config as RetryableAxiosRequestConfig | undefined;
+        const status = error.response?.status;
+        const method = (config?.method ?? "get").toUpperCase();
+        const url = config?.url ?? "?";
+        let serverMessage: string | undefined;
+        try {
+            const data = error.response?.data;
+            if (data && typeof data === "object") {
+                const obj = data as Record<string, unknown>;
+                if (typeof obj.message === "string") serverMessage = obj.message.slice(0, 200);
+                else if (typeof obj.error === "string") serverMessage = obj.error.slice(0, 200);
+            }
+        } catch {
+            /* 错误体解析失败不影响主流程 */
+        }
+        log.warn(
+            "api/astrobox",
+            `${method} ${url} → ${status ? `HTTP ${status}` : "网络错误"}`,
+            {
+                data: {
+                    status,
+                    serverMessage,
+                    durationMs: config?._startedAt
+                        ? Date.now() - config._startedAt
+                        : undefined,
+                },
+            },
+        );
+        return Promise.reject(error);
+    },
+);
 
 astroboxApi.interceptors.request.use((config) => {
     // sendApiRequest 会把显式 token 或当前存储 token 直接放到 headers 里；

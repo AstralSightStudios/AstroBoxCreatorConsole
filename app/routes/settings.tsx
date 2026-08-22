@@ -4,10 +4,20 @@ import {
   ArrowClockwiseIcon,
   ArrowUpRightIcon,
   CheckIcon,
+  DownloadSimpleIcon,
+  FolderOpenIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
+import {
+  getLogLevel,
+  setLogLevel,
+  type LogLevel,
+} from "~/logic/logging";
+import { reportFailure, reportSuccess } from "~/logic/logging/feedback";
 import {
   REPO_ENVS,
   saveRepoEnvId,
@@ -41,6 +51,118 @@ import { SectionCard } from "./resource/publish/components/shared";
 const EULA_URL = "https://astrobox.online/eula.html";
 const PRIVACY_URL = "https://astrobox.online/privacy.html";
 const WEBSITE_URL = "https://astrobox.online";
+
+const LOG_LEVEL_OPTIONS: LogLevel[] = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+];
+
+/** 日志与诊断：级别调节、打开日志目录、导出日志包。 */
+function LogsSection() {
+  const [level, setLevelState] = useState<LogLevel>(getLogLevel());
+  const [exporting, setExporting] = useState(false);
+
+  const handleSelectLevel = (next: LogLevel) => {
+    if (next === level) return;
+    setLogLevel(next);
+    setLevelState(next);
+    toast.success(`日志级别已切换为 ${next.toUpperCase()}`);
+  };
+
+  const handleOpenLogDir = async () => {
+    try {
+      const dir = await invoke<string>("get_log_dir_path");
+      await openPath(dir);
+      reportSuccess("settings/logs", "已打开日志文件夹");
+    } catch (error) {
+      reportFailure("settings/logs", "无法打开日志文件夹", error);
+    }
+  };
+
+  const handleExportArchive = async () => {
+    setExporting(true);
+    try {
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[:T]/g, "-")
+        .slice(0, 19);
+      const targetPath = await save({
+        title: "导出日志包（含构建与设备信息）",
+        defaultPath: `astroboxcc-logs-${stamp}.tar.gz`,
+        filters: [{ name: "日志包", extensions: ["gz"] }],
+      });
+      if (!targetPath) return;
+      const result = await invoke<{
+        savedPath: string;
+        fileSize: number;
+      }>("export_logs_archive", { targetPath });
+      reportSuccess(
+        "settings/logs",
+        `日志包已保存（${(result.fileSize / 1024).toFixed(1)} KB）`,
+        { data: result },
+      );
+    } catch (error) {
+      reportFailure("settings/logs", "导出日志包失败", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="日志"
+      description="运行日志与资源发布/编辑流程记录，用于问题排查；敏感密钥已自动脱敏"
+    >
+      <div className="flex flex-col gap-3 px-2 pb-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12px] text-white/50">全局日志级别</span>
+          <div className="flex overflow-hidden rounded-lg border border-white/[0.08]">
+            {LOG_LEVEL_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => handleSelectLevel(option)}
+                className={`px-3 py-1.5 font-mono-sarasa text-[11.5px] uppercase transition ${
+                  option === level
+                    ? "bg-emerald-400/[0.15] text-emerald-300"
+                    : "text-white/55 hover:bg-white/[0.05] hover:text-white"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="soft"
+            size="2"
+            onClick={() => void handleOpenLogDir()}
+          >
+            <FolderOpenIcon size={15} />
+            打开日志文件夹
+          </Button>
+          <Button
+            variant="soft"
+            size="2"
+            disabled={exporting}
+            onClick={() => void handleExportArchive()}
+          >
+            <DownloadSimpleIcon size={15} />
+            {exporting ? "正在打包..." : "拉取日志包 (.tar.gz)"}
+          </Button>
+        </div>
+        <p className="text-[11.5px] leading-snug text-white/40">
+          日志包内含最近运行日志、资源发布/编辑会话记录以及构建与设备诊断信息，
+          可在反馈问题时附上。全局日志保留 7 天，资源会话日志保留 30 天。
+        </p>
+      </div>
+    </SectionCard>
+  );
+}
 
 function openExternal(url: string) {
   openUrl(url).catch(() =>
@@ -388,6 +510,9 @@ export default function Settings() {
             ))}
           </div>
         </SectionCard>
+
+        {/* 日志与诊断 */}
+        <LogsSection />
 
         {/* 关于与法律 */}
         <SectionCard

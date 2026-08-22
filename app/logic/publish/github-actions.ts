@@ -1,5 +1,6 @@
 import { MAIN_RESOURCE_BRANCH } from "./branch";
 import { loadAccountState } from "../account/store";
+import { log } from "~/logic/logging";
 
 const isWeb =
     typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__;
@@ -9,6 +10,11 @@ function proxyGithubUrl(url: string): string {
         return url.replace("https://api.github.com/", "/github-api/");
     }
     return url;
+}
+
+/** 从 RequestInit 中提取可读的请求方法（用于日志）。 */
+function describeMethod(init: RequestInit): string {
+    return (init.method ?? "GET").toUpperCase();
 }
 
 export interface RepoInfo {
@@ -180,6 +186,7 @@ export async function githubFetch<T>(
     for (let attempt = 0; attempt <= retries; attempt++) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const startedAt = performance.now();
         let response: Response;
         try {
             response = await fetch(proxyGithubUrl(url), {
@@ -200,14 +207,23 @@ export async function githubFetch<T>(
                     : "GitHub 网络连接失败，请检查网络。",
             );
             if (attempt < retries) {
+                log.warn("github/fetch", `${describeMethod(init)} ${url} 网络失败(第 ${attempt + 1} 次)，将重试`, {
+                    data: { error, timeoutMs },
+                });
                 await sleep(retryDelayMs(attempt));
                 continue;
             }
+            log.error("github/fetch", `${describeMethod(init)} ${url} 网络失败，已达最大重试`, {
+                data: { error, attempts: retries + 1, durationMs: Math.round(performance.now() - startedAt) },
+            });
             throw lastError;
         }
         clearTimeout(timer);
 
         if (response.ok) {
+            log.debug("github/fetch", `${describeMethod(init)} ${url} → ${response.status}`, {
+                data: { durationMs: Math.round(performance.now() - startedAt), status: response.status },
+            });
             if (response.status === 204) {
                 return undefined as T;
             }
@@ -219,6 +235,9 @@ export async function githubFetch<T>(
                 return JSON.parse(text) as T;
             } catch {
                 // 中间代理/网关可能返回非 JSON（如 HTML 错误页）
+                log.error("github/fetch", `${describeMethod(init)} ${url} 返回非 JSON 响应`, {
+                    data: { bodyPreview: text.slice(0, 200) },
+                });
                 throw new Error(
                     `GitHub 返回了无法解析的响应（可能被代理或网关篡改）：${text.slice(0, 120)}`,
                 );
@@ -231,10 +250,21 @@ export async function githubFetch<T>(
             response.status >= 500 ||
             isRateLimited(response.status, response, bodyText);
         if (retryable && attempt < retries) {
+            log.warn("github/fetch", `${describeMethod(init)} ${url} → HTTP ${response.status}(第 ${attempt + 1} 次)，将重试`, {
+                data: { status: response.status, bodyPreview: bodyText.slice(0, 300) },
+            });
             lastError = apiError;
             await sleep(retryDelayMs(attempt, response));
             continue;
         }
+        log.error("github/fetch", `${describeMethod(init)} ${url} → HTTP ${response.status}`, {
+            data: {
+                status: response.status,
+                bodyPreview: bodyText.slice(0, 500),
+                attempts: attempt + 1,
+                durationMs: Math.round(performance.now() - startedAt),
+            },
+        });
         throw apiError;
     }
 
