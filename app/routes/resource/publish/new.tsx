@@ -134,6 +134,8 @@ import {
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
+const REQUIRE_ASTROBOX_LOGIN = !import.meta.env.DEV;
+
 function isManifestExtObject(value: unknown): value is ManifestExtObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -2013,7 +2015,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </div>
   ) : null;
 
-  if (mode === "new" && !accountState.astrobox?.username?.trim()) {
+  if (
+    mode === "new" &&
+    REQUIRE_ASTROBOX_LOGIN &&
+    !accountState.astrobox?.username?.trim()
+  ) {
     return (
       <Page>
         <div className="mx-auto max-w-2xl px-2 py-10">
