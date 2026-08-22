@@ -107,6 +107,48 @@ async function fetchIssueComments(
     );
 }
 
+async function fetchPullReviews(
+    repoOwner: string,
+    repoName: string,
+    pullNumber: number,
+    token: string,
+) {
+    return githubFetch<any[]>(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${pullNumber}/reviews?per_page=100`,
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+}
+
+async function fetchPrTimelineComments(
+    repoOwner: string,
+    repoName: string,
+    pullNumber: number,
+    token: string,
+) {
+    const [comments, reviews] = await Promise.all([
+        fetchIssueComments(repoOwner, repoName, pullNumber, token),
+        fetchPullReviews(repoOwner, repoName, pullNumber, token),
+    ]);
+    const fromReviews = (reviews || [])
+        .filter(
+            (review: any) =>
+                review.state !== "PENDING" &&
+                (review.state === "REQUEST_CHANGES" ||
+                    review.state === "COMMENTED") &&
+                typeof review.body === "string" &&
+                review.body.trim(),
+        )
+        .map((review: any) => ({
+            ...review,
+            created_at: review.submitted_at || review.created_at,
+        }));
+    return [...(comments || []), ...fromReviews].sort((a: any, b: any) =>
+        (a.created_at || "").localeCompare(b.created_at || ""),
+    );
+}
+
 async function fetchPullFiles(
     repoOwner: string,
     repoName: string,
@@ -390,7 +432,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(
         }
         try {
             const [comments, files] = await Promise.all([
-                fetchIssueComments(
+                fetchPrTimelineComments(
                     PUBLISH_CONFIG.targetPrRepoOwner,
                     PUBLISH_CONFIG.targetPrRepoName,
                     pr.number,
@@ -484,7 +526,7 @@ async function loadInProgressStagingResourcesForCurrentUser(
         }
         try {
             const [comments, files] = await Promise.all([
-                fetchIssueComments(
+                fetchPrTimelineComments(
                     PUBLISH_CONFIG.targetPrRepoOwner,
                     PUBLISH_CONFIG.targetPrRepoName,
                     pr.number,

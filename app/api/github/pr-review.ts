@@ -43,6 +43,7 @@ export interface GithubIssueComment {
     avatar_url?: string;
   };
   created_at?: string;
+  pull_review_id?: number;
 }
 
 export interface GithubPullReview {
@@ -191,6 +192,33 @@ export async function listPullRequestComments(prNumber: number) {
   );
 }
 
+export async function listPullRequestTimeline(
+  prNumber: number,
+): Promise<GithubIssueComment[]> {
+  const [comments, reviews] = await Promise.all([
+    listPullRequestComments(prNumber),
+    listPullRequestReviews(prNumber),
+  ]);
+  const fromReviews: GithubIssueComment[] = reviews
+    .filter(
+      (review) =>
+        review.state !== "PENDING" &&
+        (review.state === "REQUEST_CHANGES" || review.state === "COMMENTED") &&
+        Boolean(review.body?.trim()),
+    )
+    .map((review) => ({
+      id: review.id,
+      body: review.body,
+      user: review.user,
+      created_at: review.submitted_at,
+      html_url: `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${prNumber}#review-${review.id}`,
+      pull_review_id: review.id,
+    }));
+  return [...comments, ...fromReviews].sort((a, b) =>
+    (b.created_at || "").localeCompare(a.created_at || ""),
+  );
+}
+
 export async function listPullRequestFiles(prNumber: number) {
   return githubFetch<GithubPullFile[]>(
     repoPath(`/pulls/${prNumber}/files?per_page=100`),
@@ -231,15 +259,16 @@ export async function requestChangesPullRequest(
   prNumber: number,
   body?: string,
 ) {
+  const payload: Record<string, string> = { event: "REQUEST_CHANGES" };
+  if (body?.trim()) {
+    payload.body = body;
+  }
   return githubFetch<unknown>(
     repoPath(`/pulls/${prNumber}/reviews`),
     {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({
-        event: "REQUEST_CHANGES",
-        body: body || "Changes requested from AstroBox Creator Console.",
-      }),
+      body: JSON.stringify(payload),
     },
   );
 }
@@ -261,6 +290,34 @@ export async function updatePullRequestComment(commentId: number, body: string) 
       method: "PATCH",
       headers: headers(),
       body: JSON.stringify({ body }),
+    },
+  );
+}
+
+export async function updatePullRequestReview(
+  prNumber: number,
+  reviewId: number,
+  body: string,
+) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`),
+    {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({ body }),
+    },
+  );
+}
+
+export async function deletePullRequestReview(
+  prNumber: number,
+  reviewId: number,
+) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`),
+    {
+      method: "DELETE",
+      headers: headers(),
     },
   );
 }

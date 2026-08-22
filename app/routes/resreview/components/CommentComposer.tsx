@@ -77,6 +77,13 @@ export function CommentComposer({
   const tagIdRef = useRef(makeNeedFixId());
 
   useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, Math.max(120, window.innerHeight * 0.4))}px`;
+  }, [value, tab]);
+
+  useEffect(() => {
     if (editingTarget) {
       const parsed = parseReviewCommentBody(editingTarget.comment.body || "");
       setTagEnabled(Boolean(parsed.tagId));
@@ -288,7 +295,7 @@ export function CommentComposer({
                 ref={textareaRef}
                 value={value}
                 placeholder="写下你的评论..."
-                className="min-h-[120px] resize-y border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
+                className="min-h-[64px] resize-none overflow-y-auto border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
                 style={{ borderRadius: "10px" }}
                 onChange={(e) => onChange(e.target.value)}
               />

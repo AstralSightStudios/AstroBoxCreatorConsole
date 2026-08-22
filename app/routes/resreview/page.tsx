@@ -18,7 +18,7 @@ import {
   getCurrentGithubPermission,
   getPullRequest,
   listReviewPullRequests,
-  listPullRequestComments,
+  listPullRequestTimeline,
   listPullRequestFiles,
   approvePullRequest,
   mergePullRequest,
@@ -27,7 +27,9 @@ import {
   requestChangesPullRequest,
   createPullRequestComment,
   deletePullRequestComment,
+  deletePullRequestReview,
   updatePullRequestComment,
+  updatePullRequestReview,
   listOrganizationMembers,
   type GithubPullRequest,
 } from "~/api/github/pr-review";
@@ -154,14 +156,14 @@ export default function ResourceReviewPage() {
       const commentEntries = await Promise.all(
         list.map(async (pull) => {
           try {
-            return [
-              pull.number,
-              filterReviewTagComments(
-                await listPullRequestComments(pull.number),
-                orgMembers,
-                pull.user?.login,
-              ),
-            ] as const;
+              return [
+                pull.number,
+                filterReviewTagComments(
+                  await listPullRequestTimeline(pull.number),
+                  orgMembers,
+                  pull.user?.login,
+                ),
+              ] as const;
           } catch {
             return [pull.number, []] as const;
           }
@@ -197,7 +199,7 @@ export default function ResourceReviewPage() {
     setResourcePreviews([]);
     try {
       const [nextComments, nextFiles] = await Promise.all([
-        listPullRequestComments(number).then((comments) =>
+        listPullRequestTimeline(number).then((comments) =>
           filterReviewTagComments(comments, orgMembers, openPull?.user?.login),
         ),
         listPullRequestFiles(number),
@@ -304,7 +306,11 @@ export default function ResourceReviewPage() {
   const deleteComment = async (comment: import("~/api/github/pr-review").GithubIssueComment) => {
     if (!openNumber || !comment.id) return;
     try {
-      await deletePullRequestComment(comment.id);
+      if (comment.pull_review_id) {
+        await deletePullRequestReview(openNumber, comment.pull_review_id);
+      } else {
+        await deletePullRequestComment(comment.id);
+      }
       await loadDetail(openNumber);
       toast.success("评论已删除");
     } catch (err) {
@@ -327,18 +333,19 @@ export default function ResourceReviewPage() {
     setSubmittingComment(true);
     try {
       if (editingTarget) {
-        await updatePullRequestComment(editingTarget.comment.id, body);
+        if (editingTarget.comment.pull_review_id) {
+          await updatePullRequestReview(
+            number,
+            editingTarget.comment.pull_review_id,
+            body,
+          );
+        } else {
+          await updatePullRequestComment(editingTarget.comment.id, body);
+        }
+      } else if (isNewNeedFix) {
+        await requestChangesPullRequest(number, body);
       } else {
         await createPullRequestComment(number, body);
-        if (isNewNeedFix) {
-          try {
-            await requestChangesPullRequest(number, body);
-          } catch (reviewError) {
-            toast.warning(
-              `评论已发送，但标记 Changes Requested 失败：${getErrorMessage(reviewError)}`,
-            );
-          }
-        }
       }
       setGeneralComment("");
       setReplyTarget(null);
