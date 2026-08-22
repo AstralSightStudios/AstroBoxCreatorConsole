@@ -1367,12 +1367,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
       const manifestForCatalog = lastManifest ?? manifestResult;
       const useStaging = loadSubmitMode() === "staging";
-      const prBodyContent = [
-        prBody.trim(),
-        "欢迎加入 [AstroBox 资源开发者官方 QQ 群](https://qm.qq.com/q/4YVntKbEMo)",
-      ]
-        .filter(Boolean)
-        .join("\n\n");
+      const prBodyContent = prBody.trim();
       const catalogEntry = {
         id: itemId.trim(),
         name: itemName.trim(),
