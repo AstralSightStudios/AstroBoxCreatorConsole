@@ -87,6 +87,11 @@ import {
   validateWatchfaceIdFormat,
   fetchExistingCatalogIds,
 } from "~/logic/publish/watchface-id";
+import {
+  CANOPUS_ID_PREFIX,
+  normalizeCanopusIdInput,
+  validateCanopusIdFormat,
+} from "~/logic/publish/canopus-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
   normalizeResourceType,
@@ -323,6 +328,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
   const [itemName, setItemName] = useState("");
   const [description, setDescription] = useState("");
+  const idsByTypeRef = useRef<Partial<Record<ResourceType, string>>>({});
+  const itemIdRef = useRef(itemId);
+  itemIdRef.current = itemId;
 
   const [idError, setIdError] = useState("");
   const [idGenerating, setIdGenerating] = useState(false);
@@ -445,6 +453,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setItemId(form.itemId);
       setItemName(form.itemName);
       setDescription(form.description);
+      idsByTypeRef.current[form.resourceType] = form.itemId;
       setResourceType(form.resourceType);
       setTagsInput(form.tagsInput);
       setPaidType(form.paidType);
@@ -561,6 +570,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   useEffect(() => {
     const trimmed = itemId.trim();
+  const handleResourceTypeChange = useCallback(
+    (next: ResourceType) => {
+      if (next === resourceType) return;
+      idsByTypeRef.current[resourceType] = itemIdRef.current;
+      const cached = idsByTypeRef.current[next];
+      setItemId(cached !== undefined ? cached : next === "canopus" ? CANOPUS_ID_PREFIX : "");
+      setResourceType(next);
+    },
+    [resourceType],
+  );
+
+  const handleItemIdChange = useCallback(
+    (value: string) => {
+      if (resourceType === "canopus") {
+        setItemId(normalizeCanopusIdInput(value));
+        return;
+      }
+      setItemId(value);
+    },
+    [resourceType],
+  );
+
     if (!trimmed) {
       setIdError("");
       return;
@@ -574,6 +605,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
     }
     const existingName = existingCatalogIds?.get(trimmed);
+    } else if (resourceType === "canopus") {
+      const formatError = validateCanopusIdFormat(trimmed);
+      if (formatError) {
+        setIdError(formatError);
+        return;
+      }
     if (existingName && trimmed !== ownedId) {
       setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
       return;
@@ -622,6 +659,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setItemId(manifest.item.id || catalogEntry.id || "");
         setItemName(manifest.item.name || catalogEntry.name || "");
         setDescription(manifest.item.description || "");
+        idsByTypeRef.current[normalizeResourceType(manifest.item.restype)] =
+          manifest.item.id || catalogEntry.id || "";
         setResourceType(
           normalizeResourceType(manifest.item.restype),
         );
@@ -1730,6 +1769,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
     setBundledResources(
       Array.isArray(data.bundledResources) ? data.bundledResources : [],
+    idsByTypeRef.current[data.resourceType] = data.itemId;
     );
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
     setExtRaw(data.extRaw);
@@ -2122,14 +2162,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
-                onItemIdChange={setItemId}
+                onItemIdChange={handleItemIdChange}
                 onItemNameChange={setItemName}
                 onDescriptionChange={setDescription}
                 onAddTag={addTag}
                 onRemoveTag={removeTag}
                 onTagInputChange={setTagInput}
                 onPaidTypeChange={setPaidType}
-                onResourceTypeChange={setResourceType}
+                onResourceTypeChange={handleResourceTypeChange}
                 onGenerateId={handleGenerateId}
               />
               <MediaSection

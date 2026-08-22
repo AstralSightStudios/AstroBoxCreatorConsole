@@ -8,6 +8,7 @@ import {
 import { DiceFiveIcon } from "@phosphor-icons/react";
 import { Field, SectionCard } from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
+import { CANOPUS_ID_PREFIX } from "~/logic/publish/canopus-id";
 import type { ResourceType } from "~/logic/publish/resource-type";
 
 interface BasicInfoSectionProps {
@@ -136,34 +137,52 @@ export function BasicInfoSection({
               ? "填写快应用包名"
               : resourceType === "watchface"
                 ? "12位纯数字，以9798开头"
-                : "填写模块 ID"
+                : "模块名称将拼接为 canopus_模块名称"
           }
         >
           <div className="flex gap-2 items-start">
             <div className="flex-1 min-w-0">
-              <TextField.Root
-                placeholder={
-                  resourceType === "quick_app"
-                    ? "com.example.quickapp"
-                    : resourceType === "watchface"
-                      ? "9798XXXXXXXX"
-                      : "请输入模块 ID"
-                }
-                value={itemId}
-                onChange={(e) => {
-                  if (resourceType === "watchface") {
-                    onItemIdChange(normalizeWatchfaceIdInput(e.target.value));
-                  } else {
-                    onItemIdChange(e.target.value);
+              <div className="flex items-stretch">
+                {resourceType === "canopus" && (
+                  <span className="flex shrink-0 select-none items-center whitespace-nowrap rounded-l-(--radius-5) border border-r-0 border-white/15 bg-white/10 px-3 text-sm text-white/50">
+                    {CANOPUS_ID_PREFIX}
+                  </span>
+                )}
+                <TextField.Root
+                  placeholder={
+                    resourceType === "quick_app"
+                      ? "com.example.quickapp"
+                      : resourceType === "watchface"
+                        ? "9798XXXXXXXX"
+                        : "模块名称"
                   }
-                }}
-                inputMode={resourceType === "watchface" ? "numeric" : "text"}
-                maxLength={
-                  resourceType === "watchface" ? 12 : undefined
-                }
-                radius="large"
-                className={idError ? "!border-red-400/60" : ""}
-              />
+                  value={
+                    resourceType === "canopus" &&
+                    itemId.startsWith(CANOPUS_ID_PREFIX)
+                      ? itemId.slice(CANOPUS_ID_PREFIX.length)
+                      : itemId
+                  }
+                  onChange={(e) => {
+                    if (resourceType === "watchface") {
+                      onItemIdChange(normalizeWatchfaceIdInput(e.target.value));
+                    } else if (resourceType === "canopus") {
+                      onItemIdChange(
+                        CANOPUS_ID_PREFIX + e.target.value.trim(),
+                      );
+                    } else {
+                      onItemIdChange(e.target.value);
+                    }
+                  }}
+                  inputMode={resourceType === "watchface" ? "numeric" : "text"}
+                  maxLength={
+                    resourceType === "watchface" ? 12 : undefined
+                  }
+                  radius="large"
+                  className={`${idError ? "!border-red-400/60" : ""} ${
+                    resourceType === "canopus" ? "!rounded-l-none" : ""
+                  }`}
+                />
+              </div>
               {idError && (
                 <p className="text-xs text-red-400 mt-1">{idError}</p>
               )}
