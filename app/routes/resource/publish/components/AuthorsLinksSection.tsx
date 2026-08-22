@@ -479,7 +479,10 @@ export function AuthorsLinksSection({
           if (!open) setIconPickerIndex(null);
         }}
       >
-        <Dialog.Content className="flex max-w-[min(94vw,760px)] flex-col gap-4 p-5">
+        <Dialog.Content
+          maxWidth="100vw"
+          className="flex w-[min(96vw,760px)]! max-w-none! flex-col gap-4 overflow-hidden p-4 sm:p-5"
+        >
           <div className="flex items-start justify-between gap-4">
             <Dialog.Title className="m-0 min-w-0 text-base">
               选择 Phosphor Icon
