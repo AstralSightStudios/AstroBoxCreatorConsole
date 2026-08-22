@@ -36,7 +36,20 @@ export interface ManifestDownloadInfo {
 
 export interface ManifestBundledResource {
     type: string;
-    id: string;
+    /** resource 类型：目录资源 ID；plugin 类型：不使用 */
+    id?: string;
+    /** plugin 类型：插件仓库 index.json 中的 manifest.name；resource 类型：展示名（可选） */
+    name?: string;
+}
+
+export type BundledResourceMode = "required" | "recommend";
+
+export type BundledResourceType = "resource" | "plugin";
+
+export interface BundledResourceEntry
+    extends Omit<ManifestBundledResource, "type"> {
+    mode: BundledResourceMode;
+    type: BundledResourceType;
 }
 
 export interface ManifestExtObject extends Record<string, unknown> {
@@ -44,39 +57,58 @@ export interface ManifestExtObject extends Record<string, unknown> {
     trialDownloads?: Record<string, ManifestDownloadInfo>;
     bundledResources?: {
         required?: ManifestBundledResource[];
+        recommend?: ManifestBundledResource[];
     };
     wallpaperGenerator?: {
         configUrl: string;
     };
 }
 
-export function normalizeBundledResources(
-    value: unknown,
-): ManifestBundledResource[] {
-    const container = value as
-        | { required?: unknown }
-        | undefined
-        | null;
-    const required = Array.isArray(container?.required)
-        ? container.required
-        : Array.isArray(value)
-          ? value
-          : [];
-    const seen = new Set<string>();
-    const result: ManifestBundledResource[] = [];
-    for (const item of required) {
+function normalizeBundledList(
+    list: unknown,
+    mode: BundledResourceMode,
+    seen: Set<string>,
+): BundledResourceEntry[] {
+    if (!Array.isArray(list)) return [];
+    const result: BundledResourceEntry[] = [];
+    for (const item of list) {
         if (!item || typeof item !== "object") continue;
-        const id = String((item as { id?: unknown }).id ?? "").trim();
+        const raw = item as { type?: unknown; id?: unknown; name?: unknown };
+        const rawType = String(raw.type ?? "resource").trim();
+        if (rawType === "plugin") {
+            const pluginName =
+                String(raw.name ?? raw.id ?? "").trim();
+            if (!pluginName || seen.has(`plugin:${pluginName}`)) continue;
+            seen.add(`plugin:${pluginName}`);
+            result.push({ mode, type: "plugin", id: pluginName, name: pluginName });
+            continue;
+        }
+        const id = String(raw.id ?? "").trim();
         if (!id || seen.has(id)) continue;
         seen.add(id);
+        const name = String(raw.name ?? "").trim();
         result.push({
-            type:
-                String((item as { type?: unknown }).type ?? "resource").trim() ||
-                "resource",
+            mode,
+            type: "resource",
             id,
+            ...(name ? { name } : {}),
         });
     }
     return result;
+}
+
+/** 解析 manifest ext 中的 bundledResources。 */
+export function normalizeBundledResources(
+    value: unknown,
+): BundledResourceEntry[] {
+    const container = value as
+        | { required?: unknown; recommend?: unknown }
+        | undefined
+        | null;
+    const seen = new Set<string>();
+    const required = normalizeBundledList(container?.required, "required", seen);
+    const recommend = normalizeBundledList(container?.recommend, "recommend", seen);
+    return [...required, ...recommend];
 }
 
 export interface ManifestWallpaperInput {
@@ -103,7 +135,7 @@ export interface ManifestBuildInput {
     links: BasicLink[];
     downloads: DownloadUploadInput[];
     trialDownloads: DownloadUploadInput[];
-    bundledResources?: ManifestBundledResource[];
+    bundledResources?: BundledResourceEntry[];
     ext: ManifestExtObject;
     enableAstroBoxCreatorFeatures: boolean;
     wallpaper?: ManifestWallpaperInput;
@@ -266,10 +298,46 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         delete ext.trialDownloads;
     }
 
-    const bundledResources = normalizeBundledResources(input.bundledResources);
+    const bundledEntries: BundledResourceEntry[] = [];
+    const seenBundledIds = new Set<string>();
+    for (const item of input.bundledResources ?? []) {
+        const isPlugin = item.type === "plugin";
+        const identifier = String(
+            (isPlugin ? item.name ?? item.id : item.id) ?? "",
+        ).trim();
+        if (!identifier || seenBundledIds.has(identifier)) continue;
+        seenBundledIds.add(identifier);
+        const trimmedName = item.name?.trim();
+        bundledEntries.push({
+            mode: item.mode === "recommend" ? "recommend" : "required",
+            type: isPlugin ? "plugin" : "resource",
+            id: identifier,
+            ...(trimmedName ? { name: trimmedName } : {}),
+        });
+    }
     delete ext.bundledResources;
-    if (bundledResources.length > 0) {
-        ext.bundledResources = { required: bundledResources };
+    if (bundledEntries.length > 0) {
+        ext.bundledResources = {};
+        const toManifestEntry = ({
+            type,
+            id,
+            name,
+        }: BundledResourceEntry) =>
+            type === "plugin"
+                ? { type, name: name ?? id }
+                : { type, id };
+        const required = bundledEntries
+            .filter((item) => item.mode === "required")
+            .map(toManifestEntry);
+        const recommend = bundledEntries
+            .filter((item) => item.mode === "recommend")
+            .map(toManifestEntry);
+        if (required.length > 0) {
+            ext.bundledResources.required = required;
+        }
+        if (recommend.length > 0) {
+            ext.bundledResources.recommend = recommend;
+        }
     }
 
     let wallpaperConfigJson: string | undefined;

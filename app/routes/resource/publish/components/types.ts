@@ -4,7 +4,16 @@ export type AuthorInput = { name: string; bindABAccount: boolean };
 
 export type LinkInput = { icon: string; title: string; url: string };
 
-export type BundledResourceInput = { type: string; id: string; name?: string };
+export type BundledResourceMode = "required" | "recommend";
+
+export type BundledResourceType = "resource" | "plugin";
+
+export type BundledResourceInput = {
+  mode: BundledResourceMode;
+  type: BundledResourceType;
+  id: string;
+  name?: string;
+};
 
 export type DownloadInput = {
     uid: string;

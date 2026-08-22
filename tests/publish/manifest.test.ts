@@ -50,12 +50,13 @@ describe("manifest ext.bundledResources", () => {
     enableAstroBoxCreatorFeatures: false,
   };
 
-  test("writes required bundled resources into ext", () => {
+  test("writes required and recommend bundled entries into ext", () => {
     const result = buildManifest({
       ...baseInput,
       bundledResources: [
-        { type: "resource", id: "com.canopus.lyraimport" },
-        { type: "quick_app", id: "com.example.player" },
+        { mode: "required", type: "resource", id: "com.canopus.lyraimport" },
+        { mode: "required", type: "plugin", id: "Lyra音乐导入器", name: "Lyra音乐导入器" },
+        { mode: "recommend", type: "resource", id: "com.example.player" },
       ],
       ext: {},
     });
@@ -64,8 +65,9 @@ describe("manifest ext.bundledResources", () => {
     expect(manifest.ext.bundledResources).toEqual({
       required: [
         { type: "resource", id: "com.canopus.lyraimport" },
-        { type: "quick_app", id: "com.example.player" },
+        { type: "plugin", name: "Lyra音乐导入器" },
       ],
+      recommend: [{ type: "resource", id: "com.example.player" }],
     });
   });
 
@@ -89,7 +91,7 @@ describe("manifest ext.bundledResources", () => {
   test("structured input wins over stale custom ext entries", () => {
     const result = buildManifest({
       ...baseInput,
-      bundledResources: [{ type: "resource", id: "fresh.id" }],
+      bundledResources: [{ mode: "recommend", type: "resource", id: "fresh.id" }],
       ext: {
         bundledResources: {
           required: [{ type: "resource", id: "stale.id" }],
@@ -99,14 +101,14 @@ describe("manifest ext.bundledResources", () => {
 
     const manifest = JSON.parse(result.manifestJson);
     expect(manifest.ext.bundledResources).toEqual({
-      required: [{ type: "resource", id: "fresh.id" }],
+      recommend: [{ type: "resource", id: "fresh.id" }],
     });
   });
 
   test("keeps other structured ext fields untouched", () => {
     const result = buildManifest({
       ...baseInput,
-      bundledResources: [{ type: "resource", id: "dep" }],
+      bundledResources: [{ mode: "required", type: "plugin", id: "dep" }],
       trialDownloads: [
         {
           platformId: "xmb10p",
@@ -123,13 +125,13 @@ describe("manifest ext.bundledResources", () => {
       xmb10p: { version: "1.0.0", file_name: "downloads/trial/demo.bin" },
     });
     expect(manifest.ext.bundledResources).toEqual({
-      required: [{ type: "resource", id: "dep" }],
+      required: [{ type: "plugin", name: "dep" }],
     });
   });
 });
 
 describe("normalizeBundledResources", () => {
-  test("parses ext shape with required array", () => {
+  test("parses required and recommend arrays with modes", () => {
     expect(
       normalizeBundledResources({
         required: [
@@ -137,22 +139,31 @@ describe("normalizeBundledResources", () => {
           { id: "b.id" },
           { type: "", id: "" },
         ],
+        recommend: [{ type: "plugin", name: "Lyra音乐导入器" }],
       }),
     ).toEqual([
-      { type: "resource", id: "a.id" },
-      { type: "resource", id: "b.id" },
+      { mode: "required", type: "resource", id: "a.id" },
+      { mode: "required", type: "resource", id: "b.id" },
+      { mode: "recommend", type: "plugin", id: "Lyra音乐导入器", name: "Lyra音乐导入器" },
     ]);
   });
 
-  test("accepts a bare array and dedupes ids", () => {
+  test("rejects bare arrays and dedupes ids across groups", () => {
     expect(
-      normalizeBundledResources([
-        { type: "canopus", id: "dup" },
-        { type: "watchface", id: "dup" },
-        "garbage",
-        null,
-      ]),
-    ).toEqual([{ type: "canopus", id: "dup" }]);
+      normalizeBundledResources([{ type: "resource", id: "dup" }]),
+    ).toEqual([]);
+    expect(
+      normalizeBundledResources({
+        required: [{ id: "dup" }],
+        recommend: [{ id: "dup" }],
+      }),
+    ).toEqual([{ mode: "required", type: "resource", id: "dup" }]);
+  });
+
+  test("coerces unknown types to resource", () => {
+    expect(
+      normalizeBundledResources({ recommend: [{ type: "whatever", id: "x" }] }),
+    ).toEqual([{ mode: "recommend", type: "resource", id: "x" }]);
   });
 
   test("returns empty for invalid input", () => {

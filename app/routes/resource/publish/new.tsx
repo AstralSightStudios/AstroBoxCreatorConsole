@@ -328,11 +328,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [resourceType, setResourceType] = useState<ResourceType>(
     "quick_app",
   );
-  const [itemName, setItemName] = useState("");
-  const [description, setDescription] = useState("");
   const idsByTypeRef = useRef<Partial<Record<ResourceType, string>>>({});
   const itemIdRef = useRef(itemId);
   itemIdRef.current = itemId;
+  const [itemName, setItemName] = useState("");
+  const [description, setDescription] = useState("");
 
   const [idError, setIdError] = useState("");
   const [idGenerating, setIdGenerating] = useState(false);
@@ -453,9 +453,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       restoredFromSessionRef.current = true;
       const form = session.form;
       setItemId(form.itemId);
+      idsByTypeRef.current[form.resourceType] = form.itemId;
       setItemName(form.itemName);
       setDescription(form.description);
-      idsByTypeRef.current[form.resourceType] = form.itemId;
       setResourceType(form.resourceType);
       setTagsInput(form.tagsInput);
       setPaidType(form.paidType);
@@ -570,8 +570,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [resourceType, itemId, existingCatalogIds]);
 
-  useEffect(() => {
-    const trimmed = itemId.trim();
   const handleResourceTypeChange = useCallback(
     (next: ResourceType) => {
       if (next === resourceType) return;
@@ -594,6 +592,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [resourceType],
   );
 
+  useEffect(() => {
+    const trimmed = itemId.trim();
     if (!trimmed) {
       setIdError("");
       return;
@@ -605,14 +605,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setIdError(formatError);
         return;
       }
-    }
-    const existingName = existingCatalogIds?.get(trimmed);
     } else if (resourceType === "canopus") {
       const formatError = validateCanopusIdFormat(trimmed);
       if (formatError) {
         setIdError(formatError);
         return;
       }
+    }
+    const existingName = existingCatalogIds?.get(trimmed);
     if (existingName && trimmed !== ownedId) {
       setIdError(`该 ID 已被资源「${existingName}」占用，请更换一个`);
       return;
@@ -659,10 +659,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         if (!active) return;
 
         setItemId(manifest.item.id || catalogEntry.id || "");
-        setItemName(manifest.item.name || catalogEntry.name || "");
-        setDescription(manifest.item.description || "");
         idsByTypeRef.current[normalizeResourceType(manifest.item.restype)] =
           manifest.item.id || catalogEntry.id || "";
+        setItemName(manifest.item.name || catalogEntry.name || "");
+        setDescription(manifest.item.description || "");
         setResourceType(
           normalizeResourceType(manifest.item.restype),
         );
@@ -739,7 +739,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setEnableAstroBoxCreatorFeatures(
           Boolean(ext.enableAstroBoxCreatorFeatures),
         );
-        setBundledResources(normalizeBundledResources(ext.bundledResources));
+        setBundledResources(
+          normalizeBundledResources(ext.bundledResources).map((item) => ({
+            mode: item.mode,
+            type: item.type,
+            id: item.id ?? item.name ?? "",
+            name: item.name,
+          })),
+        );
         setExtRaw(JSON.stringify(extractCustomExt(ext), null, 2));
         setRepoInfo({ ...repo });
         setRepoNameInput(repo.name);
@@ -1688,13 +1695,27 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           if (!id || seen.has(id)) continue;
           seen.add(id);
           merged.push({
-            type: (item.type || "resource").trim() || "resource",
+            mode: item.mode === "recommend" ? "recommend" : "required",
+            type: item.type === "plugin" ? "plugin" : "resource",
             id,
             name: item.name,
           });
         }
         return merged;
       });
+    },
+    [],
+  );
+
+  const handleToggleBundledResourceMode = useCallback(
+    (id: string, mode: BundledResourceInput["mode"]) => {
+      setBundledResources((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, mode: mode === "recommend" ? "recommend" : "required" }
+            : item,
+        ),
+      );
     },
     [],
   );
@@ -1748,6 +1769,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
+    idsByTypeRef.current[data.resourceType] = data.itemId;
     setItemName(data.itemName);
     setDescription(data.description);
     setResourceType(data.resourceType);
@@ -1765,8 +1787,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
     setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
     setBundledResources(
-      Array.isArray(data.bundledResources) ? data.bundledResources : [],
-    idsByTypeRef.current[data.resourceType] = data.itemId;
+      (Array.isArray(data.bundledResources) ? data.bundledResources : [])
+        .map((item) => ({
+          mode: item.mode === "recommend" ? ("recommend" as const) : ("required" as const),
+          type: item.type === "plugin" ? ("plugin" as const) : ("resource" as const),
+          id: String(item.id ?? ""),
+          name: item.name,
+        }))
+        .filter((item) => item.id),
     );
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
     setExtRaw(data.extRaw);
@@ -2053,6 +2081,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           </div>
           {stepsCard}
           {draftActions}
+          {!isEditing && (
+            <div className="mx-3 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">
+              如需修改正在审核中的资源，请前往{" "}
+              <Link
+                to="/manage?tab=publish"
+                className="font-medium underline underline-offset-2 transition hover:text-white"
+              >
+                审核列表
+              </Link>
+              ，避免重复提交新的发布申请。
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-3.5 w-full lg:grow lg:min-w-0 lg:px-3.5 pt-1.5 pb-6">
           {missingEditContext && (
@@ -2076,18 +2116,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   {editContext.catalog.entry.name ||
                     editContext.catalog.entry.id}
                   {editContext.mode === "in_progress" && editContext.prNumber
-          {!isEditing && (
-            <div className="mx-3 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">
-              如需修改正在审核中的资源，请前往{" "}
-              <Link
-                to="/manage?tab=publish"
-                className="font-medium underline underline-offset-2 transition hover:text-white"
-              >
-                审核列表
-              </Link>
-              ，避免重复提交新的发布申请。
-            </div>
-          )}
                     ? `（PR #${editContext.prNumber}）`
                     : ""}
                 </Callout.Text>
@@ -2281,6 +2309,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 selfResourceId={itemId}
                 onAddBundledResources={handleAddBundledResources}
                 onRemoveBundledResource={handleRemoveBundledResource}
+                onToggleBundledResourceMode={handleToggleBundledResourceMode}
                 onChange={setExtRaw}
                 onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
               />
