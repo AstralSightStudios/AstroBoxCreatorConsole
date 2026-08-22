@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Theme } from "@radix-ui/themes";
 import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
+import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { Toaster } from "sonner";
@@ -47,6 +48,7 @@ export default function RootLayout() {
     return (
         <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
             <AstroboxAccountRefresher />
+            <AutoUpdateChecker />
             <NavVisibilityProvider>
                 <div
                     className="flex flex-row h-screen min-h-screen"

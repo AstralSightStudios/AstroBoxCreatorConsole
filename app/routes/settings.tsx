@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Callout } from "@radix-ui/themes";
+import { Button, Callout, Spinner, Switch } from "@radix-ui/themes";
 import {
   ArrowClockwiseIcon,
   ArrowUpRightIcon,
@@ -28,6 +28,13 @@ import {
   useLoginMethod,
   type AstroboxLoginMethod,
 } from "~/config/loginMethod";
+import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
+import {
+  checkForUpdate,
+  isTauriRuntime,
+  useUpdateCheckDisabled,
+  type UpdateInfo,
+} from "~/logic/update/update-checker";
 import Page from "~/layout/page";
 import { SectionCard } from "./resource/publish/components/shared";
 
@@ -133,6 +140,45 @@ function LinkRow({
   );
 }
 
+/** A tappable row inside a grouped card that toggles a boolean setting. */
+function ToggleRow({
+  title,
+  subtitle,
+  checked,
+  onChange,
+  last,
+}: {
+  title: string;
+  subtitle: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  last?: boolean;
+}) {
+  return (
+    <div
+      role="switch"
+      aria-checked={checked}
+      tabIndex={0}
+      onClick={() => onChange(!checked)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onChange(!checked);
+        }
+      }}
+      className={`flex w-full cursor-pointer items-center gap-3 px-2 py-3 select-none hover:bg-white/[0.035] ${
+        last ? "" : "border-b border-white/[0.06]"
+      }`}
+    >
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[13.5px] font-medium text-white">{title}</span>
+        <span className="truncate text-[12px] text-white/45">{subtitle}</span>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
 export default function Settings() {
   const currentEnv = useRepoEnvId();
   const currentSubmitMode = useSubmitMode();
@@ -140,6 +186,10 @@ export default function Settings() {
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -189,6 +239,36 @@ export default function Settings() {
   const reload = () => {
     window.location.reload();
   };
+
+  const handleCheckUpdate = async () => {
+    if (checkingUpdate) return;
+    if (!isTauriRuntime() && !appVersion) {
+      toast.info("更新检测仅支持桌面端应用。");
+      return;
+    }
+    setCheckingUpdate(true);
+    try {
+      const version =
+        appVersion ??
+        (await import("@tauri-apps/api/app").then((m) => m.getVersion()));
+      if (!version) throw new Error("无法读取当前应用版本号。");
+      const update = await checkForUpdate(version);
+      if (update) {
+        // 手动检查无视「忽略此版本」，始终弹出
+        setUpdateInfo(update);
+        setUpdateDialogOpen(true);
+      } else {
+        toast.success(`当前已是最新版本（v${version}）`);
+      }
+    } catch (err) {
+      toast.error(
+        `检查更新失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
 
   return (
     <Page>
@@ -312,8 +392,43 @@ export default function Settings() {
         {/* 关于与法律 */}
         <SectionCard
           title="关于与法律"
-          description="协议、隐私与版本信息"
+          description="协议、隐私、更新与版本信息"
         >
+            <button
+              type="button"
+              onClick={() => void handleCheckUpdate()}
+              disabled={checkingUpdate}
+              className={`group flex w-full items-center gap-3 px-2 py-3 text-left hover:bg-white/[0.035] ${
+                autoCheckDisabled ? "" : "border-b border-white/[0.06]"
+              }`}
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="text-[13.5px] font-medium text-white">
+                  检查更新
+                  {checkingUpdate ? "…" : ""}
+                </span>
+                <span className="truncate text-[12px] text-white/45">
+                  {appVersion
+                    ? `当前版本 v${appVersion}，前往 GitHub 查看最新版本`
+                    : "前往 GitHub 查看最新版本"}
+                </span>
+              </div>
+              {checkingUpdate ? (
+                <Spinner size="1" />
+              ) : (
+                <ArrowUpRightIcon
+                  size={15}
+                  className="shrink-0 text-white/30 transition group-hover:text-white/65"
+                />
+              )}
+            </button>
+            <ToggleRow
+              title="自动检查更新"
+              subtitle="启动时自动检测新版本并弹窗提示"
+              checked={!autoCheckDisabled}
+              onChange={(next) => setAutoCheckDisabled(!next)}
+              last
+            />
             <LinkRow
               title="用户协议"
               subtitle="AstroBox 最终用户许可协议（EULA）"
@@ -336,6 +451,13 @@ export default function Settings() {
           AstroBox CreatorConsole
           {appVersion ? ` · v${appVersion}` : ""}
         </p>
+
+        <UpdateAvailableDialog
+          info={updateInfo}
+          currentVersion={appVersion}
+          open={updateDialogOpen}
+          onOpenChange={setUpdateDialogOpen}
+        />
       </div>
     </Page>
   );
