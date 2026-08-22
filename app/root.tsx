@@ -5,6 +5,7 @@ import { Theme } from "@radix-ui/themes";
 import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
 import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
+import BroadcastDialogHost from "./components/announcement/BroadcastDialogHost";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { Toaster } from "sonner";
@@ -49,6 +50,7 @@ export default function RootLayout() {
         <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
             <AstroboxAccountRefresher />
             <AutoUpdateChecker />
+            <BroadcastDialogHost />
             <NavVisibilityProvider>
                 <div
                     className="flex flex-row h-screen min-h-screen"
