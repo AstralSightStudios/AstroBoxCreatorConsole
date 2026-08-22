@@ -31,6 +31,7 @@ export default defineConfig({
   ],
   server: {
     port: 5180,
+    allowedHosts: [".trycloudflare.com", ".ts.net"],
     proxy: {
       "/github-login": {
         target: "https://github.com",
