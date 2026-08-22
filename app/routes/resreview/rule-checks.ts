@@ -15,6 +15,10 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
+  listSellerResourceConfigs,
+  listSellerResourceFileKeys,
+} from "~/api/astrobox/order";
+import {
   checkPaidFreeRatioForAuthor,
   type PaidRatioResult,
 } from "./utils/paid-ratio";
@@ -879,44 +883,162 @@ export async function runResourceRuleChecks(options: {
     detail: manifestRestype && csvRestype ? `manifest: ${manifestRestype} / csv: ${csvRestype}` : "缺少可比对字段",
   });
 
-  // --- check: ext.bundledResources 前置资源有效性 ---
-  const bundledRequired = normalizeBundledResources(manifest?.ext?.bundledResources);
-  if (bundledRequired.length > 0) {
+  // --- check: ext.bundledResources 捆绑配置有效性 ---
+  const bundledEntries = normalizeBundledResources(manifest?.ext?.bundledResources);
+  if (bundledEntries.length > 0) {
+    const bundledResourceItems = bundledEntries.filter((r) => r.type === "resource");
+    const bundledPluginCount = bundledEntries.length - bundledResourceItems.length;
     const selfResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
-    const selfBound = bundledRequired.filter((r) => r.id === selfResourceId);
+    const selfBound = bundledResourceItems.filter((r) => r.id === selfResourceId);
     let catalogIdMap: Map<string, string> | null = null;
     let catalogError = "";
-    try {
-      const result = await fetchCatalogEntries({ token });
-      catalogIdMap = new Map(
-        result.entries
-          .filter((e) => e.id)
-          .map((e) => [e.id, e.name || e.id]),
-      );
-    } catch (err) {
-      catalogError = err instanceof Error ? err.message : String(err);
+    if (bundledResourceItems.length > 0) {
+      try {
+        const result = await fetchCatalogEntries({ token });
+        catalogIdMap = new Map(
+          result.entries
+            .filter((e) => e.id)
+            .map((e) => [e.id, e.name || e.id]),
+        );
+      } catch (err) {
+        catalogError = err instanceof Error ? err.message : String(err);
+      }
     }
     const missingInCatalog =
       catalogIdMap != null
-        ? bundledRequired.filter((r) => !catalogIdMap!.has(r.id))
+        ? bundledResourceItems.filter((r) => !catalogIdMap!.has(r.id ?? ""))
         : [];
+    const requiredCount = bundledEntries.filter((r) => r.mode === "required").length;
     checks.push({
-      title: "ext.bundledResources 前置资源有效",
+      title: "ext.bundledResources 捆绑配置有效",
       status: (() => {
-        if (catalogIdMap == null) return "manual";
         if (selfBound.length > 0 || missingInCatalog.length > 0) return "fail";
+        if (catalogIdMap == null && bundledResourceItems.length > 0) return "manual";
         return "pass";
       })(),
       detail: (() => {
-        if (catalogIdMap == null)
-          return `无法加载资源目录进行校验：${catalogError}`;
+        const summary = `必需 ${requiredCount} / 推荐 ${bundledEntries.length - requiredCount}${
+          bundledPluginCount > 0 ? `（含插件 ${bundledPluginCount}，暂不校验）` : ""
+        }`;
         if (selfBound.length > 0)
-          return `前置资源不能绑定自身：${selfBound.map((r) => r.id).join(", ")}`;
+          return `捆绑项不能绑定自身：${selfBound.map((r) => r.id).join(", ")}`;
         if (missingInCatalog.length > 0)
-          return `目录中不存在的前置资源：${missingInCatalog.map((r) => r.id).join(", ")}`;
-        return `前置资源均存在（${bundledRequired.map((r) => catalogIdMap!.get(r.id) || r.id).join("、")}）`;
+          return `目录中不存在的捆绑资源：${missingInCatalog.map((r) => r.id).join(", ")}`;
+        if (catalogIdMap == null && bundledResourceItems.length > 0)
+          return `${summary}；无法加载资源目录进行校验：${catalogError}`;
+        return `${summary}；捆绑资源均存在（${bundledResourceItems.map((r) => catalogIdMap!.get(r.id ?? "") || r.name || r.id || "").join("、")}）`;
       })(),
     });
+  }
+
+  // --- check: manifest 引用文件路径不含 URL 特殊字符 ---
+  const referencedMediaPaths = getManifestReferencedFiles(manifest);
+  const urlUnsafeFail: string[] = [];
+  const urlUnsafeWarn: string[] = [];
+  for (const rawPath of referencedMediaPaths) {
+    const path = rawPath.trim();
+    if (!path) continue;
+    if (/[#?]/.test(path)) {
+      urlUnsafeFail.push(path);
+    } else if (path.includes("%")) {
+      urlUnsafeWarn.push(path);
+    }
+  }
+  checks.push({
+    title: "manifest 引用文件名不含 # 等URL特殊字符",
+    status:
+      urlUnsafeFail.length > 0 ? "fail" : urlUnsafeWarn.length > 0 ? "warn" : "pass",
+    detail: (() => {
+      if (urlUnsafeFail.length === 0 && urlUnsafeWarn.length === 0)
+        return "引用文件名均不含 URL 特殊字符";
+      const parts: string[] = [];
+      if (urlUnsafeFail.length > 0)
+        parts.push(
+          `文件名含 # 或 ?，客户端拼接 URL 时会被截断导致无法加载：${urlUnsafeFail.join("、")}`,
+        );
+      if (urlUnsafeWarn.length > 0)
+        parts.push(`文件名含 %，可能存在编码歧义：${urlUnsafeWarn.join("、")}`);
+      return parts.join("；");
+    })(),
+  });
+
+  // --- check: 购买与加密配置就绪 ---
+  const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
+  if (creatorFeaturesEnabled || astroboxToken) {
+    const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
+    const fullDownloadDevices = Array.from(
+      new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
+    ).filter(Boolean);
+
+    let encryptedDeviceSet: Set<string> | null = null;
+    let mappedDeviceSet: Set<string> | null = null;
+    let cryptoCheckError = "";
+    if (astroboxToken && cryptoResourceId) {
+      try {
+        const [fileKeys, configs] = await Promise.all([
+          listSellerResourceFileKeys({ resourceId: cryptoResourceId, limit: 500 }, astroboxToken),
+          listSellerResourceConfigs({ resourceId: cryptoResourceId }, astroboxToken),
+        ]);
+        encryptedDeviceSet = new Set(fileKeys.map((k) => k.deviceId));
+        mappedDeviceSet = new Set(
+          configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
+        );
+      } catch (err) {
+        cryptoCheckError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    const missingEncryption =
+      creatorFeaturesEnabled && encryptedDeviceSet
+        ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
+        : [];
+    const missingMapping =
+      creatorFeaturesEnabled && mappedDeviceSet
+        ? fullDownloadDevices.filter((d) => !mappedDeviceSet!.has(d))
+        : [];
+    const unmappedButEnabledMapping =
+      !creatorFeaturesEnabled && mappedDeviceSet
+        ? fullDownloadDevices.filter((d) => mappedDeviceSet!.has(d))
+        : [];
+
+    if (
+      creatorFeaturesEnabled ||
+      unmappedButEnabledMapping.length > 0 ||
+      cryptoCheckError
+    ) {
+      checks.push({
+        title: creatorFeaturesEnabled
+          ? "购买与加密配置就绪（enableAstroBoxCreatorFeatures）"
+          : "已存在付费映射但购买功能未开启",
+        status: (() => {
+          if (!creatorFeaturesEnabled) return "warn";
+          if (!astroboxToken) return "manual";
+          if (!cryptoResourceId) return "warn";
+          if (cryptoCheckError) return "manual";
+          if (missingEncryption.length > 0 || missingMapping.length > 0)
+            return "fail";
+          return "pass";
+        })(),
+        detail: (() => {
+          if (!creatorFeaturesEnabled)
+            return `以下设备已完成付费平台映射：${unmappedButEnabledMapping.join(", ")}`;
+          if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
+          if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
+          if (cryptoResourceId === "")
+            return "manifest 缺少资源 ID，无法查询服务端配置";
+          const parts: string[] = [];
+          if (missingEncryption.length > 0)
+            parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
+          if (missingMapping.length > 0)
+            parts.push(`缺少付费平台映射的设备：${missingMapping.join(", ")}`);
+          if (parts.length === 0)
+            parts.push(
+              `全部 ${fullDownloadDevices.length} 个正式下载设备均已配置加密密钥与付费映射`,
+            );
+          return parts.join("；");
+        })(),
+      });
+    }
   }
 
   // --- check: manifest downloads 设备标识有效性 ---

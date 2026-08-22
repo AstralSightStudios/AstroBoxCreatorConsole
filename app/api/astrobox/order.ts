@@ -154,11 +154,14 @@ export function deleteSellerPlatformConfig(body: { platform: CommercePlatform })
     );
 }
 
-export function listSellerResourceConfigs(body: { resourceId?: string } = {}) {
+export function listSellerResourceConfigs(
+    body: { resourceId?: string } = {},
+    token?: string,
+) {
     return sendApiRequest<SellerResourceConfigListResponse>(
         "/order/seller/resource-config/list",
         "POST",
-        undefined,
+        token,
         body,
     );
 }
@@ -172,11 +175,14 @@ export function getSellerOverview(body: SellerOverviewBody = {}) {
     );
 }
 
-export function listSellerResourceFileKeys(body: { resourceId: string; deviceId?: string; limit?: number }) {
+export function listSellerResourceFileKeys(
+    body: { resourceId: string; deviceId?: string; limit?: number },
+    token?: string,
+) {
     return sendApiRequest<SellerResourceFileKey[]>(
         "/order/seller/resource-file-key/list",
         "POST",
-        undefined,
+        token,
         body,
     );
 }
