@@ -28,6 +28,9 @@ import {
     buildSubmissionPath,
     buildSubmissionRequest,
     canonicalCatalogEntryDigest,
+    isSubmissionFilePath,
+    parseSubmissionCsv,
+    parseSubmissionRequestJson,
     submissionCsvPath,
     submissionRequestPath,
     type SubmissionRequest,
@@ -68,33 +71,103 @@ export function buildSubmissionEntry(payload: CatalogUpdateRequest): CatalogEntr
     };
 }
 
-async function listOpenPullNumbers(token: string): Promise<number[]> {
+async function listOpenPulls(
+    token: string,
+): Promise<Array<{ number: number; title: string }>> {
     const pulls = await githubFetch<
-        Array<{ number: number }>
+        Array<{ number: number; title?: string }>
     >(
         `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls?state=open&per_page=100`,
         { headers: { Authorization: `Bearer ${token}` } },
     );
-    return pulls.map((pull) => pull.number);
+    return pulls.map((pull) => ({ number: pull.number, title: pull.title ?? "" }));
 }
 
-async function hasPendingSubmissionPath(
+/** 经 Git Blobs API 读取文件内容（pull files 端点只给 sha）。 */
+async function fetchBlobText(token: string, sha: string): Promise<string> {
+    const blob = await githubFetch<{ content?: string; encoding?: string }>(
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/git/blobs/${sha}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (blob.encoding !== "base64" || !blob.content) return "";
+    const bytes = Uint8Array.from(atob(blob.content.replace(/\n/g, "")), (ch) =>
+        ch.charCodeAt(0),
+    );
+    return new TextDecoder().decode(bytes);
+}
+
+function sameResourceId(left: string, right: string): boolean {
+    return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+export interface PendingSubmissionConflict {
+    prNumber: number;
+    prTitle: string;
+    /** 命中的 PR 是否与本次提交路径完全相同（同用户重复提交场景）。 */
+    samePath: boolean;
+}
+
+/**
+ * 扫描所有开放 PR，检测与本次提交的冲突：
+ * - B1 同路径：同一 tmp/{login}/{repo} 路径已有未处理请求（含解析失败兜底，
+ *   行为与旧版 hasPendingSubmissionPath 一致）；
+ * - B2 跨用户：任何开放 PR 的提交明细指向同一资源 ID（edit 的 original_id 或
+ *   csv 行 id），无论路径是否相同。
+ * 解析失败的历史/脏数据一律跳过，不阻塞正常提交。
+ */
+async function findPendingSubmissionConflicts(
     token: string,
     submissionPath: string,
-): Promise<boolean> {
-    const numbers = await listOpenPullNumbers(token);
-    for (const number of numbers) {
+    entry: CatalogEntry,
+): Promise<PendingSubmissionConflict | null> {
+    const pulls = await listOpenPulls(token);
+    for (const pull of pulls) {
         const files = await githubFetch<
-            Array<{ filename?: string }>
+            Array<{ filename?: string; sha?: string }>
         >(
-            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${number}/files?per_page=100`,
+            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${pull.number}/files?per_page=100`,
             { headers: { Authorization: `Bearer ${token}` } },
         );
-        if (files.some((file) => file.filename?.startsWith(`${submissionPath}/`))) {
-            return true;
+
+        let samePath = false;
+        let idConflict = false;
+        for (const file of files) {
+            const filePath = file.filename ?? "";
+            if (!isSubmissionFilePath(filePath)) continue;
+            if (filePath.startsWith(`${submissionPath}/`)) {
+                samePath = true;
+            }
+            if (!file.sha) continue;
+            try {
+                const text = await fetchBlobText(token, file.sha);
+                if (!text) continue;
+                if (filePath.endsWith(".json")) {
+                    const request = parseSubmissionRequestJson(text);
+                    if (
+                        request.mode === "edit" &&
+                        typeof request.original_id === "string" &&
+                        sameResourceId(request.original_id, entry.id)
+                    ) {
+                        idConflict = true;
+                    }
+                } else {
+                    const parsed = parseSubmissionCsv(text);
+                    if (sameResourceId(parsed.id, entry.id)) {
+                        idConflict = true;
+                    }
+                }
+            } catch {
+                // 历史/脏数据解析失败：跳过该文件，不中断提交流程。
+                continue;
+            }
+        }
+
+        // 内容确认不了但同路径已存在 → 与旧行为一致，保守视为待处理请求。
+        if (idConflict || samePath) {
+            return { prNumber: pull.number, prTitle: pull.title, samePath };
         }
     }
-    return false;
+    return null;
 }
 
 async function commitFilesToBranch(params: {
@@ -187,12 +260,24 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         entry.repo_name,
     );
 
-    if (intent.mode === "create") {
-        if (await hasPendingSubmissionPath(token, submissionPath)) {
+    // 重复提交守卫：create/edit 都要查。同路径 = 同用户重复开 PR；
+    // 跨用户 = 别人正开着另一个 PR 改同一资源。
+    const conflict = await findPendingSubmissionConflicts(
+        token,
+        submissionPath,
+        entry,
+    );
+    if (conflict) {
+        if (conflict.samePath) {
             throw new Error(
-                `路径 ${submissionPath} 已有未处理请求，请等待处理或继续编辑原 PR。`,
+                `路径 ${submissionPath} 已有未处理请求（PR #${conflict.prNumber}），` +
+                `请等待处理或继续编辑原 PR。`,
             );
         }
+        throw new Error(
+            `资源 "${entry.id}" 已有进行中的提交 PR #${conflict.prNumber}《${conflict.prTitle}》，` +
+            `请等待其处理完成，或通过「管理」页在原 PR 上继续更新。`,
+        );
     }
 
     const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
