@@ -11,6 +11,7 @@ import { RuleCheckPanel } from "./RuleCheckPanel";
 import { CommentTimeline } from "./CommentTimeline";
 import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
 import { RepoFileChanges } from "./RepoFileChanges";
+import { CatalogRowChanges } from "./CatalogRowChanges";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 
 export interface PullRequestReviewViewProps {
@@ -173,6 +174,11 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                   {files.length === 0 && (
                     <p className="text-sm text-white/45">暂无文件信息</p>
                   )}
+                </div>
+              )}
+              {resourcePreviews.some((r) => r.request) && (
+                <div className="mt-6 flex flex-col gap-3">
+                  <CatalogRowChanges resources={resourcePreviews} onFileComment={handleFileComment} />
                 </div>
               )}
               {repoFileChanges.length > 0 && (
