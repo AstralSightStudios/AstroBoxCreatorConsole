@@ -1,6 +1,7 @@
 import { loadRepoEnv } from "~/config/repoEnv";
 import { getRepoFile } from "~/logic/publish/github-actions";
 import type { RepoInfo } from "~/logic/publish/github-actions";
+import { fetchDeviceJsonViaCdn } from "./device-json-cdn";
 
 export interface DeviceOption {
     id: string;
@@ -9,6 +10,8 @@ export interface DeviceOption {
 }
 
 type DevicesPayload = Record<string, Record<string, { id: string; name: string }>>;
+
+const DEVICES_FILE_PATH = "devices_v2.json";
 
 const optionsCache = new Map<string, DeviceOption[]>();
 const payloadCache = new Map<string, DevicesPayload>();
@@ -79,13 +82,24 @@ async function loadDevicesPayload(
         name: repoName,
         branch: defaultBranch,
     };
-    const response = await getRepoFile({
-        repo,
-        path: "devices_v2.json",
-        ref: defaultBranch,
-    });
-    const raw = decodeBase64(response.content);
-    const payload = JSON.parse(raw) as DevicesPayload;
+    let payload: DevicesPayload;
+    try {
+        // 公开仓库走 CDN 链（jsDelivr → GitHub raw → 前缀代理镜像），无需登录且更快。
+        payload = await fetchDeviceJsonViaCdn<DevicesPayload>(
+            owner,
+            repoName,
+            defaultBranch,
+            DEVICES_FILE_PATH,
+        );
+    } catch {
+        // CDN 链全部失败（私有仓库 / 全部源不可达）时回退到带鉴权的 Contents API。
+        const response = await getRepoFile({
+            repo,
+            path: DEVICES_FILE_PATH,
+            ref: defaultBranch,
+        });
+        payload = JSON.parse(decodeBase64(response.content)) as DevicesPayload;
+    }
     payloadCache.set(cacheKey, payload);
     return payload;
 }
