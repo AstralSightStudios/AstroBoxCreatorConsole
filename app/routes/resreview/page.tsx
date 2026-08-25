@@ -44,6 +44,7 @@ import {
 } from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
+import { hasSubmissionFiles } from "~/logic/publish/submission-protocol";
 import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
 import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAccessMessage";
@@ -91,9 +92,14 @@ export default function ResourceReviewPage() {
   const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];
   const openStatus = deriveReviewStatus(openComments);
 
+  const reviewModeForOpenPr =
+    publishMode === "staging" || hasSubmissionFiles(files)
+      ? "staging"
+      : "legacy";
+
   const repoFileChanges = useMemo(() => {
     if (files.length === 0 || resourcePreviews.length === 0) return [];
-    if (publishMode === "staging") {
+    if (reviewModeForOpenPr === "staging") {
       return resourcePreviews.map((preview) => {
         const oldEntry = preview.baseEntry;
         const isNew = !oldEntry || !oldEntry.repo_commit_hash;
@@ -127,7 +133,7 @@ export default function ResourceReviewPage() {
         manifest: preview.manifest,
       };
     });
-  }, [files, resourcePreviews, publishMode]);
+  }, [files, resourcePreviews, reviewModeForOpenPr]);
 
   const loadPermission = async () => {
     setCheckingPermission(true);
@@ -206,7 +212,8 @@ export default function ResourceReviewPage() {
       ]);
       if (callId !== loadDetailRef.current) return;
       const nextResourcePreviews =
-        publishMode === "staging" && openPull
+        openPull &&
+        (publishMode === "staging" || hasSubmissionFiles(nextFiles))
           ? await loadStagingPrResourcePreviews(
               nextFiles,
               accountState.github?.token || "",
@@ -504,7 +511,7 @@ export default function ResourceReviewPage() {
                 merging={merging}
                 closing={closing}
                 refusing={refusing}
-                canMerge={publishMode === "staging"}
+                canMerge={reviewModeForOpenPr === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
                 onRefreshList={() => {

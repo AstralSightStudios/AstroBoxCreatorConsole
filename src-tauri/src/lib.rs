@@ -20,9 +20,14 @@ struct GithubProxyRequest {
     body: Option<String>,
 }
 
+struct AppHttpClient(reqwest::Client);
+
 // Simple GitHub proxy to bypass CORS in the frontend.
 #[tauri::command]
-async fn github_request(request: GithubProxyRequest) -> Result<Value, String> {
+async fn github_request(
+    http_client: tauri::State<'_, AppHttpClient>,
+    request: GithubProxyRequest,
+) -> Result<Value, String> {
     if !(request.url.starts_with("https://api.github.com/")
         || request.url.starts_with("https://github.com/"))
     {
@@ -32,8 +37,7 @@ async fn github_request(request: GithubProxyRequest) -> Result<Value, String> {
     let method = reqwest::Method::from_bytes(request.method.as_bytes())
         .map_err(|_| format!("Invalid HTTP method: {}", request.method))?;
 
-    let client = reqwest::Client::new();
-    let mut builder = client.request(method, &request.url);
+    let mut builder = http_client.0.request(method, &request.url);
 
     let mut has_user_agent = false;
     if let Some(headers) = request.headers {
@@ -67,15 +71,16 @@ async fn github_request(request: GithubProxyRequest) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn afdian_request(body: String) -> Result<Value, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("AstroBoxCreatorConsole")
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
+async fn afdian_request(
+    http_client: tauri::State<'_, AppHttpClient>,
+    body: String,
+) -> Result<Value, String> {
+    let response = http_client
+        .0
         .post("https://ifdian.net/api/open/query-order")
+        .header("User-Agent", "AstroBoxCreatorConsole")
         .header("content-type", "application/json")
+        .timeout(Duration::from_secs(30))
         .body(body)
         .send()
         .await
@@ -133,24 +138,26 @@ struct FetchMediaResponse {
 // return them base64-encoded so the frontend can build a blob: URL without
 // hitting CORS. Restricted to https only.
 #[tauri::command]
-async fn fetch_media(request: FetchMediaRequest) -> Result<FetchMediaResponse, String> {
+async fn fetch_media(
+    http_client: tauri::State<'_, AppHttpClient>,
+    request: FetchMediaRequest,
+) -> Result<FetchMediaResponse, String> {
     if !request.url.starts_with("https://") {
         return Err("Only https URLs are allowed".into());
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("AstroBoxCreatorConsole")
-        .build()
-        .map_err(|err| err.to_string())?;
-
-    let mut builder = client.get(&request.url);
+    let mut builder = http_client.0.get(&request.url);
     if let Some(headers) = request.headers {
         for (key, value) in headers {
             builder = builder.header(&key, value);
         }
     }
 
-    let response = builder.send().await.map_err(|err| err.to_string())?;
+    let response = builder
+        .header("User-Agent", "AstroBoxCreatorConsole")
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
     let status = response.status();
     let content_type = response
         .headers()
@@ -184,6 +191,7 @@ async fn write_text_file(path: String, content: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppHttpClient(reqwest::Client::new()))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

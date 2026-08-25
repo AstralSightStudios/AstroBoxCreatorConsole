@@ -82,6 +82,13 @@ export function extractSubmissionPathFromFilePath(
     return parts.slice(0, 3).join("/");
 }
 
+/** Return whether a PR file list contains at least one new-flow submission file. */
+export function hasSubmissionFiles(
+    files: ReadonlyArray<{ filename?: string }>,
+): boolean {
+    return files.some((file) => Boolean(extractSubmissionPathFromFilePath(file.filename)));
+}
+
 export function parseSubmissionCsv(csv: string): CatalogEntry {
     const rows = csv
         .split(/\r?\n/)

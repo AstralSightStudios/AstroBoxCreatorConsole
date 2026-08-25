@@ -4,6 +4,7 @@ import {
   buildSubmissionPath,
   buildSubmissionRequest,
   canonicalCatalogEntryDigest,
+  hasSubmissionFiles,
   parseSubmissionCsv,
   parseSubmissionRequestJson,
 } from "../../app/logic/publish/submission-protocol";
@@ -34,6 +35,17 @@ describe("submission protocol", () => {
   test("rejects path traversal segments", () => {
     expect(() => buildSubmissionPath("../Alice", "repo")).toThrow();
     expect(() => buildSubmissionPath("alice", "repo/../x")).toThrow();
+  });
+
+  test("detects new-flow files in a PR", () => {
+    expect(
+      hasSubmissionFiles([
+        { filename: "index_v2.csv" },
+        { filename: "tmp/alice/resource-repo/resource.csv" },
+      ]),
+    ).toBe(true);
+    expect(hasSubmissionFiles([{ filename: "index_v2.csv" }])).toBe(false);
+    expect(hasSubmissionFiles([{ filename: "tmp/alice/resource.csv" }])).toBe(false);
   });
 
   test("parses exact two-row submission CSV", () => {
