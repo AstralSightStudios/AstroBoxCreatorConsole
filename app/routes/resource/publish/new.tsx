@@ -102,6 +102,7 @@ import {
 } from "~/logic/publish/canopus-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
+  formatResourceType,
   normalizeResourceType,
   type ResourceType,
 } from "~/logic/publish/resource-type";
@@ -109,7 +110,12 @@ import { MediaSection } from "./components/MediaSection";
 import { AuthorsLinksSection } from "./components/AuthorsLinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
-import { RepoStepSection } from "./components/RepoStepSection";
+import { RepoStepSection, type ExistingRepoOption } from "./components/RepoStepSection";
+import {
+  getRepoFile,
+  isGithubStatus,
+  listCurrentUserRepos,
+} from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
 import {
@@ -139,6 +145,62 @@ import {
   type DraftMediaItem,
   type DraftWallpaperAsset,
 } from "~/logic/publish/publish-drafts";
+
+async function findExistingResourceManifest(
+  token: string,
+  repoName: string,
+): Promise<{
+  file: string;
+  id?: string;
+  restype?: string;
+  name?: string;
+} | null> {
+  const username = loadAccountState().github?.username;
+  if (!username || !repoName) return null;
+  for (const file of [PUBLISH_CONFIG.manifestFileName, "manifest.json"]) {
+    let data: any = null;
+    try {
+      data = await getRepoFile({
+        repo: {
+          owner: username,
+          name: repoName,
+          branch: MAIN_RESOURCE_BRANCH,
+        },
+        path: file,
+        tokenOverride: token,
+        ref: MAIN_RESOURCE_BRANCH,
+      });
+    } catch (error) {
+      if (!isGithubStatus(error, 404)) throw error;
+      continue;
+    }
+    try {
+      const raw = String(data?.content || "").replace(/\s+/g, "");
+      const parsed = JSON.parse(
+        new TextDecoder().decode(
+          Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)),
+        ),
+      );
+      if (parsed && typeof parsed === "object") {
+        return {
+          file,
+          id: typeof parsed.item?.id === "string" ? parsed.item.id : undefined,
+          restype:
+            typeof parsed.item?.restype === "string"
+              ? parsed.item.restype
+              : undefined,
+          name:
+            typeof parsed.item?.name === "string"
+              ? parsed.item.name
+              : undefined,
+        };
+      }
+    } catch {
+      return { file };
+    }
+  }
+  return null;
+}
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
@@ -400,6 +462,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [prBody, setPrBody] = useState("");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [repoNameInput, setRepoNameInput] = useState("");
+  const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
+  const [userReposLoading, setUserReposLoading] = useState(false);
+  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
+  const [overwriteTarget, setOverwriteTarget] = useState<{
+    repoName: string;
+    file: string;
+    id?: string;
+    restype?: string;
+    name?: string;
+  } | null>(null);
   const [uploadLogs, setUploadLogs] = useState<string[]>([]);
   const [editContext, setEditContext] = useState<ResourceEditContext | null>(
     () => {
@@ -1233,6 +1305,27 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     ] as const;
   }, [activeStepIndex, prStatus, repoStatus]);
 
+  useEffect(() => {
+    if (isEditing || activeStepIndex !== 1) return;
+    if (userReposLoading || userRepos.length > 0) return;
+    const token = loadAccountState().github?.token;
+    if (!token) return;
+    setUserReposLoading(true);
+    listCurrentUserRepos(token)
+      .then((repos) =>
+        setUserRepos(
+          [...repos].sort((a, b) => {
+            const aResource = a.name.startsWith("astrobox-resource-") ? 0 : 1;
+            const bResource = b.name.startsWith("astrobox-resource-") ? 0 : 1;
+            if (aResource !== bResource) return aResource - bResource;
+            return b.updatedAt.localeCompare(a.updatedAt);
+          }),
+        ),
+      )
+      .catch(() => setUserRepos([]))
+      .finally(() => setUserReposLoading(false));
+  }, [activeStepIndex, isEditing, userRepos.length, userReposLoading]);
+
   const addLog = (message: string) => {
     setUploadLogs((prev) => [
       ...prev,
@@ -1241,7 +1334,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("upload/progress", message);
   };
 
-  const handleUploadToRepo = async () => {
+  const handleUploadToRepo = async (
+    options?: { skipOverwriteConfirm?: boolean },
+  ) => {
     if (missingEditContext) {
       setRepoStatus("error");
       setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
@@ -1297,6 +1392,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
 
       if (mode === "new") {
+        if (!options?.skipOverwriteConfirm) {
+          setRepoMessage("正在检查目标仓库是否已包含资源配置...");
+          const repoName =
+            repoNameInput.trim() ||
+            buildRepoName(itemId || itemName || "resource");
+          const existingManifest = await findExistingResourceManifest(
+            token,
+            repoName,
+          );
+          if (existingManifest) {
+            setOverwriteTarget({ repoName, ...existingManifest });
+            setOverwriteConfirmOpen(true);
+            setRepoStatus("idle");
+            setRepoMessage("");
+            return;
+          }
+        }
         const repo = await flowSpan("upload/repo", "创建仓库并上传 manifest 与资产", () =>
           uploadManifestAndAssets({
             manifest: manifestResult,
@@ -2026,6 +2138,42 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </div>
   );
 
+  const overwriteDialog = (
+    <AlertDialog.Root
+      open={overwriteConfirmOpen}
+      onOpenChange={setOverwriteConfirmOpen}
+    >
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>仓库已包含资源配置</AlertDialog.Title>
+        <AlertDialog.Description size="2">
+          目标仓库 {overwriteTarget?.repoName} 中已存在{" "}
+          {overwriteTarget?.file}
+          {overwriteTarget?.id
+            ? `（资源：${overwriteTarget.name || overwriteTarget.id} · ${formatResourceType(overwriteTarget.restype)}）`
+            : ""}
+          。继续上传会覆盖该仓库中的相关内容，是否覆盖？
+        </AlertDialog.Description>
+        <div className="flex justify-end gap-3 mt-4">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              返回修改
+            </Button>
+          </AlertDialog.Cancel>
+          <AlertDialog.Action>
+            <Button
+              variant="solid"
+              onClick={() =>
+                void handleUploadToRepo({ skipOverwriteConfirm: true })
+              }
+            >
+              覆盖上传
+            </Button>
+          </AlertDialog.Action>
+        </div>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+  );
+
   // Auto-save restore prompt
   const autoSaveDialog = (
     <AlertDialog.Root open={autoSavePromptOpen}>
@@ -2166,6 +2314,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   return (
     <Page>
       {autoSaveDialog}
+      {overwriteDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -2464,8 +2613,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               repoMessage={repoMessage}
               repoInfo={repoInfo}
               uploadLogs={uploadLogs}
+              existingRepos={userRepos}
+              existingReposLoading={userReposLoading}
               onRepoNameChange={setRepoNameInput}
-              onUpload={handleUploadToRepo}
+              onPickExistingRepo={setRepoNameInput}
+              onUpload={() => void handleUploadToRepo()}
               onPrev={() => goToStep(0)}
               onNext={() => goToStep(2)}
               mode={repoStepMode}
