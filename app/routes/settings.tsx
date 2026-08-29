@@ -27,9 +27,7 @@ import {
 import {
   PUBLISH_MODES,
   saveReviewMode,
-  saveSubmitMode,
   useReviewMode,
-  useSubmitMode,
   type PublishMode,
 } from "~/config/publishMode";
 import {
@@ -303,7 +301,6 @@ function ToggleRow({
 
 export default function Settings() {
   const currentEnv = useRepoEnvId();
-  const currentSubmitMode = useSubmitMode();
   const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
@@ -337,12 +334,6 @@ export default function Settings() {
   const handleSelect = (id: RepoEnvId) => {
     if (id === currentEnv) return;
     setPending(id);
-  };
-
-  const handleSelectSubmitMode = (id: PublishMode) => {
-    if (id === currentSubmitMode) return;
-    saveSubmitMode(id);
-    toast.success(`提交已切换到 ${PUBLISH_MODES[id].label}`);
   };
 
   const handleSelectReviewMode = (id: PublishMode) => {
@@ -442,29 +433,6 @@ export default function Settings() {
               </div>
             </div>
           )}
-        </SectionCard>
-
-        {/* 提交模式 */}
-        <SectionCard
-          title="提交模式"
-          description={`当前：${PUBLISH_MODES[currentSubmitMode].label}（新版本统一使用新流程提交）`}
-        >
-          <div className="grid gap-2.5 md:grid-cols-2">
-            {(
-              Object.values(PUBLISH_MODES) as Array<
-                (typeof PUBLISH_MODES)[PublishMode]
-              >
-            ).map((mode) => (
-              <OptionCard
-                key={mode.id}
-                selected={mode.id === currentSubmitMode}
-                onClick={() => handleSelectSubmitMode(mode.id)}
-                disabled={mode.id === "legacy"}
-                title={mode.label}
-                description={mode.description}
-              />
-            ))}
-          </div>
         </SectionCard>
 
         {/* 审核模式 */}
