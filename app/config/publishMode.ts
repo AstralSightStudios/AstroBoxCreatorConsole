@@ -19,7 +19,6 @@ export const PUBLISH_MODES: Record<
     },
 };
 
-const SUBMIT_MODE_KEY = "ABCC_SUBMIT_MODE_V1";
 const REVIEW_MODE_KEY = "ABCC_REVIEW_MODE_V1";
 const LEGACY_MODE_KEY = "ABCC_PUBLISH_MODE_V1";
 
@@ -52,28 +51,6 @@ function attachStorageListener() {
         notifySubscribers();
     });
     storageListenerAttached = true;
-}
-
-// 新版本提交统一走新流程（staging），旧流程入口在设置中禁用。
-export function loadSubmitMode(): PublishMode {
-    return "staging";
-}
-
-export function saveSubmitMode(mode: PublishMode) {
-    if (isBrowser()) localStorage.setItem(SUBMIT_MODE_KEY, mode);
-    notifySubscribers();
-}
-
-export function useSubmitMode(): PublishMode {
-    attachStorageListener();
-    return useSyncExternalStore(
-        (listener) => {
-            subscribers.add(listener);
-            return () => subscribers.delete(listener);
-        },
-        loadSubmitMode,
-        () => "staging" as PublishMode,
-    );
 }
 
 export function loadReviewMode(): PublishMode {

@@ -1,5 +1,4 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
-import { loadSubmitMode } from "~/config/publishMode";
 import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
 import { listOrganizationMembers } from "~/api/github/pr-review";
@@ -398,7 +397,7 @@ function submissionEntryFromPullFiles(
 }
 
 export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
-    const mode = loadSubmitMode() === "staging" ? "staging" : "legacy";
+    const mode = "staging";
     const { token, username } = requireGithubAccount();
     const pulls = await fetchMyReviewPullRequests(token, username);
     const signature = pulls

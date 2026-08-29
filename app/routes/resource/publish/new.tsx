@@ -23,7 +23,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
-import { loadSubmitMode } from "~/config/publishMode";
 import { REPO_ENVS, useRepoEnvId } from "~/config/repoEnv";
 import { log } from "~/logic/logging";
 import { reportFailure, reportSuccess } from "~/logic/logging/feedback";
@@ -440,7 +439,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     meta: () => {
       const context = editContext;
       return {
-        flow: loadSubmitMode(),
+        flow: "staging",
         repoEnv: `${REPO_ENVS[repoEnvId]?.label ?? repoEnvId}`,
         itemId: context?.catalog.entry.id,
         itemName: context?.catalog.entry.name,
@@ -1430,7 +1429,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }));
 
       const manifestForCatalog = lastManifest ?? manifestResult;
-      const useStaging = loadSubmitMode() === "staging";
+      const useStaging = true;
       const prBodyContent = prBody.trim();
       const catalogEntry = {
         id: itemId.trim(),
