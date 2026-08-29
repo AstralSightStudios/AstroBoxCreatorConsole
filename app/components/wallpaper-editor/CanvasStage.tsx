@@ -44,12 +44,12 @@ export interface CanvasStageProps {
     onRemoveTemplate: (index: number) => void;
 }
 
-/** Device model shown above each canvas: prefer deviceKey, then model aliases. */
+/** 设备预览标题优先展示面向用户的表盘名称。 */
 function deviceModel(template: ResolvedWallpaperTemplate): string {
     return (
-        template.deviceKey ||
-        template.aliases?.[0] ||
         template.watchface?.name ||
+        template.aliases?.[0] ||
+        template.deviceKey ||
         template.id
     );
 }

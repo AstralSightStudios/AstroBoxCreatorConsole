@@ -32,6 +32,42 @@ export interface WizardWallpaperResult {
     baseUrl: string;
 }
 
+export interface WizardWallpaperInitial {
+    config: WallpaperConfigRaw;
+    assets: WallpaperAssetFile[];
+    baseUrl: string;
+}
+
+export function parseWallpaperEditorInitial(
+    configJson: string,
+    assets: WallpaperAssetFile[],
+    baseUrl = "",
+): WizardWallpaperInitial | null {
+    if (!configJson.trim()) return null;
+    try {
+        const config = JSON.parse(configJson) as WallpaperConfigRaw;
+        if (!config || !Array.isArray(config.templates)) return null;
+        return { config, assets, baseUrl };
+    } catch {
+        return null;
+    }
+}
+
+export function resolveWallpaperEditorInitial(
+    payload: { configJson: string; assets: WallpaperAssetFile[] },
+    fallback?: WizardWallpaperInitial | null,
+): WizardWallpaperInitial | null {
+    return (
+        parseWallpaperEditorInitial(
+            payload.configJson,
+            payload.assets,
+            fallback?.baseUrl ?? "",
+        ) ??
+        fallback ??
+        null
+    );
+}
+
 export interface WizardSession {
     /** New-mode form snapshot (files kept in-memory, object URLs stay valid). */
     form?: WizardFormSnapshot;

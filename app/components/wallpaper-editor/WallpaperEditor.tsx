@@ -15,7 +15,8 @@ import type {
     WallpaperResources,
     WallpaperTransformState,
 } from "@claralight-design/wallpaper-engine";
-import { DownloadSimpleIcon, FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
+import { FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
+import { zipSync } from "fflate";
 import {
     WALLPAPER_DEVICE_PRESETS,
     createWallpaperConfig,
@@ -325,22 +326,36 @@ export function WallpaperEditor({
 
     const handleExport = useCallback(async () => {
         if (!resolvedForView || !config) return;
-        const template = resolvedForView[activeIndex];
-        const state = templateStates[template.id];
-        const res = resources[template.id];
-        if (!state || !res) return;
         try {
-            const blob = await renderWallpaperToBlob(template, state, baseImage ?? undefined, res);
-            const url = URL.createObjectURL(blob);
+            const files: Record<string, Uint8Array> = {};
+            for (const [index, template] of resolvedForView.entries()) {
+                const state = templateStates[template.id];
+                const res = resources[template.id];
+                if (!state || !res) continue;
+                const blob = await renderWallpaperToBlob(
+                    template,
+                    state,
+                    baseImage ?? undefined,
+                    res,
+                );
+                const safeName = (template.watchface?.name || template.deviceKey || template.id)
+                    .replace(/[\\/:*?"<>|]/g, "-")
+                    .trim() || template.id;
+                files[`${String(index + 1).padStart(2, "0")}-${safeName}.png`] =
+                    new Uint8Array(await blob.arrayBuffer());
+            }
+            if (Object.keys(files).length === 0) return;
+            const archive = new Blob([zipSync(files)], { type: "application/zip" });
+            const url = URL.createObjectURL(archive);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `${template.id}.png`;
+            link.download = `${title?.trim() || "wallpaper"}-全部设备.zip`;
             link.click();
             URL.revokeObjectURL(url);
         } catch (error) {
             setApplyError((error as Error).message);
         }
-    }, [activeIndex, baseImage, config, resolvedForView, resources, templateStates]);
+    }, [baseImage, config, resolvedForView, resources, templateStates, title]);
 
     const handleTransformChange = useCallback(
         (templateId: string, transform: WallpaperTransformState) => {
@@ -898,27 +913,6 @@ export function WallpaperEditor({
 
     return (
         <div className="flex h-full w-full flex-col" style={{ background: "var(--color-editor-bg)" }}>
-            {/* view toggle */}
-            <div className="flex shrink-0 items-center justify-end gap-1 px-3 py-1.5">
-                <button
-                    type="button"
-                    onClick={handleSwitchToVisual}
-                    className={`rounded-md px-2.5 py-1 text-xs transition ${
-                        viewMode === "visual" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"
-                    }`}
-                >
-                    可视化
-                </button>
-                <button
-                    type="button"
-                    onClick={openJsonView}
-                    className={`rounded-md px-2.5 py-1 text-xs transition ${
-                        viewMode === "json" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"
-                    }`}
-                >
-                    JSON
-                </button>
-            </div>
             {configIssues.length > 0 && viewMode === "visual" && (
                 <div className="shrink-0 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2">
                     <div className="flex items-center justify-between gap-3">
@@ -958,8 +952,9 @@ export function WallpaperEditor({
                         <Sidebar
                             title={title ?? ""}
                             onBack={() => onBack?.()}
+                            onOpenJson={openJsonView}
+                            onSelectCanvas={handleSelectCanvas}
                             hasConfig
-                            hasBaseImage={Boolean(baseImage)}
                             onUploadTestImage={(file) => void handleUploadTestImage(file)}
                             onExport={() => void handleExport()}
                             layers={layers}
@@ -968,13 +963,6 @@ export function WallpaperEditor({
                             onAddLayer={handleAddLayer}
                             onRemoveLayer={handleRemoveLayer}
                             onMoveLayerTo={handleMoveLayerTo}
-                            transform={{
-                                scale: transformControls.scale,
-                                rotation: transformControls.rotation,
-                                onScaleChange: (patch) => handleTransformPatch({ scale: patchControlMerge(transformControls.scale, patch) }),
-                                onRotationChange: (patch) => handleTransformPatch({ rotation: patchControlMerge(transformControls.rotation, patch) }),
-                            }}
-                            onRenderSimplifyChange={setRenderSimplify}
                         />
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
                         <main
@@ -1011,6 +999,12 @@ export function WallpaperEditor({
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
+                            wallpaperTransform={{
+                                scale: transformControls.scale,
+                                rotation: transformControls.rotation,
+                                onScaleChange: (patch) => handleTransformPatch({ scale: patchControlMerge(transformControls.scale, patch) }),
+                                onRotationChange: (patch) => handleTransformPatch({ rotation: patchControlMerge(transformControls.rotation, patch) }),
+                            }}
                             onRenderSimplifyChange={setRenderSimplify}
                         />
                     </WallpaperEditorErrorBoundary>
@@ -1024,6 +1018,7 @@ export function WallpaperEditor({
                             setJsonIssues(issues);
                         }}
                         onApply={handleApplyJson}
+                        onBack={handleSwitchToVisual}
                     />
                 )}
             </div>

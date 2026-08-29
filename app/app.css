@@ -41,7 +41,7 @@
     --editor-divider-width: 1px;
     --editor-panel-padding-x: 9px;
     --editor-control-height: 34px;
-    --editor-control-radius: 6px;
+    --editor-control-radius: 8px;
     --editor-control-gap: 2px;
     --editor-label-size: 13px;
     --editor-label-line-height: 18px;
@@ -50,7 +50,7 @@
     --editor-field-group-pitch: 65px;
     --editor-layer-row-height: 35px;
     --editor-layer-row-gap: 4px;
-    --editor-layer-row-radius: 6px;
+    --editor-layer-row-radius: 8px;
     --editor-preview-width: 252px;
     --editor-preview-height: 360px;
     --editor-preview-radius: 34px;
@@ -60,7 +60,7 @@
     --editor-switch-height: 24px;
     --editor-switch-radius: 12px;
 
-    --color-editor-bg: #070707;
+    --color-editor-bg: #080808;
     --color-editor-canvas: #191919;
     --color-editor-divider: #393939;
     --color-editor-control: #202020;
@@ -184,6 +184,32 @@
 
 .editor-slider:focus-visible {
     outline: none;
+}
+
+.editor-number-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.editor-number-input::-webkit-inner-spin-button,
+.editor-number-input::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
+.editor-select-trigger,
+.editor-select-trigger:hover,
+.editor-select-trigger:focus,
+.editor-select-trigger[data-state="open"] {
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+}
+
+.editor-select-trigger::before,
+.editor-select-trigger::after {
+    border: 0 !important;
+    box-shadow: none !important;
 }
 
 .dashboard-tabs-list {

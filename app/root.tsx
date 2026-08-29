@@ -1,6 +1,7 @@
 import "./app.css";
 
 import { useEffect, useRef } from "react";
+import { Outlet, useLocation } from "react-router";
 import { Theme } from "@radix-ui/themes";
 import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
@@ -46,22 +47,34 @@ function AstroboxAccountRefresher() {
 }
 
 export default function RootLayout() {
+    const location = useLocation();
+    const isWallpaperEditor = location.pathname === "/publish/wallpaper";
+
     return (
         <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
             <AstroboxAccountRefresher />
             <AutoUpdateChecker />
             <BroadcastDialogHost />
-            <NavVisibilityProvider>
-                <div
-                    className="flex flex-row h-screen min-h-screen"
+            {isWallpaperEditor ? (
+                <main
+                    className="h-screen min-h-screen w-screen overflow-hidden"
                     style={{ height: "100dvh", minHeight: "100dvh" }}
                 >
-                    <Nav />
-                    <main className="flex-1 h-full">
-                        <PageTransition />
-                    </main>
-                </div>
-            </NavVisibilityProvider>
+                    <Outlet />
+                </main>
+            ) : (
+                <NavVisibilityProvider>
+                    <div
+                        className="flex flex-row h-screen min-h-screen"
+                        style={{ height: "100dvh", minHeight: "100dvh" }}
+                    >
+                        <Nav />
+                        <main className="flex-1 h-full">
+                            <PageTransition />
+                        </main>
+                    </div>
+                </NavVisibilityProvider>
+            )}
             <Toaster
                 position="bottom-right"
                 richColors
