@@ -24,6 +24,7 @@ import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
 import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
+import OauthCallbackPage from "./pages/oauth-callback";
 import { installFrontendLogBridge } from "~/logic/logging";
 import {
   NewResourcePublishPage,
@@ -67,6 +68,10 @@ const router = createBrowserRouter([
   {
     path: "/callback",
     element: <LoginCallback />,
+  },
+  {
+    path: "/oauth-callback",
+    element: <OauthCallbackPage />,
   },
 ]);
 
