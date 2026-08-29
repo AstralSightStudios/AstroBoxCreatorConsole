@@ -196,19 +196,12 @@ export default function ResourcePublish() {
   const content = useMemo(() => {
     if (loading) {
       return (
-        <Callout.Root
-          color="gray"
-          variant="soft"
-          highContrast
-          className="-mb-2.5 bg-transparent! p-3!"
-        >
-          <Callout.Icon>
-            <Spinner size="2" />
-          </Callout.Icon>
-          <Callout.Text className="font-semibold text-white/45">
-            <span>正在载入申请列表...</span>
-          </Callout.Text>
-        </Callout.Root>
+        <div className="flex flex-col items-center justify-center gap-2.5 px-3 py-8">
+          <Spinner size="2" />
+          <span className="text-sm font-semibold text-white/45">
+            正在载入申请列表资源...
+          </span>
+        </div>
       );
     }
     if (error) {
