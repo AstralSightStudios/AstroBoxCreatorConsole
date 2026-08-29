@@ -267,7 +267,9 @@ export async function loadStagingPrResourcePreviews(
   );
   if (submissionPaths.length === 0) return [];
 
-  const baseRef = (openPull.base as { sha?: string }).sha || PUBLISH_CONFIG.defaultBranch;
+  // 基准行取目标仓库默认分支上「最新」的 index_v2.csv：合入时 Action 应用的是
+  // 当前目录，而非 PR 创建时刻的 base.sha；这样仅改标签等目录字段的提交也能
+  // 与将要被替换的那一行做逐字段对比。
   let baseEntries: CatalogEntry[] = [];
   try {
     const baseFile = await getFileContent(
@@ -275,7 +277,7 @@ export async function loadStagingPrResourcePreviews(
       PUBLISH_CONFIG.targetPrRepoOwner,
       PUBLISH_CONFIG.targetPrRepoName,
       PUBLISH_CONFIG.catalogFilePath,
-      baseRef,
+      PUBLISH_CONFIG.defaultBranch,
     );
     baseEntries = parseCatalogCsv(decodeCatalogContent(baseFile.content));
   } catch {

@@ -488,6 +488,31 @@ export async function ensureMainResourceBranch(repo: RepoInfo, token: string) {
     }
 }
 
+export interface UserRepoSummary {
+    name: string;
+    defaultBranch: string;
+    updatedAt: string;
+}
+
+export async function listCurrentUserRepos(
+    tokenOverride?: string,
+): Promise<UserRepoSummary[]> {
+    const token = tokenOverride ?? getGithubTokenOrThrow();
+    const data = await githubFetch<any[]>(
+        "https://api.github.com/user/repos?affiliation=owner&per_page=100&sort=pushed",
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        },
+    );
+    return (data || [])
+        .filter((repo) => repo && repo.name)
+        .map((repo) => ({
+            name: repo.name as string,
+            defaultBranch: (repo.default_branch as string) || MAIN_RESOURCE_BRANCH,
+            updatedAt: (repo.pushed_at || repo.updated_at || "") as string,
+        }));
+}
+
 export async function getRepoFile(params: {
     repo: RepoInfo;
     path: string;

@@ -15,7 +15,6 @@ const CHECK_DELAY_MS = 3_000;
 export default function AutoUpdateChecker() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [open, setOpen] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -30,7 +29,6 @@ export default function AutoUpdateChecker() {
           const { getVersion } = await import("@tauri-apps/api/app");
           const version = await getVersion();
           if (cancelled) return;
-          setCurrentVersion(version);
           const update = await checkForUpdate(version);
           if (cancelled || !update || isIgnored(update.tagName)) return;
           setInfo(update);
@@ -50,7 +48,6 @@ export default function AutoUpdateChecker() {
   return (
     <UpdateAvailableDialog
       info={info}
-      currentVersion={currentVersion}
       open={open}
       onOpenChange={setOpen}
     />

@@ -38,6 +38,7 @@ export function PullRequestSummaryCard({
   const [closeReason, setCloseReason] = useState("");
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [refuseReason, setRefuseReason] = useState("");
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   if (!openPull) return null;
   const badgeState: "open" | "closed" | "merged" =
     openPull.state === "closed"
@@ -94,7 +95,7 @@ export function PullRequestSummaryCard({
             {approving ? "通过中..." : "通过"}
           </Button>
           {canMerge && (
-            <Button color="blue" onClick={onMerge} disabled={merging}>
+            <Button color="blue" onClick={() => setMergeDialogOpen(true)} disabled={merging}>
               {merging ? "合入中..." : "合入"}
             </Button>
           )}
@@ -119,6 +120,39 @@ export function PullRequestSummaryCard({
           )}
         </div>
       </div>
+
+      <Dialog.Root
+        open={mergeDialogOpen}
+        onOpenChange={(open) => {
+          if (!merging) setMergeDialogOpen(open);
+        }}
+      >
+        <Dialog.Content className="max-w-[420px]">
+          <Dialog.Title>合入 PR #{openPull.number}</Dialog.Title>
+          <Dialog.Description size="2" className="text-white/60">
+            合入后将触发仓库 Action 自动应用该资源更新/提交请求，确认完成审核并通过。
+          </Dialog.Description>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="soft"
+              color="gray"
+              onClick={() => setMergeDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              color="blue"
+              disabled={merging}
+              onClick={() => {
+                setMergeDialogOpen(false);
+                onMerge();
+              }}
+            >
+              {merging ? "合入中..." : "确认合入"}
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
 
       <Dialog.Root
         open={closeDialogOpen}
