@@ -29,6 +29,9 @@ import { reportFailure, reportSuccess } from "~/logic/logging/feedback";
 import {
   endResourceSession,
   flowSpan,
+  logFieldChange,
+  getActiveResourceSession,
+  resumeResourceSession,
   usePublishFlowSession,
 } from "~/logic/logging/publish-flow";
 import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
@@ -101,7 +104,6 @@ import {
 } from "~/logic/publish/canopus-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
-  formatResourceType,
   normalizeResourceType,
   type ResourceType,
 } from "~/logic/publish/resource-type";
@@ -143,6 +145,7 @@ import {
   type PublishDraftFormData,
   type DraftMediaItem,
   type DraftWallpaperAsset,
+  type DraftDownloadInput,
 } from "~/logic/publish/publish-drafts";
 
 async function findExistingResourceManifest(
@@ -323,6 +326,56 @@ function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
   };
 }
 
+async function serializeDownloadInputs(
+  inputs: DownloadInput[],
+): Promise<DraftDownloadInput[]> {
+  return Promise.all(
+    inputs.map(async (item) => {
+      const file = item.file;
+      if (!file?.file?.size) {
+        return { ...item, file: null };
+      }
+      const bytes = await file.file.arrayBuffer();
+      return {
+        ...item,
+        file: {
+          id: file.id,
+          name: file.name,
+          type: file.file.type,
+          size: bytes.byteLength,
+          bytes,
+          pathOverride: file.pathOverride,
+          skipUpload: file.skipUpload,
+          source: file.source,
+        },
+      };
+    }),
+  );
+}
+
+function restoreDownloadInput(item: DraftDownloadInput): DownloadInput {
+  if (item.file?.bytes?.byteLength) {
+    const file = new File([item.file.bytes], item.file.name, {
+      type: item.file.type || "application/octet-stream",
+    });
+    const restored = createUploadItem(file);
+    return {
+      ...item,
+      file: {
+        ...restored,
+        id: item.file.id,
+        pathOverride: item.file.pathOverride,
+        skipUpload: item.file.skipUpload,
+        source: item.file.source,
+      },
+      existingFileName: undefined,
+    };
+  }
+  // 旧版草稿可能残留 WebKitGTK 无法回读的 File 对象：直接置空，
+  // 避免恢复后上传报 “The object can not be found here.”。
+  return { ...item, file: null };
+}
+
 async function serializeWallpaperAsset(
   asset: WallpaperAssetFile,
 ): Promise<DraftWallpaperAsset> {
@@ -463,14 +516,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [repoNameInput, setRepoNameInput] = useState("");
   const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
   const [userReposLoading, setUserReposLoading] = useState(false);
-  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
-  const [overwriteTarget, setOverwriteTarget] = useState<{
-    repoName: string;
-    file: string;
-    id?: string;
-    restype?: string;
-    name?: string;
-  } | null>(null);
+  const userReposFetchIdRef = useRef(0);
   const [uploadLogs, setUploadLogs] = useState<string[]>([]);
   const [editContext, setEditContext] = useState<ResourceEditContext | null>(
     () => {
@@ -988,7 +1034,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handlePreviewUpload = async (files: FileList | null) => {
     if (!files?.length) return;
     const fileList = Array.from(files);
-    console.log("[preview-upload] start", fileList.length, fileList.map((f) => f.name));
+    log.info("media/preview", `导入 ${fileList.length} 张预览图`, {
+      data: {
+        files: fileList.map((f) => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+      },
+    });
     setPreviewUploading(true);
     try {
       const initialItems = fileList.map((file) => ({
@@ -1003,7 +1057,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         const itemId = initialItems[index].id;
         let progressTimer: number | undefined;
         try {
-          console.log("[preview-upload] compress", index + 1, file.name, file.size);
+          log.debug(
+            "media/preview",
+            `压缩预览图 ${index + 1}/${fileList.length}`,
+            { data: { name: file.name, size: file.size } },
+          );
           setPreviewProcessingId(itemId);
           progressTimer = window.setInterval(() => {
             setPreviews((prev) =>
@@ -1015,9 +1073,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             );
           }, 160);
           const processed = await compressImageFile(file, 500 * 1024);
-          console.log("[preview-upload] read dimensions", file.name, processed.size);
+          log.debug("media/preview", "读取预览图尺寸", {
+            data: { name: file.name, compressedSize: processed.size },
+          });
           const item = await createImageUploadItem(processed);
-          console.log("[preview-upload] ready", file.name, item.width, item.height);
+          log.info("media/preview", "预览图就绪", {
+            data: {
+              name: item.name,
+              width: item.width,
+              height: item.height,
+              size: processed.size,
+            },
+          });
           if (progressTimer != null) window.clearInterval(progressTimer);
           setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
           setPreviews((prev) =>
@@ -1028,7 +1095,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         } catch (err) {
           if (progressTimer != null) window.clearInterval(progressTimer);
           setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
-          console.error("[preview-upload] failed", file.name, err);
+          log.error("media/preview", `预览图处理失败: ${file.name}`, {
+            data: { name: file.name, error: err },
+          });
           toast.error(`图片处理失败：${file.name}`);
           setPreviews((prev) =>
             prev.map((old) =>
@@ -1037,7 +1106,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           );
         }
       }
-      console.log("[preview-upload] done");
+      log.debug("media/preview", "预览图批量处理完成");
     } finally {
       setPreviewProcessingId(null);
       setPreviewUploading(false);
@@ -1047,16 +1116,33 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleIconUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    log.info("media/icon", "导入图标", {
+      data: { name: file.name, size: file.size, type: file.type },
+    });
     const originalDims = await getImageDimensions(file);
     if (
       !originalDims.width ||
       !originalDims.height ||
       originalDims.width !== originalDims.height
     ) {
+      log.warn("media/icon", "图标宽高比必须为 1:1，已拒绝", {
+        data: {
+          name: file.name,
+          width: originalDims.width,
+          height: originalDims.height,
+        },
+      });
       toast.error("图标宽高比必须为 1:1，请重新选择。");
       return;
     }
     if (originalDims.width > 500 || originalDims.height > 500) {
+      log.warn("media/icon", "图标尺寸过大，已拒绝", {
+        data: {
+          name: file.name,
+          width: originalDims.width,
+          height: originalDims.height,
+        },
+      });
       toast.error("图标尺寸过大，请重新选择。");
       return;
     }
@@ -1065,13 +1151,30 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       let processed = file;
       try {
         processed = await compressImageFile(file, 100 * 1024);
+        log.debug("media/icon", "图标压缩完成", {
+          data: {
+            name: file.name,
+            originalSize: file.size,
+            compressedSize: processed.size,
+          },
+        });
       } catch (err) {
         toast.error("图标处理失败，将使用原图");
-        console.error("compress icon failed:", err);
+        log.warn("media/icon", "图标压缩失败，使用原图", {
+          data: { name: file.name, error: err },
+        });
       }
       const next = await createImageUploadItem(processed).catch(() =>
         createUploadItem(processed),
       );
+      log.info("media/icon", "图标导入完成", {
+        data: {
+          name: next.name,
+          width: next.width,
+          height: next.height,
+          size: next.file.size,
+        },
+      });
       setIcon((prev) => {
         revokeUrl(prev);
         return next;
@@ -1084,6 +1187,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleCoverUpload = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    log.info("media/cover", "导入封面", {
+      data: { name: file.name, size: file.size, type: file.type },
+    });
     const originalDims = await getImageDimensions(file);
     const originalRatio =
       originalDims.width && originalDims.height
@@ -1095,6 +1201,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       !originalRatio ||
       Math.abs(originalRatio - COVER_RATIO) > COVER_RATIO_TOLERANCE
     ) {
+      log.warn("media/cover", "封面宽高比必须为 3:2，已拒绝", {
+        data: {
+          name: file.name,
+          width: originalDims.width,
+          height: originalDims.height,
+          ratio: originalRatio,
+        },
+      });
       toast.error(
         `封面宽高比必须为 3:2，当前 ${
           originalRatio ? originalRatio.toFixed(2) : "未知"
@@ -1105,18 +1219,38 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     let processed = file;
     try {
       processed = await compressImageFile(file, 600 * 1024);
+      log.debug("media/cover", "封面压缩完成", {
+        data: {
+          name: file.name,
+          originalSize: file.size,
+          compressedSize: processed.size,
+        },
+      });
     } catch (err) {
       toast.error("封面处理失败，将使用原图");
-      console.error("compress cover failed:", err);
+      log.warn("media/cover", "封面压缩失败，使用原图", {
+        data: { name: file.name, error: err },
+      });
     }
     const next = await createImageUploadItem(processed).catch(() =>
       createUploadItem(processed),
     );
     if (next.file.size > COVER_MAX_BYTES) {
+      log.warn("media/cover", "封面体积过大，已拒绝", {
+        data: { name: next.name, size: next.file.size },
+      });
       toast.error("封面体积过大，请压缩后重新上传。");
       revokeUrl(next);
       return;
     }
+    log.info("media/cover", "封面导入完成", {
+      data: {
+        name: next.name,
+        width: next.width,
+        height: next.height,
+        size: next.file.size,
+      },
+    });
     setCover((prev) => {
       revokeUrl(prev);
       return next;
@@ -1146,6 +1280,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setTagInput("");
       return;
     }
+    log.info("form/tags", `添加标签: ${nextTag}`);
     setTagsInput((prev) => {
       const existing = parseTagText(prev);
       return [...existing, nextTag].join(";");
@@ -1154,6 +1289,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const removeTag = (index: number) => {
+    const removed = tags[index];
+    if (removed) log.info("form/tags", `移除标签: ${removed}`);
     setTagsInput((prev) => {
       const next = parseTagText(prev);
       next.splice(index, 1);
@@ -1162,9 +1299,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleRemovePreview = (id: string) => {
+    const toRemove = previews.find((item) => item.id === id);
+    if (toRemove) {
+      log.info("media/preview", "移除预览图", {
+        data: { name: toRemove.name },
+      });
+    }
     setPreviews((prev) => {
-      const toRemove = prev.find((item) => item.id === id);
-      revokeUrl(toRemove);
+      const target = prev.find((item) => item.id === id);
+      revokeUrl(target);
       return prev.filter((item) => item.id !== id);
     });
   };
@@ -1182,11 +1325,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleRemoveIcon = () => {
+    if (icon) log.info("media/icon", "移除图标", { data: { name: icon.name } });
     revokeUrl(icon);
     setIcon(null);
   };
 
   const handleRemoveCover = () => {
+    if (cover) {
+      log.info("media/cover", "移除封面", { data: { name: cover.name } });
+    }
     revokeUrl(cover);
     setCover(null);
   };
@@ -1309,9 +1456,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (userReposLoading || userRepos.length > 0) return;
     const token = loadAccountState().github?.token;
     if (!token) return;
+    const fetchId = ++userReposFetchIdRef.current;
     setUserReposLoading(true);
     listCurrentUserRepos(token)
-      .then((repos) =>
+      .then((repos) => {
+        if (fetchId !== userReposFetchIdRef.current) return;
         setUserRepos(
           [...repos].sort((a, b) => {
             const aResource = a.name.startsWith("astrobox-resource-") ? 0 : 1;
@@ -1319,10 +1468,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             if (aResource !== bResource) return aResource - bResource;
             return b.updatedAt.localeCompare(a.updatedAt);
           }),
-        ),
-      )
-      .catch(() => setUserRepos([]))
-      .finally(() => setUserReposLoading(false));
+        );
+      })
+      .catch(() => {
+        if (fetchId === userReposFetchIdRef.current) setUserRepos([]);
+      })
+      .finally(() => {
+        if (fetchId === userReposFetchIdRef.current) {
+          setUserReposLoading(false);
+        }
+      });
   }, [activeStepIndex, isEditing, userRepos.length, userReposLoading]);
 
   const addLog = (message: string) => {
@@ -1333,9 +1488,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("upload/progress", message);
   };
 
-  const handleUploadToRepo = async (
-    options?: { skipOverwriteConfirm?: boolean },
-  ) => {
+  const handleUploadToRepo = async () => {
     if (missingEditContext) {
       setRepoStatus("error");
       setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
@@ -1391,22 +1544,20 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
 
       if (mode === "new") {
-        if (!options?.skipOverwriteConfirm) {
-          setRepoMessage("正在检查目标仓库是否已包含资源配置...");
-          const repoName =
-            repoNameInput.trim() ||
-            buildRepoName(itemId || itemName || "resource");
-          const existingManifest = await findExistingResourceManifest(
-            token,
-            repoName,
+        setRepoMessage("正在检查目标仓库是否已包含资源配置...");
+        const repoName =
+          repoNameInput.trim() ||
+          buildRepoName(itemId || itemName || "resource");
+        const existingManifest = await findExistingResourceManifest(
+          token,
+          repoName,
+        );
+        if (existingManifest) {
+          throw new Error(
+            `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${
+              existingManifest.name || existingManifest.id || "未知"
+            }」占用，请更换仓库名。`,
           );
-          if (existingManifest) {
-            setOverwriteTarget({ repoName, ...existingManifest });
-            setOverwriteConfirmOpen(true);
-            setRepoStatus("idle");
-            setRepoMessage("");
-            return;
-          }
         }
         const repo = await flowSpan("upload/repo", "创建仓库并上传 manifest 与资产", () =>
           uploadManifestAndAssets({
@@ -1422,8 +1573,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setRepoInfo(repo);
         setLastManifest(manifestResult);
         setRepoStatus("success");
-        setRepoMessage("仓库与文件已就绪，下一步可提交 PR。");
-        setActiveStepIndex(2);
+        setRepoMessage("");
+        toast.success("仓库创建成功，文件已上传。");
         log.info("upload/repo", "仓库上传完成", {
           data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
         });
@@ -1454,8 +1605,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setRepoInfo(repo);
       setLastManifest(manifestResult);
       setRepoStatus("success");
-      setRepoMessage("仓库更新完成，准备提交目录更新。");
-      setActiveStepIndex(2);
+      setRepoMessage("");
+      toast.success("仓库文件更新成功。");
       log.info("upload/repo", "仓库更新完成", {
         data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
       });
@@ -1765,11 +1916,26 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       const next =
         sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
         sortedDeviceOptions[0];
+      log.info("download/row", "添加下载配置行", {
+        data: {
+          deviceId: next?.id,
+          deviceName: next?.name,
+        },
+      });
       return [...prev, buildRow(next?.id)];
     });
   };
 
   const removeDownloadRow = (uid: string) => {
+    const removed = downloads.find((d) => d.uid === uid);
+    if (removed) {
+      log.info("download/row", "移除下载配置行", {
+        data: {
+          deviceId: removed.platformId,
+          fileName: removed.file?.name ?? removed.existingFileName ?? null,
+        },
+      });
+    }
     setDownloads((prev) => prev.filter((d) => d.uid !== uid));
   };
 
@@ -1783,6 +1949,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const batchSetDownloadDevices = (selectedIds: string[]) => {
+    log.info("download/row", `批量选择设备（${selectedIds.length} 台）`, {
+      data: { deviceIds: selectedIds },
+    });
     setDownloads((prev) => {
       const existingMap = new Map(
         prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
@@ -1805,6 +1974,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     file: UploadItem | null;
     encryptOnUpload?: boolean;
   }) => {
+    log.info("download/row", "一键填充下载配置", {
+      data: {
+        version: template.version,
+        fileName: template.file?.name ?? null,
+        encryptOnUpload: template.encryptOnUpload,
+      },
+    });
     setDownloads((prev) =>
       prev.map((row) => ({
         ...row,
@@ -1821,6 +1997,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       const next =
         sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
         sortedDeviceOptions[0];
+      log.info("download/trial/row", "添加试用下载配置行", {
+        data: {
+          deviceId: next?.id,
+          deviceName: next?.name,
+        },
+      });
       return [
         ...prev,
         {
@@ -1835,6 +2017,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const removeTrialDownloadRow = (uid: string) => {
+    const removed = trialDownloads.find((d) => d.uid === uid);
+    if (removed) {
+      log.info("download/trial/row", "移除试用下载配置行", {
+        data: {
+          deviceId: removed.platformId,
+          fileName: removed.file?.name ?? removed.existingFileName ?? null,
+        },
+      });
+    }
     setTrialDownloads((prev) => prev.filter((d) => d.uid !== uid));
   };
 
@@ -1848,6 +2039,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const batchSetTrialDownloadDevices = (selectedIds: string[]) => {
+    log.info("download/trial/row", `批量选择试用设备（${selectedIds.length} 台）`, {
+      data: { deviceIds: selectedIds },
+    });
     setTrialDownloads((prev) => {
       const existingMap = new Map(
         prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
@@ -1870,6 +2064,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     file: UploadItem | null;
     encryptOnUpload?: boolean;
   }) => {
+    log.info("download/trial/row", "一键填充试用下载配置", {
+      data: {
+        version: template.version,
+        fileName: template.file?.name ?? null,
+      },
+    });
     setTrialDownloads((prev) =>
       prev.map((row) => ({
         ...row,
@@ -1895,6 +2095,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       toast.error("请先完成资源仓库上传并获取提交哈希。");
       setActiveStepIndex(1);
       return;
+    }
+    if (target === 1) {
+      setRepoStatus("idle");
+      setRepoMessage("");
+      setUploadLogs([]);
     }
     setActiveStepIndex(target);
   };
@@ -1951,14 +2156,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const buildFormData = useCallback(async (): Promise<PublishDraftFormData> => {
-    const [serializedPreviews, serializedIcon, serializedCover] = await Promise.all([
+    const [
+      serializedPreviews,
+      serializedIcon,
+      serializedCover,
+      serializedDownloads,
+      serializedTrialDownloads,
+      serializedWallpaperAssets,
+    ] = await Promise.all([
       Promise.all(previews.map(serializeMediaItem)).then((items) =>
         items.filter((item): item is DraftMediaItem => item !== null),
       ),
       serializeMediaItem(icon),
       serializeMediaItem(cover),
+      serializeDownloadInputs(downloads),
+      serializeDownloadInputs(trialDownloads),
+      Promise.all(wallpaperPayload.assets.map(serializeWallpaperAsset)),
     ]);
     return {
+      sessionFile: getActiveResourceSession()?.fileName,
       itemId,
       itemName,
       description,
@@ -1970,15 +2186,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       previews: serializedPreviews,
       icon: serializedIcon,
       cover: serializedCover,
-      downloads: downloads.map((d) => ({ ...d, file: null })),
-      trialDownloads: trialDownloads.map((d) => ({ ...d, file: null })),
+      downloads: serializedDownloads,
+      trialDownloads: serializedTrialDownloads,
       bundledResources,
       enableAstroBoxCreatorFeatures,
       extRaw,
       wallpaperConfigJson: wallpaperPayload.configJson,
-      wallpaperAssets: await Promise.all(
-        wallpaperPayload.assets.map(serializeWallpaperAsset),
-      ),
+      wallpaperAssets: serializedWallpaperAssets,
     };
   }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperPayload]);
 
@@ -1999,8 +2213,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     setIcon(restoreMediaItem(data.icon));
     setCover(restoreMediaItem(data.cover));
-    setDownloads(data.downloads.map((d) => ({ ...d, file: null })));
-    setTrialDownloads(data.trialDownloads.map((d) => ({ ...d, file: null })));
+    setDownloads((data.downloads ?? []).map(restoreDownloadInput));
+    setTrialDownloads((data.trialDownloads ?? []).map(restoreDownloadInput));
     setBundledResources(
       (Array.isArray(data.bundledResources) ? data.bundledResources : [])
         .map((item) => ({
@@ -2024,7 +2238,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (isEditMode || previewUploading) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
-      void buildFormData().then(autoSaveDraft);
+      void buildFormData()
+        .then(autoSaveDraft)
+        .catch((error) => {
+          console.warn("[draft] 构建草稿数据失败", error);
+        });
     }, 1000);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -2045,16 +2263,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const handleSaveDraft = async () => {
     const name = draftName.trim() || itemName || "未命名草稿";
-    const data = await buildFormData();
-    await saveDraft(name, data);
-    setDraftName("");
-    setSaveDraftOpen(false);
-    setDraftList(await listDrafts());
+    try {
+      const data = await buildFormData();
+      await saveDraft(name, data);
+      setDraftName("");
+      setSaveDraftOpen(false);
+      setDraftList(await listDrafts());
+    } catch (error) {
+      console.warn("[draft] 保存草稿失败", error);
+      toast.error(`保存草稿失败：${(error as Error).message}`);
+    }
   };
 
   const handleRestoreDraft = (draft: PublishDraft) => {
     restoreFormData(draft.formData);
+    void resumeSessionFromDraft(draft.formData.sessionFile);
     setDraftPopoverOpen(false);
+  };
+
+  const resumeSessionFromDraft = async (sessionFile?: string) => {
+    if (!sessionFile) return;
+    const current = getActiveResourceSession();
+    if (current && current.fileName === sessionFile) return;
+    await resumeResourceSession(sessionFile, isEditMode ? "edit" : "publish", {
+      itemId,
+      itemName,
+    });
   };
 
   const handleDeleteDraft = async (id: string) => {
@@ -2065,6 +2299,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleRestoreAutoSave = async () => {
     if (autoSavedData) {
       restoreFormData(autoSavedData.formData);
+      await resumeSessionFromDraft(autoSavedData.formData.sessionFile);
     }
     setAutoSavePromptOpen(false);
     await clearAutoSavedDraft();
@@ -2135,42 +2370,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         onSelect={goToStep}
       />
     </div>
-  );
-
-  const overwriteDialog = (
-    <AlertDialog.Root
-      open={overwriteConfirmOpen}
-      onOpenChange={setOverwriteConfirmOpen}
-    >
-      <AlertDialog.Content maxWidth="480px">
-        <AlertDialog.Title>仓库已包含资源配置</AlertDialog.Title>
-        <AlertDialog.Description size="2">
-          目标仓库 {overwriteTarget?.repoName} 中已存在{" "}
-          {overwriteTarget?.file}
-          {overwriteTarget?.id
-            ? `（资源：${overwriteTarget.name || overwriteTarget.id} · ${formatResourceType(overwriteTarget.restype)}）`
-            : ""}
-          。继续上传会覆盖该仓库中的相关内容，是否覆盖？
-        </AlertDialog.Description>
-        <div className="flex justify-end gap-3 mt-4">
-          <AlertDialog.Cancel>
-            <Button variant="soft" color="gray">
-              返回修改
-            </Button>
-          </AlertDialog.Cancel>
-          <AlertDialog.Action>
-            <Button
-              variant="solid"
-              onClick={() =>
-                void handleUploadToRepo({ skipOverwriteConfirm: true })
-              }
-            >
-              覆盖上传
-            </Button>
-          </AlertDialog.Action>
-        </div>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
   );
 
   // Auto-save restore prompt
@@ -2313,7 +2512,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   return (
     <Page>
       {autoSaveDialog}
-      {overwriteDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -2455,14 +2653,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
-                onItemIdChange={handleItemIdChange}
-                onItemNameChange={setItemName}
-                onDescriptionChange={setDescription}
+                onItemIdChange={(value) => {
+                  handleItemIdChange(value);
+                  logFieldChange("itemId", "资源 ID", value);
+                }}
+                onItemNameChange={(value) => {
+                  setItemName(value);
+                  logFieldChange("itemName", "资源名称", value);
+                }}
+                onDescriptionChange={(value) => {
+                  setDescription(value);
+                  logFieldChange("description", "资源描述", value);
+                }}
                 onAddTag={addTag}
                 onRemoveTag={removeTag}
-                onTagInputChange={setTagInput}
-                onPaidTypeChange={setPaidType}
-                onResourceTypeChange={handleResourceTypeChange}
+                onTagInputChange={(value) => {
+                  setTagInput(value);
+                  logFieldChange("tagInput", "标签输入", value);
+                }}
+                onPaidTypeChange={(value) => {
+                  setPaidType(value);
+                  log.info("form/paidType", `付费类型: ${value || "(未设置)"}`);
+                }}
+                onResourceTypeChange={(next) => {
+                  handleResourceTypeChange(next);
+                  log.info("form/resourceType", `资源类型: ${next}`);
+                }}
                 onGenerateId={handleGenerateId}
               />
               <MediaSection
@@ -2562,8 +2778,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onAddBundledResources={handleAddBundledResources}
                 onRemoveBundledResource={handleRemoveBundledResource}
                 onToggleBundledResourceMode={handleToggleBundledResourceMode}
-                onChange={setExtRaw}
-                onToggleCreatorFeatures={setEnableAstroBoxCreatorFeatures}
+                onChange={(value) => {
+                  setExtRaw(value);
+                  logFieldChange("extRaw", "扩展配置", value, 1000);
+                }}
+                onToggleCreatorFeatures={(value) => {
+                  setEnableAstroBoxCreatorFeatures(value);
+                  log.info("form/ext", `切换 Creator 功能: ${value ? "开启" : "关闭"}`);
+                }}
               />
               {resourceType === "watchface" && (
                 <SectionCard

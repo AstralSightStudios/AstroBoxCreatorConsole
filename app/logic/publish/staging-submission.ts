@@ -242,7 +242,7 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         );
         if (duplicateRepo) {
             throw new Error(
-                `资源仓库 ${entry.repo_owner}/${entry.repo_name} 已被资源「${duplicateRepo.name || duplicateRepo.id}」占用。`,
+                `仓库 ${entry.repo_owner}/${entry.repo_name} 已经在 AstroBox 的软件索引里，被资源「${duplicateRepo.name || duplicateRepo.id}」占用，请更换仓库名。`,
             );
         }
     } else {

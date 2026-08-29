@@ -492,6 +492,7 @@ export interface UserRepoSummary {
     name: string;
     defaultBranch: string;
     updatedAt: string;
+    description: string;
 }
 
 export async function listCurrentUserRepos(
@@ -510,6 +511,7 @@ export async function listCurrentUserRepos(
             name: repo.name as string,
             defaultBranch: (repo.default_branch as string) || MAIN_RESOURCE_BRANCH,
             updatedAt: (repo.pushed_at || repo.updated_at || "") as string,
+            description: (repo.description as string) || "",
         }));
 }
 

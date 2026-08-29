@@ -27,6 +27,8 @@ import { type DeviceOption, type DownloadInput } from "./types";
 import { type UploadItem, SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
 import { toast } from "sonner";
+import { log } from "~/logic/logging";
+import { logFieldChange } from "~/logic/logging/publish-flow";
 
 interface DownloadsSectionProps {
   title?: string;
@@ -272,7 +274,7 @@ export function DownloadsSection({
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1 md:grid md:grid-cols-[minmax(0,1.4fr)_120px_minmax(0,1fr)_auto] md:items-start">
+                <div className="flex flex-wrap gap-1 md:grid md:grid-cols-[minmax(0,1.3fr)_minmax(100px,0.9fr)_minmax(0,1.5fr)_auto] md:items-start">
                   <div
                     className="min-w-[120px] flex-1 md:min-w-0"
                     style={{
@@ -288,15 +290,24 @@ export function DownloadsSection({
                       )}px`,
                     }}
                   >
-                    <Select.Root
-                      value={item.platformId || undefined}
-                      onValueChange={(value) =>
-                        onUpdateRow(item.uid, (row) => ({
-                          ...row,
-                          platformId: value,
-                        }))
-                      }
-                    >
+                      <Select.Root
+                        value={item.platformId || undefined}
+                        onValueChange={(value) => {
+                          const device = sortedDeviceOptions.find(
+                            (opt) => opt.id === value,
+                          );
+                          log.info("download/row", "选择设备", {
+                            data: {
+                              deviceId: value,
+                              deviceName: device?.name ?? null,
+                            },
+                          });
+                          onUpdateRow(item.uid, (row) => ({
+                            ...row,
+                            platformId: value,
+                          }));
+                        }}
+                      >
                       <Select.Trigger
                         radius="large"
                         placeholder="请选择设备"
@@ -329,12 +340,20 @@ export function DownloadsSection({
                       value={item.version}
                       radius="large"
                       className="min-w-0 w-full"
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const device = sortedDeviceOptions.find(
+                          (opt) => opt.id === item.platformId,
+                        );
+                        logFieldChange(
+                          `download-version-${item.uid}`,
+                          `版本号(${device?.name ?? (item.platformId || "未选设备")})`,
+                          e.target.value,
+                        );
                         onUpdateRow(item.uid, (row) => ({
                           ...row,
                           version: e.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                     />
                   </div>
 
@@ -349,6 +368,9 @@ export function DownloadsSection({
                         const file = e.target.files?.[0];
                         e.target.value = "";
                         if (!file) return;
+                        log.info("download/file", "选择包体文件", {
+                          data: { name: file.name, size: file.size },
+                        });
                         try {
                           const meta = await validateFile?.(file);
                           const uploadItem = createUploadItem(file);
@@ -360,6 +382,14 @@ export function DownloadsSection({
                               ? { version: meta.versionName }
                               : {}),
                           }));
+                          log.info("download/file", "包体校验完成", {
+                            data: {
+                              name: file.name,
+                              size: file.size,
+                              versionName: meta?.versionName ?? null,
+                              warning: meta?.warning ?? null,
+                            },
+                          });
                           if (meta?.warning) {
                             setFileWarnings((prev) => ({
                               ...prev,
@@ -373,6 +403,9 @@ export function DownloadsSection({
                             });
                           }
                         } catch (error) {
+                          log.error("download/file", `包体导入失败: ${file.name}`, {
+                            data: { name: file.name, error },
+                          });
                           toast.error((error as Error).message);
                         }
                       }}
@@ -420,12 +453,18 @@ export function DownloadsSection({
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
                         disabled={Boolean(item.existingFileName)}
-                        onCheckedChange={(checked) =>
+                        onCheckedChange={(checked) => {
+                          log.info("download/row", "切换加密上传", {
+                            data: {
+                              deviceId: item.platformId,
+                              encryptOnUpload: checked,
+                            },
+                          });
                           onUpdateRow(item.uid, (row) => ({
                             ...row,
                             encryptOnUpload: checked,
-                          }))
-                        }
+                          }));
+                        }}
                       />
                       {item.encryptOnUpload && (
                         <EncryptConfigDialog
