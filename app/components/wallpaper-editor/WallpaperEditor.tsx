@@ -27,6 +27,7 @@ import {
     flattenAllTemplates,
     getExpandedTemplate,
     getLayer,
+    migrateWallpaperConfigForEngine031,
     moveLayerToIndex,
     removeLayer,
     removeTemplate,
@@ -52,7 +53,10 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { GLASS_MATERIAL_DEFAULTS, LAYER_BLEND_MODES } from "~/logic/wallpaper/types";
+import {
+    createWallpaperBlendControl,
+    GLASS_MATERIAL_DEFAULTS,
+} from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
@@ -108,8 +112,8 @@ function clampAxis(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
-    const next = cloneConfig(config);
+function prepareWallpaperConfigForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
+    const next = migrateWallpaperConfigForEngine031(config);
     const base = baseUrl?.replace(/\/+$/, "");
     const toRelative = (src: string) => {
         if (base && src.startsWith(`${base}/`)) return `./${src.slice(base.length + 1)}`;
@@ -131,7 +135,7 @@ function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: stri
 
 function parseAndValidate(raw: string, baseUrl?: string) {
     try {
-        const parsed = JSON.parse(raw) as WallpaperConfigRaw;
+        const parsed = prepareWallpaperConfigForEditor(JSON.parse(raw) as WallpaperConfigRaw, baseUrl);
         normalizeWallpaperConfig(parsed, baseUrl ?? "");
         return { config: parsed, issues: [] as string[] };
     } catch (error) {
@@ -152,7 +156,7 @@ export function WallpaperEditor({
 }: WallpaperEditorProps) {
     const [config, setConfig] = useState<WallpaperConfigRaw | null>(() =>
         initialConfig
-            ? flattenAllTemplates(normalizeAssetPathsForEditor(initialConfig, baseUrl))
+            ? flattenAllTemplates(prepareWallpaperConfigForEditor(initialConfig, baseUrl))
             : null,
     );
     const [assetFiles, setAssetFiles] = useState<Record<string, WallpaperAssetFile>>(() => {
@@ -481,7 +485,7 @@ export function WallpaperEditor({
                               type: "text",
                               clip: "frame",
                               opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
-                              blendMode: "normal",
+                              blendMode: createWallpaperBlendControl(),
                               content: { default: content, adjustable: true },
                               maxLength: 20,
                               textBox,
@@ -506,7 +510,7 @@ export function WallpaperEditor({
                             type: "wallpaper",
                             clip: "frame",
                             blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
-                            blendMode: "normal",
+                            blendMode: createWallpaperBlendControl(),
                         }
                       : kind === "glass"
                         ? (() => {
@@ -519,7 +523,7 @@ export function WallpaperEditor({
                                   type: "glass",
                                   clip: "frame",
                                   opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
-                                  blendMode: "normal",
+                                  blendMode: createWallpaperBlendControl(),
                                   visible: true,
                                   transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
                                   geometry: {
@@ -539,7 +543,7 @@ export function WallpaperEditor({
                             amount: { default: 0, min: -1, max: 1, step: 0.01, adjustable: true },
                             lightColor: "#ffffff",
                             darkColor: "#000000",
-                            blendMode: "normal",
+                            blendMode: createWallpaperBlendControl(),
                         };
             const next = addLayer(config, activeIndex, layer);
             setConfig(next);
@@ -578,7 +582,7 @@ export function WallpaperEditor({
                 opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
                 blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
                 backdropBlur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
-                blendMode: { default: "normal", adjustable: true, options: [...LAYER_BLEND_MODES] },
+                blendMode: createWallpaperBlendControl(),
             };
             setConfig((prev) => (prev ? addLayer(prev, activeIndex, layer) : prev));
             setSelection({ kind: "layer", layerId: layer.id });
@@ -801,7 +805,7 @@ export function WallpaperEditor({
             setApplyError(`导入失败：${issues[0] ?? "JSON 无效"}`);
             return;
         }
-        setConfig(normalizeAssetPathsForEditor(parsed, baseUrl));
+        setConfig(parsed);
         setActiveTemplate(0);
         setSelection({ kind: "canvas" });
         setApplyError("");
@@ -811,7 +815,7 @@ export function WallpaperEditor({
         const { config: parsed, issues } = parseAndValidate(jsonDraft, baseUrl);
         setJsonIssues(issues);
         if (parsed) {
-            setConfig(normalizeAssetPathsForEditor(parsed, baseUrl));
+            setConfig(parsed);
             setApplyError("");
             setViewMode("visual");
         }

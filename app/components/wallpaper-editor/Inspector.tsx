@@ -70,6 +70,8 @@ const GLASS_BLEND_MODE_LABELS: Record<WallpaperGlassBlendMode, string> = {
     "soft-light": "柔光",
     difference: "差值",
     exclusion: "排除",
+    "linear-dodge": "线性减淡",
+    "linear-burn": "线性加深",
 };
 
 const GLASS_BLEND_MODE_OPTIONS: Array<{ value: string; label: string }> = GLASS_BLEND_MODES.map(
@@ -450,7 +452,13 @@ export function Inspector({
             ? layer.geometry
             : layer.geometry && layer.geometry.type === "rounded-rect"
               ? layer.geometry
-              : { type: "rounded-rect", width: 100, height: 100, radius: 0 };
+              : {
+                    type: "circle",
+                    diameter: Math.max(
+                        1,
+                        Math.min(canvas?.canvas?.width ?? 200, canvas?.canvas?.height ?? 200) / 2,
+                    ),
+                };
     const rawMaterial = layer.material;
     const legacyCurvature =
         typeof (rawMaterial as { curvature?: unknown } | undefined)?.curvature === "number"
@@ -1071,21 +1079,21 @@ export function Inspector({
                                         ]}
                                         onChange={(value) => {
                                             if (value === "circle") {
-                                                const radius = Math.max(
+                                                const diameter = Math.max(
                                                     1,
                                                     Math.round(
                                                         Math.min(
-                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.width : glassGeometry.radius * 2,
-                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.height : glassGeometry.radius * 2,
-                                                        ) / 2,
+                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.width : glassGeometry.diameter,
+                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.height : glassGeometry.diameter,
+                                                        ),
                                                     ),
                                                 );
-                                                onLayerPatch({ geometry: { type: "circle", radius } });
+                                                onLayerPatch({ geometry: { type: "circle", diameter } });
                                             } else {
                                                 const width =
-                                                    glassGeometry.type === "circle" ? glassGeometry.radius * 2 : glassGeometry.width;
+                                                    glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.width;
                                                 const height =
-                                                    glassGeometry.type === "circle" ? glassGeometry.radius * 2 : glassGeometry.height;
+                                                    glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.height;
                                                 onLayerPatch({
                                                     geometry: {
                                                         type: "rounded-rect",
@@ -1125,10 +1133,10 @@ export function Inspector({
                                     </EditorField>
                                 </>
                             ) : (
-                                <EditorField label="半径">
+                                <EditorField label="直径">
                                     <EditorNumberField
-                                        value={glassGeometry.radius}
-                                        onChange={(v) => patchGlassGeometry({ radius: Math.max(1, v) })}
+                                        value={glassGeometry.diameter}
+                                        onChange={(v) => patchGlassGeometry({ diameter: Math.max(1, v) })}
                                     />
                                 </EditorField>
                             )}
