@@ -35,6 +35,9 @@ import {
 } from "./nav-config";
 import { useNavVisibility } from "./nav-visibility-context";
 import { AstroBoxLogo } from "~/components/svgs";
+import InboxBell from "~/components/inbox/InboxBell";
+import InboxDrawer from "~/components/inbox/InboxDrawer";
+import { useInboxPolling } from "~/logic/inbox/use-inbox";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
@@ -45,6 +48,7 @@ export default function Nav() {
   const account = getDisplayAccount(accountState);
   const location = useLocation();
   const navigate = useNavigate();
+  useInboxPolling();
   const {
     isCollapsed,
     isDesktop,
@@ -260,6 +264,7 @@ function NavHeader({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showGithubLogoutConfirm, setShowGithubLogoutConfirm] = useState(false);
   const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const githubLoginState = useGithubLoginState();
 
   const handleAstroLogin = () => {
@@ -303,15 +308,18 @@ function NavHeader({
           className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
           {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
-          <Popover.Trigger>
-            <button
-              type="button"
-              aria-label="账号菜单"
-              className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-            >
-              <AccountAvatar account={account} isActive={hasAccount} />
-            </button>
-          </Popover.Trigger>
+          <div className="flex items-center gap-2">
+            <InboxBell onClick={() => setInboxOpen(true)} />
+            <Popover.Trigger>
+              <button
+                type="button"
+                aria-label="账号菜单"
+                className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+              >
+                <AccountAvatar account={account} isActive={hasAccount} />
+              </button>
+            </Popover.Trigger>
+          </div>
         </div>
         <AccountMenu
           accountState={accountState}
@@ -323,6 +331,8 @@ function NavHeader({
           onGithubLogout={handleGithubLogout}
         />
       </Popover.Root>
+
+      <InboxDrawer open={inboxOpen} onClose={() => setInboxOpen(false)} />
 
       <Dialog.Root open={showGithubLogoutConfirm} onOpenChange={setShowGithubLogoutConfirm}>
         <Dialog.Content className="max-w-[520px]">

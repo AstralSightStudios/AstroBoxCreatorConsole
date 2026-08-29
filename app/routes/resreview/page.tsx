@@ -6,7 +6,10 @@ import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
-import { useAccountState } from "~/logic/account/store";
+import { useAccountState, getAstroboxToken } from "~/logic/account/store";
+import { sendCcNotice } from "~/logic/inbox/send";
+import type { CcNoticeSubtype } from "~/logic/inbox/types";
+import { resolveAuthorProStatuses } from "./owner-pro";
 import { useRepoEnv } from "~/config/repoEnv";
 import { useReviewMode } from "~/config/publishMode";
 import {
@@ -49,6 +52,55 @@ import { hasSubmissionFiles } from "~/logic/publish/submission-protocol";
 import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
 import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAccessMessage";
+
+function buildPrUrl(number: number): string {
+  return `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${number}`;
+}
+
+const CC_NOTICE_TITLES: Record<CcNoticeSubtype, (name: string) => string> = {
+  "review-changes-requested": (name) => `《${name}》提交需要修改`,
+  "review-approved": (name) => `《${name}》资源提交已通过`,
+  "review-refused": (name) => `《${name}》资源提交被拒绝`,
+  "review-closed": (name) => `《${name}》资源提交已被关闭`,
+};
+
+/**
+ * 解析当前 PR 中「声明已绑定 AstroBox 账号」的作者（manifest.item.author 里
+ * bindABAccount 为 true 的 name），再按名称精确匹配 /admin/users，拿到真实 userId。
+ */
+async function resolveRecipientUserIds(
+  previews: PrResourcePreview[],
+  astroboxToken: string | undefined,
+): Promise<{ userIds: string[]; resourceName: string; resourceId: string }> {
+  const boundNames = new Set<string>();
+  let resourceName = "";
+  let resourceId = "";
+  for (const preview of previews) {
+    if (!resourceName) {
+      resourceName = preview.entry.name || "";
+      resourceId = preview.entry.id || "";
+    }
+    const authors = preview.manifest?.item.author ?? [];
+    for (const author of authors) {
+      if (author.bindABAccount && author.name?.trim()) {
+        boundNames.add(author.name.trim());
+      }
+    }
+  }
+  if (boundNames.size === 0) {
+    return { userIds: [], resourceName, resourceId };
+  }
+  const statuses = await resolveAuthorProStatuses(
+    Array.from(boundNames),
+    astroboxToken,
+  );
+  const userIds = new Set<string>();
+  for (const name of boundNames) {
+    const status = statuses[name];
+    if (status?.state === "found") userIds.add(status.user.userId);
+  }
+  return { userIds: Array.from(userIds), resourceName, resourceId };
+}
 
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
@@ -366,6 +418,15 @@ export default function ResourceReviewPage() {
       setReplyTarget(null);
       setEditingTarget(null);
       await loadDetail(number);
+      if (isNewNeedFix) {
+        const parsed = parseReviewCommentBody(body);
+        void notifyCc({
+          subtype: "review-changes-requested",
+          prNumber: number,
+          tagId: parsed.tagId || undefined,
+          content: parsed.content,
+        });
+      }
       toast.success(
         editingTarget
           ? "评论已更新"
@@ -400,6 +461,7 @@ export default function ResourceReviewPage() {
     setMerging(true);
     try {
       await mergePullRequest(number);
+      void notifyCc({ subtype: "review-approved", prNumber: number });
       toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
       await loadPulls();
       if (openNumber === number) {
@@ -422,6 +484,12 @@ export default function ResourceReviewPage() {
         ? `[ABCC_CLOSE] ${reason}`
         : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
       await createPullRequestComment(number, commentBody);
+      void notifyCc({
+        subtype: "review-closed",
+        prNumber: number,
+        content: reason,
+        senderNote: reason,
+      });
       toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
       await loadPulls();
       await loadDetail(number);
@@ -442,6 +510,12 @@ export default function ResourceReviewPage() {
         ? `[ABCC_REFUSE] ${reason}`
         : "[ABCC_REFUSE] 该 PR 已被审核成员拒绝。";
       await createPullRequestComment(number, commentBody);
+      void notifyCc({
+        subtype: "review-refused",
+        prNumber: number,
+        content: reason,
+        senderNote: reason,
+      });
       toast.success("PR 已拒绝，不再显示在审核列表中。");
       await loadPulls();
       navigate("/resreview", { replace: true });
@@ -450,6 +524,34 @@ export default function ResourceReviewPage() {
     } finally {
       setRefusing(false);
     }
+  };
+
+  const notifyCc = async (params: {
+    subtype: CcNoticeSubtype;
+    prNumber: number;
+    tagId?: string;
+    content?: string;
+    senderNote?: string;
+  }) => {
+    const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
+      resourcePreviews,
+      getAstroboxToken(),
+    );
+    if (userIds.length === 0) return;
+    await sendCcNotice({
+      subtype: params.subtype,
+      tagId: params.tagId,
+      content: params.content,
+      senderNote: params.senderNote,
+      prNumber: params.prNumber,
+      prUrl: buildPrUrl(params.prNumber),
+      resourceId: resourceId || undefined,
+      resourceName: resourceName || undefined,
+      deepLink: `/resreview?pr=${params.prNumber}`,
+      userIds,
+      title: CC_NOTICE_TITLES[params.subtype](resourceName),
+      body: params.content ?? params.senderNote ?? "",
+    });
   };
 
   const topbarActions = null;
