@@ -308,7 +308,7 @@ function NavHeader({
           className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
           {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <InboxBell onClick={() => setInboxOpen(true)} />
             <Popover.Trigger>
               <button
