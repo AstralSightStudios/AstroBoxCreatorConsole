@@ -547,7 +547,6 @@ export default function Settings() {
 
         <UpdateAvailableDialog
           info={updateInfo}
-          currentVersion={appVersion}
           open={updateDialogOpen}
           onOpenChange={setUpdateDialogOpen}
         />
