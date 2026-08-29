@@ -74,6 +74,7 @@ export interface PublishDraftFormData {
   extRaw: string;
   wallpaperConfigJson: string;
   wallpaperAssets: DraftWallpaperAsset[];
+  wallpaperBaseUrl?: string;
 }
 
 function isBrowser() {

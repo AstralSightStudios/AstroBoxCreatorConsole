@@ -17,7 +17,7 @@ export interface WallpaperColorControlConfig {
     allowCustom?: boolean;
 }
 
-/** 图层通用混合模式（CSS 15 模式，与引擎 BLEND_MODES 一致）。 */
+/** 图层通用混合模式（CSS 16 模式，与引擎支持范围一致）。 */
 export const LAYER_BLEND_MODES = [
     "normal",
     "multiply",
@@ -43,6 +43,16 @@ export interface WallpaperBlendControlConfig {
     default: string;
     adjustable?: boolean;
     options?: string[];
+}
+
+export function createWallpaperBlendControl(
+    defaultValue: WallpaperLayerBlendMode = "normal",
+): WallpaperBlendControlConfig {
+    return {
+        default: defaultValue,
+        adjustable: true,
+        options: [...LAYER_BLEND_MODES],
+    };
 }
 
 export interface WallpaperRectConfig {
@@ -112,10 +122,11 @@ export type WallpaperGlassGeometryConfig =
       }
     | {
           type: "circle";
-          radius: number;
+          /** 圆形实际直径（壁纸文档像素）。 */
+          diameter: number;
       };
 
-/** 玻璃高光 / 阴影支持混合模式（CSS 12 模式，与引擎 GLASS_BLEND_MODES 一致）。 */
+/** 玻璃高光 / 描边支持混合模式（CSS 模式 + Figma Linear 模式）。 */
 export const GLASS_BLEND_MODES = [
     "normal",
     "multiply",
@@ -129,6 +140,8 @@ export const GLASS_BLEND_MODES = [
     "soft-light",
     "difference",
     "exclusion",
+    "linear-dodge",
+    "linear-burn",
 ] as const;
 
 export type WallpaperGlassBlendMode = (typeof GLASS_BLEND_MODES)[number];
@@ -148,9 +161,9 @@ export interface WallpaperGlassMaterialConfig {
     contrast: number;
     highlight: number;
     shadow: number;
-    /** 高光（Fresnel + specular）混合模式（默认 screen）。 */
+    /** 高光（Fresnel + specular）混合模式（默认 linear-dodge）。 */
     highlightBlendMode: WallpaperGlassBlendMode;
-    /** 内阴影混合模式（默认 multiply）。 */
+    /** 描边 / 内阴影混合模式（默认 linear-burn）。 */
     shadowBlendMode: WallpaperGlassBlendMode;
     /** 打光角度（度，[0,360]）：对共享基线光照绕 Z 轴旋转，默认 0。 */
     lightAngle: number;
@@ -158,6 +171,14 @@ export interface WallpaperGlassMaterialConfig {
     tintOpacity: number;
     /** 高级：bevel 宽度覆盖（0=自动 plateau）。 */
     bezelWidth: number;
+    /** 内部：折射率。 */
+    ior: number;
+    /** 内部：光学厚度比例。 */
+    opticalScale: number;
+    /** 内部：表面轮廓。 */
+    surfaceProfile: "apple" | "bubble";
+    /** 内部：折射采样方向。 */
+    refractionSign: 1 | -1;
 }
 
 
@@ -203,20 +224,24 @@ export interface WallpaperLayerConfig {
 
 /** 玻璃材质默认值（与引擎 config 的 GLASS_MATERIAL_DEFAULTS 一致）。 */
 export const GLASS_MATERIAL_DEFAULTS: WallpaperGlassMaterialConfig = {
-    blur: 30,
-    refraction: 2,
-    thickness: 12,
-    dispersion: 0.8,
-    saturation: 1.2,
-    contrast: 1.03,
-    highlight: 0.5,
-    shadow: 0.25,
-    highlightBlendMode: "screen",
-    shadowBlendMode: "multiply",
+    blur: 52,
+    refraction: 0.7,
+    thickness: 30,
+    dispersion: 0.2,
+    saturation: 1,
+    contrast: 1,
+    highlight: 0.25,
+    shadow: 0.45,
+    highlightBlendMode: "linear-dodge",
+    shadowBlendMode: "linear-burn",
     lightAngle: 0,
-    tint: "#ffffff",
-    tintOpacity: 0.08,
+    tint: "#1a1a1a",
+    tintOpacity: 0.7,
     bezelWidth: 0,
+    ior: 1.45,
+    opticalScale: 0.6,
+    surfaceProfile: "apple",
+    refractionSign: -1,
 };
 
 export interface WallpaperWatchfaceConfig {

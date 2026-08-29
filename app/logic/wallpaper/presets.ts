@@ -4,6 +4,7 @@ import type {
     WallpaperLayerConfig,
     WallpaperTemplateConfig,
 } from "./types";
+import { createWallpaperBlendControl } from "./types";
 
 export interface WallpaperDevicePreset {
     id: string;
@@ -83,7 +84,7 @@ function defaultLayers(): WallpaperLayerConfig[] {
             type: "wallpaper",
             clip: "frame",
             blur: 0,
-            blendMode: "normal",
+            blendMode: createWallpaperBlendControl(),
         },
     ];
 }

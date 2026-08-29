@@ -1,4 +1,4 @@
-import { CheckIcon, WarningIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, CheckIcon, WarningIcon } from "@phosphor-icons/react";
 import JsonMonacoEditor from "~/components/admin/JsonMonacoEditor";
 import { Button } from "@radix-ui/themes";
 
@@ -7,13 +7,21 @@ export interface JsonSourcePanelProps {
     issues: string[];
     onChange: (value: string) => void;
     onApply: () => void;
+    onBack: () => void;
 }
 
-export function JsonSourcePanel({ value, issues, onChange, onApply }: JsonSourcePanelProps) {
+export function JsonSourcePanel({ value, issues, onChange, onApply, onBack }: JsonSourcePanelProps) {
     return (
         <div className="flex h-full w-full flex-col" style={{ background: "var(--color-editor-bg)" }}>
-            <div className="flex shrink-0 items-center justify-between px-3 py-2">
-                <span className="text-[13px] leading-[18px] text-white/85">壁纸配置 JSON</span>
+            <div className="flex h-[60px] shrink-0 items-center justify-between px-2">
+                <button
+                    type="button"
+                    onClick={onBack}
+                    className="flex h-[34px] items-center gap-2 rounded-lg px-2 text-[13px] text-white/75 transition hover:bg-white/10 hover:text-white"
+                >
+                    <ArrowLeftIcon size={16} weight="regular" />
+                    返回可视化编辑
+                </button>
                 <Button
                     size="2"
                     radius="medium"

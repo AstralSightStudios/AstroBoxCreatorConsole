@@ -4,9 +4,47 @@ import type {
     WallpaperLayerConfig,
     WallpaperTemplateConfig,
 } from "./types";
+import { LAYER_BLEND_MODES } from "./types";
 
 export function cloneConfig<T>(config: T): T {
     return JSON.parse(JSON.stringify(config)) as T;
+}
+
+/** 将 0.2.x 圆形玻璃半径迁移为 0.3.1 使用的实际直径。 */
+export function migrateWallpaperConfigForEngine031(
+    config: WallpaperConfigRaw,
+): WallpaperConfigRaw {
+    const next = cloneConfig(config);
+    const visit = (value: unknown) => {
+        if (Array.isArray(value)) {
+            value.forEach(visit);
+            return;
+        }
+        if (!value || typeof value !== "object") return;
+        const record = value as Record<string, unknown>;
+        const geometry = record.geometry;
+        if (
+            record.type === "glass" &&
+            geometry &&
+            typeof geometry === "object" &&
+            (geometry as Record<string, unknown>).type === "circle"
+        ) {
+            const circle = geometry as Record<string, unknown>;
+            if (
+                circle.diameter === undefined &&
+                typeof circle.radius === "number" &&
+                Number.isFinite(circle.radius)
+            ) {
+                record.geometry = {
+                    type: "circle",
+                    diameter: Math.max(1, circle.radius * 2),
+                };
+            }
+        }
+        Object.values(record).forEach(visit);
+    };
+    visit(next);
+    return next;
 }
 
 /** Expand the `shared` inheritance for one template (read-only). */
@@ -151,7 +189,18 @@ export function addLayer(
 ): WallpaperConfigRaw {
     const next = withFlattened(config, templateIndex);
     const template = next.templates[templateIndex];
-    template.layers = [...(template.layers ?? []), layer];
+    const blendMode = layer.blendMode;
+    const nextLayer =
+        blendMode &&
+        typeof blendMode === "object" &&
+        blendMode.adjustable === true &&
+        (!Array.isArray(blendMode.options) || blendMode.options.length === 0)
+            ? {
+                  ...layer,
+                  blendMode: { ...blendMode, options: [...LAYER_BLEND_MODES] },
+              }
+            : layer;
+    template.layers = [...(template.layers ?? []), nextLayer];
     return next;
 }
 

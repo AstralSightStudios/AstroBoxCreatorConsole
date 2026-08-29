@@ -7,7 +7,7 @@
       "dependencies": {
         "@antv/l7": "^2.23.2",
         "@antv/l7-maps": "^2.23.2",
-        "@claralight-design/wallpaper-engine": "^0.2.4",
+        "@claralight-design/wallpaper-engine": "^0.3.1",
         "@phosphor-icons/react": "^2.1.10",
         "@radix-ui/react-scroll-area": "^1.2.10",
         "@radix-ui/themes": "^3.2.1",
@@ -122,7 +122,7 @@
 
     "@babel/types": ["@babel/types@7.28.5", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-qQ5m48eI/MFLQ5PxQj4PFaprjyCTLI37ElWMmNs0K8Lk3dVeOdNpB3ks8jc7yM5CDmVC73eMVk/trk3fgmrUpA=="],
 
-    "@claralight-design/wallpaper-engine": ["@claralight-design/wallpaper-engine@0.2.4", "", { "dependencies": { "pako": "^3.0.1" }, "peerDependencies": { "react": ">=18 <20" }, "optionalPeers": ["react"] }, "sha512-s4B9l1eDbY0LZbZQaKYBY1Os26TKp2kEgR+Or/sKSC4ikhuBeDcDo32enZUBIzG32bSmGQLlOvQTKO46pj8y8A=="],
+    "@claralight-design/wallpaper-engine": ["@claralight-design/wallpaper-engine@0.3.1", "", { "dependencies": { "pako": "^3.0.1" }, "peerDependencies": { "react": ">=18 <20" }, "optionalPeers": ["react"] }, "sha512-qNemk4V0Exe0068y1gvAaAT3d9MNwa5zA8c0BP9nwXQyRIJFfweZpzU9X2y9XUlEOzpFfDJbMXHrj3MPc1kxwA=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 

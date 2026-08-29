@@ -37,6 +37,8 @@ import {
 } from "~/logic/logging/publish-flow";
 import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
 import {
+  parseWallpaperEditorInitial,
+  resolveWallpaperEditorInitial,
   saveWizardSession,
   takeWizardSession,
   type WizardSession,
@@ -1381,6 +1383,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [wallpaperPayload.configJson]);
 
   const handleOpenWallpaperEditor = useCallback(async () => {
+    const editorInitial = resolveWallpaperEditorInitial(
+      wallpaperPayload,
+      wallpaperInitial,
+    );
     const session: WizardSession = {
       form: {
         itemId,
@@ -1404,7 +1410,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     saveWizardSession(session);
     navigate("/publish/wallpaper", {
       state: {
-        wallpaperInitial,
+        wallpaperInitial: editorInitial,
         title: itemName,
         returnPath: isEditMode ? "/publish/edit" : "/publish/new",
         editContext,
@@ -2208,7 +2214,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       serializedCover,
       serializedDownloads,
       serializedTrialDownloads,
-      serializedWallpaperAssets,
     ] = await Promise.all([
       Promise.all(previews.map(serializeMediaItem)).then((items) =>
         items.filter((item): item is DraftMediaItem => item !== null),
@@ -2217,8 +2222,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       serializeMediaItem(cover),
       serializeDownloadInputs(downloads),
       serializeDownloadInputs(trialDownloads),
-      Promise.all(wallpaperPayload.assets.map(serializeWallpaperAsset)),
     ]);
+    const draftWallpaperInitial = resolveWallpaperEditorInitial(
+      wallpaperPayload,
+      wallpaperInitial,
+    );
+    const draftWallpaperConfigJson = wallpaperPayload.configJson.trim()
+      ? wallpaperPayload.configJson
+      : draftWallpaperInitial
+        ? JSON.stringify(draftWallpaperInitial.config, null, 2)
+        : "";
+    const draftWallpaperAssets = wallpaperPayload.configJson.trim()
+      ? wallpaperPayload.assets
+      : (draftWallpaperInitial?.assets ?? []);
     return {
       sessionFile: getActiveResourceSession()?.fileName,
       itemId,
@@ -2237,10 +2253,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       bundledResources,
       enableAstroBoxCreatorFeatures,
       extRaw,
-      wallpaperConfigJson: wallpaperPayload.configJson,
-      wallpaperAssets: serializedWallpaperAssets,
+      wallpaperConfigJson: draftWallpaperConfigJson,
+      wallpaperAssets: await Promise.all(
+        draftWallpaperAssets.map(serializeWallpaperAsset),
+      ),
+      wallpaperBaseUrl: draftWallpaperInitial?.baseUrl ?? "",
     };
-  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperPayload]);
+  }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperInitial, wallpaperPayload]);
 
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
@@ -2273,10 +2292,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     setEnableAstroBoxCreatorFeatures(data.enableAstroBoxCreatorFeatures);
     setExtRaw(data.extRaw);
-    setWallpaperPayload({
+    const restoredWallpaperPayload = {
       configJson: data.wallpaperConfigJson ?? "",
       assets: (data.wallpaperAssets ?? []).map(restoreWallpaperAsset),
-    });
+    };
+    setWallpaperPayload(restoredWallpaperPayload);
+    setWallpaperInitial(
+      parseWallpaperEditorInitial(
+        restoredWallpaperPayload.configJson,
+        restoredWallpaperPayload.assets,
+        data.wallpaperBaseUrl ?? "",
+      ),
+    );
   }, []);
 
   // Auto-save debounce

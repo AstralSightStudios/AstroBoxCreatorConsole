@@ -15,7 +15,8 @@ import type {
     WallpaperResources,
     WallpaperTransformState,
 } from "@claralight-design/wallpaper-engine";
-import { DownloadSimpleIcon, FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
+import { FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
+import { zipSync } from "fflate";
 import {
     WALLPAPER_DEVICE_PRESETS,
     createWallpaperConfig,
@@ -27,6 +28,7 @@ import {
     flattenAllTemplates,
     getExpandedTemplate,
     getLayer,
+    migrateWallpaperConfigForEngine031,
     moveLayerToIndex,
     removeLayer,
     removeTemplate,
@@ -52,7 +54,10 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
-import { GLASS_MATERIAL_DEFAULTS, LAYER_BLEND_MODES } from "~/logic/wallpaper/types";
+import {
+    createWallpaperBlendControl,
+    GLASS_MATERIAL_DEFAULTS,
+} from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
@@ -108,8 +113,8 @@ function clampAxis(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
-    const next = cloneConfig(config);
+function prepareWallpaperConfigForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
+    const next = migrateWallpaperConfigForEngine031(config);
     const base = baseUrl?.replace(/\/+$/, "");
     const toRelative = (src: string) => {
         if (base && src.startsWith(`${base}/`)) return `./${src.slice(base.length + 1)}`;
@@ -131,7 +136,7 @@ function normalizeAssetPathsForEditor(config: WallpaperConfigRaw, baseUrl?: stri
 
 function parseAndValidate(raw: string, baseUrl?: string) {
     try {
-        const parsed = JSON.parse(raw) as WallpaperConfigRaw;
+        const parsed = prepareWallpaperConfigForEditor(JSON.parse(raw) as WallpaperConfigRaw, baseUrl);
         normalizeWallpaperConfig(parsed, baseUrl ?? "");
         return { config: parsed, issues: [] as string[] };
     } catch (error) {
@@ -152,7 +157,7 @@ export function WallpaperEditor({
 }: WallpaperEditorProps) {
     const [config, setConfig] = useState<WallpaperConfigRaw | null>(() =>
         initialConfig
-            ? flattenAllTemplates(normalizeAssetPathsForEditor(initialConfig, baseUrl))
+            ? flattenAllTemplates(prepareWallpaperConfigForEditor(initialConfig, baseUrl))
             : null,
     );
     const [assetFiles, setAssetFiles] = useState<Record<string, WallpaperAssetFile>>(() => {
@@ -321,22 +326,38 @@ export function WallpaperEditor({
 
     const handleExport = useCallback(async () => {
         if (!resolvedForView || !config) return;
-        const template = resolvedForView[activeIndex];
-        const state = templateStates[template.id];
-        const res = resources[template.id];
-        if (!state || !res) return;
         try {
-            const blob = await renderWallpaperToBlob(template, state, baseImage ?? undefined, res);
-            const url = URL.createObjectURL(blob);
+            const files: Record<string, Uint8Array> = {};
+            for (const [index, template] of resolvedForView.entries()) {
+                const state = templateStates[template.id];
+                const res = resources[template.id];
+                if (!state || !res) continue;
+                const blob = await renderWallpaperToBlob(
+                    template,
+                    state,
+                    baseImage ?? undefined,
+                    res,
+                );
+                const safeName = (template.watchface?.name || template.deviceKey || template.id)
+                    .replace(/[\\/:*?"<>|]/g, "-")
+                    .trim() || template.id;
+                files[`${String(index + 1).padStart(2, "0")}-${safeName}.png`] =
+                    new Uint8Array(await blob.arrayBuffer());
+            }
+            if (Object.keys(files).length === 0) return;
+            const archive = new Blob([Uint8Array.from(zipSync(files))], {
+                type: "application/zip",
+            });
+            const url = URL.createObjectURL(archive);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `${template.id}.png`;
+            link.download = `${title?.trim() || "wallpaper"}-全部设备.zip`;
             link.click();
             URL.revokeObjectURL(url);
         } catch (error) {
             setApplyError((error as Error).message);
         }
-    }, [activeIndex, baseImage, config, resolvedForView, resources, templateStates]);
+    }, [baseImage, config, resolvedForView, resources, templateStates, title]);
 
     const handleTransformChange = useCallback(
         (templateId: string, transform: WallpaperTransformState) => {
@@ -396,9 +417,9 @@ export function WallpaperEditor({
         "material",
     ]);
 
-    const handleLayerPatch = useCallback(
-        (patch: Partial<WallpaperLayerConfig>) => {
-            if (!config || !selectedLayerId) return;
+    const patchLayerById = useCallback(
+        (layerId: string, patch: Partial<WallpaperLayerConfig>) => {
+            if (!config || !layerId) return;
             const patchKeys = Object.keys(patch);
             const isSyncFlagPatch =
                 patchKeys.length === 1 && patchKeys[0] === "syncAcrossDevices";
@@ -407,12 +428,12 @@ export function WallpaperEditor({
             // 某设备缺少该图层时自动复制创建（仅在开启同步时）。
             if (isSyncFlagPatch) {
                 const enabling = patch.syncAcrossDevices === true;
-                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
+                const sourceLayer = getLayer(config, activeIndex, layerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
-                        selectedLayerId,
+                        layerId,
                         sourceLayer,
                         patch,
                         enabling,
@@ -425,14 +446,14 @@ export function WallpaperEditor({
                 patchKeys.length > 0 &&
                 patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
             const layerSync =
-                getLayer(config, activeIndex, selectedLayerId)?.syncAcrossDevices === true;
+                getLayer(config, activeIndex, layerId)?.syncAcrossDevices === true;
             if (layerSync && isSyncPatch) {
-                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
+                const sourceLayer = getLayer(config, activeIndex, layerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
-                        selectedLayerId,
+                        layerId,
                         sourceLayer,
                         patch,
                         true,
@@ -440,9 +461,17 @@ export function WallpaperEditor({
                 });
                 return;
             }
-            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, patch) : prev));
+            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, layerId, patch) : prev));
         },
-        [activeIndex, config, selectedLayerId],
+        [activeIndex, config],
+    );
+
+    const handleLayerPatch = useCallback(
+        (patch: Partial<WallpaperLayerConfig>) => {
+            if (!selectedLayerId) return;
+            patchLayerById(selectedLayerId, patch);
+        },
+        [patchLayerById, selectedLayerId],
     );
 
     const handleAddLayer = useCallback(
@@ -481,7 +510,7 @@ export function WallpaperEditor({
                               type: "text",
                               clip: "frame",
                               opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
-                              blendMode: "normal",
+                              blendMode: createWallpaperBlendControl(),
                               content: { default: content, adjustable: true },
                               maxLength: 20,
                               textBox,
@@ -506,7 +535,7 @@ export function WallpaperEditor({
                             type: "wallpaper",
                             clip: "frame",
                             blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
-                            blendMode: "normal",
+                            blendMode: createWallpaperBlendControl(),
                         }
                       : kind === "glass"
                         ? (() => {
@@ -519,7 +548,7 @@ export function WallpaperEditor({
                                   type: "glass",
                                   clip: "frame",
                                   opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
-                                  blendMode: "normal",
+                                  blendMode: createWallpaperBlendControl(),
                                   visible: true,
                                   transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
                                   geometry: {
@@ -539,7 +568,7 @@ export function WallpaperEditor({
                             amount: { default: 0, min: -1, max: 1, step: 0.01, adjustable: true },
                             lightColor: "#ffffff",
                             darkColor: "#000000",
-                            blendMode: "normal",
+                            blendMode: createWallpaperBlendControl(),
                         };
             const next = addLayer(config, activeIndex, layer);
             setConfig(next);
@@ -578,7 +607,7 @@ export function WallpaperEditor({
                 opacity: { default: 1, min: 0, max: 1, step: 0.01, adjustable: true },
                 blur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
                 backdropBlur: { default: 0, min: 0, max: 30, step: 1, adjustable: true },
-                blendMode: { default: "normal", adjustable: true, options: [...LAYER_BLEND_MODES] },
+                blendMode: createWallpaperBlendControl(),
             };
             setConfig((prev) => (prev ? addLayer(prev, activeIndex, layer) : prev));
             setSelection({ kind: "layer", layerId: layer.id });
@@ -801,7 +830,7 @@ export function WallpaperEditor({
             setApplyError(`导入失败：${issues[0] ?? "JSON 无效"}`);
             return;
         }
-        setConfig(normalizeAssetPathsForEditor(parsed, baseUrl));
+        setConfig(parsed);
         setActiveTemplate(0);
         setSelection({ kind: "canvas" });
         setApplyError("");
@@ -811,7 +840,7 @@ export function WallpaperEditor({
         const { config: parsed, issues } = parseAndValidate(jsonDraft, baseUrl);
         setJsonIssues(issues);
         if (parsed) {
-            setConfig(normalizeAssetPathsForEditor(parsed, baseUrl));
+            setConfig(parsed);
             setApplyError("");
             setViewMode("visual");
         }
@@ -894,27 +923,6 @@ export function WallpaperEditor({
 
     return (
         <div className="flex h-full w-full flex-col" style={{ background: "var(--color-editor-bg)" }}>
-            {/* view toggle */}
-            <div className="flex shrink-0 items-center justify-end gap-1 px-3 py-1.5">
-                <button
-                    type="button"
-                    onClick={handleSwitchToVisual}
-                    className={`rounded-md px-2.5 py-1 text-xs transition ${
-                        viewMode === "visual" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"
-                    }`}
-                >
-                    可视化
-                </button>
-                <button
-                    type="button"
-                    onClick={openJsonView}
-                    className={`rounded-md px-2.5 py-1 text-xs transition ${
-                        viewMode === "json" ? "bg-white/15 text-white" : "text-white/50 hover:text-white"
-                    }`}
-                >
-                    JSON
-                </button>
-            </div>
             {configIssues.length > 0 && viewMode === "visual" && (
                 <div className="shrink-0 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2">
                     <div className="flex items-center justify-between gap-3">
@@ -954,8 +962,9 @@ export function WallpaperEditor({
                         <Sidebar
                             title={title ?? ""}
                             onBack={() => onBack?.()}
+                            onOpenJson={openJsonView}
+                            onSelectCanvas={handleSelectCanvas}
                             hasConfig
-                            hasBaseImage={Boolean(baseImage)}
                             onUploadTestImage={(file) => void handleUploadTestImage(file)}
                             onExport={() => void handleExport()}
                             layers={layers}
@@ -964,13 +973,6 @@ export function WallpaperEditor({
                             onAddLayer={handleAddLayer}
                             onRemoveLayer={handleRemoveLayer}
                             onMoveLayerTo={handleMoveLayerTo}
-                            transform={{
-                                scale: transformControls.scale,
-                                rotation: transformControls.rotation,
-                                onScaleChange: (patch) => handleTransformPatch({ scale: patchControlMerge(transformControls.scale, patch) }),
-                                onRotationChange: (patch) => handleTransformPatch({ rotation: patchControlMerge(transformControls.rotation, patch) }),
-                            }}
-                            onRenderSimplifyChange={setRenderSimplify}
                         />
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
                         <main
@@ -988,6 +990,7 @@ export function WallpaperEditor({
                                 onActiveTemplateChange={setActiveTemplate}
                                 onSelectCanvas={handleSelectCanvas}
                                 onTransformChange={handleTransformChange}
+                                onLayerTransformChange={handleLayerPatch}
                                 onDuplicateTemplate={handleDuplicateTemplate}
                                 onRemoveTemplate={handleRemoveTemplate}
                                 onRenderError={(message) =>
@@ -1007,6 +1010,12 @@ export function WallpaperEditor({
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
+                            wallpaperTransform={{
+                                scale: transformControls.scale,
+                                rotation: transformControls.rotation,
+                                onScaleChange: (patch) => handleTransformPatch({ scale: patchControlMerge(transformControls.scale, patch) }),
+                                onRotationChange: (patch) => handleTransformPatch({ rotation: patchControlMerge(transformControls.rotation, patch) }),
+                            }}
                             onRenderSimplifyChange={setRenderSimplify}
                         />
                     </WallpaperEditorErrorBoundary>
@@ -1020,6 +1029,7 @@ export function WallpaperEditor({
                             setJsonIssues(issues);
                         }}
                         onApply={handleApplyJson}
+                        onBack={handleSwitchToVisual}
                     />
                 )}
             </div>

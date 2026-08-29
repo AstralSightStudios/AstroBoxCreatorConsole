@@ -2,35 +2,28 @@ import { useMemo, useRef, useState } from "react";
 import {
     ArrowLeftIcon,
     CircleHalfIcon,
+    DotsSixVerticalIcon,
     DownloadSimpleIcon,
     DropIcon,
+    FileCodeIcon,
     ImageIcon,
     ImagesIcon,
     TextTIcon,
     TrashIcon,
     UploadIcon,
 } from "@phosphor-icons/react";
-import type { WallpaperControlValue, WallpaperLayerConfig, WallpaperLayerKind } from "~/logic/wallpaper/types";
-import { controlAdjustable } from "~/logic/wallpaper/control";
+import type { WallpaperLayerConfig, WallpaperLayerKind } from "~/logic/wallpaper/types";
 import {
     EditorActionButton,
     EditorIconButton,
-    EditorSwitch,
-    NumericControlEditor,
 } from "./controls";
-
-export interface WallpaperTransformEditorProps {
-    scale: WallpaperControlValue | undefined;
-    rotation: WallpaperControlValue | undefined;
-    onScaleChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
-    onRotationChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
-}
 
 export interface SidebarProps {
     title: string;
     onBack: () => void;
+    onOpenJson: () => void;
+    onSelectCanvas: () => void;
     hasConfig: boolean;
-    hasBaseImage: boolean;
     onUploadTestImage: (file: File) => void;
     onExport: () => void;
     layers: WallpaperLayerConfig[];
@@ -40,9 +33,6 @@ export interface SidebarProps {
     onRemoveLayer: (id: string) => void;
     /** 拖拽排序：把 layerId 移动到结果数组的 toIndex 位置。 */
     onMoveLayerTo: (layerId: string, toIndex: number) => void;
-    transform: WallpaperTransformEditorProps;
-    /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
-    onRenderSimplifyChange?: (dragging: boolean) => void;
 }
 
 const LAYER_ADD_ITEMS: Array<{ kind: WallpaperLayerKind; label: string; icon: React.ReactNode }> = [
@@ -71,8 +61,9 @@ function layerTypeIcon(type: WallpaperLayerKind | undefined): React.ReactNode {
 export function Sidebar({
     title,
     onBack,
+    onOpenJson,
+    onSelectCanvas,
     hasConfig,
-    hasBaseImage,
     onUploadTestImage,
     onExport,
     layers,
@@ -81,8 +72,6 @@ export function Sidebar({
     onAddLayer,
     onRemoveLayer,
     onMoveLayerTo,
-    transform,
-    onRenderSimplifyChange,
 }: SidebarProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -199,56 +188,39 @@ export function Sidebar({
         });
     };
 
-    const transformRow = (
-        label: string,
-        control: WallpaperControlValue | undefined,
-        onChange: (patch: never) => void,
-    ) => {
-        const patch = (key: string, value: number | boolean) => {
-            onChange({ [key]: value } as never);
-        };
-        return (
-            <NumericControlEditor
-                label={label}
-                control={control}
-                onChange={(p) => onChange(p as never)}
-                onDragStateChange={onRenderSimplifyChange}
-                headerRight={
-                    <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-white/40">可调</span>
-                        <EditorSwitch
-                            checked={controlAdjustable(control)}
-                            onCheckedChange={(v) => patch("adjustable", v)}
-                        />
-                    </div>
-                }
-            />
-        );
-    };
-
     return (
         <aside
-            className="flex h-full w-[300px] shrink-0 flex-col"
+            className="flex h-full w-[var(--editor-sidebar-width)] shrink-0 flex-col"
             style={{ background: "var(--color-editor-bg)" }}
         >
-            {/* Header */}
-            <div className="flex shrink-0 items-start gap-2 px-2 pt-2 pb-3">
+            <div className="flex h-[60px] shrink-0 items-center gap-1.5 p-2">
                 <button
                     type="button"
                     onClick={onBack}
+                    aria-label="返回发布页"
                     className="grid shrink-0 place-items-center rounded text-white/70 transition hover:bg-white/10 hover:text-white"
-                    style={{ width: 32, height: 32, marginLeft: 8 }}
+                    style={{ width: 34, height: 34 }}
                 >
                     <ArrowLeftIcon size={18} weight="regular" />
                 </button>
-                <div className="flex flex-col" style={{ gap: 1, paddingTop: 2 }}>
-                    <span className="max-w-[200px] truncate text-[13px] leading-[18px] text-white/85">
-                        {title || "壁纸编辑器"}
+                <div className="flex min-w-0 flex-1 flex-col gap-px">
+                    <span className="truncate text-[13px] font-medium leading-[18px] text-white">
+                        壁纸编辑器
                     </span>
-                    {title && (
-                        <span className="text-[13px] leading-[18px] text-white/45">壁纸编辑器</span>
-                    )}
+                    <span className="truncate text-[13px] leading-[18px] text-white/75">
+                        {title || "未命名壁纸"}
+                    </span>
                 </div>
+                <button
+                    type="button"
+                    onClick={onOpenJson}
+                    title="编辑 JSON"
+                    aria-label="编辑壁纸配置 JSON"
+                    className="grid shrink-0 place-items-center rounded text-white/45 transition hover:bg-white/10 hover:text-white"
+                    style={{ width: 34, height: 34 }}
+                >
+                    <FileCodeIcon size={17} weight="regular" />
+                </button>
             </div>
             <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
 
@@ -266,7 +238,7 @@ export function Sidebar({
                     disabled={!hasConfig}
                     onClick={onExport}
                 >
-                    导出生成结果
+                    导出全部设备壁纸
                 </EditorActionButton>
                 <input
                     ref={fileInputRef}
@@ -279,19 +251,17 @@ export function Sidebar({
                         e.target.value = "";
                     }}
                 />
-                {hasBaseImage && (
-                    <p className="px-1.5 text-[11px] text-white/45">已上传测试壁纸</p>
-                )}
             </div>
 
-            {/* 壁纸属性编辑区域（无标题，仅缩放/旋转控件） */}
             {hasConfig && (
-                <div className="flex w-full shrink-0 flex-col">
-                    <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
-                    <div className="flex w-full flex-col px-[9px] py-[9px]" style={{ gap: "var(--editor-field-group-gap)" }}>
-                        {transformRow("整体缩放", transform.scale, transform.onScaleChange as never)}
-                        {transformRow("整体旋转", transform.rotation, transform.onRotationChange as never)}
-                    </div>
+                <div className="flex w-full shrink-0 flex-col px-4 py-2">
+                    <button
+                        type="button"
+                        onClick={onSelectCanvas}
+                        className="text-left text-[13px] font-medium leading-[18px] text-white/40 transition hover:text-white/75"
+                    >
+                        壁纸属性编辑区域
+                    </button>
                 </div>
             )}
 
@@ -301,23 +271,24 @@ export function Sidebar({
                     <div style={{ height: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
                     <div className="flex w-full flex-col">
                         <h3
-                            className="pt-[9px] text-[13px] leading-[18px] text-white/85"
+                            className="pt-[9px] text-[13px] font-medium leading-[18px] text-white/40"
                             style={{ paddingLeft: 16 }}
                         >
                             新建图层
                         </h3>
                         <div
                             className="grid w-full px-[9px] py-2"
-                            style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}
+                            style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}
                         >
                             {LAYER_ADD_ITEMS.map((item) => (
                                 <EditorIconButton
                                     key={item.kind}
                                     title={item.label}
                                     onClick={() => onAddLayer(item.kind)}
-                                    style={{ height: 32, borderRadius: 6 }}
+                                    style={{ height: 48, borderRadius: 8, flexDirection: "column", gap: 3 }}
                                 >
                                     {item.icon}
+                                    <span className="text-[11px] leading-[14px]">{item.label}</span>
                                 </EditorIconButton>
                             ))}
                         </div>
@@ -330,7 +301,7 @@ export function Sidebar({
             {hasConfig && (
                 <div className="flex min-h-0 w-full flex-1 flex-col">
                     <h3
-                        className="pt-[9px] text-[13px] leading-[18px] text-white/85"
+                        className="pt-[9px] text-[13px] font-medium leading-[18px] text-white/40"
                         style={{ paddingLeft: 16 }}
                     >
                         图层
@@ -373,6 +344,13 @@ export function Sidebar({
                                             paddingLeft: 8,
                                         }}
                                     >
+                                        <span
+                                            className="grid shrink-0 place-items-center text-white/35"
+                                            title="拖拽调整层级"
+                                            aria-label="拖拽调整层级"
+                                        >
+                                            <DotsSixVerticalIcon size={14} weight="regular" />
+                                        </span>
                                         <span className="shrink-0 text-white/70">
                                             {layerTypeIcon(layer.type)}
                                         </span>
@@ -388,6 +366,20 @@ export function Sidebar({
                                                 同步
                                             </span>
                                         )}
+                                        <button
+                                            type="button"
+                                            title="删除图层"
+                                            aria-label={`删除图层 ${layer.name || layer.id}`}
+                                            onPointerDown={(event) => event.stopPropagation()}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onRemoveLayer(layer.id);
+                                            }}
+                                            className="grid shrink-0 place-items-center rounded text-white/35 transition hover:bg-red-400/20 hover:text-red-300"
+                                            style={{ width: 24, height: 24, marginRight: 2 }}
+                                        >
+                                            <TrashIcon size={14} weight="regular" />
+                                        </button>
                                     </div>
                                 );
                             })}

@@ -1,9 +1,12 @@
 import {
   Button,
+  ContextMenu,
+  Popover,
   Select,
   Switch,
 } from "@radix-ui/themes";
-import { PlusIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, InfoIcon, PlusIcon } from "@phosphor-icons/react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { WallpaperControlValue } from "~/logic/wallpaper/types";
 import {
@@ -51,7 +54,7 @@ export function EditorSlider({
   );
 }
 
-/** 可调数值控件：当前值 = 滑块 + 输入框并存，区间/步长用小输入框，可调开关放 header 右侧。 */
+/** 可调数值控件：默认突出当前数值，范围设置按需展开。 */
 export function NumericControlEditor({
   label,
   control,
@@ -71,39 +74,141 @@ export function NumericControlEditor({
   const min = controlMin(control, 0);
   const max = controlMax(control, 100);
   const step = controlStep(control, 0.01);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const patch = (key: "default" | "min" | "max" | "step", value: number) =>
     onChange({ [key]: value });
   return (
     <div className="flex w-full flex-col" style={{ gap: 6 }}>
       <div className="flex items-center justify-between px-1.5">
-        <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+        <div className="flex items-center" style={{ gap: 4 }}>
+          <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+          <Popover.Root>
+            <Popover.Trigger>
+              <button
+                type="button"
+                title="查看数值输入说明"
+                aria-label="查看数值输入说明"
+                className="grid place-items-center text-white/40 transition hover:text-white/75"
+                style={{ width: 18, height: 18 }}
+              >
+                <InfoIcon size={14} weight="regular" />
+              </button>
+            </Popover.Trigger>
+            <Popover.Content size="1" style={{ width: 360 }}>
+              <div className="flex flex-col" style={{ gap: 8 }}>
+                <strong className="text-[12px] font-medium">数值输入说明</strong>
+                <div
+                  className="grid w-full"
+                  style={{
+                    gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+                    gap: "var(--editor-control-gap)",
+                  }}
+                >
+                  <input
+                    readOnly
+                    tabIndex={-1}
+                    value="默认值"
+                    className="h-[var(--editor-control-height)] min-w-0 bg-[var(--color-editor-control)] px-2 text-center text-[11px] text-white/75 outline-none"
+                    style={{ borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)" }}
+                  />
+                  <div
+                    className="grid min-w-0 items-center overflow-hidden bg-[var(--color-editor-control)]"
+                    style={{ gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)" }}
+                  >
+                    <input
+                      readOnly
+                      tabIndex={-1}
+                      value="最小值"
+                      className="h-[var(--editor-control-height)] min-w-0 bg-transparent px-1 text-center text-[11px] text-white/75 outline-none"
+                    />
+                    <span className="select-none text-xs text-white/35">~</span>
+                    <input
+                      readOnly
+                      tabIndex={-1}
+                      value="最大值"
+                      className="h-[var(--editor-control-height)] min-w-0 bg-transparent px-1 text-center text-[11px] text-white/75 outline-none"
+                    />
+                  </div>
+                  <input
+                    readOnly
+                    tabIndex={-1}
+                    value="步长"
+                    className="h-[var(--editor-control-height)] min-w-0 bg-[var(--color-editor-control)] px-2 text-center text-[11px] text-white/75 outline-none"
+                    style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
+                  />
+                </div>
+                <p className="text-[11px] leading-4 text-gray-11">
+                  默认值是初始数值；最小值和最大值决定用户可调范围；步长决定每次调整的增量。
+                </p>
+              </div>
+            </Popover.Content>
+          </Popover.Root>
+        </div>
         {headerRight}
       </div>
-      <EditorSlider
-        value={def}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(v) => patch("default", v)}
-        onDragStateChange={onDragStateChange}
-      />
-      <div
-        className="grid w-full"
+      <div className="flex w-full items-center" style={{ gap: 8 }}>
+        <div className="min-w-0 flex-1">
+          <EditorSlider
+            value={def}
+            min={min}
+            max={max}
+            step={step}
+            onChange={(v) => patch("default", v)}
+            onDragStateChange={onDragStateChange}
+          />
+        </div>
+        <div className="w-[76px] shrink-0">
+          <EditorNumberField
+            value={def}
+            step={step}
+            onChange={(v) => patch("default", v)}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-expanded={advancedOpen}
+        onClick={() => setAdvancedOpen((open) => !open)}
+        className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
         style={{
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "var(--editor-control-gap)",
+          borderRadius: "var(--editor-control-radius)",
+          background: "var(--color-editor-control)",
         }}
       >
-        <EditorNumberField value={def} step={step} onChange={(v) => patch("default", v)} />
+        <span>范围设置</span>
+        <CaretDownIcon
+          size={14}
+          weight="regular"
+          style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
+        />
+      </button>
+      {advancedOpen && (
         <div
-          className="grid min-w-0 grid-cols-2"
-          style={{ gap: "var(--editor-control-gap)" }}
+          className="grid w-full"
+          style={{
+            gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+            gap: "var(--editor-control-gap)",
+          }}
         >
-          <EditorNumberField value={min} onChange={(v) => patch("min", v)} />
-          <EditorNumberField value={max} onChange={(v) => patch("max", v)} />
+          <EditorNumberField
+            value={def}
+            step={step}
+            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
+            onChange={(v) => patch("default", v)}
+          />
+          <EditorRangeField
+            min={min}
+            max={max}
+            onMinChange={(value) => patch("min", value)}
+            onMaxChange={(value) => patch("max", value)}
+          />
+          <EditorNumberField
+            value={step}
+            radius="0 var(--editor-control-radius) var(--editor-control-radius) 0"
+            onChange={(v) => patch("step", v)}
+          />
         </div>
-        <EditorNumberField value={step} onChange={(v) => patch("step", v)} />
-      </div>
+      )}
     </div>
   );
 }
@@ -136,8 +241,7 @@ export function EditorSection({
             {title !== undefined && (
                 <div className="flex w-full flex-col">
                     <h3
-                        className="text-[13px] leading-[18px] text-white/85"
-                        style={{ paddingLeft: 16 }}
+                        className="px-1.5 text-[13px] leading-[18px] text-white/85"
                     >
                         {title}
                     </h3>
@@ -151,10 +255,12 @@ export function EditorSection({
 
 export function EditorField({
     label,
+    labelRight,
     children,
     twoColumn,
 }: {
     label: string;
+    labelRight?: ReactNode;
     children: ReactNode;
     twoColumn?: boolean;
 }) {
@@ -162,12 +268,15 @@ export function EditorField({
     // 否则 WebKit 下 label 默认行为与程序化 input.click() 叠加会导致选择后 change 事件丢失。
     return (
         <div className="flex flex-col" style={{ gap: "var(--editor-label-control-gap)" }}>
-            <span
-                className="text-[13px] leading-[18px] text-white/75"
-                style={{ fontSize: "var(--editor-label-size)", lineHeight: "var(--editor-label-line-height)" }}
-            >
-                {label}
-            </span>
+            <div className="flex items-center px-1.5" style={{ gap: 4 }}>
+                <span
+                    className="text-[13px] leading-[18px] text-white/75"
+                    style={{ fontSize: "var(--editor-label-size)", lineHeight: "var(--editor-label-line-height)" }}
+                >
+                    {label}
+                </span>
+                {labelRight}
+            </div>
             {children}
         </div>
     );
@@ -213,6 +322,8 @@ export function EditorNumberField({
     step,
     placeholder,
     prefix,
+    suffix,
+    radius,
 }: {
     value: number;
     onChange: (value: number) => void;
@@ -221,6 +332,8 @@ export function EditorNumberField({
     step?: number;
     placeholder?: string;
     prefix?: string;
+    suffix?: string;
+    radius?: React.CSSProperties["borderRadius"];
 }) {
     const sanitize = (raw: number) => {
         if (!Number.isFinite(raw)) raw = 0;
@@ -236,7 +349,10 @@ export function EditorNumberField({
 
     const displayValue = Number.isFinite(value) ? value : "";
     return (
-        <div className="flex items-center overflow-hidden" style={controlBase}>
+        <div
+            className="flex min-w-0 items-center overflow-hidden"
+            style={{ ...controlBase, borderRadius: radius ?? controlBase.borderRadius }}
+        >
             {prefix && (
                 <span className="shrink-0 pl-2 text-xs text-white/45">{prefix}</span>
             )}
@@ -251,7 +367,57 @@ export function EditorNumberField({
                     const parsed = e.target.valueAsNumber;
                     onChange(sanitize(Number.isFinite(parsed) ? parsed : (min ?? 0)));
                 }}
-                className="h-full w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-white/30"
+                className="editor-number-input h-full min-w-0 w-full bg-transparent px-2 font-mono text-sm text-white outline-none placeholder:text-white/30"
+            />
+            {suffix && (
+                <span className="shrink-0 pr-2 text-xs text-white/45">{suffix}</span>
+            )}
+        </div>
+    );
+}
+
+function EditorRangeField({
+    min,
+    max,
+    onMinChange,
+    onMaxChange,
+}: {
+    min: number;
+    max: number;
+    onMinChange: (value: number) => void;
+    onMaxChange: (value: number) => void;
+}) {
+    return (
+        <div
+            className="grid min-w-0 items-center overflow-hidden"
+            style={{
+                ...controlBase,
+                borderRadius: 0,
+                gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+            }}
+        >
+            <input
+                type="number"
+                value={min}
+                max={max}
+                aria-label="区间最小值"
+                onChange={(event) => {
+                    const value = event.target.valueAsNumber;
+                    onMinChange(Number.isFinite(value) ? value : 0);
+                }}
+                className="editor-number-input h-full min-w-0 w-full bg-transparent pl-2 pr-1 font-mono text-sm text-white outline-none"
+            />
+            <span className="select-none text-xs text-white/35">~</span>
+            <input
+                type="number"
+                value={max}
+                min={min}
+                aria-label="区间最大值"
+                onChange={(event) => {
+                    const value = event.target.valueAsNumber;
+                    onMaxChange(Number.isFinite(value) ? value : min);
+                }}
+                className="editor-number-input h-full min-w-0 w-full bg-transparent pl-1 pr-2 font-mono text-sm text-white outline-none"
             />
         </div>
     );
@@ -297,11 +463,14 @@ export function EditorSelect({
         <Select.Root value={stringValue || undefined} onValueChange={onChange}>
             <Select.Trigger
                 placeholder={placeholder}
-                className="w-full!"
+                className="editor-select-trigger w-full!"
                 style={{
                     height: "var(--editor-control-height)",
                     borderRadius: "var(--editor-control-radius)",
                     background: "var(--color-editor-control)",
+                    border: "none",
+                    boxShadow: "none",
+                    outline: "none",
                 }}
             />
             <Select.Content position="popper" align="start">
@@ -381,79 +550,107 @@ export function EditorColorDots({
     colors,
     selected,
     onSelect,
+    onEdit,
+    onRemove,
     onAdd,
     allowCustom,
 }: {
     colors: string[];
     selected: string;
     onSelect: (color: string) => void;
-    onAdd?: () => void;
+    onEdit: (color: string, rect: DOMRect) => void;
+    onRemove: (color: string) => void;
+    onAdd?: (rect: DOMRect) => void;
     allowCustom?: boolean;
 }) {
     const safeColors = colors.filter((color) => typeof color === "string").map(String);
     const selectedKey = String(selected ?? "").toLowerCase();
-    return (
-        <div className="flex flex-wrap items-center gap-1.5">
-            {safeColors.map((color) => {
-                const isSelected = color.toLowerCase() === selectedKey;
-                if (isSelected) {
-                    return (
-                        <button
-                            key={color}
-                            type="button"
-                            onClick={() => onSelect(color)}
-                            className="flex items-center justify-center"
-                            style={{
-                                width: 48,
-                                height: 24,
-                                borderRadius: 12,
-                                background: "var(--color-editor-control)",
-                                border: "1px solid var(--color-editor-blue-fg)",
-                            }}
-                        >
-                            <span
-                                className="block rounded-full"
-                                style={{
-                                    width: 16,
-                                    height: 16,
-                                    borderRadius: "50%",
-                                    background: color,
-                                    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
-                                }}
-                            />
-                        </button>
-                    );
-                }
-                return (
+    const canRemove = safeColors.length > 1;
+    const showAdd = Boolean(allowCustom || onAdd);
+    const colorRows: string[][] = [];
+    let colorIndex = 0;
+    while (safeColors.length - colorIndex > (showAdd ? 6 : 7)) {
+        const remaining = safeColors.length - colorIndex;
+        const rowSize = showAdd && remaining === 7 ? 6 : 7;
+        colorRows.push(safeColors.slice(colorIndex, colorIndex + rowSize));
+        colorIndex += rowSize;
+    }
+    if (colorIndex < safeColors.length || showAdd) {
+        colorRows.push(safeColors.slice(colorIndex));
+    }
+
+    const renderColor = (color: string) => {
+        const isSelected = color.toLowerCase() === selectedKey;
+        return (
+            <ContextMenu.Root key={color}>
+                <ContextMenu.Trigger className="inline-flex h-[30px] items-center">
                     <button
-                        key={color}
                         type="button"
-                        onClick={() => onSelect(color)}
-                        className="block"
+                        aria-pressed={isSelected}
+                        title={isSelected ? "单击修改颜色，右键删除" : "单击选中，双击修改颜色，右键删除"}
+                        onClick={(event) => {
+                            if (event.detail >= 2) {
+                                onEdit(color, event.currentTarget.getBoundingClientRect());
+                                return;
+                            }
+                            if (isSelected) {
+                                onEdit(color, event.currentTarget.getBoundingClientRect());
+                            } else {
+                                onSelect(color);
+                            }
+                        }}
+                        className="block shrink-0"
                         style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
+                            width: isSelected ? 58 : 26,
+                            height: isSelected ? 30 : 26,
+                            borderRadius: isSelected ? 15 : 13,
                             background: color,
-                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
+                            border: isSelected ? "2px solid rgba(255,255,255,0.78)" : 0,
+                            boxShadow: isSelected
+                                ? "inset 0 0 0 2px rgba(0,0,0,0.78)"
+                                : "inset 0 0 0 1px rgba(255,255,255,0.25)",
+                            transition: "width 220ms cubic-bezier(0.34, 1.56, 0.64, 1), height 220ms cubic-bezier(0.34, 1.56, 0.64, 1), border-radius 220ms cubic-bezier(0.34, 1.56, 0.64, 1), border-width 160ms ease, box-shadow 160ms ease",
                         }}
                     />
-                );
-            })}
+                </ContextMenu.Trigger>
+                <ContextMenu.Content size="1">
+                    <ContextMenu.Item
+                        color="red"
+                        disabled={!canRemove}
+                        onSelect={() => onRemove(color)}
+                    >
+                        删除颜色
+                    </ContextMenu.Item>
+                </ContextMenu.Content>
+            </ContextMenu.Root>
+        );
+    };
+
+    return (
+        <div className="flex flex-col" style={{ gap: 8, minHeight: 30 }}>
             {safeColors.length === 0 && (
                 <span className="text-xs text-white/40">未配置颜色</span>
             )}
-            {(allowCustom || onAdd) && (
-                <button
-                    type="button"
-                    onClick={onAdd}
-                    title="添加颜色"
-                    className="flex items-center justify-center text-white/60 transition hover:text-white"
-                    style={{ width: 22, height: 22 }}
+            {colorRows.map((row, rowIndex) => (
+                <div
+                    key={`color-row-${rowIndex}`}
+                    className="flex h-[30px] shrink-0 items-center"
+                    style={{ gap: 8 }}
                 >
-                    <PlusIcon size={14} weight="regular" />
-                </button>
-            )}
+                    {row.map(renderColor)}
+                    {showAdd && rowIndex === colorRows.length - 1 && (
+                        <button
+                            type="button"
+                            onClick={(event) => onAdd?.(event.currentTarget.getBoundingClientRect())}
+                            title="添加颜色"
+                            className="flex items-center justify-center text-white/60 transition hover:text-white"
+                            style={{ width: 26, height: 26 }}
+                        >
+                            <PlusIcon size={19} weight="regular" />
+                        </button>
+                    )}
+                </div>
+            ))}
         </div>
     );
 }

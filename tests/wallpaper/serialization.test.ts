@@ -6,6 +6,7 @@ import {
     duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
+    migrateWallpaperConfigForEngine031,
     moveLayer,
     moveLayerToIndex,
     removeLayer,
@@ -26,6 +27,10 @@ import {
     patchControl,
     patchControlValue,
 } from "../../app/logic/wallpaper/control";
+import {
+    createWallpaperBlendControl,
+    LAYER_BLEND_MODES,
+} from "../../app/logic/wallpaper/types";
 import type { WallpaperConfigRaw, WallpaperLayerConfig } from "../../app/logic/wallpaper/types";
 
 const preset = WALLPAPER_DEVICE_PRESETS[0];
@@ -51,6 +56,7 @@ describe("wallpaper preset", () => {
         expect(template.layers?.some((layer) => layer.type === "wallpaper")).toBe(true);
         expect(template.wallpaperTransform?.scale).toBeDefined();
         expect(template.wallpaperTransform?.rotation).toBeDefined();
+        expect(template.layers?.[0].blendMode).toEqual(createWallpaperBlendControl());
     });
 });
 
@@ -80,6 +86,57 @@ describe("wallpaper json-tree", () => {
         config = removeLayer(config, 0, "tint-1");
         expect(getExpandedTemplate(config, 0).layers?.length).toBe(1);
         expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
+    });
+
+    test("addLayer completes options for adjustable blend mode", () => {
+        const config = addLayer(validConfig(), 0, {
+            id: "blend-layer",
+            type: "tint",
+            blendMode: { default: "normal", adjustable: true },
+        });
+        const layer = getExpandedTemplate(config, 0).layers?.find(
+            (item) => item.id === "blend-layer",
+        );
+        expect(layer?.blendMode).toEqual({
+            default: "normal",
+            adjustable: true,
+            options: [...LAYER_BLEND_MODES],
+        });
+        expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
+    });
+
+    test("engine 0.3.1 accepts new circle geometry and glass defaults", () => {
+        const config = validConfig();
+        config.templates[0].layers = [
+            {
+                id: "glass-1",
+                type: "glass",
+                geometry: { type: "circle", diameter: 120 },
+                blendMode: createWallpaperBlendControl(),
+            },
+        ];
+        const resolved = normalizeWallpaperConfig(config, "");
+        expect(resolved[0].layers[0].glass?.geometry).toEqual({
+            type: "circle",
+            diameter: 120,
+        });
+    });
+
+    test("migrates 0.2.x circle radius to 0.3.1 diameter", () => {
+        const config = flattenAllTemplates(validConfig());
+        config.templates[0].layers = [
+            {
+                id: "legacy-glass",
+                type: "glass",
+                geometry: { type: "circle", radius: 60 },
+            } as unknown as WallpaperLayerConfig,
+        ];
+        const migrated = migrateWallpaperConfigForEngine031(config);
+        expect(migrated.templates[0].layers?.[0].geometry).toEqual({
+            type: "circle",
+            diameter: 120,
+        });
+        expect(() => normalizeWallpaperConfig(migrated, "")).not.toThrow();
     });
 
     test("flat text layer schema renders real text (content/box/font/style)", () => {
