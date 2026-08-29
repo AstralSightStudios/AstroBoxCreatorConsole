@@ -94,10 +94,11 @@ function LogsSection() {
         filters: [{ name: "日志包", extensions: ["gz"] }],
       });
       if (!targetPath) return;
+      const clientDiagnostics = buildClientDiagnostics();
       const result = await invoke<{
         savedPath: string;
         fileSize: number;
-      }>("export_logs_archive", { targetPath });
+      }>("export_logs_archive", { targetPath, clientDiagnostics });
       reportSuccess(
         "settings/logs",
         `日志包已保存（${(result.fileSize / 1024).toFixed(1)} KB）`,
@@ -109,6 +110,61 @@ function LogsSection() {
       setExporting(false);
     }
   };
+
+  function buildClientDiagnostics() {
+    const nav = navigator as Navigator & {
+      deviceMemory?: number;
+      connection?: {
+        effectiveType?: string;
+        downlink?: number;
+        rtt?: number;
+        saveData?: boolean;
+      };
+    };
+    const screenInfo = window.screen
+      ? {
+          width: window.screen.width,
+          height: window.screen.height,
+          availWidth: window.screen.availWidth,
+          availHeight: window.screen.availHeight,
+          colorDepth: window.screen.colorDepth,
+          pixelRatio: window.devicePixelRatio || 1,
+        }
+      : undefined;
+    return {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform || undefined,
+      language: navigator.language || undefined,
+      languages: navigator.languages?.length ? Array.from(navigator.languages) : undefined,
+      timezone:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+      screen: screenInfo,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      hardwareConcurrency: navigator.hardwareConcurrency || undefined,
+      deviceMemory: nav.deviceMemory,
+      maxTouchPoints: navigator.maxTouchPoints,
+      online: navigator.onLine,
+      connection: nav.connection
+        ? {
+            effectiveType: nav.connection.effectiveType,
+            downlink: nav.connection.downlink,
+            rtt: nav.connection.rtt,
+            saveData: nav.connection.saveData,
+          }
+        : undefined,
+      tauri: isTauriRuntime(),
+      probeUrls: [
+        "https://api.github.com",
+        "https://github.com",
+        "https://astrobox-api.astralsight.space",
+        "https://cas.astralsight.space",
+        "https://astrobox.online",
+      ],
+    };
+  }
 
   return (
     <SectionCard

@@ -5,6 +5,7 @@ use ecb::Encryptor;
 mod logs_archive;
 mod logger;
 mod resource_log;
+mod buildinfo;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
