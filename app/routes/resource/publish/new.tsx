@@ -7,6 +7,7 @@ import {
   Popover,
   Text,
   AlertDialog,
+  Dialog,
 } from "@radix-ui/themes";
 import {
   FileXIcon,
@@ -90,6 +91,7 @@ import {
   type DeviceOption,
   type DownloadInput,
   type LinkInput,
+  type UpdateLogEntry,
 } from "./components/types";
 import { loadDeviceOptions } from "~/logic/devices/catalog";
 import {
@@ -222,11 +224,25 @@ function buildDownloadInputsFromManifest(params: {
   const { downloads, owner, repo, ref, encryptedDeviceSet } = params;
   return Object.entries(downloads || {}).map(([platformId, info]) => {
     const fileName = info?.file_name || "";
+    const rawLogs = info?.updatelogs;
+    const rawVersionCode = info?.versionCode;
     return {
       uid: crypto.randomUUID?.() ?? Math.random().toString(36),
       platformId,
       version: info?.version || "",
       encryptOnUpload: encryptedDeviceSet?.has(platformId) ?? false,
+      versionCode:
+        typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
+          ? Math.trunc(rawVersionCode)
+          : undefined,
+      updatelogs: Array.isArray(rawLogs)
+        ? rawLogs
+            .map((log) => ({
+              version: String(log.version ?? "").trim(),
+              content: String(log.content ?? "").trim(),
+            }))
+            .filter((log) => log.version || log.content)
+        : undefined,
       file: fileName
         ? createExistingUploadItem(
             fileName.split("/").pop() || fileName,
@@ -513,6 +529,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [prMessage, setPrMessage] = useState("");
   const [prBody, setPrBody] = useState("");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [versionCodeWarningOpen, setVersionCodeWarningOpen] = useState(false);
   const [repoNameInput, setRepoNameInput] = useState("");
   const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
   const [userReposLoading, setUserReposLoading] = useState(false);
@@ -1973,12 +1990,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     version: string;
     file: UploadItem | null;
     encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: UpdateLogEntry[];
   }) => {
     log.info("download/row", "一键填充下载配置", {
       data: {
         version: template.version,
         fileName: template.file?.name ?? null,
         encryptOnUpload: template.encryptOnUpload,
+        versionCode: template.versionCode ?? null,
+        updateLogCount: template.updatelogs?.length ?? 0,
       },
     });
     setDownloads((prev) =>
@@ -1987,6 +2008,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         version: template.version,
         file: template.file,
         encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
+        versionCode: template.versionCode,
+        updatelogs: template.updatelogs
+          ? template.updatelogs.map((log) => ({ ...log }))
+          : undefined,
       })),
     );
   };
@@ -2063,11 +2088,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     version: string;
     file: UploadItem | null;
     encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: UpdateLogEntry[];
   }) => {
     log.info("download/trial/row", "一键填充试用下载配置", {
       data: {
         version: template.version,
         fileName: template.file?.name ?? null,
+        versionCode: template.versionCode ?? null,
+        updateLogCount: template.updatelogs?.length ?? 0,
       },
     });
     setTrialDownloads((prev) =>
@@ -2075,6 +2104,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         ...row,
         version: template.version,
         file: template.file,
+        versionCode: template.versionCode,
+        updatelogs: template.updatelogs
+          ? template.updatelogs.map((log) => ({ ...log }))
+          : undefined,
       })),
     );
   };
@@ -2102,6 +2135,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setUploadLogs([]);
     }
     setActiveStepIndex(target);
+  };
+
+  const handleNextFromDownloadConfig = () => {
+    const missingVersionCode = downloads.some(
+      (d) =>
+        (d.file !== null || Boolean(d.existingFileName)) &&
+        (d.versionCode === undefined || d.versionCode === null),
+    );
+    if (missingVersionCode) {
+      setVersionCodeWarningOpen(true);
+      return;
+    }
+    goToStep(1);
   };
 
   // --- Draft system ---
@@ -2396,6 +2442,39 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </AlertDialog.Root>
   );
 
+  const versionCodeWarningDialog = (
+    <Dialog.Root
+      open={versionCodeWarningOpen}
+      onOpenChange={setVersionCodeWarningOpen}
+    >
+      <Dialog.Content maxWidth="440px">
+        <Dialog.Title>未填写 versionCode</Dialog.Title>
+        <Dialog.Description size="2">
+          有包体未填写 versionCode，未填写 versionCode 将导致 AstroBox
+          无法为用户自动检查更新。建议返回下载配置补充数字版本号，或选择仍然继续。
+        </Dialog.Description>
+        <div className="flex justify-end gap-3 mt-4">
+          <Button
+            variant="soft"
+            color="gray"
+            onClick={() => setVersionCodeWarningOpen(false)}
+          >
+            返回填写
+          </Button>
+          <Button
+            variant="solid"
+            onClick={() => {
+              setVersionCodeWarningOpen(false);
+              goToStep(1);
+            }}
+          >
+            仍然继续
+          </Button>
+        </div>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+
   // Draft action buttons
   const draftActions = !isEditing ? (
     <div className="flex flex-col gap-1.5 px-3 w-full">
@@ -2512,6 +2591,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   return (
     <Page>
       {autoSaveDialog}
+      {versionCodeWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -2716,6 +2796,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                          const info = await readRpkManifestInfo(file);
                          return {
                            versionName: info.versionName,
+                           versionCode: info.versionCode,
                            warning:
                              info.packageName !== itemId
                                ? {
@@ -2750,6 +2831,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                          const info = await readRpkManifestInfo(file);
                          return {
                            versionName: info.versionName,
+                           versionCode: info.versionCode,
                            warning:
                              info.packageName !== itemId
                                ? {
@@ -2819,7 +2901,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   radius="large"
                   size="2"
                   variant="soft"
-                  onClick={() => goToStep(1)}
+                  onClick={handleNextFromDownloadConfig}
                 >
                   下一步
                 </Button>

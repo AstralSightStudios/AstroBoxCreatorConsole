@@ -130,6 +130,150 @@ describe("manifest ext.bundledResources", () => {
   });
 });
 
+describe("manifest downloads updatelogs", () => {
+  const baseInput = {
+    itemId: "canopus_bluetoothaudio",
+    itemName: "Canopus 蓝牙音频扩展模块",
+    description: "A canopus module",
+    resourceType: "canopus" as const,
+    previews: [],
+    icon: null,
+    cover: null,
+    usePreviewAsCover: false,
+    coverPreviewId: null,
+    authors: [],
+    links: [],
+    downloads: [],
+    trialDownloads: [],
+    enableAstroBoxCreatorFeatures: false,
+  };
+
+  test("writes per-download update logs into manifest.downloads", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        {
+          platformId: "m2345b1",
+          version: "1.2.0",
+          path: "downloads/lyra.bin",
+          file: new File([], "lyra.bin"),
+          updatelogs: [
+            { version: "1.2.0", content: "修复若干问题\n新增离线解析" },
+            { version: "1.1.0", content: "首次发布" },
+          ],
+        },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.m2345b1).toEqual({
+      version: "1.2.0",
+      file_name: "downloads/lyra.bin",
+      updatelogs: [
+        { version: "1.2.0", content: "修复若干问题\n新增离线解析" },
+        { version: "1.1.0", content: "首次发布" },
+      ],
+    });
+  });
+
+  test("trims entries and omits updatelogs when empty", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        {
+          platformId: "xmb10p",
+          version: "1.0.0",
+          path: "downloads/a.bin",
+          file: new File([], "a.bin"),
+          updatelogs: [
+            { version: " ", content: "" },
+            { version: "1.0.0", content: "  首个版本  " },
+          ],
+        },
+        {
+          platformId: "xmb10",
+          version: "1.0.0",
+          path: "downloads/b.bin",
+          file: new File([], "b.bin"),
+          updatelogs: [],
+        },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb10p).toEqual({
+      version: "1.0.0",
+      file_name: "downloads/a.bin",
+      updatelogs: [{ version: "1.0.0", content: "首个版本" }],
+    });
+    expect(manifest.downloads.xmb10).toEqual({
+      version: "1.0.0",
+      file_name: "downloads/b.bin",
+    });
+  });
+
+  test("writes update logs into ext.trialDownloads", () => {
+    const result = buildManifest({
+      ...baseInput,
+      trialDownloads: [
+        {
+          platformId: "xmb10p",
+          version: "0.9.0",
+          path: "downloads/trial/demo.bin",
+          file: new File([], "demo.bin"),
+          updatelogs: [{ version: "0.9.0", content: "体验版" }],
+        },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.ext.trialDownloads).toEqual({
+      xmb10p: {
+        version: "0.9.0",
+        file_name: "downloads/trial/demo.bin",
+        updatelogs: [{ version: "0.9.0", content: "体验版" }],
+      },
+    });
+  });
+
+  test("writes numeric versionCode and omits it when invalid", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        {
+          platformId: "m2345b1",
+          version: "26.1.3",
+          path: "downloads/lyra.bin",
+          file: new File([], "lyra.bin"),
+          versionCode: 2601003,
+        },
+        {
+          platformId: "xmb10p",
+          version: "1.0.0",
+          path: "downloads/a.bin",
+          file: new File([], "a.bin"),
+          versionCode: 0,
+        },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.m2345b1).toEqual({
+      version: "26.1.3",
+      file_name: "downloads/lyra.bin",
+      versionCode: 2601003,
+    });
+    expect(manifest.downloads.xmb10p).toEqual({
+      version: "1.0.0",
+      file_name: "downloads/a.bin",
+    });
+  });
+});
+
 describe("normalizeBundledResources", () => {
   test("parses required and recommend arrays with modes", () => {
     expect(

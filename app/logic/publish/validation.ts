@@ -197,6 +197,8 @@ export async function readRpkPackage(file: Blob): Promise<string> {
 export interface RpkManifestInfo {
     packageName: string;
     versionName: string;
+    /** RPK manifest.json 的数字版本号，ABNG 用于 latest > installed 的更新检测。 */
+    versionCode?: number;
 }
 
 export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> {
@@ -244,6 +246,15 @@ export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> 
             : typeof manifest.version_name === "string"
               ? manifest.version_name.trim()
               : "";
+    const rawVersionCode = manifest.versionCode;
+    const versionCode =
+        typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
+            ? Math.trunc(rawVersionCode)
+            : typeof rawVersionCode === "string" &&
+                rawVersionCode.trim() !== "" &&
+                Number.isFinite(Number(rawVersionCode))
+              ? Math.trunc(Number(rawVersionCode))
+              : undefined;
     if (!packageName) {
         log.warn("rpk/parse", "RPK manifest.json 缺少 package 字段", {
             data: { manifestPath: manifestName },
@@ -258,9 +269,10 @@ export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> 
             manifestPath: manifestName,
             packageName,
             versionName,
+            versionCode,
         },
     });
-    return { packageName, versionName };
+    return { packageName, versionName, versionCode };
 }
 
 export async function validateRpkPackage(
