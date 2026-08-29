@@ -220,7 +220,12 @@ function collectPackages(
 
   const packages: ResourcePackagePreview[] = [];
   Object.entries(manifest.downloads ?? {}).forEach(([deviceId, info]) => {
-    const record = info as { file_name?: string; version?: string };
+    const record = info as {
+      file_name?: string;
+      version?: string;
+      versionCode?: unknown;
+      updatelogs?: unknown;
+    };
     const fileName = record.file_name || "";
     if (!fileName) return;
     packages.push({
@@ -229,11 +234,30 @@ function collectPackages(
       version: record.version || "",
       fileName,
       url: buildResourceRawUrl(entry, ref, fileName),
+      versionCode:
+        typeof record.versionCode === "number" &&
+        Number.isFinite(record.versionCode)
+          ? Math.trunc(record.versionCode)
+          : undefined,
+      updateLogs: Array.isArray(record.updatelogs)
+        ? record.updatelogs.filter(
+            (log): log is { version: string; content: string } =>
+              Boolean(log) && typeof log === "object",
+          )
+        : undefined,
     });
   });
 
   const trialDownloads = manifest.ext?.trialDownloads as
-    | Record<string, { version?: string; file_name?: string }>
+    | Record<
+        string,
+        {
+          version?: string;
+          file_name?: string;
+          versionCode?: unknown;
+          updatelogs?: unknown;
+        }
+      >
     | undefined;
   Object.entries(trialDownloads ?? {}).forEach(([deviceId, info]) => {
     const fileName = info.file_name || "";
@@ -244,6 +268,17 @@ function collectPackages(
       version: info.version || "",
       fileName,
       url: buildResourceRawUrl(entry, ref, fileName),
+      versionCode:
+        typeof info.versionCode === "number" &&
+        Number.isFinite(info.versionCode)
+          ? Math.trunc(info.versionCode)
+          : undefined,
+      updateLogs: Array.isArray(info.updatelogs)
+        ? info.updatelogs.filter(
+            (log): log is { version: string; content: string } =>
+              Boolean(log) && typeof log === "object",
+          )
+        : undefined,
     });
   });
 
