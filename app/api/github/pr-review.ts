@@ -192,14 +192,16 @@ export async function listPullRequestComments(prNumber: number) {
   );
 }
 
-export async function listPullRequestTimeline(
+/**
+ * 只拉取 PR review（含 REQUEST_CHANGES / COMMENTED 且有正文的），并映射成
+ * 评论结构。ABCC 的标签（NEEDFIX/REFUSE 等）只通过 review 发送，列表页用它
+ * 替代完整时间线，避免为每个 PR 额外请求 issue 评论。
+ */
+export async function listPullRequestReviewComments(
   prNumber: number,
 ): Promise<GithubIssueComment[]> {
-  const [comments, reviews] = await Promise.all([
-    listPullRequestComments(prNumber),
-    listPullRequestReviews(prNumber),
-  ]);
-  const fromReviews: GithubIssueComment[] = reviews
+  const reviews = await listPullRequestReviews(prNumber);
+  return reviews
     .filter(
       (review) =>
         review.state !== "PENDING" &&
@@ -214,6 +216,15 @@ export async function listPullRequestTimeline(
       html_url: `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${prNumber}#review-${review.id}`,
       pull_review_id: review.id,
     }));
+}
+
+export async function listPullRequestTimeline(
+  prNumber: number,
+): Promise<GithubIssueComment[]> {
+  const [comments, fromReviews] = await Promise.all([
+    listPullRequestComments(prNumber),
+    listPullRequestReviewComments(prNumber),
+  ]);
   return [...comments, ...fromReviews].sort((a, b) =>
     (b.created_at || "").localeCompare(a.created_at || ""),
   );

@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import RootLayout from "~/root";
+import RouteErrorFallback from "~/components/RouteErrorFallback";
 import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
 import Interactions from "~/routes/interactions";
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
+    errorElement: <RouteErrorFallback />,
     children: [
       { index: true, element: <Home /> },
       { path: "analysis", element: <Analysis /> },
