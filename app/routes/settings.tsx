@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { appLogDir } from "@tauri-apps/api/path";
 import { toast } from "sonner";
 import {
   getLogLevel,
@@ -71,9 +72,9 @@ function LogsSection() {
   };
 
   const handleOpenLogDir = async () => {
+    if (!isTauriRuntime) return;
     try {
-      const dir = await invoke<string>("get_log_dir_path");
-      await openPath(dir);
+      await openPath(await appLogDir());
       reportSuccess("settings/logs", "已打开日志文件夹");
     } catch (error) {
       reportFailure("settings/logs", "无法打开日志文件夹", error);

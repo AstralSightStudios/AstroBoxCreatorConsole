@@ -217,7 +217,7 @@ pub fn run() {
             logger::frontend_log,
             resource_log::resource_log_start,
             resource_log::resource_log_write,
-            logs_archive::get_log_dir_path,
+            resource_log::resource_log_discard,
             logs_archive::export_logs_archive
         ])
         .run(tauri::generate_context!())

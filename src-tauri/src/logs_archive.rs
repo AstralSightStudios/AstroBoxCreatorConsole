@@ -7,13 +7,6 @@ use std::path::PathBuf;
 use tar::Builder;
 use tauri::{AppHandle, Manager, Runtime};
 
-/// Resolve the app log directory (global daily logs + resource session logs).
-#[tauri::command]
-pub async fn get_log_dir_path<R: Runtime>(app_handle: AppHandle<R>) -> Result<String, String> {
-    let dir = log_dir(&app_handle).map_err(|err| err.to_string())?;
-    Ok(dir.to_string_lossy().into_owned())
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportLogsResult {
