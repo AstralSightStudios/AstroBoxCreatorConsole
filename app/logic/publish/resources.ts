@@ -1,15 +1,24 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
 import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
-import { listOrganizationMembers } from "~/api/github/pr-review";
+import {
+    getPullRequest,
+    listOrganizationMembers,
+    listPullRequestFiles,
+} from "~/api/github/pr-review";
 import {
     fetchCatalogEntries,
+    getFileContent,
+    decodeCatalogContent,
     parseCatalogCsv,
     type CatalogEntry,
 } from "./catalog";
 import {
     extractSubmissionPathFromFilePath,
     parseSubmissionCsv,
+    parseSubmissionRequestJson,
+    submissionCsvPath,
+    submissionRequestPath,
     type SubmissionRequest,
 } from "./submission-protocol";
 import {
@@ -90,6 +99,68 @@ export async function loadOwnedCatalogResourcesForCurrentUser(): Promise<
             ref: catalog.ref,
             sha: catalog.sha,
         }));
+}
+
+/**
+ * 根据已存在的开放 PR 构建「继续编辑」上下文（mode=in_progress），
+ * 供已发布资源进入编辑前的预检复用：命中进行中的 PR 时直接打开该提交继续编辑。
+ */
+export async function buildInProgressEditContextFromPr(options: {
+    prNumber: number;
+    token: string;
+}): Promise<ResourceEditContext & { authorLogin?: string }> {
+    const { prNumber, token } = options;
+    const full = await getPullRequest(prNumber);
+    const headRepo = full.head?.repo;
+    const prHead = headRepo
+        ? {
+              owner: headRepo.owner?.login || "",
+              repo: headRepo.name,
+              ref: full.head.ref,
+          }
+        : undefined;
+    if (!prHead) {
+        throw new Error("缺少 PR 分支信息，无法载入提交明细。");
+    }
+
+    const files = await listPullRequestFiles(prNumber);
+    const submissionPath = files
+        .map((file) => extractSubmissionPathFromFilePath(file.filename))
+        .find((path): path is string => Boolean(path));
+    if (!submissionPath) {
+        throw new Error("未找到新流程提交明细，无法继续编辑该 PR。");
+    }
+
+    const [requestFile, csvFile] = await Promise.all([
+        getFileContent(token, prHead.owner, prHead.repo, submissionRequestPath(submissionPath), prHead.ref),
+        getFileContent(token, prHead.owner, prHead.repo, submissionCsvPath(submissionPath), prHead.ref),
+    ]);
+    const request = parseSubmissionRequestJson(
+        decodeCatalogContent(requestFile.content),
+    );
+    const entry = parseSubmissionCsv(decodeCatalogContent(csvFile.content));
+    const catalog: ResourceCatalogContext = {
+        entry,
+        owner: prHead.owner,
+        repo: prHead.repo,
+        ref: prHead.ref,
+        sha: full.head?.sha,
+    };
+    return {
+        mode: "in_progress",
+        catalog,
+        prNumber,
+        prUrl: full.html_url || "",
+        prState:
+            full.state === "open"
+                ? "open"
+                : full.merged_at
+                  ? "merged"
+                  : "closed",
+        prHead,
+        submission: { path: submissionPath, request },
+        authorLogin: full.user?.login,
+    };
 }
 
 async function fetchIssueComments(
