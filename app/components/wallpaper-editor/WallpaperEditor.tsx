@@ -415,9 +415,9 @@ export function WallpaperEditor({
         "material",
     ]);
 
-    const handleLayerPatch = useCallback(
-        (patch: Partial<WallpaperLayerConfig>) => {
-            if (!config || !selectedLayerId) return;
+    const patchLayerById = useCallback(
+        (layerId: string, patch: Partial<WallpaperLayerConfig>) => {
+            if (!config || !layerId) return;
             const patchKeys = Object.keys(patch);
             const isSyncFlagPatch =
                 patchKeys.length === 1 && patchKeys[0] === "syncAcrossDevices";
@@ -426,12 +426,12 @@ export function WallpaperEditor({
             // 某设备缺少该图层时自动复制创建（仅在开启同步时）。
             if (isSyncFlagPatch) {
                 const enabling = patch.syncAcrossDevices === true;
-                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
+                const sourceLayer = getLayer(config, activeIndex, layerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
-                        selectedLayerId,
+                        layerId,
                         sourceLayer,
                         patch,
                         enabling,
@@ -444,14 +444,14 @@ export function WallpaperEditor({
                 patchKeys.length > 0 &&
                 patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
             const layerSync =
-                getLayer(config, activeIndex, selectedLayerId)?.syncAcrossDevices === true;
+                getLayer(config, activeIndex, layerId)?.syncAcrossDevices === true;
             if (layerSync && isSyncPatch) {
-                const sourceLayer = getLayer(config, activeIndex, selectedLayerId);
+                const sourceLayer = getLayer(config, activeIndex, layerId);
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
-                        selectedLayerId,
+                        layerId,
                         sourceLayer,
                         patch,
                         true,
@@ -459,9 +459,17 @@ export function WallpaperEditor({
                 });
                 return;
             }
-            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, selectedLayerId, patch) : prev));
+            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, layerId, patch) : prev));
         },
-        [activeIndex, config, selectedLayerId],
+        [activeIndex, config],
+    );
+
+    const handleLayerPatch = useCallback(
+        (patch: Partial<WallpaperLayerConfig>) => {
+            if (!selectedLayerId) return;
+            patchLayerById(selectedLayerId, patch);
+        },
+        [patchLayerById, selectedLayerId],
     );
 
     const handleAddLayer = useCallback(
@@ -980,6 +988,7 @@ export function WallpaperEditor({
                                 onActiveTemplateChange={setActiveTemplate}
                                 onSelectCanvas={handleSelectCanvas}
                                 onTransformChange={handleTransformChange}
+                                onLayerTransformChange={handleLayerPatch}
                                 onDuplicateTemplate={handleDuplicateTemplate}
                                 onRemoveTemplate={handleRemoveTemplate}
                                 onRenderError={(message) =>

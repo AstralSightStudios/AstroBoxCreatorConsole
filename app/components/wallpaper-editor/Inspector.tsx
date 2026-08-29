@@ -834,6 +834,23 @@ export function Inspector({
     ) => {
         onLayerPatch({ transform: { ...glassTransform, ...patch } });
     };
+    const glassBaseWidth = glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.width;
+    const glassBaseHeight = glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.height;
+    const flipGlass = (axis: "x" | "y") => {
+        if (axis === "x") {
+            const nextScaleX = -glassTransform.scaleX;
+            patchGlassTransform({
+                x: glassTransform.x + (glassBaseWidth * glassTransform.scaleX) / 2 - (glassBaseWidth * nextScaleX) / 2,
+                scaleX: nextScaleX,
+            });
+            return;
+        }
+        const nextScaleY = -glassTransform.scaleY;
+        patchGlassTransform({
+            y: glassTransform.y + (glassBaseHeight * glassTransform.scaleY) / 2 - (glassBaseHeight * nextScaleY) / 2,
+            scaleY: nextScaleY,
+        });
+    };
 
     const patchColor = (patch: Partial<WallpaperColorControlConfig>) => {        const base: WallpaperColorControlConfig = colorControl ?? {
             default: "#ffffff",
@@ -1416,7 +1433,7 @@ export function Inspector({
                             <EditorField label="旋转">
                                 <div
                                     className="grid w-full"
-                                    style={{ gridTemplateColumns: "minmax(0, 3fr) repeat(3, minmax(0, 1fr))", gap: "var(--editor-control-gap)" }}
+                                    style={{ gridTemplateColumns: "minmax(0, 3fr) repeat(2, minmax(0, 1fr))", gap: "var(--editor-control-gap)" }}
                                 >
                                     <EditorNumberField
                                         value={transform.rotation ?? 0}
@@ -1432,16 +1449,11 @@ export function Inspector({
                                         <ArrowClockwiseIcon size={16} weight="regular" />
                                     </EditorIconButton>
                                     <EditorIconButton
-                                        title="水平翻转"
-                                        style={{ borderRadius: 0 }}
-                                    >
-                                        <FlipHorizontalIcon size={16} weight="regular" />
-                                    </EditorIconButton>
-                                    <EditorIconButton
-                                        title="垂直翻转"
+                                        title="旋转 180°"
                                         style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
+                                        onClick={() => patchTransform({ rotation: (transform.rotation ?? 0) + 180 })}
                                     >
-                                        <FlipVerticalIcon size={16} weight="regular" />
+                                        <ArrowClockwiseIcon size={16} weight="regular" />
                                     </EditorIconButton>
                                 </div>
                             </EditorField>
@@ -1752,6 +1764,27 @@ export function Inspector({
                                             value={glassTransform.rotation}
                                             onChange={(v) => patchGlassTransform({ rotation: v })}
                                         />
+                                    </EditorField>
+                                    <EditorField label="镜像">
+                                        <div
+                                            className="grid w-full"
+                                            style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "var(--editor-control-gap)" }}
+                                        >
+                                            <EditorIconButton
+                                                title="水平镜像"
+                                                onClick={() => flipGlass("x")}
+                                                style={{ borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)" }}
+                                            >
+                                                <FlipHorizontalIcon size={16} weight="regular" />
+                                            </EditorIconButton>
+                                            <EditorIconButton
+                                                title="垂直镜像"
+                                                onClick={() => flipGlass("y")}
+                                                style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
+                                            >
+                                                <FlipVerticalIcon size={16} weight="regular" />
+                                            </EditorIconButton>
+                                        </div>
                                     </EditorField>
                                 </div>
                             </EditorSection>

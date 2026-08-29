@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import {
     ArrowLeftIcon,
     CircleHalfIcon,
+    DotsSixVerticalIcon,
     DownloadSimpleIcon,
     DropIcon,
     FileCodeIcon,
@@ -277,16 +278,17 @@ export function Sidebar({
                         </h3>
                         <div
                             className="grid w-full px-[9px] py-2"
-                            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}
+                            style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}
                         >
                             {LAYER_ADD_ITEMS.map((item) => (
                                 <EditorIconButton
                                     key={item.kind}
                                     title={item.label}
                                     onClick={() => onAddLayer(item.kind)}
-                                    style={{ height: 34, borderRadius: 8 }}
+                                    style={{ height: 48, borderRadius: 8, flexDirection: "column", gap: 3 }}
                                 >
                                     {item.icon}
+                                    <span className="text-[11px] leading-[14px]">{item.label}</span>
                                 </EditorIconButton>
                             ))}
                         </div>
@@ -342,6 +344,13 @@ export function Sidebar({
                                             paddingLeft: 8,
                                         }}
                                     >
+                                        <span
+                                            className="grid shrink-0 place-items-center text-white/35"
+                                            title="拖拽调整层级"
+                                            aria-label="拖拽调整层级"
+                                        >
+                                            <DotsSixVerticalIcon size={14} weight="regular" />
+                                        </span>
                                         <span className="shrink-0 text-white/70">
                                             {layerTypeIcon(layer.type)}
                                         </span>
@@ -357,6 +366,20 @@ export function Sidebar({
                                                 同步
                                             </span>
                                         )}
+                                        <button
+                                            type="button"
+                                            title="删除图层"
+                                            aria-label={`删除图层 ${layer.name || layer.id}`}
+                                            onPointerDown={(event) => event.stopPropagation()}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onRemoveLayer(layer.id);
+                                            }}
+                                            className="grid shrink-0 place-items-center rounded text-white/35 transition hover:bg-red-400/20 hover:text-red-300"
+                                            style={{ width: 24, height: 24, marginRight: 2 }}
+                                        >
+                                            <TrashIcon size={14} weight="regular" />
+                                        </button>
                                     </div>
                                 );
                             })}

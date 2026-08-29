@@ -5,7 +5,8 @@ import {
   Select,
   Switch,
 } from "@radix-ui/themes";
-import { InfoIcon, PlusIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, InfoIcon, PlusIcon } from "@phosphor-icons/react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { WallpaperControlValue } from "~/logic/wallpaper/types";
 import {
@@ -53,7 +54,7 @@ export function EditorSlider({
   );
 }
 
-/** 可调数值控件：数值、区间和步长组成连续的三段输入区域。 */
+/** 可调数值控件：默认突出当前数值，范围设置按需展开。 */
 export function NumericControlEditor({
   label,
   control,
@@ -73,6 +74,7 @@ export function NumericControlEditor({
   const min = controlMin(control, 0);
   const max = controlMax(control, 100);
   const step = controlStep(control, 0.01);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const patch = (key: "default" | "min" | "max" | "step", value: number) =>
     onChange({ [key]: value });
   return (
@@ -144,39 +146,69 @@ export function NumericControlEditor({
         </div>
         {headerRight}
       </div>
-      <EditorSlider
-        value={def}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(v) => patch("default", v)}
-        onDragStateChange={onDragStateChange}
-      />
-      <div
-        className="grid w-full"
+      <div className="flex w-full items-center" style={{ gap: 8 }}>
+        <div className="min-w-0 flex-1">
+          <EditorSlider
+            value={def}
+            min={min}
+            max={max}
+            step={step}
+            onChange={(v) => patch("default", v)}
+            onDragStateChange={onDragStateChange}
+          />
+        </div>
+        <div className="w-[76px] shrink-0">
+          <EditorNumberField
+            value={def}
+            step={step}
+            onChange={(v) => patch("default", v)}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-expanded={advancedOpen}
+        onClick={() => setAdvancedOpen((open) => !open)}
+        className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
         style={{
-          gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
-          gap: "var(--editor-control-gap)",
+          borderRadius: "var(--editor-control-radius)",
+          background: "var(--color-editor-control)",
         }}
       >
-        <EditorNumberField
-          value={def}
-          step={step}
-          radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
-          onChange={(v) => patch("default", v)}
+        <span>范围设置</span>
+        <CaretDownIcon
+          size={14}
+          weight="regular"
+          style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
         />
-        <EditorRangeField
-          min={min}
-          max={max}
-          onMinChange={(value) => patch("min", value)}
-          onMaxChange={(value) => patch("max", value)}
-        />
-        <EditorNumberField
-          value={step}
-          radius="0 var(--editor-control-radius) var(--editor-control-radius) 0"
-          onChange={(v) => patch("step", v)}
-        />
-      </div>
+      </button>
+      {advancedOpen && (
+        <div
+          className="grid w-full"
+          style={{
+            gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+            gap: "var(--editor-control-gap)",
+          }}
+        >
+          <EditorNumberField
+            value={def}
+            step={step}
+            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
+            onChange={(v) => patch("default", v)}
+          />
+          <EditorRangeField
+            min={min}
+            max={max}
+            onMinChange={(value) => patch("min", value)}
+            onMaxChange={(value) => patch("max", value)}
+          />
+          <EditorNumberField
+            value={step}
+            radius="0 var(--editor-control-radius) var(--editor-control-radius) 0"
+            onChange={(v) => patch("step", v)}
+          />
+        </div>
+      )}
     </div>
   );
 }
