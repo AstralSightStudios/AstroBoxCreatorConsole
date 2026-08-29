@@ -101,6 +101,34 @@ async function handleAuthUrl(rawUrl: string) {
     }
 }
 
+// astroboxcc://open?pr=NNN —— 从 NG 信箱「在 CC 中查看」跳回对应 PR 审核详情。
+async function handleOpenUrl(rawUrl: string) {
+    try {
+        const url = new URL(rawUrl);
+        const pr = url.searchParams.get("pr");
+        if (pr) {
+            window.location.assign(
+                `/resreview/detail?pr=${encodeURIComponent(pr)}`,
+            );
+            if (isTauri) {
+                try {
+                    const { getCurrentWindow } = await import(
+                        "@tauri-apps/api/window"
+                    );
+                    const win = getCurrentWindow();
+                    await win.show();
+                    await win.unminimize();
+                    await win.setFocus();
+                } catch (err) {
+                    console.warn("Failed to focus app window after deep link", err);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn("Failed to handle open deep link", err);
+    }
+}
+
 async function ensureDeepLinkHandler() {
     if (deepLinkHandlerInstalled || !isTauri) return;
     deepLinkHandlerInstalled = true;
@@ -108,24 +136,24 @@ async function ensureDeepLinkHandler() {
         const { onOpenUrl, getCurrent } = await import(
             "@tauri-apps/plugin-deep-link"
         );
-        await onOpenUrl((urls) => {
-            const target = urls.find((u) =>
-                u.startsWith("astroboxcc://auth/callback"),
-            );
-            if (target) {
-                void handleAuthUrl(target);
+        const dispatch = (urls: string[]) => {
+            for (const url of urls) {
+                if (url.startsWith("astroboxcc://auth/callback")) {
+                    void handleAuthUrl(url);
+                    return;
+                }
+                if (url.startsWith("astroboxcc://open")) {
+                    void handleOpenUrl(url);
+                    return;
+                }
             }
-        });
+        };
+        await onOpenUrl(dispatch);
 
         // Cold-start case: app was launched by a deep link.
         const initial = await getCurrent();
         if (initial && initial.length) {
-            const target = initial.find((u) =>
-                u.startsWith("astroboxcc://auth/callback"),
-            );
-            if (target) {
-                void handleAuthUrl(target);
-            }
+            dispatch(initial);
         }
     } catch (err) {
         console.warn("Failed to install deep-link handler", err);
