@@ -29,8 +29,6 @@ export default function LoginCallback() {
                     ASTROBOX_SERVER_CONFIG.serverUrl,
                 )) as TokenResponse;
 
-                console.log(tokenResponse);
-
                 if (!tokenResponse?.token) {
                     const errMsg = tokenResponse?.error || "拿不到token。";
                     throw new Error(errMsg);
@@ -45,7 +43,6 @@ export default function LoginCallback() {
                 setMessage("Loading account information...");
                 const profile: any = await getSelfUserInfo(tokenResponse.token);
 
-                console.log(profile);
                 persistAstroboxAccount(profile, tokenResponse.token, tokenResponse.refreshToken);
                 setMessage("Success!");
                 window.location.replace("/");
