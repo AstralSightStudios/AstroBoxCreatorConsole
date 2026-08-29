@@ -12,6 +12,7 @@ import {
     ImageIcon,
     InfoIcon,
     PlusIcon,
+    SunIcon,
 } from "@phosphor-icons/react";
 import type {
     WallpaperColorControlConfig,
@@ -321,7 +322,122 @@ function ControlTriple({
     );
 }
 
-/** 玻璃材质滑块：滑块 + 数值输入框。 */
+function GlassLightField({
+    angle,
+    intensity,
+    onAngleChange,
+    onIntensityChange,
+}: {
+    angle: number;
+    intensity: number;
+    onAngleChange: (value: number) => void;
+    onIntensityChange: (value: number) => void;
+}) {
+    const padRef = useRef<HTMLDivElement | null>(null);
+    const updateAngleFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+        const rect = padRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const x = event.clientX - (rect.left + rect.width / 2);
+        const y = event.clientY - (rect.top + rect.height / 2);
+        const next = (Math.atan2(x, -y) * 180) / Math.PI;
+        onAngleChange(Math.round((next + 360) % 360));
+    };
+    const angleInRadians = (angle * Math.PI) / 180;
+    const indicatorX = 50 + Math.sin(angleInRadians) * 32;
+    const indicatorY = 50 - Math.cos(angleInRadians) * 32;
+
+    return (
+        <div className="flex w-full items-center" style={{ gap: 8 }}>
+            <span className="w-[42px] shrink-0 text-[13px] leading-[18px] text-white/75">
+                方向
+            </span>
+            <div className="flex min-w-0 flex-1 items-center" style={{ gap: 8 }}>
+                <div
+                    ref={padRef}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label="光照角度"
+                    aria-valuemin={0}
+                    aria-valuemax={360}
+                    aria-valuenow={Math.round(angle)}
+                    className="relative h-[72px] w-[104px] shrink-0 cursor-crosshair overflow-hidden"
+                    style={{
+                        borderRadius: "var(--editor-control-radius)",
+                        background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02) 42%, rgba(0,0,0,0.32))",
+                    }}
+                    onPointerDown={(event) => {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        updateAngleFromPointer(event);
+                    }}
+                    onPointerMove={(event) => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                            updateAngleFromPointer(event);
+                        }
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+                            event.preventDefault();
+                            onAngleChange((angle + 359) % 360);
+                        }
+                        if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                            event.preventDefault();
+                            onAngleChange((angle + 1) % 360);
+                        }
+                    }}
+                >
+                    <div
+                        className="absolute left-1/2 top-1/2 h-px w-[34px] origin-left"
+                        style={{
+                            background: "var(--color-editor-blue-fg)",
+                            transform: `rotate(${angle - 90}deg)`,
+                        }}
+                    />
+                    <div
+                        className="absolute grid h-[24px] w-[24px] place-items-center"
+                        style={{
+                            left: `${indicatorX}%`,
+                            top: `${indicatorY}%`,
+                            borderRadius: "50%",
+                            background: "var(--color-editor-blue-bg)",
+                            color: "var(--color-editor-blue-fg)",
+                            transform: "translate(-50%, -50%)",
+                        }}
+                    >
+                        <SunIcon size={16} weight="regular" />
+                    </div>
+                    <div
+                        className="absolute left-1/2 top-1/2 h-1.5 w-1.5"
+                        style={{
+                            borderRadius: "50%",
+                            background: "var(--color-editor-blue-fg)",
+                            transform: "translate(-50%, -50%)",
+                        }}
+                    />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col" style={{ gap: 4 }}>
+                    <EditorNumberField
+                        value={Math.round(angle)}
+                        min={0}
+                        max={360}
+                        step={1}
+                        suffix="°"
+                        onChange={(value) => onAngleChange(value)}
+                    />
+                    <EditorNumberField
+                        value={Math.round(intensity * 100)}
+                        min={0}
+                        max={100}
+                        step={1}
+                        suffix="%"
+                        onChange={(value) => onIntensityChange(value / 100)}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function GlassSliderField({
     label,
     value,
@@ -340,19 +456,29 @@ function GlassSliderField({
     onDragStateChange?: (dragging: boolean) => void;
 }) {
     return (
-        <div className="flex w-full flex-col" style={{ gap: 6 }}>
-            <div className="flex items-center justify-between px-1.5">
-                <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
-                <EditorNumberField value={value} step={step} onChange={onChange} />
+        <div className="flex w-full items-center" style={{ gap: 8 }}>
+            <span className="w-[80px] shrink-0 text-[13px] leading-[18px] text-white/75">
+                {label}
+            </span>
+            <div className="min-w-0 flex-1">
+                <EditorSlider
+                    value={value}
+                    min={min}
+                    max={max}
+                    step={step}
+                    onChange={onChange}
+                    onDragStateChange={onDragStateChange}
+                />
             </div>
-            <EditorSlider
-                value={value}
-                min={min}
-                max={max}
-                step={step}
-                onChange={onChange}
-                onDragStateChange={onDragStateChange}
-            />
+            <div className="w-[72px] shrink-0">
+                <EditorNumberField
+                    value={value}
+                    min={min}
+                    max={max}
+                    step={step}
+                    onChange={onChange}
+                />
+            </div>
         </div>
     );
 }
@@ -506,6 +632,7 @@ export function Inspector({
         y: number;
     } | null>(null);
     const [axesOpen, setAxesOpen] = useState(false);
+    const [glassAdvancedOpen, setGlassAdvancedOpen] = useState(false);
     const [maskImportNoticeOpen, setMaskImportNoticeOpen] = useState(false);
     const [colorEditNoticeOpen, setColorEditNoticeOpen] = useState(false);
 
@@ -1367,237 +1494,267 @@ export function Inspector({
                     {/* 玻璃层 */}
                     {isGlass && (
                         <>
-                            <EditorField label="玻璃可见">
-                                <EditorSwitch
-                                    checked={layer.visible !== false}
-                                    onCheckedChange={(v) => onLayerPatch({ visible: v })}
-                                />
-                            </EditorField>
-                            <TwoColumnGrid>
-                                <EditorField label="几何形状">
-                                    <EditorSelect
-                                        value={glassGeometry.type}
-                                        options={[
-                                            { value: "rounded-rect", label: "圆角矩形" },
-                                            { value: "circle", label: "圆形" },
-                                        ]}
-                                        onChange={(value) => {
-                                            if (value === "circle") {
-                                                const diameter = Math.max(
-                                                    1,
-                                                    Math.round(
-                                                        Math.min(
-                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.width : glassGeometry.diameter,
-                                                            glassGeometry.type === "rounded-rect" ? glassGeometry.height : glassGeometry.diameter,
-                                                        ),
-                                                    ),
-                                                );
-                                                onLayerPatch({ geometry: { type: "circle", diameter } });
-                                            } else {
-                                                const width =
-                                                    glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.width;
-                                                const height =
-                                                    glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.height;
-                                                onLayerPatch({
-                                                    geometry: {
-                                                        type: "rounded-rect",
-                                                        width,
-                                                        height,
-                                                        radius: Math.max(0, glassGeometry.type === "circle" ? Math.round(width / 4) : glassGeometry.radius),
-                                                    },
-                                                });
-                                            }
-                                        }}
-                                    />
-                                </EditorField>
-                            </TwoColumnGrid>
-                            {glassGeometry.type === "rounded-rect" ? (
-                                <>
-                                    <TwoColumnGrid>
-                                        <EditorField label="宽">
-                                            <EditorNumberField
-                                                value={glassGeometry.width}
-                                                onChange={(v) => patchGlassGeometry({ width: Math.max(1, v) })}
-                                            />
-                                        </EditorField>
-                                        <EditorField label="高">
-                                            <EditorNumberField
-                                                value={glassGeometry.height}
-                                                onChange={(v) => patchGlassGeometry({ height: Math.max(1, v) })}
-                                            />
-                                        </EditorField>
-                                    </TwoColumnGrid>
-                                    <EditorField label="圆角半径">
-                                        <EditorNumberField
-                                            value={glassGeometry.radius}
-                                            onChange={(v) =>
-                                                patchGlassGeometry({ radius: Math.max(0, Math.min(v, glassGeometry.width / 2, glassGeometry.height / 2)) })
-                                            }
+                            <EditorSection title="形状" noDivider>
+                                <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                                    <EditorField label="玻璃可见">
+                                        <EditorSwitch
+                                            checked={layer.visible !== false}
+                                            onCheckedChange={(v) => onLayerPatch({ visible: v })}
                                         />
                                     </EditorField>
-                                </>
-                            ) : (
-                                <EditorField label="直径">
-                                    <EditorNumberField
-                                        value={glassGeometry.diameter}
-                                        onChange={(v) => patchGlassGeometry({ diameter: Math.max(1, v) })}
-                                    />
-                                </EditorField>
-                            )}
-                            <GlassSliderField
-                                label="模糊"
-                                value={glassMaterial.blur}
-                                min={0}
-                                max={100}
-                                step={1}
-                                onChange={(v) => patchGlassMaterial({ blur: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="折射"
-                                value={glassMaterial.refraction}
-                                min={0}
-                                max={4}
-                                step={0.1}
-                                onChange={(v) => patchGlassMaterial({ refraction: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="厚度"
-                                value={glassMaterial.thickness}
-                                min={0}
-                                max={40}
-                                step={0.5}
-                                onChange={(v) => patchGlassMaterial({ thickness: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="色散"
-                                value={glassMaterial.dispersion}
-                                min={0}
-                                max={4}
-                                step={0.05}
-                                onChange={(v) => patchGlassMaterial({ dispersion: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="对比度"
-                                value={glassMaterial.contrast}
-                                min={0.5}
-                                max={1.5}
-                                step={0.01}
-                                onChange={(v) => patchGlassMaterial({ contrast: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <EditorField label="着色 Tint">
-                                <div className="flex items-center" style={{ gap: 6 }}>
-                                    <span
-                                        className="block shrink-0 rounded-full"
-                                        style={{
-                                            width: 14,
-                                            height: 14,
-                                            background: glassMaterial.tint,
-                                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
-                                        }}
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                        <EditorTextInput
-                                            value={glassMaterial.tint}
-                                            onChange={(v) => patchGlassMaterial({ tint: v })}
+                                    <EditorField label="几何形状">
+                                        <EditorSelect
+                                            value={glassGeometry.type}
+                                            options={[
+                                                { value: "rounded-rect", label: "圆角矩形" },
+                                                { value: "circle", label: "圆形" },
+                                            ]}
+                                            onChange={(value) => {
+                                                if (value === "circle") {
+                                                    const diameter = Math.max(
+                                                        1,
+                                                        Math.round(
+                                                            Math.min(
+                                                                glassGeometry.type === "rounded-rect" ? glassGeometry.width : glassGeometry.diameter,
+                                                                glassGeometry.type === "rounded-rect" ? glassGeometry.height : glassGeometry.diameter,
+                                                            ),
+                                                        ),
+                                                    );
+                                                    onLayerPatch({ geometry: { type: "circle", diameter } });
+                                                } else {
+                                                    const width =
+                                                        glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.width;
+                                                    const height =
+                                                        glassGeometry.type === "circle" ? glassGeometry.diameter : glassGeometry.height;
+                                                    onLayerPatch({
+                                                        geometry: {
+                                                            type: "rounded-rect",
+                                                            width,
+                                                            height,
+                                                            radius: Math.max(0, glassGeometry.type === "circle" ? Math.round(width / 4) : glassGeometry.radius),
+                                                        },
+                                                    });
+                                                }
+                                            }}
                                         />
-                                    </div>
+                                    </EditorField>
+                                    {glassGeometry.type === "rounded-rect" ? (
+                                        <>
+                                            <TwoColumnGrid>
+                                                <EditorField label="宽">
+                                                    <EditorNumberField
+                                                        value={glassGeometry.width}
+                                                        onChange={(v) => patchGlassGeometry({ width: Math.max(1, v) })}
+                                                    />
+                                                </EditorField>
+                                                <EditorField label="高">
+                                                    <EditorNumberField
+                                                        value={glassGeometry.height}
+                                                        onChange={(v) => patchGlassGeometry({ height: Math.max(1, v) })}
+                                                    />
+                                                </EditorField>
+                                            </TwoColumnGrid>
+                                            <EditorField label="圆角半径">
+                                                <EditorNumberField
+                                                    value={glassGeometry.radius}
+                                                    onChange={(v) =>
+                                                        patchGlassGeometry({ radius: Math.max(0, Math.min(v, glassGeometry.width / 2, glassGeometry.height / 2)) })
+                                                    }
+                                                />
+                                            </EditorField>
+                                        </>
+                                    ) : (
+                                        <EditorField label="直径">
+                                            <EditorNumberField
+                                                value={glassGeometry.diameter}
+                                                onChange={(v) => patchGlassGeometry({ diameter: Math.max(1, v) })}
+                                            />
+                                        </EditorField>
+                                    )}
                                 </div>
-                            </EditorField>
-                            <GlassSliderField
-                                label="着色不透明度"
-                                value={glassMaterial.tintOpacity}
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                onChange={(v) => patchGlassMaterial({ tintOpacity: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="饱和度"
-                                value={glassMaterial.saturation}
-                                min={0}
-                                max={2}
-                                step={0.01}
-                                onChange={(v) => patchGlassMaterial({ saturation: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="高光"
-                                value={glassMaterial.highlight}
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                onChange={(v) => patchGlassMaterial({ highlight: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <EditorField label="高光混合模式">
-                                <EditorSelect
-                                    value={glassMaterial.highlightBlendMode}
-                                    options={GLASS_BLEND_MODE_OPTIONS}
-                                    onChange={(v) => patchGlassMaterial({ highlightBlendMode: v as WallpaperGlassBlendMode })}
+                            </EditorSection>
+                            <EditorSection title="光照" className="pt-[9px]">
+                                <GlassLightField
+                                    angle={glassMaterial.lightAngle}
+                                    intensity={glassMaterial.highlight}
+                                    onAngleChange={(value) => patchGlassMaterial({ lightAngle: value })}
+                                    onIntensityChange={(value) => patchGlassMaterial({ highlight: value })}
                                 />
-                            </EditorField>
-                            <GlassSliderField
-                                label="阴影"
-                                value={glassMaterial.shadow}
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                onChange={(v) => patchGlassMaterial({ shadow: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <EditorField label="阴影混合模式">
-                                <EditorSelect
-                                    value={glassMaterial.shadowBlendMode}
-                                    options={GLASS_BLEND_MODE_OPTIONS}
-                                    onChange={(v) => patchGlassMaterial({ shadowBlendMode: v as WallpaperGlassBlendMode })}
-                                />
-                            </EditorField>
-                            <GlassSliderField
-                                label="打光角度"
-                                value={glassMaterial.lightAngle}
-                                min={0}
-                                max={360}
-                                step={1}
-                                onChange={(v) => patchGlassMaterial({ lightAngle: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <GlassSliderField
-                                label="Bevel 宽度（高级，0=自动）"
-                                value={glassMaterial.bezelWidth}
-                                min={0}
-                                max={40}
-                                step={0.5}
-                                onChange={(v) => patchGlassMaterial({ bezelWidth: v })}
-                                onDragStateChange={onRenderSimplifyChange}
-                            />
-                            <TwoColumnGrid>
-                                <EditorField label="位置 X">
-                                    <EditorNumberField value={glassTransform.x} onChange={(v) => patchGlassTransform({ x: v })} />
-                                </EditorField>
-                                <EditorField label="位置 Y">
-                                    <EditorNumberField value={glassTransform.y} onChange={(v) => patchGlassTransform({ y: v })} />
-                                </EditorField>
-                            </TwoColumnGrid>
-                            <TwoColumnGrid>
-                                <EditorField label="缩放 X">
-                                    <EditorNumberField value={glassTransform.scaleX} onChange={(v) => patchGlassTransform({ scaleX: v })} />
-                                </EditorField>
-                                <EditorField label="缩放 Y">
-                                    <EditorNumberField value={glassTransform.scaleY} onChange={(v) => patchGlassTransform({ scaleY: v })} />
-                                </EditorField>
-                            </TwoColumnGrid>
-                            <EditorField label="旋转">
-                                <EditorNumberField
-                                    value={glassTransform.rotation}
-                                    onChange={(v) => patchGlassTransform({ rotation: v })}
-                                />
-                            </EditorField>
+                            </EditorSection>
+                            <EditorSection title="材质" className="pt-[9px]">
+                                <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                                    <GlassSliderField
+                                        label="折射"
+                                        value={glassMaterial.refraction}
+                                        min={0}
+                                        max={4}
+                                        step={0.1}
+                                        onChange={(v) => patchGlassMaterial({ refraction: v })}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                    />
+                                    <GlassSliderField
+                                        label="厚度"
+                                        value={glassMaterial.thickness}
+                                        min={0}
+                                        max={40}
+                                        step={0.5}
+                                        onChange={(v) => patchGlassMaterial({ thickness: v })}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                    />
+                                    <GlassSliderField
+                                        label="色散"
+                                        value={glassMaterial.dispersion}
+                                        min={0}
+                                        max={4}
+                                        step={0.05}
+                                        onChange={(v) => patchGlassMaterial({ dispersion: v })}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                    />
+                                    <GlassSliderField
+                                        label="雾化"
+                                        value={glassMaterial.blur}
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        onChange={(v) => patchGlassMaterial({ blur: v })}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                    />
+                                    <GlassSliderField
+                                        label="对比度"
+                                        value={glassMaterial.contrast}
+                                        min={0.5}
+                                        max={1.5}
+                                        step={0.01}
+                                        onChange={(v) => patchGlassMaterial({ contrast: v })}
+                                        onDragStateChange={onRenderSimplifyChange}
+                                    />
+                                    <button
+                                        type="button"
+                                        aria-expanded={glassAdvancedOpen}
+                                        className="flex h-[var(--editor-control-height)] w-full cursor-pointer items-center justify-between px-2 text-left text-[13px] text-white/65 transition hover:text-white"
+                                        style={{
+                                            borderRadius: "var(--editor-control-radius)",
+                                            background: "var(--color-editor-control)",
+                                        }}
+                                        onClick={() => setGlassAdvancedOpen((open) => !open)}
+                                    >
+                                        <span>更多材质参数</span>
+                                        <CaretDownIcon
+                                            size={14}
+                                            weight="regular"
+                                            style={{ transform: glassAdvancedOpen ? "rotate(180deg)" : undefined }}
+                                        />
+                                    </button>
+                                    {glassAdvancedOpen && (
+                                        <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                                            <EditorField label="着色 Tint">
+                                                <div className="flex items-center" style={{ gap: 6 }}>
+                                                    <span
+                                                        className="block shrink-0 rounded-full"
+                                                        style={{
+                                                            width: 14,
+                                                            height: 14,
+                                                            background: glassMaterial.tint,
+                                                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
+                                                        }}
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <EditorTextInput
+                                                            value={glassMaterial.tint}
+                                                            onChange={(v) => patchGlassMaterial({ tint: v })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </EditorField>
+                                            <GlassSliderField
+                                                label="着色不透明度"
+                                                value={glassMaterial.tintOpacity}
+                                                min={0}
+                                                max={1}
+                                                step={0.01}
+                                                onChange={(v) => patchGlassMaterial({ tintOpacity: v })}
+                                                onDragStateChange={onRenderSimplifyChange}
+                                            />
+                                            <GlassSliderField
+                                                label="饱和度"
+                                                value={glassMaterial.saturation}
+                                                min={0}
+                                                max={2}
+                                                step={0.01}
+                                                onChange={(v) => patchGlassMaterial({ saturation: v })}
+                                                onDragStateChange={onRenderSimplifyChange}
+                                            />
+                                            <GlassSliderField
+                                                label="高光"
+                                                value={glassMaterial.highlight}
+                                                min={0}
+                                                max={1}
+                                                step={0.01}
+                                                onChange={(v) => patchGlassMaterial({ highlight: v })}
+                                                onDragStateChange={onRenderSimplifyChange}
+                                            />
+                                            <EditorField label="高光混合模式">
+                                                <EditorSelect
+                                                    value={glassMaterial.highlightBlendMode}
+                                                    options={GLASS_BLEND_MODE_OPTIONS}
+                                                    onChange={(v) => patchGlassMaterial({ highlightBlendMode: v as WallpaperGlassBlendMode })}
+                                                />
+                                            </EditorField>
+                                            <GlassSliderField
+                                                label="阴影"
+                                                value={glassMaterial.shadow}
+                                                min={0}
+                                                max={1}
+                                                step={0.01}
+                                                onChange={(v) => patchGlassMaterial({ shadow: v })}
+                                                onDragStateChange={onRenderSimplifyChange}
+                                            />
+                                            <EditorField label="阴影混合模式">
+                                                <EditorSelect
+                                                    value={glassMaterial.shadowBlendMode}
+                                                    options={GLASS_BLEND_MODE_OPTIONS}
+                                                    onChange={(v) => patchGlassMaterial({ shadowBlendMode: v as WallpaperGlassBlendMode })}
+                                                />
+                                            </EditorField>
+                                            <GlassSliderField
+                                                label="Bevel 宽度"
+                                                value={glassMaterial.bezelWidth}
+                                                min={0}
+                                                max={40}
+                                                step={0.5}
+                                                onChange={(v) => patchGlassMaterial({ bezelWidth: v })}
+                                                onDragStateChange={onRenderSimplifyChange}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </EditorSection>
+                            <EditorSection title="位置与大小" className="pt-[9px]">
+                                <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                                    <TwoColumnGrid>
+                                        <EditorField label="位置 X">
+                                            <EditorNumberField value={glassTransform.x} onChange={(v) => patchGlassTransform({ x: v })} />
+                                        </EditorField>
+                                        <EditorField label="位置 Y">
+                                            <EditorNumberField value={glassTransform.y} onChange={(v) => patchGlassTransform({ y: v })} />
+                                        </EditorField>
+                                    </TwoColumnGrid>
+                                    <TwoColumnGrid>
+                                        <EditorField label="缩放 X">
+                                            <EditorNumberField value={glassTransform.scaleX} onChange={(v) => patchGlassTransform({ scaleX: v })} />
+                                        </EditorField>
+                                        <EditorField label="缩放 Y">
+                                            <EditorNumberField value={glassTransform.scaleY} onChange={(v) => patchGlassTransform({ scaleY: v })} />
+                                        </EditorField>
+                                    </TwoColumnGrid>
+                                    <EditorField label="旋转">
+                                        <EditorNumberField
+                                            value={glassTransform.rotation}
+                                            onChange={(v) => patchGlassTransform({ rotation: v })}
+                                        />
+                                    </EditorField>
+                                </div>
+                            </EditorSection>
                         </>
                     )}
 
