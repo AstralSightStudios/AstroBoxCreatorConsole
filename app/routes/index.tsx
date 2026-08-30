@@ -10,6 +10,7 @@ import {
 } from "~/api/astrobox/dashboard";
 import AnalysisSummary from "~/components/home/analysis-summary";
 import DownloadOverview from "~/components/home/download-overview";
+import AfdianIncomeOverview from "~/components/home/afdian-income-overview";
 import FilterBar, {
     type FilterBarResourceOption,
 } from "~/components/home/filter-bar";
@@ -541,6 +542,7 @@ export default function Home() {
                 loading={dashboardLoading}
                 error={dashboardError}
             />
+            <AfdianIncomeOverview />
             <AnalysisSummary
                 data={dashboardData}
                 loading={dashboardLoading}

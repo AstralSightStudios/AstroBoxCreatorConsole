@@ -2,10 +2,11 @@ use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit};
 use aes::Aes256;
 use base64::{engine::general_purpose, Engine as _};
 use ecb::Encryptor;
-mod logs_archive;
-mod logger;
-mod resource_log;
+mod afdian;
 mod buildinfo;
+mod logger;
+mod logs_archive;
+mod resource_log;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ struct GithubProxyRequest {
     body: Option<String>,
 }
 
-struct AppHttpClient(reqwest::Client);
+pub(crate) struct AppHttpClient(reqwest::Client);
 
 // Simple GitHub proxy to bypass CORS in the frontend.
 #[tauri::command]
@@ -212,6 +213,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             github_request,
             afdian_request,
+            afdian::afdian_session_status,
+            afdian::afdian_password_login,
+            afdian::afdian_send_quick_login_code,
+            afdian::afdian_refresh_captcha,
+            afdian::afdian_quick_login,
+            afdian::afdian_logout,
+            afdian::afdian_income_overview,
             encrypt_aes_256_ecb,
             write_text_file,
             fetch_media,
