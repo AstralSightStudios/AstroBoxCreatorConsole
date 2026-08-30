@@ -31,6 +31,9 @@ aes = "0.8"
 ecb = { version = "0.1", features = ["alloc", "block-padding"] }
 base64 = "0.22"
 tauri-plugin-deep-link = "2"
+# deep-link feature:把 Linux/Windows 深链唤起时新起的第二实例的 URL
+# 转发给已运行实例,使前端 onOpenUrl 在持有登录状态的原实例里触发。
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 anyhow = "1"
 chrono = "0.4"
 flate2 = "1"

@@ -44,6 +44,11 @@ export function getGithubRedirectUri(): string {
         : `${window.location.origin}/oauth-callback`;
 }
 
+// reqwest(Rust 代理)在本机代理环境下对 github.com 的连接可能无限挂起(invoke 不返回、
+// 也不抛错),导致 exchangeGithubCode 卡死在「正在换取访问令牌…」。这里给 invoke 加超时,
+// 超时后回退到 axios(走 webview 网络栈,与 githubFetch 同一路径,已被证明可用)。
+const INVOKE_TIMEOUT_MS = 15_000;
+
 async function githubRequest<T>(options: {
     url: string;
     method?: "GET" | "POST";
@@ -54,14 +59,27 @@ async function githubRequest<T>(options: {
 
     if (isTauriEnvironment()) {
         try {
-            return await invoke<T>("github_request", {
-                request: {
-                    url,
-                    method,
-                    headers,
-                    body: body ?? null,
-                },
-            });
+            return await Promise.race([
+                invoke<T>("github_request", {
+                    request: {
+                        url,
+                        method,
+                        headers,
+                        body: body ?? null,
+                    },
+                }),
+                new Promise<never>((_, reject) =>
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    `GitHub 请求超时（${Math.round(INVOKE_TIMEOUT_MS / 1000)} 秒无响应），已切换直连。`,
+                                ),
+                            ),
+                        INVOKE_TIMEOUT_MS,
+                    ),
+                ),
+            ]);
         } catch (error) {
             console.warn(
                 "GitHub request via Tauri failed, falling back to axios",
@@ -75,6 +93,7 @@ async function githubRequest<T>(options: {
         method,
         data: body,
         headers,
+        timeout: INVOKE_TIMEOUT_MS,
     });
 
     return response.data;
@@ -175,6 +194,18 @@ export async function exchangeGithubCode(
         },
         body: params.toString(),
     });
+
+    // 诊断:登录失败时记录交换响应的 error 字段(不记录 token 本身)。
+    if (data.error || !data.access_token) {
+        console.warn(
+            "[exchange] token response",
+            JSON.stringify({
+                error: data.error,
+                error_description: data.error_description,
+                has_access_token: Boolean(data.access_token),
+            }),
+        );
+    }
 
     if (data.error) {
         throw new Error(data.error_description || data.error);

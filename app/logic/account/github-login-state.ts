@@ -166,7 +166,9 @@ function installCallbackListener() {
                 const parsed = new URL(url);
                 if (
                     parsed.protocol !== "astroboxcc:" ||
-                    parsed.pathname !== "/oauth/callback"
+                    // astroboxcc://oauth/callback 会被解析为 host=oauth、path=/callback。
+                    parsed.host !== "oauth" ||
+                    parsed.pathname !== "/callback"
                 ) {
                     continue;
                 }
