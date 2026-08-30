@@ -49,11 +49,29 @@ function persistSentKeys(keys: Set<string>) {
   writeJson(SENT_KEYS_STORAGE, Array.from(keys));
 }
 
+// 服务端 /admin/inbox 要求 title/body 均非空（minLength: 1）。
+// 这里在传输层兜底，保证新发送与本地队列里的旧失败项都能成功。
+function defaultNoticeBody(payload: CcNoticePayload): string {
+  if (payload.subtype === "review-approved") {
+    const name = payload.resourceName?.trim();
+    return name
+      ? `您的《${name}》资源提交已通过审核并加入官方源索引，随后可于 AstroBox 刷新查看。`
+      : "您的资源提交已通过审核并加入官方源索引，随后可于 AstroBox 刷新查看。";
+  }
+  if (payload.subtype === "review-changes-requested") {
+    return "审核人要求对本次提交进行修改，请查看 PR 中的修改意见。";
+  }
+  if (payload.subtype === "review-refused") {
+    return "你的资源提交未通过审核。";
+  }
+  return "你的资源提交已被关闭。";
+}
+
 async function post(payload: CcNoticePayload) {
   await AdminApi.inbox.send({
     target: { type: "userIds", userIds: payload.userIds },
-    title: payload.title,
-    body: payload.body,
+    title: payload.title?.trim() || "资源审核通知",
+    body: payload.body?.trim() || defaultNoticeBody(payload),
     kind: "cc-notice",
     metadata: {
       subtype: payload.subtype,
@@ -95,13 +113,23 @@ export async function sendCcNotice(payload: CcNoticePayload): Promise<boolean> {
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    toast.error(`审核通知发送失败：${message}`);
     enqueuePending(payload);
+    toast.error(`审核通知发送失败：${message}`, {
+      action: {
+        label: "重试",
+        onClick: () => {
+          void sendCcNotice(payload);
+        },
+      },
+    });
     return false;
   }
 }
 
-/** 重试本地积压的发送失败通知。 */
+/**
+ * 重试本地积压的发送失败通知。逐条重发，仍失败的重新入队，
+ * 并弹出带「重试」按钮的提示，避免静默丢失。
+ */
 export async function flushCcNoticeQueue(): Promise<void> {
   const queue = readJson<CcNoticePayload[]>(PENDING_QUEUE_STORAGE, []);
   if (queue.length === 0) return;
@@ -113,8 +141,17 @@ export async function flushCcNoticeQueue(): Promise<void> {
       const sentKeys = loadSentKeys();
       sentKeys.add(idempotencyKey(payload));
       persistSentKeys(sentKeys);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       enqueuePending(payload);
+      toast.error(`审核通知补发失败：${message}`, {
+        action: {
+          label: "重试",
+          onClick: () => {
+            void sendCcNotice(payload);
+          },
+        },
+      });
     }
   }
 }
