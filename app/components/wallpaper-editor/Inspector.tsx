@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { HexColorPicker } from "react-colorful";
@@ -27,12 +27,14 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
+import { getDeviceDisplayName, type DeviceOption } from "~/logic/devices/catalog";
 import {
     GLASS_BLEND_MODES,
     GLASS_MATERIAL_DEFAULTS,
     LAYER_BLEND_MODES,
 } from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
+import { generateTemplateId } from "~/logic/wallpaper/presets";
 import {
     EditorColorOpacityField,
     EditorColorDots,
@@ -61,6 +63,9 @@ export interface InspectorProps {
     onClearMask: () => void;
     canvas: WallpaperTemplateConfig | null;
     onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
+    deviceOptions: DeviceOption[];
+    deviceOptionsLoading: boolean;
+    deviceOptionsError: string;
     wallpaperTransform: {
         scale: WallpaperControlValue | undefined;
         rotation: WallpaperControlValue | undefined;
@@ -522,11 +527,17 @@ function GlassSliderField({
 function CanvasInspector({
     canvas,
     onCanvasPatch,
+    deviceOptions,
+    deviceOptionsLoading,
+    deviceOptionsError,
     wallpaperTransform,
     onRenderSimplifyChange,
 }: {
     canvas: WallpaperTemplateConfig;
     onCanvasPatch: InspectorProps["onCanvasPatch"];
+    deviceOptions: DeviceOption[];
+    deviceOptionsLoading: boolean;
+    deviceOptionsError: string;
     wallpaperTransform: InspectorProps["wallpaperTransform"];
     onRenderSimplifyChange?: (dragging: boolean) => void;
 }) {
@@ -536,31 +547,112 @@ function CanvasInspector({
     const frame = canvas.frame ?? {};
     const preview = canvas.preview ?? {};
     const aliases = Array.isArray(canvas.aliases) ? canvas.aliases : [];
+    const [identifiersOpen, setIdentifiersOpen] = useState(false);
+    const selectedDevice = deviceOptions.find((option) => option.id === canvas.deviceKey);
+    const deviceSelectOptions = useMemo(() => {
+        const options = deviceOptions
+            .map((option) => ({
+                value: option.id,
+                label: getDeviceDisplayName(option),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans", { sensitivity: "base" }));
+        if (canvas.deviceKey && !options.some((option) => option.value === canvas.deviceKey)) {
+            options.unshift({ value: canvas.deviceKey, label: `当前配置 · ${canvas.deviceKey}` });
+        }
+        return options;
+    }, [canvas.deviceKey, deviceOptions]);
+    const generatedAliases = selectedDevice?.aliases ?? [];
+    const displayAliases = aliases.length > 0 ? aliases : generatedAliases;
+
+    useEffect(() => {
+        if (!selectedDevice) return;
+        const patch: Partial<WallpaperTemplateConfig> = {};
+        if (aliases.length === 0 && generatedAliases.length > 0) {
+            patch.aliases = generatedAliases;
+        }
+        if (!canvas.id) {
+            patch.id = generateTemplateId(selectedDevice.id);
+        }
+        if (Object.keys(patch).length > 0) patchCanvas(patch);
+    }, [aliases.length, canvas.id, generatedAliases, patchCanvas, selectedDevice]);
+
+    const handleDeviceChange = (deviceId: string) => {
+        const device = deviceOptions.find((option) => option.id === deviceId);
+        if (!device) {
+            patchCanvas({ deviceKey: deviceId });
+            return;
+        }
+        patchCanvas({
+            deviceKey: device.id,
+            aliases: device.aliases ?? [],
+            id: generateTemplateId(device.id),
+        });
+    };
 
     return (
         <div className="wallpaper-layer-scroll min-h-0 flex-1 overflow-y-auto px-[9px] py-[9px]">
             <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
-                <EditorField label="设备型号">
-                    <EditorTextInput
+                <EditorField label="设备">
+                    <EditorSelect
                         value={canvas.deviceKey ?? ""}
-                        placeholder="例如 o67 / band-pro"
-                        onChange={(v) => patchCanvas({ deviceKey: v })}
+                        options={deviceSelectOptions}
+                        placeholder={deviceOptionsLoading ? "正在加载设备库…" : "选择设备"}
+                        disabled={deviceOptionsLoading || deviceSelectOptions.length === 0}
+                        onChange={handleDeviceChange}
                     />
+                    {deviceOptionsError && (
+                        <p className="px-1.5 text-[11px] leading-4 text-amber-300/75">
+                            {deviceOptionsError}，当前配置仍可继续编辑。
+                        </p>
+                    )}
                 </EditorField>
-                <EditorField label="设备别名（逗号分隔）">
-                    <EditorTextInput
-                        value={aliases.join(", ")}
-                        placeholder="例如 M2551B1, M2553B1"
-                        onChange={(v) =>
-                            patchCanvas({
-                                aliases: v
-                                    .split(/[,，]/)
-                                    .map((token) => token.trim())
-                                    .filter(Boolean),
-                            })
-                        }
+                <button
+                    type="button"
+                    aria-expanded={identifiersOpen}
+                    onClick={() => setIdentifiersOpen((open) => !open)}
+                    className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[13px] text-white/65 transition hover:text-white"
+                    style={{
+                        borderRadius: "var(--editor-control-radius)",
+                        background: "var(--color-editor-control)",
+                    }}
+                >
+                    <span>设备标识</span>
+                    <CaretDownIcon
+                        size={14}
+                        weight="regular"
+                        style={{ transform: identifiersOpen ? "rotate(180deg)" : undefined }}
                     />
-                </EditorField>
+                </button>
+                {identifiersOpen && (
+                    <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                        <EditorField label="设备别名">
+                            <div
+                                className="flex min-h-[var(--editor-control-height)] items-center px-2 text-sm text-white/60"
+                                style={{
+                                    borderRadius: "var(--editor-control-radius)",
+                                    background: "var(--color-editor-control)",
+                                    WebkitUserSelect: "text",
+                                    userSelect: "text",
+                                }}
+                            >
+                                {displayAliases.length > 0 ? displayAliases.join(", ") : "由设备库自动生成"}
+                            </div>
+                        </EditorField>
+                        <EditorField label="模板 ID">
+                            <div
+                                className="flex min-h-[var(--editor-control-height)] items-center px-2 font-mono text-[12px] text-white/60"
+                                style={{
+                                    borderRadius: "var(--editor-control-radius)",
+                                    background: "var(--color-editor-control)",
+                                    WebkitUserSelect: "text",
+                                    userSelect: "text",
+                                }}
+                            >
+                                {canvas.id || "由设备库自动生成"}
+                            </div>
+                        </EditorField>
+                    </div>
+                )}
                 <TwoColumnGrid>
                     <EditorField label="画布宽">
                         <EditorNumberField
@@ -624,12 +716,6 @@ function CanvasInspector({
                 <p className="px-1 text-[11px] leading-4 text-white/45">
                     边框圆角决定设备屏幕形状，编辑器预览与此一致；预览圆角为客户端展示用元数据。
                 </p>
-                <EditorField label="模板 ID">
-                    <EditorTextInput
-                        value={canvas.id ?? ""}
-                        onChange={(v) => patchCanvas({ id: v })}
-                    />
-                </EditorField>
                 <div className="flex w-full flex-col pt-[9px]" style={{ gap: "var(--editor-field-group-gap)" }}>
                     <NumericControlEditor
                         label="整体缩放"
@@ -678,6 +764,9 @@ export function Inspector({
     onClearMask,
     canvas,
     onCanvasPatch,
+    deviceOptions,
+    deviceOptionsLoading,
+    deviceOptionsError,
     wallpaperTransform,
     onRenderSimplifyChange,
 }: InspectorProps) {
@@ -772,6 +861,9 @@ export function Inspector({
                 <CanvasInspector
                     canvas={canvas}
                     onCanvasPatch={onCanvasPatch}
+                    deviceOptions={deviceOptions}
+                    deviceOptionsLoading={deviceOptionsLoading}
+                    deviceOptionsError={deviceOptionsError}
                     wallpaperTransform={wallpaperTransform}
                     onRenderSimplifyChange={onRenderSimplifyChange}
                 />

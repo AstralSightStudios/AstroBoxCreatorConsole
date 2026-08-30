@@ -7,6 +7,15 @@ export interface DeviceOption {
     id: string;
     name: string;
     vendor?: string;
+    aliases?: string[];
+}
+
+/** 设备选项显示名只使用设备名称，不拼接厂商字段。 */
+export function getDeviceDisplayName(
+    option?: Pick<DeviceOption, "name" | "vendor">,
+): string {
+    const name = option?.name?.trim();
+    return name || "";
 }
 
 type DevicesPayload = Record<string, Record<string, { id: string; name: string }>>;
@@ -20,14 +29,20 @@ const inflight = new Map<string, Promise<DeviceOption[]>>();
 function parseDeviceOptions(payload: DevicesPayload): DeviceOption[] {
     const map = new Map<string, DeviceOption>();
     Object.entries(payload).forEach(([vendor, devices]) => {
-        Object.values(devices).forEach((device) => {
-            if (!map.has(device.id)) {
-                map.set(device.id, {
-                    id: device.id,
-                    name: device.name || device.id,
-                    vendor,
-                });
+        Object.entries(devices).forEach(([modelNumber, device]) => {
+            const current = map.get(device.id);
+            if (current) {
+                if (modelNumber && !current.aliases?.includes(modelNumber)) {
+                    current.aliases = [...(current.aliases ?? []), modelNumber];
+                }
+                return;
             }
+            map.set(device.id, {
+                id: device.id,
+                name: device.name || device.id,
+                vendor,
+                aliases: modelNumber ? [modelNumber] : [],
+            });
         });
     });
 

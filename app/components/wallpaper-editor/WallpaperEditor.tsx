@@ -60,6 +60,7 @@ import {
     GLASS_MATERIAL_DEFAULTS,
 } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
+import { loadDeviceOptions, type DeviceOption } from "~/logic/devices/catalog";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
 import { CanvasStage } from "./CanvasStage";
@@ -190,6 +191,9 @@ export function WallpaperEditor({
     const [templateStates, setTemplateStates] = useState<Record<string, WallpaperEditorState>>({});
     const [resources, setResources] = useState<Record<string, WallpaperResources>>({});
     const [renderSimplify, setRenderSimplify] = useState(false);
+    const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+    const [deviceOptionsLoading, setDeviceOptionsLoading] = useState(true);
+    const [deviceOptionsError, setDeviceOptionsError] = useState("");
     const [jsonDraft, setJsonDraft] = useState("");
     const [jsonIssues, setJsonIssues] = useState<string[]>([]);
     const [applyError, setApplyError] = useState("");
@@ -205,6 +209,28 @@ export function WallpaperEditor({
         document.documentElement.classList.add("wallpaper-editor-active");
         return () => {
             document.documentElement.classList.remove("wallpaper-editor-active");
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        setDeviceOptionsLoading(true);
+        setDeviceOptionsError("");
+        loadDeviceOptions()
+            .then((options) => {
+                if (!cancelled) setDeviceOptions(options);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setDeviceOptions([]);
+                    setDeviceOptionsError("设备库加载失败");
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setDeviceOptionsLoading(false);
+            });
+        return () => {
+            cancelled = true;
         };
     }, []);
 
@@ -1089,6 +1115,7 @@ export function WallpaperEditor({
                                 templateStates={templateStates}
                                 resources={resources}
                                 baseImage={baseImage}
+                                deviceOptions={deviceOptions}
                                 activeTemplate={activeIndex}
                                 selectedLayerId={selectedLayerId}
                                 simplify={renderSimplify}
@@ -1117,6 +1144,9 @@ export function WallpaperEditor({
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
+                            deviceOptions={deviceOptions}
+                            deviceOptionsLoading={deviceOptionsLoading}
+                            deviceOptionsError={deviceOptionsError}
                             wallpaperTransform={{
                                 scale: transformControls.scale,
                                 rotation: transformControls.rotation,

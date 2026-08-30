@@ -565,18 +565,20 @@ export function EditorSelect({
     options,
     onChange,
     placeholder,
+    disabled = false,
 }: {
     value: string;
     options: Array<{ value: string; label: string }>;
     onChange: (value: string) => void;
     placeholder?: string;
+    disabled?: boolean;
 }) {
     const stringValue = typeof value === "string" ? value : "";
     const safeOptions = options.filter(
         (option) => option && typeof option.value === "string",
     );
     return (
-        <Select.Root value={stringValue || undefined} onValueChange={onChange}>
+        <Select.Root value={stringValue || undefined} onValueChange={onChange} disabled={disabled}>
             <Select.Trigger
                 placeholder={placeholder}
                 className="editor-select-trigger w-full!"
