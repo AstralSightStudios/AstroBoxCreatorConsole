@@ -73,6 +73,26 @@
     corner-shape: superellipse(1.75);
 }
 
+/* ---- 信箱 / 浮层面板（样式对齐 AstroBox-NG） ---- */
+:root {
+    --nav-btn-bg: rgba(255, 255, 255, 0.05);
+    --nav-indicator: rgba(255, 255, 255, 0.08);
+    --nav-indicator-active: rgba(255, 255, 255, 0.12);
+    --nav-border-strong: rgba(255, 255, 255, 0.075);
+    --nav-active-bg: rgba(62, 99, 221, 0.26);
+    --nav-active-bg-hover: rgba(62, 99, 221, 0.32);
+    --nav-active-bg-active: rgba(62, 99, 221, 0.38);
+    --nav-panel-shadow: 0 20px 48px rgba(6, 10, 25, 0.28);
+
+    --inbox-expanded-card-bg: #353538;
+    --inbox-stacked-card-bg: rgba(71, 71, 75, 0.3);
+    --inbox-expanded-card-shadow: 0 16px 32px rgba(0, 0, 0, 0.28);
+    --inbox-control-bg: rgba(255, 255, 255, 0.08);
+    --inbox-control-bg-hover: rgba(255, 255, 255, 0.12);
+    --inbox-control-bg-active: rgba(255, 255, 255, 0.16);
+    --inbox-link-decoration: rgba(255, 255, 255, 0.35);
+}
+
 .card-num {
     font-size: 32px;
     font-weight: 500;
