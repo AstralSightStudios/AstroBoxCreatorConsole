@@ -15,6 +15,7 @@ import {
   controlMin,
   controlStep,
 } from "~/logic/wallpaper/control";
+import { ScrubbableNumberField } from "./ScrubbableNumberField";
 
 export function EditorSlider({
   value,
@@ -54,7 +55,7 @@ export function EditorSlider({
   );
 }
 
-/** 可调数值控件：默认突出当前数值，范围设置按需展开。 */
+/** 可调数值控件：当前值支持拖拽调节，范围设置按需展开。 */
 export function NumericControlEditor({
   label,
   control,
@@ -100,20 +101,16 @@ export function NumericControlEditor({
                 <div
                   className="grid w-full"
                   style={{
-                    gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+                    gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
                     gap: "var(--editor-control-gap)",
                   }}
                 >
-                  <input
-                    readOnly
-                    tabIndex={-1}
-                    value="默认值"
-                    className="h-[var(--editor-control-height)] min-w-0 bg-[var(--color-editor-control)] px-2 text-center text-[11px] text-white/75 outline-none"
-                    style={{ borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)" }}
-                  />
                   <div
                     className="grid min-w-0 items-center overflow-hidden bg-[var(--color-editor-control)]"
-                    style={{ gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)" }}
+                    style={{
+                      borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)",
+                      gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+                    }}
                   >
                     <input
                       readOnly
@@ -138,7 +135,7 @@ export function NumericControlEditor({
                   />
                 </div>
                 <p className="text-[11px] leading-4 text-gray-11">
-                  默认值是初始数值；最小值和最大值决定用户可调范围；步长决定每次调整的增量。
+                  最小值和最大值决定用户可调范围；步长决定每次调整的增量。
                 </p>
               </div>
             </Popover.Content>
@@ -148,57 +145,45 @@ export function NumericControlEditor({
       </div>
       <div className="flex w-full items-center" style={{ gap: 8 }}>
         <div className="min-w-0 flex-1">
-          <EditorSlider
+          <EditorNumberField
             value={def}
             min={min}
             max={max}
             step={step}
             onChange={(v) => patch("default", v)}
-            onDragStateChange={onDragStateChange}
+            onScrubStateChange={onDragStateChange}
           />
         </div>
-        <div className="w-[76px] shrink-0">
-          <EditorNumberField
-            value={def}
-            step={step}
-            onChange={(v) => patch("default", v)}
+        <button
+          type="button"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvancedOpen((open) => !open)}
+          className="flex h-[var(--editor-control-height)] w-[96px] shrink-0 items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
+          style={{
+            borderRadius: "var(--editor-control-radius)",
+            background: "var(--color-editor-control)",
+          }}
+        >
+          <span>范围设置</span>
+          <CaretDownIcon
+            size={14}
+            weight="regular"
+            style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
           />
-        </div>
+        </button>
       </div>
-      <button
-        type="button"
-        aria-expanded={advancedOpen}
-        onClick={() => setAdvancedOpen((open) => !open)}
-        className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
-        style={{
-          borderRadius: "var(--editor-control-radius)",
-          background: "var(--color-editor-control)",
-        }}
-      >
-        <span>范围设置</span>
-        <CaretDownIcon
-          size={14}
-          weight="regular"
-          style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
-        />
-      </button>
       {advancedOpen && (
         <div
           className="grid w-full"
           style={{
-            gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+            gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
             gap: "var(--editor-control-gap)",
           }}
         >
-          <EditorNumberField
-            value={def}
-            step={step}
-            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
-            onChange={(v) => patch("default", v)}
-          />
           <EditorRangeField
             min={min}
             max={max}
+            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
             onMinChange={(value) => patch("min", value)}
             onMaxChange={(value) => patch("max", value)}
           />
@@ -324,6 +309,7 @@ export function EditorNumberField({
     prefix,
     suffix,
     radius,
+    onScrubStateChange,
 }: {
     value: number;
     onChange: (value: number) => void;
@@ -331,59 +317,37 @@ export function EditorNumberField({
     max?: number;
     step?: number;
     placeholder?: string;
-    prefix?: string;
+    prefix?: ReactNode;
     suffix?: string;
     radius?: React.CSSProperties["borderRadius"];
+    onScrubStateChange?: (scrubbing: boolean) => void;
 }) {
-    const sanitize = (raw: number) => {
-        if (!Number.isFinite(raw)) raw = 0;
-        const lo = Number.isFinite(min) ? (min as number) : undefined;
-        const hi = Number.isFinite(max) ? (max as number) : undefined;
-        if (lo !== undefined && hi !== undefined && lo > hi) {
-            return raw;
-        }
-        if (lo !== undefined && raw < lo) raw = lo;
-        if (hi !== undefined && raw > hi) raw = hi;
-        return raw;
-    };
-
-    const displayValue = Number.isFinite(value) ? value : "";
     return (
-        <div
-            className="flex min-w-0 items-center overflow-hidden"
-            style={{ ...controlBase, borderRadius: radius ?? controlBase.borderRadius }}
-        >
-            {prefix && (
-                <span className="shrink-0 pl-2 text-xs text-white/45">{prefix}</span>
-            )}
-            <input
-                type="number"
-                value={displayValue}
-                min={min}
-                max={max}
-                step={step}
-                placeholder={placeholder}
-                onChange={(e) => {
-                    const parsed = e.target.valueAsNumber;
-                    onChange(sanitize(Number.isFinite(parsed) ? parsed : (min ?? 0)));
-                }}
-                className="editor-number-input h-full min-w-0 w-full bg-transparent px-2 font-mono text-sm text-white outline-none placeholder:text-white/30"
-            />
-            {suffix && (
-                <span className="shrink-0 pr-2 text-xs text-white/45">{suffix}</span>
-            )}
-        </div>
+        <ScrubbableNumberField
+            value={value}
+            min={min}
+            max={max}
+            step={step}
+            placeholder={placeholder}
+            prefix={prefix}
+            suffix={suffix}
+            radius={radius ?? controlBase.borderRadius}
+            onChange={onChange}
+            onScrubStateChange={onScrubStateChange}
+        />
     );
 }
 
 function EditorRangeField({
     min,
     max,
+    radius,
     onMinChange,
     onMaxChange,
 }: {
     min: number;
     max: number;
+    radius?: React.CSSProperties["borderRadius"];
     onMinChange: (value: number) => void;
     onMaxChange: (value: number) => void;
 }) {
@@ -392,7 +356,7 @@ function EditorRangeField({
             className="grid min-w-0 items-center overflow-hidden"
             style={{
                 ...controlBase,
-                borderRadius: 0,
+                borderRadius: radius ?? 0,
                 gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
             }}
         >

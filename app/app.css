@@ -197,6 +197,195 @@
     -webkit-appearance: none;
 }
 
+.scrubbable-number-field {
+    position: relative;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    height: var(--editor-control-height);
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.9);
+    background: var(--color-editor-control);
+    border-radius: var(--editor-control-radius);
+}
+
+.scrubbable-number-field:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-editor-blue-fg);
+}
+
+.scrubbable-number-content {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.scrubbable-number-field.is-scrubbing .scrubbable-number-content {
+    opacity: 0;
+}
+
+.scrubbable-number-prefix,
+.scrubbable-number-suffix {
+    flex: none;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 12px;
+    line-height: 1;
+    user-select: none;
+}
+
+.scrubbable-number-prefix {
+    display: grid;
+    place-items: center;
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    overflow: hidden;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.scrubbable-number-prefix svg {
+    width: 16px;
+    height: 16px;
+}
+
+.scrubbable-number-suffix {
+    padding-right: 4px;
+}
+
+.scrubbable-number-input {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0 8px;
+    color: rgba(255, 255, 255, 0.9);
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
+}
+
+.scrubbable-number-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.scrubbable-number-stepper {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    flex: 0 0 24px;
+    align-self: stretch;
+    touch-action: none;
+}
+
+.scrubbable-number-stepper button {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.2);
+    background: transparent;
+    border: 0;
+    cursor: ew-resize;
+}
+
+.scrubbable-number-stepper button[data-enabled="true"] {
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.scrubbable-number-stepper button[data-enabled="true"]:hover {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.scrubbable-number-field[data-adjustable="false"] .scrubbable-number-prefix,
+.scrubbable-number-field[data-adjustable="false"] .scrubbable-number-stepper button {
+    cursor: default;
+}
+
+.scrubbable-number-ruler {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: rgba(255, 255, 255, 0.9);
+    pointer-events: none;
+}
+
+.scrubbable-number-overlay {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    min-width: 80px;
+    box-sizing: border-box;
+    padding: 10px 16px 8px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.95);
+    background: var(--color-panel-solid, var(--color-editor-control));
+    border: 1px solid var(--gray-a6);
+    border-radius: var(--editor-control-radius);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -100%);
+    transform-origin: bottom center;
+    pointer-events: none;
+    animation: scrubbable-number-overlay-in 120ms ease-out;
+}
+
+.scrubbable-number-overlay::after {
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 8px;
+    height: 8px;
+    content: "";
+    background: inherit;
+    border-right: 1px solid var(--gray-a6);
+    border-bottom: 1px solid var(--gray-a6);
+    transform: translateX(-50%) rotate(45deg);
+}
+
+.scrubbable-number-overlay span {
+    font-family: var(--font-mono-sarasa);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.12;
+}
+
+.scrubbable-number-overlay small {
+    margin-left: 3px;
+    color: rgba(255, 255, 255, 0.45);
+    font-family: var(--font-mono-sarasa);
+    font-size: 18px;
+    line-height: 1.12;
+}
+
+html.numeric-scrub-active,
+html.numeric-scrub-active * {
+    cursor: ew-resize !important;
+    user-select: none !important;
+}
+
+@keyframes scrubbable-number-overlay-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -100%) scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -100%) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrubbable-number-overlay {
+        animation: none;
+    }
+}
+
 .editor-select-trigger,
 .editor-select-trigger:hover,
 .editor-select-trigger:focus,

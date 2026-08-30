@@ -65,7 +65,7 @@ export interface InspectorProps {
         onScaleChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
         onRotationChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
     };
-    /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
+    /** 数值拖动时通知编辑器暂停模糊/混合模式渲染。 */
     onRenderSimplifyChange?: (dragging: boolean) => void;
 }
 
