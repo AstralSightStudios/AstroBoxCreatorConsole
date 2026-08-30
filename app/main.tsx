@@ -25,6 +25,7 @@ import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
 import OauthCallbackPage from "./pages/oauth-callback";
+import LoginPage from "./routes/login";
 import { installFrontendLogBridge } from "~/logic/logging";
 import {
   NewResourcePublishPage,
@@ -63,6 +64,7 @@ const router = createBrowserRouter([
       { path: "publish/edit", element: <ResourceEditPage /> },
       { path: "publish/wallpaper", element: <WallpaperEditorPage /> },
       { path: "manage/edit", element: <ResourceEditPage /> },
+      { path: "login", element: <LoginPage /> },
     ],
   },
   {

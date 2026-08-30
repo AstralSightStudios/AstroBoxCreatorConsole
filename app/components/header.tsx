@@ -17,6 +17,7 @@ import { CreatorConsoleLogoIcon } from "./svgs";
 
 const PAGE_NAME_MAP: Record<string, string> = {
   "": "概览",
+  login: "登录",
   settings: "设置",
   analysis: "数据分析",
   profile: "个人主页管理",

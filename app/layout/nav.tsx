@@ -12,7 +12,6 @@ import { useLocation, useNavigate } from "react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import NavItem from "~/components/nav/navitem";
 import FunctionButton from "~/components/nav/function-button";
-import { startAstroboxLogin } from "~/logic/account/astrobox";
 import {
   useGithubLoginState,
   startGithubLogin,
@@ -267,10 +266,11 @@ function NavHeader({
   const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const githubLoginState = useGithubLoginState();
+  const navigate = useNavigate();
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
-    void startAstroboxLogin();
+    navigate("/login");
   };
 
   const handleGithubLogin = async () => {

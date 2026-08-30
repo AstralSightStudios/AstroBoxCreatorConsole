@@ -176,6 +176,7 @@ export async function startAstroboxLogin() {
 
     // Built-in webpage login: open the casdoor page inside the app's own
     // window and let the in-page /callback route finish the exchange.
+    // 系统浏览器回不到 astroboxcc://,故「外部登录」必须用内置网页。
     if (loadLoginMethod() === "webview") {
         emit({ phase: "waiting-browser" });
         location.href = WEBVIEW_SDK.getSigninUrl();
