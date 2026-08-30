@@ -73,7 +73,7 @@
     corner-shape: superellipse(1.75);
 }
 
-/* ---- 信箱 / 浮层面板（样式对齐 AstroBox-NG） ---- */
+/* ---- 信箱 / 浮层面板 ---- */
 :root {
     --nav-btn-bg: rgba(255, 255, 255, 0.05);
     --nav-indicator: rgba(255, 255, 255, 0.08);

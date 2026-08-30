@@ -3,8 +3,7 @@ import { motion } from "framer-motion";
 import { useInboxUnreadCount } from "~/logic/inbox/store";
 
 /**
- * 样式对齐 ABNG 首页右上角信箱按钮（NavIconButton）：
- * 圆形外圈 + 半透明背景 + backdrop-blur，按下缩放；
+ * 信箱铃铛按钮：圆形外圈 + 半透明背景 + backdrop-blur，按下缩放；
  * 有未读时在图标旁内联显示红底未读数胶囊。
  */
 export default function InboxBell({ onClick }: { onClick: () => void }) {
