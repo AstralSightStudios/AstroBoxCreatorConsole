@@ -182,6 +182,28 @@ export function updateLayer(
     return next;
 }
 
+/** 复制当前模板中的图层，并把副本插入到原图层后面。 */
+export function duplicateLayer(
+    config: WallpaperConfigRaw,
+    templateIndex: number,
+    layerId: string,
+    newLayerId?: string,
+): WallpaperConfigRaw {
+    const next = withFlattened(config, templateIndex);
+    const template = next.templates[templateIndex];
+    const layers = [...(template.layers ?? [])];
+    const index = layers.findIndex((layer) => layer.id === layerId);
+    if (index < 0) return config;
+
+    const source = layers[index];
+    const copy = cloneLayer(source);
+    copy.id = newLayerId ?? `${source.id}-copy-${Date.now().toString(36)}`;
+    copy.name = source.name ? `${source.name}副本` : "图层副本";
+    layers.splice(index + 1, 0, copy);
+    template.layers = layers;
+    return next;
+}
+
 export function addLayer(
     config: WallpaperConfigRaw,
     templateIndex: number,

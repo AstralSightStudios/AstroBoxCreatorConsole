@@ -24,6 +24,7 @@ import {
 import {
     addLayer,
     cloneConfig,
+    duplicateLayer,
     duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
@@ -874,6 +875,47 @@ export function WallpaperEditor({
         [activeIndex, config, selectedLayerId],
     );
 
+    const handleDuplicateLayer = useCallback(
+        (id: string) => {
+            if (!config || !getLayer(config, activeIndex, id)) return;
+            const newLayerId = `${id}-copy-${Date.now().toString(36)}`;
+            setConfig((prev) =>
+                prev ? duplicateLayer(prev, activeIndex, id, newLayerId) : prev,
+            );
+            setSelection({ kind: "layer", layerId: newLayerId });
+        },
+        [activeIndex, config],
+    );
+
+    // 编辑器未聚焦文本控件时，删除键操作当前图层，避免 WebView 将 Backspace 当作返回。
+    useEffect(() => {
+        const handleEditorKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            const isEditable =
+                target?.isContentEditable === true ||
+                target?.tagName === "INPUT" ||
+                target?.tagName === "TEXTAREA" ||
+                target?.tagName === "SELECT";
+            if (viewMode !== "visual" || isEditable || !selectedLayerId) return;
+
+            const key = event.key.toLowerCase();
+            if (key === "backspace" || key === "delete") {
+                event.preventDefault();
+                event.stopPropagation();
+                handleRemoveLayer(selectedLayerId);
+                return;
+            }
+            if ((event.metaKey || event.ctrlKey) && key === "d") {
+                event.preventDefault();
+                event.stopPropagation();
+                handleDuplicateLayer(selectedLayerId);
+            }
+        };
+
+        window.addEventListener("keydown", handleEditorKeyDown);
+        return () => window.removeEventListener("keydown", handleEditorKeyDown);
+    }, [handleDuplicateLayer, handleRemoveLayer, selectedLayerId, viewMode]);
+
     const handleMoveLayerTo = useCallback(
         (layerId: string, toIndex: number) => {
             if (!config) return;
@@ -897,6 +939,14 @@ export function WallpaperEditor({
         },
         [config],
     );
+
+    const handleAddCanvas = useCallback(() => {
+        if (!config || config.templates.length === 0) return;
+        const newIndex = activeIndex + 1;
+        setConfig((prev) => (prev ? duplicateTemplateAt(prev, activeIndex) : prev));
+        setActiveTemplate(newIndex);
+        setSelection({ kind: "canvas" });
+    }, [activeIndex, config]);
 
     const handleRemoveTemplate = useCallback(
         (index: number) => {
@@ -1102,7 +1152,9 @@ export function WallpaperEditor({
                             selectedLayerId={selectedLayerId}
                             onSelectLayer={handleSelectLayer}
                             onAddLayer={handleAddLayer}
+                            onAddCanvas={handleAddCanvas}
                             onRemoveLayer={handleRemoveLayer}
+                            onDuplicateLayer={handleDuplicateLayer}
                             onMoveLayerTo={handleMoveLayerTo}
                         />
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />

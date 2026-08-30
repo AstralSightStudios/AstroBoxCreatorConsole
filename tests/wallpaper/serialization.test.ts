@@ -3,6 +3,7 @@ import { normalizeWallpaperConfig } from "@claralight-design/wallpaper-engine";
 import { createWallpaperConfig, WALLPAPER_DEVICE_PRESETS } from "../../app/logic/wallpaper/presets";
 import {
     addLayer,
+    duplicateLayer,
     duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
@@ -103,6 +104,21 @@ describe("wallpaper json-tree", () => {
             options: [...LAYER_BLEND_MODES],
         });
         expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
+    });
+
+    test("duplicateLayer copies the selected layer after the source", () => {
+        const config = flattenAllTemplates(validConfig());
+        config.templates[0].layers = [
+            { id: "wallpaper", name: "壁纸", type: "wallpaper", clip: "frame" },
+            { id: "tint", name: "明暗", type: "tint", amount: 0.5 },
+        ];
+
+        const next = duplicateLayer(config, 0, "tint", "tint-copy");
+        const layers = getExpandedTemplate(next, 0).layers ?? [];
+        expect(layers.map((layer) => layer.id)).toEqual(["wallpaper", "tint", "tint-copy"]);
+        expect(layers[2].name).toBe("明暗副本");
+        expect(layers[2].amount).toBe(0.5);
+        expect(() => normalizeWallpaperConfig(next, "")).not.toThrow();
     });
 
     test("engine 0.3.1 accepts new circle geometry and glass defaults", () => {

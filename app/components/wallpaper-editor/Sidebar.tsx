@@ -2,12 +2,14 @@ import { useMemo, useRef, useState } from "react";
 import {
     ArrowLeftIcon,
     CircleHalfIcon,
+    CopyIcon,
     DotsSixVerticalIcon,
     DownloadSimpleIcon,
     DropIcon,
     FileCodeIcon,
     ImageIcon,
     ImagesIcon,
+    PlusIcon,
     TextTIcon,
     TrashIcon,
     UploadIcon,
@@ -30,7 +32,9 @@ export interface SidebarProps {
     selectedLayerId: string | null;
     onSelectLayer: (id: string) => void;
     onAddLayer: (kind: WallpaperLayerKind) => void;
+    onAddCanvas: () => void;
     onRemoveLayer: (id: string) => void;
+    onDuplicateLayer: (id: string) => void;
     /** 拖拽排序：把 layerId 移动到结果数组的 toIndex 位置。 */
     onMoveLayerTo: (layerId: string, toIndex: number) => void;
 }
@@ -70,7 +74,9 @@ export function Sidebar({
     selectedLayerId,
     onSelectLayer,
     onAddLayer,
+    onAddCanvas,
     onRemoveLayer,
+    onDuplicateLayer,
     onMoveLayerTo,
 }: SidebarProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -262,6 +268,14 @@ export function Sidebar({
                     >
                         画布属性
                     </button>
+                    <button
+                        type="button"
+                        onClick={onAddCanvas}
+                        className="mt-2 flex h-[var(--editor-control-height)] items-center justify-center gap-1.5 rounded-md border border-white/10 text-[13px] text-white/65 transition hover:border-white/25 hover:text-white"
+                    >
+                        <PlusIcon size={14} weight="regular" />
+                        新建画布
+                    </button>
                 </div>
             )}
 
@@ -368,6 +382,20 @@ export function Sidebar({
                                         )}
                                         <button
                                             type="button"
+                                            title="复制图层"
+                                            aria-label={`复制图层 ${layer.name || layer.id}`}
+                                            onPointerDown={(event) => event.stopPropagation()}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onDuplicateLayer(layer.id);
+                                            }}
+                                            className="grid shrink-0 place-items-center rounded text-white/35 transition hover:bg-white/10 hover:text-white"
+                                            style={{ width: 24, height: 24, marginRight: 2 }}
+                                        >
+                                            <CopyIcon size={14} weight="regular" />
+                                        </button>
+                                        <button
+                                            type="button"
                                             title="删除图层"
                                             aria-label={`删除图层 ${layer.name || layer.id}`}
                                             onPointerDown={(event) => event.stopPropagation()}
@@ -422,6 +450,17 @@ export function Sidebar({
                             style={{ left: contextMenu.x, top: contextMenu.y }}
                             onContextMenu={(e) => e.preventDefault()}
                         >
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onDuplicateLayer(contextMenu.layerId);
+                                    setContextMenu(null);
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 text-left text-[13px] text-white/75 transition hover:bg-white/10"
+                            >
+                                <CopyIcon size={14} weight="regular" />
+                                复制图层
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => {
