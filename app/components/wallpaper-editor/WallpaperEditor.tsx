@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
     WallpaperConfigError,
     normalizeWallpaperConfig,
@@ -15,6 +16,7 @@ import type {
     WallpaperResources,
     WallpaperTransformState,
 } from "@claralight-design/wallpaper-engine";
+import { AlertDialog, Button } from "@radix-ui/themes";
 import { FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
 import { zipSync } from "fflate";
 import {
@@ -61,6 +63,10 @@ import {
     GLASS_MATERIAL_DEFAULTS,
 } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
+import {
+    createWallpaperEditorHistory,
+    wallpaperEditorHistoryReducer,
+} from "~/logic/wallpaper/editor-history";
 import { loadDeviceOptions, type DeviceOption } from "~/logic/devices/catalog";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
@@ -78,6 +84,10 @@ export interface WallpaperEditorProps {
     onBack?: () => void;
     onChange?: (payload: { configJson: string; assets: WallpaperAssetFile[] }) => void;
 }
+
+type PendingDelete =
+    | { kind: "layer"; id: string; name: string }
+    | { kind: "template"; index: number; name: string };
 
 function genId(prefix: string): string {
     return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -170,11 +180,35 @@ export function WallpaperEditor({
     onBack,
     onChange,
 }: WallpaperEditorProps) {
-    const [config, setConfig] = useState<WallpaperConfigRaw | null>(() =>
-        initialConfig
-            ? flattenAllTemplates(prepareWallpaperConfigForEditor(initialConfig, baseUrl))
-            : null,
+    const [configHistory, dispatchConfigHistory] = useReducer(
+        wallpaperEditorHistoryReducer,
+        initialConfig,
+        (source) => createWallpaperEditorHistory(
+            source
+                ? prepareWallpaperConfigForEditor(source, baseUrl)
+                : null,
+        ),
     );
+    const config = configHistory.present;
+    const setConfig = useCallback<Dispatch<SetStateAction<WallpaperConfigRaw | null>>>(
+        (update) => {
+            dispatchConfigHistory({ type: "set", update, timestamp: Date.now() });
+        },
+        [],
+    );
+    const setConfigCheckpoint = useCallback<Dispatch<SetStateAction<WallpaperConfigRaw | null>>>(
+        (update) => {
+            dispatchConfigHistory({
+                type: "set",
+                update,
+                timestamp: Date.now(),
+                checkpoint: true,
+            });
+        },
+        [],
+    );
+    const undoConfig = useCallback(() => dispatchConfigHistory({ type: "undo" }), []);
+    const redoConfig = useCallback(() => dispatchConfigHistory({ type: "redo" }), []);
     const [assetFiles, setAssetFiles] = useState<Record<string, WallpaperAssetFile>>(() => {
         const map: Record<string, WallpaperAssetFile> = {};
         for (const asset of initialAssets ?? []) {
@@ -199,6 +233,7 @@ export function WallpaperEditor({
     const [jsonDraft, setJsonDraft] = useState("");
     const [jsonIssues, setJsonIssues] = useState<string[]>([]);
     const [applyError, setApplyError] = useState("");
+    const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
     const assetInputRef = useRef<HTMLInputElement | null>(null);
     const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -206,6 +241,9 @@ export function WallpaperEditor({
     const resetTransformOnChangeRef = useRef(false);
     const pendingAssetLayerRef = useRef<null | { kind: "asset" }>(null);
     const lastValidResolvedRef = useRef<ResolvedWallpaperTemplate[]>([]);
+    const lastValidConfigRef = useRef<WallpaperConfigRaw | null>(
+        config ? cloneConfig(config) : null,
+    );
 
     useEffect(() => {
         document.documentElement.classList.add("wallpaper-editor-active");
@@ -244,6 +282,7 @@ export function WallpaperEditor({
         try {
             const next = normalizeWallpaperConfig(config, baseUrl ?? "");
             lastValidResolvedRef.current = next;
+            lastValidConfigRef.current = cloneConfig(config);
             return { resolved: next, configIssues: [] as string[] };
         } catch (error) {
             const issues =
@@ -870,10 +909,11 @@ export function WallpaperEditor({
     const handleRemoveLayer = useCallback(
         (id: string) => {
             if (!config) return;
-            setConfig((prev) => (prev ? removeLayer(prev, activeIndex, id) : prev));
-            if (selectedLayerId === id) setSelection({ kind: "canvas" });
+            const layer = getLayer(config, activeIndex, id);
+            if (!layer) return;
+            setPendingDelete({ kind: "layer", id, name: layer.name || layer.id });
         },
-        [activeIndex, config, selectedLayerId],
+        [activeIndex, config],
     );
 
     const handleDuplicateLayer = useCallback(
@@ -897,9 +937,23 @@ export function WallpaperEditor({
                 target?.tagName === "INPUT" ||
                 target?.tagName === "TEXTAREA" ||
                 target?.tagName === "SELECT";
-            if (viewMode !== "visual" || isEditable || !selectedLayerId) return;
+            if (viewMode !== "visual" || isEditable) return;
 
             const key = event.key.toLowerCase();
+            if ((event.metaKey || event.ctrlKey) && key === "z") {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.shiftKey) redoConfig();
+                else undoConfig();
+                return;
+            }
+            if ((event.metaKey || event.ctrlKey) && key === "y") {
+                event.preventDefault();
+                event.stopPropagation();
+                redoConfig();
+                return;
+            }
+            if (!selectedLayerId || pendingDelete) return;
             if (key === "backspace" || key === "delete") {
                 event.preventDefault();
                 event.stopPropagation();
@@ -915,7 +969,15 @@ export function WallpaperEditor({
 
         window.addEventListener("keydown", handleEditorKeyDown);
         return () => window.removeEventListener("keydown", handleEditorKeyDown);
-    }, [handleDuplicateLayer, handleRemoveLayer, selectedLayerId, viewMode]);
+    }, [
+        handleDuplicateLayer,
+        handleRemoveLayer,
+        pendingDelete,
+        redoConfig,
+        selectedLayerId,
+        undoConfig,
+        viewMode,
+    ]);
 
     const handleMoveLayerTo = useCallback(
         (layerId: string, toIndex: number) => {
@@ -952,10 +1014,48 @@ export function WallpaperEditor({
     const handleRemoveTemplate = useCallback(
         (index: number) => {
             if (!config || config.templates.length <= 1) return;
-            setConfig((prev) => (prev ? removeTemplate(prev, index) : prev));
+            const template = config.templates[index];
+            setPendingDelete({
+                kind: "template",
+                index,
+                name: template.watchface?.name || template.deviceKey || template.id,
+            });
         },
         [config],
     );
+
+    const handleConfirmDelete = useCallback(() => {
+        if (!pendingDelete) return;
+        if (pendingDelete.kind === "layer") {
+            setConfigCheckpoint((prev) =>
+                prev ? removeLayer(prev, activeIndex, pendingDelete.id) : prev,
+            );
+            if (selectedLayerId === pendingDelete.id) {
+                setSelection({ kind: "canvas" });
+            }
+        } else {
+            const removedIndex = pendingDelete.index;
+            setConfigCheckpoint((prev) =>
+                prev && prev.templates.length > 1
+                    ? removeTemplate(prev, removedIndex)
+                    : prev,
+            );
+            setActiveTemplate((current) =>
+                current > removedIndex
+                    ? current - 1
+                    : current === removedIndex
+                      ? Math.max(0, current - 1)
+                      : current,
+            );
+            setSelection({ kind: "canvas" });
+        }
+        setPendingDelete(null);
+    }, [
+        activeIndex,
+        pendingDelete,
+        selectedLayerId,
+        setConfigCheckpoint,
+    ]);
 
     const handleTransformPatch = useCallback(
         (patch: Record<string, unknown>) => {
@@ -1019,14 +1119,14 @@ export function WallpaperEditor({
         }
     }, [baseUrl, jsonDraft]);
 
-    const handleSwitchToVisual = useCallback(() => {
-        if (viewMode === "json") {
-            // JSON 模式切回可视化时先应用草稿；校验不通过则停留在 JSON 视图保留修改。
-            handleApplyJson();
-            return;
+    const handleDiscardJson = useCallback(() => {
+        if (configIssues.length > 0 && lastValidConfigRef.current) {
+            setConfig(cloneConfig(lastValidConfigRef.current));
         }
+        setJsonDraft("");
+        setJsonIssues([]);
         setViewMode("visual");
-    }, [handleApplyJson, viewMode]);
+    }, [configIssues.length]);
 
     // Reset active template bounds when templates change.
     useEffect(() => {
@@ -1034,6 +1134,12 @@ export function WallpaperEditor({
             setActiveTemplate(Math.max(0, config.templates.length - 1));
         }
     }, [activeTemplate, config]);
+
+    useEffect(() => {
+        if (selection?.kind === "layer" && !selectedLayer) {
+            setSelection({ kind: "canvas" });
+        }
+    }, [selectedLayer, selection?.kind]);
 
     // Preset picker / empty state
     if (!config) {
@@ -1136,15 +1242,16 @@ export function WallpaperEditor({
             <div className="relative flex min-h-0 flex-1 flex-row">
                 {viewMode === "visual" ? (
                     <WallpaperEditorErrorBoundary
-                        onReset={() => {
-                            // 回到 JSON 视图，把问题留给用户修复，而不是让界面空白。
-                            setViewMode("json");
-                        }}
+                        onReset={openJsonView}
                     >
                         <Sidebar
                             title={title ?? ""}
                             onBack={() => onBack?.()}
                             onOpenJson={openJsonView}
+                            canUndo={configHistory.past.length > 0}
+                            canRedo={configHistory.future.length > 0}
+                            onUndo={undoConfig}
+                            onRedo={redoConfig}
                             onSelectCanvas={handleSelectCanvas}
                             hasConfig
                             onUploadTestImage={(file) => void handleUploadTestImage(file)}
@@ -1219,10 +1326,34 @@ export function WallpaperEditor({
                             setJsonIssues(issues);
                         }}
                         onApply={handleApplyJson}
-                        onBack={handleSwitchToVisual}
+                        onDiscard={handleDiscardJson}
                     />
                 )}
             </div>
+
+            <AlertDialog.Root
+                open={pendingDelete !== null}
+                onOpenChange={(open) => {
+                    if (!open) setPendingDelete(null);
+                }}
+            >
+                <AlertDialog.Content maxWidth="420px">
+                    <AlertDialog.Title>
+                        {pendingDelete?.kind === "template" ? "删除设备" : "删除图层"}
+                    </AlertDialog.Title>
+                    <AlertDialog.Description size="2">
+                        确定删除“{pendingDelete?.name ?? "当前项目"}”吗？删除后可以撤销。
+                    </AlertDialog.Description>
+                    <div className="mt-4 flex justify-end gap-2">
+                        <AlertDialog.Cancel>
+                            <Button variant="soft" color="gray">取消</Button>
+                        </AlertDialog.Cancel>
+                        <AlertDialog.Action>
+                            <Button color="red" onClick={handleConfirmDelete}>确认删除</Button>
+                        </AlertDialog.Action>
+                    </div>
+                </AlertDialog.Content>
+            </AlertDialog.Root>
 
             {/* hidden file input used by asset-layer creation */}
             <input

@@ -86,6 +86,14 @@ export function saveWizardSession(session: WizardSession | null): void {
     current = session;
 }
 
+export function updateWizardWallpaperPayload(
+    wallpaperPayload: NonNullable<WizardSession["wallpaperPayload"]>,
+): void {
+    current = current
+        ? { ...current, wallpaperPayload }
+        : { wallpaperPayload };
+}
+
 export function takeWizardSession(): WizardSession | null {
     const session = current;
     current = null;

@@ -3,6 +3,9 @@ import { WALLPAPER_DEVICE_PRESETS, createWallpaperConfig } from "../../app/logic
 import {
     parseWallpaperEditorInitial,
     resolveWallpaperEditorInitial,
+    saveWizardSession,
+    takeWizardSession,
+    updateWizardWallpaperPayload,
 } from "../../app/logic/wallpaper/wizard-session";
 import type { WallpaperAssetFile } from "../../app/logic/wallpaper/types";
 
@@ -46,5 +49,15 @@ describe("壁纸草稿接入", () => {
                 fallback,
             ),
         ).toBe(fallback);
+    });
+
+    test("编辑器变化会实时写回发布向导会话", () => {
+        saveWizardSession({ wallpaperPayload: { configJson: "旧配置", assets: [] } });
+        const next = { configJson: "新配置", assets: [] };
+
+        updateWizardWallpaperPayload(next);
+
+        expect(takeWizardSession()?.wallpaperPayload).toEqual(next);
+        saveWizardSession(null);
     });
 });

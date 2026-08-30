@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import {
     ArrowLeftIcon,
+    ArrowClockwiseIcon,
+    ArrowCounterClockwiseIcon,
     CircleHalfIcon,
     CopyIcon,
     DotsSixVerticalIcon,
@@ -24,6 +26,10 @@ export interface SidebarProps {
     title: string;
     onBack: () => void;
     onOpenJson: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+    onUndo: () => void;
+    onRedo: () => void;
     onSelectCanvas: () => void;
     hasConfig: boolean;
     onUploadTestImage: (file: File) => void;
@@ -66,6 +72,10 @@ export function Sidebar({
     title,
     onBack,
     onOpenJson,
+    canUndo,
+    canRedo,
+    onUndo,
+    onRedo,
     onSelectCanvas,
     hasConfig,
     onUploadTestImage,
@@ -203,6 +213,7 @@ export function Sidebar({
                 <button
                     type="button"
                     onClick={onBack}
+                    title="返回发布页"
                     aria-label="返回发布页"
                     className="grid shrink-0 place-items-center rounded text-white/70 transition hover:bg-white/10 hover:text-white"
                     style={{ width: 34, height: 34 }}
@@ -210,13 +221,38 @@ export function Sidebar({
                     <ArrowLeftIcon size={18} weight="regular" />
                 </button>
                 <div className="flex min-w-0 flex-1 flex-col gap-px">
-                    <span className="truncate text-[13px] font-medium leading-[18px] text-white">
-                        壁纸编辑器
+                    <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-[18px] text-white">
+                        <span className="truncate">壁纸编辑器</span>
+                        <span className="shrink-0 text-[11px] font-normal text-[var(--color-editor-blue-fg)]">
+                            已保存
+                        </span>
                     </span>
                     <span className="truncate text-[13px] leading-[18px] text-white/75">
                         {title || "未命名壁纸"}
                     </span>
                 </div>
+                <button
+                    type="button"
+                    onClick={onUndo}
+                    disabled={!canUndo}
+                    title="撤销"
+                    aria-label="撤销"
+                    className="grid shrink-0 place-items-center rounded text-white/45 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                    style={{ width: 28, height: 34 }}
+                >
+                    <ArrowCounterClockwiseIcon size={16} weight="regular" />
+                </button>
+                <button
+                    type="button"
+                    onClick={onRedo}
+                    disabled={!canRedo}
+                    title="重做"
+                    aria-label="重做"
+                    className="grid shrink-0 place-items-center rounded text-white/45 transition hover:bg-white/10 hover:text-white disabled:opacity-25"
+                    style={{ width: 28, height: 34 }}
+                >
+                    <ArrowClockwiseIcon size={16} weight="regular" />
+                </button>
                 <button
                     type="button"
                     onClick={onOpenJson}

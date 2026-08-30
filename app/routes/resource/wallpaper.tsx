@@ -3,7 +3,10 @@ import { useLocation, useNavigate } from "react-router";
 import { WallpaperEditor } from "~/components/wallpaper-editor/WallpaperEditor";
 import { WallpaperEditorErrorBoundary } from "~/components/wallpaper-editor/ErrorBoundary";
 import type { ResourceEditContext } from "~/logic/publish/resources";
-import type { WizardWallpaperResult } from "~/logic/wallpaper/wizard-session";
+import {
+    updateWizardWallpaperPayload,
+    type WizardWallpaperResult,
+} from "~/logic/wallpaper/wizard-session";
 import type { WallpaperAssetFile, WallpaperConfigRaw } from "~/logic/wallpaper/types";
 
 interface EditorPageState {
@@ -51,6 +54,14 @@ export default function WallpaperEditorPage() {
         });
     }, [navigate, payload, state]);
 
+    const handleEditorChange = useCallback((next: {
+        configJson: string;
+        assets: WallpaperAssetFile[];
+    }) => {
+        setPayload(next);
+        updateWizardWallpaperPayload(next);
+    }, []);
+
     return (
         <div className="h-full min-h-0 w-full overflow-hidden">
             <WallpaperEditorErrorBoundary
@@ -66,7 +77,7 @@ export default function WallpaperEditorPage() {
                     initialAssets={state.wallpaperInitial?.assets}
                     baseUrl={state.wallpaperInitial?.baseUrl}
                     onBack={handleBack}
-                    onChange={setPayload}
+                    onChange={handleEditorChange}
                 />
             </WallpaperEditorErrorBoundary>
         </div>
