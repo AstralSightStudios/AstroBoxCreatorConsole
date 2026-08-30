@@ -260,7 +260,7 @@ export function Sidebar({
                         onClick={onSelectCanvas}
                         className="text-left text-[13px] font-medium leading-[18px] text-white/40 transition hover:text-white/75"
                     >
-                        壁纸属性编辑区域
+                        画布属性
                     </button>
                 </div>
             )}

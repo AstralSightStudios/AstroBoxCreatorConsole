@@ -34,6 +34,7 @@ import {
 } from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
 import {
+    EditorColorOpacityField,
     EditorColorDots,
     EditorField,
     EditorIconButton,
@@ -46,6 +47,7 @@ import {
     NumericControlEditor,
     TwoColumnGrid,
 } from "./controls";
+import { formatEditorColorOpacity, parseEditorColorOpacity } from "./color-opacity";
 
 export interface InspectorProps {
     mode: "layer" | "canvas";
@@ -277,6 +279,39 @@ function AdjustableToggle({
     );
 }
 
+function AdjustableCheckboxRow({
+    label,
+    checked,
+    onCheckedChange,
+    disabled = false,
+}: {
+    label: string;
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div
+            className="flex items-center"
+            style={{
+                height: "var(--editor-control-height)",
+                gap: 8,
+                paddingInline: 10,
+                borderRadius: "var(--editor-control-radius)",
+                background: "var(--color-editor-control)",
+                opacity: disabled ? 0.4 : 1,
+            }}
+        >
+            <Checkbox
+                disabled={disabled}
+                checked={checked}
+                onCheckedChange={(value) => onCheckedChange(value === true)}
+            />
+            <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+        </div>
+    );
+}
+
 function AdjustableField({
     label,
     adjustable,
@@ -497,6 +532,7 @@ function CanvasInspector({
 }) {
     const patchCanvas = (patch: Partial<WallpaperTemplateConfig>) => onCanvasPatch(patch);
     const canvasSize = canvas.canvas ?? {};
+    const canvasBackground = parseEditorColorOpacity(canvasSize.background ?? "transparent");
     const frame = canvas.frame ?? {};
     const preview = canvas.preview ?? {};
     const aliases = Array.isArray(canvas.aliases) ? canvas.aliases : [];
@@ -544,9 +580,27 @@ function CanvasInspector({
                     </EditorField>
                 </TwoColumnGrid>
                 <EditorField label="画布背景">
-                    <EditorTextInput
-                        value={canvasSize.background ?? "transparent"}
-                        onChange={(v) => patchCanvas({ canvas: { ...canvasSize, background: v } })}
+                    <EditorColorOpacityField
+                        color={canvasBackground.color}
+                        opacity={canvasBackground.opacity}
+                        onChange={({ color, opacity }) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(color, opacity),
+                            },
+                        })}
+                        onColorChange={(color) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(color, canvasBackground.opacity),
+                            },
+                        })}
+                        onOpacityChange={(opacity) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(canvasBackground.color, opacity),
+                            },
+                        })}
                     />
                 </EditorField>
                 <TwoColumnGrid>
@@ -582,26 +636,31 @@ function CanvasInspector({
                         control={wallpaperTransform.scale}
                         onChange={wallpaperTransform.onScaleChange}
                         onDragStateChange={onRenderSimplifyChange}
-                        headerRight={
-                            <AdjustableToggle
-                                checked={controlAdjustable(wallpaperTransform.scale)}
-                                onToggle={(adjustable) => wallpaperTransform.onScaleChange({ adjustable })}
-                            />
-                        }
                     />
                     <NumericControlEditor
                         label="整体旋转"
                         control={wallpaperTransform.rotation}
                         onChange={wallpaperTransform.onRotationChange}
                         onDragStateChange={onRenderSimplifyChange}
-                        headerRight={
-                            <AdjustableToggle
-                                checked={controlAdjustable(wallpaperTransform.rotation)}
-                                onToggle={(adjustable) => wallpaperTransform.onRotationChange({ adjustable })}
-                            />
-                        }
                     />
                 </div>
+                <EditorSection title="用户可修改" noDivider className="pt-[9px]">
+                    <p className="px-1.5 text-[11px] leading-4 text-white/45">
+                        勾选后，用户可在使用壁纸时调整对应属性。
+                    </p>
+                    <div className="flex w-full flex-col" style={{ gap: "var(--editor-control-gap)", marginTop: 8 }}>
+                        <AdjustableCheckboxRow
+                            label="整体缩放"
+                            checked={controlAdjustable(wallpaperTransform.scale)}
+                            onCheckedChange={(adjustable) => wallpaperTransform.onScaleChange({ adjustable })}
+                        />
+                        <AdjustableCheckboxRow
+                            label="整体旋转"
+                            checked={controlAdjustable(wallpaperTransform.rotation)}
+                            onCheckedChange={(adjustable) => wallpaperTransform.onRotationChange({ adjustable })}
+                        />
+                    </div>
+                </EditorSection>
             </div>
         </div>
     );
@@ -996,6 +1055,7 @@ export function Inspector({
                     同步
                     <EditorSwitch
                         checked={layer.syncAcrossDevices === true}
+                        compact
                         onCheckedChange={(value) => onLayerPatch({ syncAcrossDevices: value })}
                     />
                 </span>
@@ -1684,34 +1744,18 @@ export function Inspector({
                                     </button>
                                     {glassAdvancedOpen && (
                                         <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
-                                            <EditorField label="着色 Tint">
-                                                <div className="flex items-center" style={{ gap: 6 }}>
-                                                    <span
-                                                        className="block shrink-0 rounded-full"
-                                                        style={{
-                                                            width: 14,
-                                                            height: 14,
-                                                            background: glassMaterial.tint,
-                                                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
-                                                        }}
-                                                    />
-                                                    <div className="min-w-0 flex-1">
-                                                        <EditorTextInput
-                                                            value={glassMaterial.tint}
-                                                            onChange={(v) => patchGlassMaterial({ tint: v })}
-                                                        />
-                                                    </div>
-                                                </div>
+                                            <EditorField label="着色">
+                                                <EditorColorOpacityField
+                                                    color={glassMaterial.tint}
+                                                    opacity={glassMaterial.tintOpacity}
+                                                    onChange={({ color, opacity }) => patchGlassMaterial({
+                                                        tint: color,
+                                                        tintOpacity: opacity,
+                                                    })}
+                                                    onColorChange={(tint) => patchGlassMaterial({ tint })}
+                                                    onOpacityChange={(tintOpacity) => patchGlassMaterial({ tintOpacity })}
+                                                />
                                             </EditorField>
-                                            <GlassSliderField
-                                                label="着色不透明度"
-                                                value={glassMaterial.tintOpacity}
-                                                min={0}
-                                                max={1}
-                                                step={0.01}
-                                                onChange={(v) => patchGlassMaterial({ tintOpacity: v })}
-                                                onDragStateChange={onRenderSimplifyChange}
-                                            />
                                             <GlassSliderField
                                                 label="饱和度"
                                                 value={glassMaterial.saturation}

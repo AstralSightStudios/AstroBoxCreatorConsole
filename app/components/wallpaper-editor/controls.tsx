@@ -6,8 +6,9 @@ import {
   Switch,
 } from "@radix-ui/themes";
 import { CaretDownIcon, InfoIcon, PlusIcon } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { HexAlphaColorPicker } from "react-colorful";
 import type { WallpaperControlValue } from "~/logic/wallpaper/types";
 import {
   controlDefault,
@@ -15,6 +16,11 @@ import {
   controlMin,
   controlStep,
 } from "~/logic/wallpaper/control";
+import {
+  formatEditorColorOpacity,
+  normalizeEditorHexColor,
+  parseEditorColorOpacity,
+} from "./color-opacity";
 import { ScrubbableNumberField } from "./ScrubbableNumberField";
 
 export function EditorSlider({
@@ -408,6 +414,152 @@ export function EditorTextInput({
     );
 }
 
+export function EditorColorOpacityField({
+    color,
+    opacity,
+    onColorChange,
+    onOpacityChange,
+    onChange,
+}: {
+    color: string;
+    opacity: number;
+    onColorChange: (color: string) => void;
+    onOpacityChange: (opacity: number) => void;
+    onChange?: (value: { color: string; opacity: number }) => void;
+}) {
+    const normalizedColor = normalizeEditorHexColor(color);
+    const normalizedOpacity = Number.isFinite(opacity)
+        ? Math.min(Math.max(opacity, 0), 1)
+        : 1;
+    const normalizedPercent = Math.round(normalizedOpacity * 100);
+    const [colorDraft, setColorDraft] = useState(normalizedColor.slice(1));
+    const [opacityDraft, setOpacityDraft] = useState(String(normalizedPercent));
+
+    useEffect(() => {
+        setColorDraft(normalizedColor.slice(1));
+    }, [normalizedColor]);
+
+    useEffect(() => {
+        setOpacityDraft(String(normalizedPercent));
+    }, [normalizedPercent]);
+
+    const commitColor = (draft: string) => {
+        const compact = draft.replace(/[^\da-f]/gi, "").slice(0, 6).toUpperCase();
+        const nextColor = compact.length === 3 || compact.length === 6
+            ? normalizeEditorHexColor(`#${compact}`, normalizedColor)
+            : normalizedColor;
+        setColorDraft(nextColor.slice(1));
+        if (nextColor !== normalizedColor) onColorChange(nextColor);
+    };
+
+    const commitOpacity = (draft: string) => {
+        const parsed = Number.parseFloat(draft);
+        const nextPercent = Number.isFinite(parsed)
+            ? Math.min(Math.max(parsed, 0), 100)
+            : normalizedPercent;
+        setOpacityDraft(String(nextPercent));
+        if (nextPercent !== normalizedPercent) onOpacityChange(nextPercent / 100);
+    };
+
+    return (
+        <div
+            className="grid w-full min-w-0 overflow-hidden bg-[var(--color-editor-control)]"
+            style={{
+                height: "var(--editor-control-height)",
+                borderRadius: "var(--editor-control-radius)",
+                gridTemplateColumns: "minmax(0, 1fr) 94px",
+            }}
+        >
+            <div className="flex min-w-0 items-center px-2" style={{ gap: 10 }}>
+                <Popover.Root>
+                    <Popover.Trigger>
+                        <button
+                            type="button"
+                            aria-label="选择颜色"
+                            title="选择颜色"
+                            className="block h-4 w-4 shrink-0 overflow-hidden border border-white/20"
+                            style={{
+                                borderRadius: 3,
+                                background: normalizedColor,
+                            }}
+                        />
+                    </Popover.Trigger>
+                    <Popover.Content
+                        size="1"
+                        style={{ width: 264, padding: 10, borderRadius: 16 }}
+                    >
+                        <HexAlphaColorPicker
+                            className="editor-color-picker"
+                            color={formatEditorColorOpacity(normalizedColor, normalizedOpacity)}
+                            onChange={(nextColor) => {
+                                const nextValue = parseEditorColorOpacity(nextColor);
+                                if (onChange) {
+                                    onChange(nextValue);
+                                    return;
+                                }
+                                onColorChange(nextValue.color);
+                                onOpacityChange(nextValue.opacity);
+                            }}
+                            style={{ width: "100%", height: 214 }}
+                        />
+                    </Popover.Content>
+                </Popover.Root>
+                <input
+                    type="text"
+                    value={colorDraft}
+                    maxLength={6}
+                    aria-label="十六进制颜色"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => {
+                        const nextDraft = event.target.value
+                            .replace(/[^\da-f]/gi, "")
+                            .slice(0, 6)
+                            .toUpperCase();
+                        setColorDraft(nextDraft);
+                        if (nextDraft.length === 6) {
+                            const nextColor = `#${nextDraft}`;
+                            if (nextColor !== normalizedColor) onColorChange(nextColor);
+                        }
+                    }}
+                    onBlur={() => commitColor(colorDraft)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="h-full min-w-0 flex-1 bg-transparent font-mono text-sm uppercase text-white outline-none"
+                />
+            </div>
+            <div className="flex min-w-0 items-center border-l border-white/10 px-2" style={{ gap: 8 }}>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    value={opacityDraft}
+                    aria-label="颜色透明度百分比"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => {
+                        const nextDraft = event.target.value;
+                        if (!/^\d*$/.test(nextDraft)) return;
+                        setOpacityDraft(nextDraft);
+                        if (nextDraft === "") return;
+                        const nextPercent = Number.parseFloat(nextDraft);
+                        if (Number.isFinite(nextPercent)) {
+                            onOpacityChange(Math.min(Math.max(nextPercent, 0), 100) / 100);
+                        }
+                    }}
+                    onBlur={() => commitOpacity(opacityDraft)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="h-full min-w-0 flex-1 bg-transparent text-right font-mono text-sm text-white outline-none"
+                />
+                <span className="shrink-0 select-none text-sm text-white/55">%</span>
+            </div>
+        </div>
+    );
+}
+
 export function EditorSelect({
     value,
     options,
@@ -451,9 +603,11 @@ export function EditorSelect({
 export function EditorSwitch({
     checked,
     onCheckedChange,
+    compact = false,
 }: {
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
+    compact?: boolean;
 }) {
     return (
         <Switch
@@ -461,13 +615,14 @@ export function EditorSwitch({
             onCheckedChange={onCheckedChange}
             className="rt-SwitchRoot-editor"
             style={{
-                width: "var(--editor-switch-width)",
-                height: "var(--editor-switch-height)",
-                borderRadius: "var(--editor-switch-radius)",
-                "--switch-width": "var(--editor-switch-width)",
-                "--switch-height": "var(--editor-switch-height)",
-                "--switch-thumb-width": "calc(var(--editor-switch-height) - 4px)",
-                "--switch-thumb-height": "calc(var(--editor-switch-height) - 4px)",
+                width: compact ? 36 : "var(--editor-switch-width)",
+                height: compact ? 18 : "var(--editor-switch-height)",
+                borderRadius: compact ? 9 : "var(--editor-switch-radius)",
+                "--switch-width": compact ? "36px" : "var(--editor-switch-width)",
+                "--switch-height": compact ? "18px" : "var(--editor-switch-height)",
+                "--switch-border-radius": compact ? "9px" : "var(--editor-switch-radius)",
+                "--switch-thumb-width": compact ? "14px" : "calc(var(--editor-switch-height) - 4px)",
+                "--switch-thumb-height": compact ? "14px" : "calc(var(--editor-switch-height) - 4px)",
             } as React.CSSProperties}
         />
     );

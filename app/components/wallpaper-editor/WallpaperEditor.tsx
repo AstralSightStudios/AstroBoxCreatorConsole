@@ -201,6 +201,13 @@ export function WallpaperEditor({
     const pendingAssetLayerRef = useRef<null | { kind: "asset" }>(null);
     const lastValidResolvedRef = useRef<ResolvedWallpaperTemplate[]>([]);
 
+    useEffect(() => {
+        document.documentElement.classList.add("wallpaper-editor-active");
+        return () => {
+            document.documentElement.classList.remove("wallpaper-editor-active");
+        };
+    }, []);
+
     const { resolved, configIssues } = useMemo(() => {
         if (!config) {
             lastValidResolvedRef.current = [];
@@ -955,9 +962,12 @@ export function WallpaperEditor({
     if (!config) {
         return (
             <div
-                className="flex h-full w-full flex-col items-center justify-center gap-6 p-8"
+                className="wallpaper-editor-root flex h-full w-full flex-col items-center justify-center gap-6 p-8"
                 style={{ background: "var(--color-editor-canvas)" }}
             >
+                <div className="wallpaper-editor-narrow-screen-notice" role="status">
+                    请切换至宽屏幕使用壁纸编辑器
+                </div>
                 {onBack && (
                     <button
                         type="button"
@@ -1011,7 +1021,13 @@ export function WallpaperEditor({
     }
 
     return (
-        <div className="flex h-full w-full flex-col" style={{ background: "var(--color-editor-bg)" }}>
+        <div
+            className="wallpaper-editor-root flex h-full w-full flex-col"
+            style={{ background: "var(--color-editor-bg)" }}
+        >
+            <div className="wallpaper-editor-narrow-screen-notice" role="status">
+                请切换至宽屏幕使用壁纸编辑器
+            </div>
             {configIssues.length > 0 && viewMode === "visual" && (
                 <div className="shrink-0 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2">
                     <div className="flex items-center justify-between gap-3">

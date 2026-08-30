@@ -191,10 +191,80 @@
     -moz-appearance: textfield;
 }
 
+.editor-color-picker {
+    box-sizing: border-box;
+    padding: 6px;
+}
+
+.editor-color-picker .react-colorful__pointer {
+    width: 24px;
+    height: 24px;
+}
+
+.editor-color-picker .react-colorful__saturation {
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.editor-color-picker .react-colorful__hue,
+.editor-color-picker .react-colorful__alpha {
+    overflow: hidden;
+    margin-top: 10px;
+    border-radius: 999px;
+}
+
+.editor-color-picker .react-colorful__saturation .react-colorful__interactive {
+    inset: 12px;
+}
+
+.editor-color-picker .react-colorful__hue .react-colorful__interactive,
+.editor-color-picker .react-colorful__alpha .react-colorful__interactive {
+    inset: 0 12px;
+}
+
 .editor-number-input::-webkit-inner-spin-button,
 .editor-number-input::-webkit-outer-spin-button {
     margin: 0;
     -webkit-appearance: none;
+}
+
+.wallpaper-editor-root,
+html.wallpaper-editor-active body * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.wallpaper-editor-narrow-screen-notice {
+    display: none;
+}
+
+@media (max-width: 1100px) {
+    .wallpaper-editor-root > :not(.wallpaper-editor-narrow-screen-notice) {
+        display: none !important;
+    }
+
+    .wallpaper-editor-narrow-screen-notice {
+        display: flex;
+        flex: 1;
+        width: 100%;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: 24px;
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 14px;
+        text-align: center;
+        background: var(--color-editor-bg);
+    }
+}
+
+html.wallpaper-editor-active input,
+html.wallpaper-editor-active textarea,
+html.wallpaper-editor-active [contenteditable="true"],
+html.wallpaper-editor-active .monaco-editor,
+html.wallpaper-editor-active .monaco-editor * {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 .scrubbable-number-field {
