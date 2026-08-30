@@ -38,6 +38,7 @@ import {
   type AstroboxLoginMethod,
 } from "~/config/loginMethod";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
+import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
 import {
   checkForUpdate,
   isTauriRuntime,
@@ -535,6 +536,8 @@ export default function Settings() {
             ))}
           </div>
         </SectionCard>
+
+        <AfdianAccountSection />
 
         {/* 日志与诊断 */}
         <LogsSection />
