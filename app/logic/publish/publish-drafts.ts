@@ -33,7 +33,29 @@ export interface DraftWallpaperAsset {
   skipUpload?: boolean;
 }
 
+/**
+ * 草稿中的包体文件：保存原始字节（ArrayBuffer）而非 File 对象。
+ * WebKitGTK 不支持把 File/Blob 结构化克隆进 IndexedDB，存 File 会导致
+ * 恢复后的文件无法读取（"The object can not be found here."）。
+ */
+export interface DraftDownloadFile {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  bytes: ArrayBuffer;
+  pathOverride?: string;
+  skipUpload?: boolean;
+  source?: "upload" | "existing";
+}
+
+export type DraftDownloadInput = Omit<DownloadInput, "file"> & {
+  file: DraftDownloadFile | null;
+};
+
 export interface PublishDraftFormData {
+  /** 当前草稿对应的资源会话日志文件名；恢复草稿时续写同一文件。 */
+  sessionFile?: string;
   itemId: string;
   itemName: string;
   description: string;
@@ -45,8 +67,8 @@ export interface PublishDraftFormData {
   previews: DraftMediaItem[];
   icon: DraftMediaItem | null;
   cover: DraftMediaItem | null;
-  downloads: DownloadInput[];
-  trialDownloads: DownloadInput[];
+  downloads: DraftDownloadInput[];
+  trialDownloads: DraftDownloadInput[];
   bundledResources?: BundledResourceInput[];
   enableAstroBoxCreatorFeatures: boolean;
   extRaw: string;

@@ -44,6 +44,26 @@ export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 并发受限地执行异步任务，避免一次性打爆 GitHub API（限流/超时）。 */
+export async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await run(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export function makeNeedFixId() {
   return Math.random().toString(36).slice(2, 8);
 }
@@ -123,14 +143,44 @@ function extractOldCatalogEntriesFromFiles(files: GithubPullFile[]) {
 }
 
 function extractCatalogEntriesFromFiles(files: GithubPullFile[]) {
-  const byId = new Map<string, CatalogEntry>();
+  const oldById = new Map<string, CatalogEntry>();
+  const newById = new Map<string, CatalogEntry>();
   for (const file of files) {
     if (!isCatalogFile(file.filename)) continue;
+    for (const entry of extractOldCatalogEntriesFromPatch(file.patch)) {
+      oldById.set(entry.id, entry);
+    }
     for (const entry of extractCatalogEntriesFromPatch(file.patch)) {
-      byId.set(entry.id, entry);
+      newById.set(entry.id, entry);
     }
   }
-  return Array.from(byId.values());
+  // 只预览真正「新增」或「内容有变化」的目录行；纯重排/移动且内容一致的行
+  // 不再逐个拉取 manifest，避免整文件重写型 PR 触发上百次 GitHub 请求。
+  const changed: CatalogEntry[] = [];
+  for (const [id, entry] of newById) {
+    const old = oldById.get(id);
+    if (!old || canonicalEntryKey(old) !== canonicalEntryKey(entry)) {
+      changed.push(entry);
+    }
+  }
+  return changed;
+}
+
+function canonicalEntryKey(entry: CatalogEntry): string {
+  return JSON.stringify([
+    entry.id,
+    entry.name,
+    entry.restype,
+    entry.repo_owner,
+    entry.repo_name,
+    entry.repo_commit_hash,
+    entry.icon,
+    entry.cover,
+    entry.tags,
+    entry.device_vendors,
+    entry.devices,
+    entry.paid_type,
+  ]);
 }
 
 export function buildResourceRawUrl(entry: CatalogEntry, ref: string, path?: string) {
@@ -170,7 +220,12 @@ function collectPackages(
 
   const packages: ResourcePackagePreview[] = [];
   Object.entries(manifest.downloads ?? {}).forEach(([deviceId, info]) => {
-    const record = info as { file_name?: string; version?: string };
+    const record = info as {
+      file_name?: string;
+      version?: string;
+      versionCode?: unknown;
+      updatelogs?: unknown;
+    };
     const fileName = record.file_name || "";
     if (!fileName) return;
     packages.push({
@@ -179,11 +234,30 @@ function collectPackages(
       version: record.version || "",
       fileName,
       url: buildResourceRawUrl(entry, ref, fileName),
+      versionCode:
+        typeof record.versionCode === "number" &&
+        Number.isFinite(record.versionCode)
+          ? Math.trunc(record.versionCode)
+          : undefined,
+      updateLogs: Array.isArray(record.updatelogs)
+        ? record.updatelogs.filter(
+            (log): log is { version: string; content: string } =>
+              Boolean(log) && typeof log === "object",
+          )
+        : undefined,
     });
   });
 
   const trialDownloads = manifest.ext?.trialDownloads as
-    | Record<string, { version?: string; file_name?: string }>
+    | Record<
+        string,
+        {
+          version?: string;
+          file_name?: string;
+          versionCode?: unknown;
+          updatelogs?: unknown;
+        }
+      >
     | undefined;
   Object.entries(trialDownloads ?? {}).forEach(([deviceId, info]) => {
     const fileName = info.file_name || "";
@@ -194,6 +268,17 @@ function collectPackages(
       version: info.version || "",
       fileName,
       url: buildResourceRawUrl(entry, ref, fileName),
+      versionCode:
+        typeof info.versionCode === "number" &&
+        Number.isFinite(info.versionCode)
+          ? Math.trunc(info.versionCode)
+          : undefined,
+      updateLogs: Array.isArray(info.updatelogs)
+        ? info.updatelogs.filter(
+            (log): log is { version: string; content: string } =>
+              Boolean(log) && typeof log === "object",
+          )
+        : undefined,
     });
   });
 
@@ -220,9 +305,23 @@ export async function loadPrResourcePreviews(
   token: string,
 ): Promise<PrResourcePreview[]> {
   const entries = extractCatalogEntriesFromFiles(files);
-  return Promise.all(
-    entries.map(async (entry) => {
+  const MAX_PREVIEWS = 40;
+  return runWithConcurrency(
+    entries.map((entry, index) => ({ entry, index })),
+    6,
+    async ({ entry, index }) => {
       const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
+      if (index >= MAX_PREVIEWS) {
+        return {
+          entry,
+          ref,
+          manifestError: `变更条目过多，已跳过 manifest 拉取（共 ${entries.length} 项，仅处理前 ${MAX_PREVIEWS} 项）`,
+          iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
+          coverUrl: buildResourceRawUrl(entry, ref, entry.cover),
+          previewUrls: [],
+          packages: [],
+        } satisfies PrResourcePreview;
+      }
       try {
         const manifest = await fetchManifest(entry, token);
         const iconPath = manifest.item?.icon || entry.icon;
@@ -249,7 +348,7 @@ export async function loadPrResourcePreviews(
           packages: [],
         } satisfies PrResourcePreview;
       }
-    }),
+    },
   );
 }
 
@@ -288,8 +387,10 @@ export async function loadStagingPrResourcePreviews(
   const headRepo = openPull.head.repo?.name || "";
   const headRef = openPull.head.ref;
 
-  return Promise.all(
-    submissionPaths.map(async (submissionPath) => {
+  return runWithConcurrency(
+    submissionPaths,
+    4,
+    async (submissionPath) => {
       const csvFile = await getFileContent(
         token,
         headOwner,
@@ -351,7 +452,7 @@ export async function loadStagingPrResourcePreviews(
           packages: [],
         } satisfies PrResourcePreview;
       }
-    }),
+    },
   );
 }
 

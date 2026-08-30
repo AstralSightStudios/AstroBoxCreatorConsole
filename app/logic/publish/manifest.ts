@@ -27,11 +27,20 @@ export interface DownloadUploadInput {
     pathOverride?: string;
     skipUpload?: boolean;
     encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: ManifestUpdateLogEntry[];
+}
+
+export interface ManifestUpdateLogEntry {
+    version: string;
+    content: string;
 }
 
 export interface ManifestDownloadInfo {
     version: string;
     file_name: string;
+    versionCode?: number;
+    updatelogs?: ManifestUpdateLogEntry[];
 }
 
 export interface ManifestBundledResource {
@@ -151,6 +160,8 @@ export interface DownloadAssetDescriptor extends AssetDescriptor {
     platformId: string;
     version: string;
     encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: ManifestUpdateLogEntry[];
 }
 
 export interface ManifestBuildResult {
@@ -173,14 +184,43 @@ function buildDownloadsObject(
 ): Record<string, ManifestDownloadInfo> {
     return assets.reduce(
         (acc, current) => {
-            acc[current.platformId] = {
+            const entry: ManifestDownloadInfo = {
                 version: current.version,
                 file_name: current.path,
             };
+            if (typeof current.versionCode === "number") {
+                entry.versionCode = current.versionCode;
+            }
+            if (current.updatelogs?.length) {
+                entry.updatelogs = current.updatelogs;
+            }
+            acc[current.platformId] = entry;
             return acc;
         },
         {} as Record<string, ManifestDownloadInfo>,
     );
+}
+
+/** 将未知来源的更新日志归一化为 { version, content }[]，空条目丢弃。 */
+function normalizeUpdateLogs(value: unknown): ManifestUpdateLogEntry[] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const logs: ManifestUpdateLogEntry[] = [];
+    for (const entry of value) {
+        if (!entry || typeof entry !== "object") continue;
+        const raw = entry as { version?: unknown; content?: unknown };
+        const version = String(raw.version ?? "").trim();
+        const content = String(raw.content ?? "").trim();
+        if (!version && !content) continue;
+        logs.push({ version, content });
+    }
+    return logs.length > 0 ? logs : undefined;
+}
+
+/** 归一化数字版本号：非法值（非正整数）视为未提供。 */
+function normalizeVersionCode(value: unknown): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+    const code = Math.trunc(value);
+    return code > 0 ? code : undefined;
 }
 
 function mediaAssetFingerprint(file: File): string {
@@ -266,6 +306,8 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             file: d.file!.file,
             skipUpload: d.file?.skipUpload ?? d.skipUpload,
             encryptOnUpload: d.encryptOnUpload,
+            versionCode: normalizeVersionCode(d.versionCode),
+            updatelogs: normalizeUpdateLogs(d.updatelogs),
         }));
 
     const trialDownloadAssets: DownloadAssetDescriptor[] = input.trialDownloads
@@ -280,6 +322,8 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             file: d.file!.file,
             skipUpload: d.file?.skipUpload ?? d.skipUpload,
             encryptOnUpload: false,
+            versionCode: normalizeVersionCode(d.versionCode),
+            updatelogs: normalizeUpdateLogs(d.updatelogs),
         }));
 
     const downloadsObject = buildDownloadsObject(downloadAssets);

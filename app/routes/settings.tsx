@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { appLogDir } from "@tauri-apps/api/path";
 import { toast } from "sonner";
 import {
   getLogLevel,
@@ -36,6 +37,12 @@ import {
   useLoginMethod,
   type AstroboxLoginMethod,
 } from "~/config/loginMethod";
+import {
+  GITHUB_LOGIN_METHODS,
+  saveGithubLoginMethod,
+  useGithubLoginMethod,
+  type GithubLoginMethod,
+} from "~/config/githubLoginMethod";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import {
   checkForUpdate,
@@ -71,9 +78,9 @@ function LogsSection() {
   };
 
   const handleOpenLogDir = async () => {
+    if (!isTauriRuntime) return;
     try {
-      const dir = await invoke<string>("get_log_dir_path");
-      await openPath(dir);
+      await openPath(await appLogDir());
       reportSuccess("settings/logs", "已打开日志文件夹");
     } catch (error) {
       reportFailure("settings/logs", "无法打开日志文件夹", error);
@@ -93,10 +100,11 @@ function LogsSection() {
         filters: [{ name: "日志包", extensions: ["gz"] }],
       });
       if (!targetPath) return;
+      const clientDiagnostics = buildClientDiagnostics();
       const result = await invoke<{
         savedPath: string;
         fileSize: number;
-      }>("export_logs_archive", { targetPath });
+      }>("export_logs_archive", { targetPath, clientDiagnostics });
       reportSuccess(
         "settings/logs",
         `日志包已保存（${(result.fileSize / 1024).toFixed(1)} KB）`,
@@ -108,6 +116,61 @@ function LogsSection() {
       setExporting(false);
     }
   };
+
+  function buildClientDiagnostics() {
+    const nav = navigator as Navigator & {
+      deviceMemory?: number;
+      connection?: {
+        effectiveType?: string;
+        downlink?: number;
+        rtt?: number;
+        saveData?: boolean;
+      };
+    };
+    const screenInfo = window.screen
+      ? {
+          width: window.screen.width,
+          height: window.screen.height,
+          availWidth: window.screen.availWidth,
+          availHeight: window.screen.availHeight,
+          colorDepth: window.screen.colorDepth,
+          pixelRatio: window.devicePixelRatio || 1,
+        }
+      : undefined;
+    return {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform || undefined,
+      language: navigator.language || undefined,
+      languages: navigator.languages?.length ? Array.from(navigator.languages) : undefined,
+      timezone:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+      screen: screenInfo,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      hardwareConcurrency: navigator.hardwareConcurrency || undefined,
+      deviceMemory: nav.deviceMemory,
+      maxTouchPoints: navigator.maxTouchPoints,
+      online: navigator.onLine,
+      connection: nav.connection
+        ? {
+            effectiveType: nav.connection.effectiveType,
+            downlink: nav.connection.downlink,
+            rtt: nav.connection.rtt,
+            saveData: nav.connection.saveData,
+          }
+        : undefined,
+      tauri: isTauriRuntime(),
+      probeUrls: [
+        "https://api.github.com",
+        "https://github.com",
+        "https://astrobox-api.astralsight.space",
+        "https://cas.astralsight.space",
+        "https://astrobox.online",
+      ],
+    };
+  }
 
   return (
     <SectionCard
@@ -304,6 +367,7 @@ export default function Settings() {
   const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
+  const currentGithubLoginMethod = useGithubLoginMethod();
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -329,6 +393,12 @@ export default function Settings() {
     if (id === currentLoginMethod) return;
     saveLoginMethod(id);
     toast.success(`已切换到 ${LOGIN_METHODS[id].label}`);
+  };
+
+  const handleSelectGithubLoginMethod = (id: GithubLoginMethod) => {
+    if (id === currentGithubLoginMethod) return;
+    saveGithubLoginMethod(id);
+    toast.success(`已切换到 ${GITHUB_LOGIN_METHODS[id].label}`);
   };
 
   const handleSelect = (id: RepoEnvId) => {
@@ -472,6 +542,28 @@ export default function Settings() {
                 key={method.id}
                 selected={method.id === currentLoginMethod}
                 onClick={() => handleSelectLoginMethod(method.id)}
+                title={method.label}
+                description={method.description}
+              />
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* GitHub 登录方式 */}
+        <SectionCard
+          title="GitHub 登录方式"
+          description="默认授权码(PKCE)登录,设备码用于兼容性回退"
+        >
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {(
+              Object.values(GITHUB_LOGIN_METHODS) as Array<
+                (typeof GITHUB_LOGIN_METHODS)[GithubLoginMethod]
+              >
+            ).map((method) => (
+              <OptionCard
+                key={method.id}
+                selected={method.id === currentGithubLoginMethod}
+                onClick={() => handleSelectGithubLoginMethod(method.id)}
                 title={method.label}
                 description={method.description}
               />

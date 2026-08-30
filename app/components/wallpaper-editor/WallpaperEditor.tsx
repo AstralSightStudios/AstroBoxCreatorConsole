@@ -357,7 +357,9 @@ export function WallpaperEditor({
                     new Uint8Array(await blob.arrayBuffer());
             }
             if (Object.keys(files).length === 0) return;
-            const archive = new Blob([zipSync(files)], { type: "application/zip" });
+            const archive = new Blob([Uint8Array.from(zipSync(files))], {
+                type: "application/zip",
+            });
             const url = URL.createObjectURL(archive);
             const link = document.createElement("a");
             link.href = url;

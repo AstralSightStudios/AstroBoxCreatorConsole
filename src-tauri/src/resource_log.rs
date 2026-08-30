@@ -145,6 +145,24 @@ pub async fn resource_log_write<R: Runtime>(
     result.map_err(|err| format!("failed to append session log: {err}"))
 }
 
+/// Delete a session log file that was just created but never had meaningful
+/// content (e.g. the wizard re-mounts and resumes an existing draft session).
+#[tauri::command]
+pub async fn resource_log_discard<R: Runtime>(
+    app_handle: AppHandle<R>,
+    file_name: String,
+) -> Result<(), String> {
+    let safe_name =
+        sanitize_session_file_name(&file_name).ok_or_else(|| "invalid session file name".to_string())?;
+    let dir = resource_log_dir(&app_handle).map_err(|err| err.to_string())?;
+    let path = dir.join(safe_name);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("failed to discard session log: {err}")),
+    }
+}
+
 /// Short per-process unique hex suffix; combined with a second-precision
 /// timestamp this avoids collisions between consecutive sessions.
 fn unique_suffix() -> String {

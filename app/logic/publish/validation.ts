@@ -1,4 +1,5 @@
 import { unzipSync } from "fflate";
+import { log } from "~/logic/logging";
 
 export interface ValidationUploadItem {
   id?: string;
@@ -196,23 +197,45 @@ export async function readRpkPackage(file: Blob): Promise<string> {
 export interface RpkManifestInfo {
     packageName: string;
     versionName: string;
+    /** RPK manifest.json 的数字版本号，ABNG 用于 latest > installed 的更新检测。 */
+    versionCode?: number;
 }
 
 export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> {
+    log.debug("rpk/parse", "开始解析 RPK 包体（解压）", {
+        data: {
+            name: file instanceof File ? file.name : "(blob)",
+            size: file.size,
+        },
+    });
     let entries: Record<string, Uint8Array>;
     try {
         entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
     } catch {
+        log.warn("rpk/parse", "RPK 解压失败（不是有效的 ZIP 包）", {
+            data: { name: file instanceof File ? file.name : "(blob)" },
+        });
         throw new Error("RPK 文件无法解压。");
     }
     const manifestName = Object.keys(entries).find(
         (name) => name.split(/[\\/]/).pop() === "manifest.json",
     );
-    if (!manifestName) throw new Error("RPK 包内缺少 manifest.json。");
+    if (!manifestName) {
+        log.warn("rpk/parse", "RPK 解压成功但未找到 manifest.json", {
+            data: {
+                entryCount: Object.keys(entries).length,
+                entries: Object.keys(entries).slice(0, 20),
+            },
+        });
+        throw new Error("RPK 包内缺少 manifest.json。");
+    }
     let manifest: Record<string, unknown>;
     try {
         manifest = JSON.parse(new TextDecoder().decode(entries[manifestName]));
     } catch {
+        log.warn("rpk/parse", "RPK manifest.json 不是有效 JSON", {
+            data: { manifestPath: manifestName },
+        });
         throw new Error("RPK manifest.json 不是有效 JSON。");
     }
     const packageName =
@@ -223,8 +246,33 @@ export async function readRpkManifestInfo(file: Blob): Promise<RpkManifestInfo> 
             : typeof manifest.version_name === "string"
               ? manifest.version_name.trim()
               : "";
-    if (!packageName) throw new Error("RPK manifest.json 缺少 package 字段。");
-    return { packageName, versionName };
+    const rawVersionCode = manifest.versionCode;
+    const versionCode =
+        typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
+            ? Math.trunc(rawVersionCode)
+            : typeof rawVersionCode === "string" &&
+                rawVersionCode.trim() !== "" &&
+                Number.isFinite(Number(rawVersionCode))
+              ? Math.trunc(Number(rawVersionCode))
+              : undefined;
+    if (!packageName) {
+        log.warn("rpk/parse", "RPK manifest.json 缺少 package 字段", {
+            data: { manifestPath: manifestName },
+        });
+        throw new Error("RPK manifest.json 缺少 package 字段。");
+    }
+    log.info("rpk/parse", "RPK 解析完成", {
+        data: {
+            name: file instanceof File ? file.name : "(blob)",
+            size: file.size,
+            entryCount: Object.keys(entries).length,
+            manifestPath: manifestName,
+            packageName,
+            versionName,
+            versionCode,
+        },
+    });
+    return { packageName, versionName, versionCode };
 }
 
 export async function validateRpkPackage(

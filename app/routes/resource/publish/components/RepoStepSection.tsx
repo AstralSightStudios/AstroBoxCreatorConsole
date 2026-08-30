@@ -7,6 +7,7 @@ import { Field, SectionCard } from "./shared";
 export interface ExistingRepoOption {
   name: string;
   updatedAt: string;
+  description?: string;
 }
 
 interface RepoStepSectionProps {
@@ -181,11 +182,18 @@ export function RepoStepSection({
                               onClick={() => selectRepo(repo.name)}
                               onMouseEnter={() => setActiveIndex(index)}
                             >
-                              <span className="min-w-0 truncate text-sm text-white">
-                                <HighlightMatch
-                                  name={repo.name}
-                                  keyword={repoNameInput}
-                                />
+                              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                <span className="min-w-0 truncate text-sm text-white">
+                                  <HighlightMatch
+                                    name={repo.name}
+                                    keyword={repoNameInput}
+                                  />
+                                </span>
+                                {repo.description && (
+                                  <span className="truncate text-[11px] text-white/40">
+                                    {repo.description}
+                                  </span>
+                                )}
                               </span>
                               <span className="shrink-0 text-[11px] text-white/35">
                                 {formatRepoUpdatedAt(repo.updatedAt)}
@@ -206,22 +214,15 @@ export function RepoStepSection({
           </Field>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            className="text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full!"
-            radius="large"
-            size="2"
-            variant="soft"
-            onClick={onUpload}
-            disabled={repoStatus === "loading"}
-          >
-            {repoStatus === "loading"
-              ? "处理中..."
-              : isEdit
-                ? "更新并上传"
-                : selectedExistingRepo
-                  ? "上传至选中仓库"
-                  : "创建并上传"}
-          </Button>
+          {repoMessage && (
+            <p
+              className={`text-sm ${
+                repoStatus === "error" ? "text-amber-400" : "text-white/70"
+              }`}
+            >
+              {repoMessage}
+            </p>
+          )}
           {repoStatus === "success" && repoInfo?.htmlUrl && (
             <a
               className="rt-reset rt-BaseButton rt-r-size-2 rt-variant-soft rt-Button text-sm! lg:max-h-10! max-lg:min-h-12! max-lg:w-full! rounded-md!"
@@ -231,13 +232,6 @@ export function RepoStepSection({
             >
               查看仓库
             </a>
-          )}
-          {repoMessage && (
-            <p
-              className={`text-sm ${repoStatus === "error" ? "text-amber-400" : "text-white/70"}`}
-            >
-              {repoMessage}
-            </p>
           )}
         </div>
       </div>
@@ -265,9 +259,18 @@ export function RepoStepSection({
             radius="large"
             size="2"
             variant="soft"
-            onClick={onNext}
+            onClick={repoStatus === "success" ? onNext : onUpload}
+            disabled={repoStatus === "loading"}
           >
-            下一步
+            {repoStatus === "loading"
+              ? "处理中..."
+              : repoStatus === "success"
+                ? "下一步"
+                : isEdit
+                  ? "更新并上传"
+                  : selectedExistingRepo
+                    ? "上传至选中仓库"
+                    : "创建并上传"}
           </Button>
         </div>
       </div>

@@ -7,12 +7,14 @@ export function SectionCard({
   children,
   className,
   padding = true,
+  headerExtra,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   className?: string;
   padding?: boolean;
+  headerExtra?: React.ReactNode;
 }) {
   return (
     <div
@@ -22,7 +24,10 @@ export function SectionCard({
         <div
           className={`flex flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
         >
-          <p className="text-[18px] font-medium text-white">{title}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[18px] font-medium text-white">{title}</p>
+            {headerExtra}
+          </div>
           {description && (
             <p className="text-sm text-white/70">{description}</p>
           )}

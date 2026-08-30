@@ -1,5 +1,6 @@
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
+import type { ManifestUpdateLogEntry } from "~/logic/publish/manifest";
 
 export const STATE_LABELS: Record<ReviewState, string> = {
   waiting_review: "等待审核",
@@ -20,6 +21,8 @@ export interface ResourcePackagePreview {
   version: string;
   fileName: string;
   url: string;
+  versionCode?: number;
+  updateLogs?: ManifestUpdateLogEntry[];
 }
 
 export interface PrResourcePreview {

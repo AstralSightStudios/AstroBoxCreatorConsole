@@ -170,6 +170,54 @@ async function findPendingSubmissionConflicts(
     return null;
 }
 
+/**
+ * 扫描所有开放 PR，返回第一个已引用该资源 ID 的提交（edit 的 original_id
+ * 或 csv 行 id 命中即视为冲突）。解析失败的历史/脏数据跳过；无命中返回 null。
+ * 供「管理」页进入编辑前预检：已有进行中 PR 时直接引导到审核页继续编辑。
+ */
+export async function findOpenSubmissionForResourceId(
+    token: string,
+    resourceId: string,
+): Promise<{ prNumber: number; prTitle: string } | null> {
+    const pulls = await listOpenPulls(token);
+    for (const pull of pulls) {
+        const files = await githubFetch<
+            Array<{ filename?: string; sha?: string }>
+        >(
+            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${pull.number}/files?per_page=100`,
+            { headers: { Authorization: `Bearer ${token}` } },
+        );
+        for (const file of files) {
+            const filePath = file.filename ?? "";
+            if (!isSubmissionFilePath(filePath)) continue;
+            if (!file.sha) continue;
+            try {
+                const text = await fetchBlobText(token, file.sha);
+                if (!text) continue;
+                if (filePath.endsWith(".json")) {
+                    const request = parseSubmissionRequestJson(text);
+                    if (
+                        request.mode === "edit" &&
+                        typeof request.original_id === "string" &&
+                        sameResourceId(request.original_id, resourceId)
+                    ) {
+                        return { prNumber: pull.number, prTitle: pull.title };
+                    }
+                } else {
+                    const parsed = parseSubmissionCsv(text);
+                    if (sameResourceId(parsed.id, resourceId)) {
+                        return { prNumber: pull.number, prTitle: pull.title };
+                    }
+                }
+            } catch {
+                // 历史/脏数据解析失败：跳过该文件，不误判为冲突。
+                continue;
+            }
+        }
+    }
+    return null;
+}
+
 async function commitFilesToBranch(params: {
     token: string;
     owner: string;
@@ -242,7 +290,7 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         );
         if (duplicateRepo) {
             throw new Error(
-                `资源仓库 ${entry.repo_owner}/${entry.repo_name} 已被资源「${duplicateRepo.name || duplicateRepo.id}」占用。`,
+                `仓库 ${entry.repo_owner}/${entry.repo_name} 已经在 AstroBox 的软件索引里，被资源「${duplicateRepo.name || duplicateRepo.id}」占用，请更换仓库名。`,
             );
         }
     } else {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLineDown, Download } from "@phosphor-icons/react";
 import { loadDeviceNameMap } from "~/logic/devices/catalog";
+import type { ManifestUpdateLogEntry } from "~/logic/publish/manifest";
 import type { PrResourcePreview } from "../types";
 
 interface DownloadGroup {
@@ -8,6 +9,8 @@ interface DownloadGroup {
   file: string;
   version: string;
   devices: string[];
+  versionCode?: number;
+  updateLogs?: ManifestUpdateLogEntry[];
 }
 
 function groupDownloads(packages: PrResourcePreview["packages"]): DownloadGroup[] {
@@ -20,11 +23,19 @@ function groupDownloads(packages: PrResourcePreview["packages"]): DownloadGroup[
         file: pkg.fileName || "",
         version: pkg.version || "",
         devices: [],
+        versionCode: pkg.versionCode,
+        updateLogs: pkg.updateLogs,
       });
     }
     const group = groups.get(key)!;
     if (pkg.deviceId && !group.devices.includes(pkg.deviceId)) {
       group.devices.push(pkg.deviceId);
+    }
+    if (group.versionCode === undefined && pkg.versionCode !== undefined) {
+      group.versionCode = pkg.versionCode;
+    }
+    if ((!group.updateLogs || group.updateLogs.length === 0) && pkg.updateLogs?.length) {
+      group.updateLogs = pkg.updateLogs;
     }
   }
   return Array.from(groups.values());
@@ -76,6 +87,28 @@ export function ResourceDownloadsSection({ resource }: { resource: PrResourcePre
               }).join(" / ") || "-"}
             </div>
             <div className="mt-1 text-xs text-white/55">版本：{group.version || "-"}</div>
+            <div className="mt-1 text-xs text-white/55">
+              versionCode：
+              {group.versionCode !== undefined ? group.versionCode : "未填写（无法检测更新）"}
+            </div>
+            {group.updateLogs && group.updateLogs.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                <div className="text-xs font-medium text-white/55">更新日志</div>
+                {group.updateLogs.map((log, index) => (
+                  <div
+                    key={`${log.version}-${index}`}
+                    className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5"
+                  >
+                    <div className="text-xs font-semibold text-white/70">
+                      {log.version || "未填写版本"}
+                    </div>
+                    <div className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-white/60">
+                      {log.content || "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="mt-1 break-all text-xs text-white/55">
               文件：
               <a

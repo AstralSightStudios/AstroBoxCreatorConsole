@@ -5,6 +5,7 @@ use ecb::Encryptor;
 mod logs_archive;
 mod logger;
 mod resource_log;
+mod buildinfo;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -217,7 +218,7 @@ pub fn run() {
             logger::frontend_log,
             resource_log::resource_log_start,
             resource_log::resource_log_write,
-            logs_archive::get_log_dir_path,
+            resource_log::resource_log_discard,
             logs_archive::export_logs_archive
         ])
         .run(tauri::generate_context!())

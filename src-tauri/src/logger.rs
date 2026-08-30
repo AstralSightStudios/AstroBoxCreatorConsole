@@ -27,10 +27,22 @@ pub fn mask_secret(value: &str) -> String {
     format!("{head}****{tail}")
 }
 
+/// Mask the tail of a credential-like value: keep only the last 4 chars,
+/// mirroring the frontend `maskCredential` behavior.
+pub fn mask_credential(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 8 {
+        return "*".repeat(chars.len().max(1));
+    }
+    let tail: String = chars[chars.len() - 4..].iter().collect();
+    format!("****{tail}")
+}
+
 /// Best-effort scrubbing of well-known credential patterns so that tokens
 /// never reach the log file even if a call site forgets to redact.
 pub fn redact_sensitive(message: String) -> String {
     static PATTERNS: Mutex<Option<Vec<Regex>>> = Mutex::new(None);
+    static KEY_VALUE_PATTERN: Mutex<Option<Regex>> = Mutex::new(None);
     let mut guard = match PATTERNS.lock() {
         Ok(guard) => guard,
         Err(_) => return message,
@@ -41,16 +53,38 @@ pub fn redact_sensitive(message: String) -> String {
                 r"gh[posur]_[A-Za-z0-9]{16,}",
                 r"github_pat_[A-Za-z0-9_]{20,}",
                 r"(?i:bearer)\s+[A-Za-z0-9._~+/=-]{8,}",
+                r"\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,}){0,2}",
             ]
             .into_iter()
             .filter_map(|pattern| Regex::new(pattern).ok())
             .collect(),
         );
+        if let Ok(regex) = Regex::new(
+            r#"(?i)("[^"]*(?:access[_-]?token|refresh[_-]?token|token|password|passwd|secret|authorization|api[_-]?key)\b[^"]*"\s*:\s*")([A-Za-z0-9._~+/=-]{12,})(")"#,
+        ) {
+            if let Ok(mut key_value_guard) = KEY_VALUE_PATTERN.lock() {
+                *key_value_guard = Some(regex);
+            }
+        }
     }
     let Some(patterns) = guard.as_ref() else {
         return message;
     };
     let mut result = message;
+
+    // 引号包裹的凭据键值对：`"token":"..."`、`"refreshToken":"eyJ..."`、
+    // `"oAuth_GitHub_accessToken":"ghu_..."` 等；值整体只留末 4 位。
+    if let Ok(key_value_guard) = KEY_VALUE_PATTERN.lock() {
+        if let Some(key_value) = key_value_guard.as_ref() {
+            result = key_value
+                .replace_all(&result, |caps: &regex::Captures| {
+                    let value = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
+                    format!("{}{}{}", &caps[1], mask_credential(value), &caps[3])
+                })
+                .into_owned();
+        }
+    }
+
     for pattern in patterns {
         result = pattern
             .replace_all(&result, |caps: &regex::Captures| {
@@ -88,12 +122,13 @@ pub fn init_logger<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> 
     let dispatch = tauri_plugin_log::fern::Dispatch::new()
         .format(|out, message, record| {
             let ts = Local::now().format(LOG_TIME_FORMAT);
+            let msg = redact_sensitive(message.to_string());
             out.finish(format_args!(
                 "[{}][{}][{}] {}",
                 ts,
                 record.level(),
                 record.target(),
-                message
+                msg
             ));
         })
         .level(default_level)

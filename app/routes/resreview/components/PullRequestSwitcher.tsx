@@ -60,7 +60,11 @@ export function PullRequestSwitcher({
             >
               <motion.div
                 animate={{ rotate: loadingPulls ? 360 : 0 }}
-                transition={{ duration: 0.6, ease: "easeInOut" }}
+                transition={{
+                  duration: 0.6,
+                  ease: "easeInOut",
+                  repeat: loadingPulls ? Infinity : 0,
+                }}
                 style={{ display: "flex" }}
               >
                 <ArrowClockwiseIcon size={16} />

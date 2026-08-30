@@ -1,3 +1,4 @@
+import type { ManifestUpdateLogEntry } from "~/logic/publish/manifest";
 import type { UploadItem } from "./shared";
 
 export type AuthorInput = { name: string; bindABAccount: boolean };
@@ -15,6 +16,8 @@ export type BundledResourceInput = {
   name?: string;
 };
 
+export type UpdateLogEntry = ManifestUpdateLogEntry;
+
 export type DownloadInput = {
     uid: string;
     platformId: string;
@@ -22,6 +25,8 @@ export type DownloadInput = {
     file: UploadItem | null;
     existingFileName?: string;
     encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: UpdateLogEntry[];
 };
 
 export type DeviceOption = { id: string; name: string; vendor?: string };

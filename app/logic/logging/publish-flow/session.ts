@@ -143,6 +143,34 @@ export function flowStep(
   log[level](`flow/${step}`, message, data === undefined ? undefined : { data });
 }
 
+const fieldLogTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * 表单字段变更日志（防抖）：同一字段停止输入一段时间后再落一条，
+ * 避免逐键刷屏，同时保证第一步的任何编辑在会话日志里都有迹可循。
+ */
+export function logFieldChange(
+  field: string,
+  label: string,
+  value: string,
+  delayMs = 800,
+): void {
+  const timer = fieldLogTimers.get(field);
+  if (timer) clearTimeout(timer);
+  fieldLogTimers.set(
+    field,
+    setTimeout(() => {
+      fieldLogTimers.delete(field);
+      const trimmed = value.trim();
+      flowStep(
+        "info",
+        `form/${field}`,
+        `${label}: ${trimmed.slice(0, 500) || "(空)"}`,
+      );
+    }, delayMs),
+  );
+}
+
 /**
  * 包裹一段异步流程：自动记录开始、耗时与失败详情。
  * 失败原样向上抛出，由调用方决定用户提示。
@@ -198,4 +226,46 @@ export async function finishResourceSession(
 /** 当前活动会话信息（用于调试展示）；无会话返回 null。 */
 export function getActiveResourceSession(): { fileName: string; mode: PublishFlowMode } | null {
   return activeSession ? { ...activeSession } : null;
+}
+
+/**
+ * 恢复草稿时续写原会话日志：结束并丢弃当前新建的空会话文件，
+ * 重新把日志管道挂到草稿携带的旧会话文件上，并在旧文件里写入恢复标记。
+ */
+export async function resumeResourceSession(
+  fileName: string,
+  mode: PublishFlowMode,
+  meta: ResourceSessionMeta = {},
+): Promise<void> {
+  if (!isTauri()) return;
+
+  const current = activeSession;
+  if (current) {
+    await finishResourceSession("superseded", "恢复草稿，合并到原会话");
+    try {
+      await invoke("resource_log_discard", { fileName: current.fileName });
+    } catch {
+      // 删除失败不影响续写
+    }
+  }
+
+  activeSession = {
+    fileName,
+    mode,
+    startedAt: Date.now(),
+  };
+  setSessionSink({ write: enqueueWrite });
+
+  const ts = new Date().toLocaleString();
+  const separator = "=".repeat(64);
+  enqueueWrite([
+    separator,
+    `[${ts}][INFO][session/resume] ===== 会话恢复（草稿续写），沿用 ${fileName} =====`,
+    separator,
+  ]);
+  await writeChain.catch(() => {});
+
+  log.info(`flow/${mode}/resume`, `资源${mode === "edit" ? "编辑" : "发布"}会话恢复（草稿续写）`, {
+    data: { file: fileName, ...meta },
+  });
 }

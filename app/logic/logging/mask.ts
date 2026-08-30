@@ -4,7 +4,8 @@
  * 规则：
  * - 普通敏感值（AES key 等）：保留前 4 后 4，中间打星；过短整体打码
  * - 账号凭据（token/password/authorization 等）：仅保留末 4 位
- * - 兜底正则：ghp_* / github_pat_* / Bearer xxx 无论出现在哪里都会被打码
+ * - 兜底正则：ghp_* / github_pat_* / Bearer xxx / JWT(eyJ...) 以及
+ *   引号包裹的 `"token":"..."` 等键值对，无论出现在哪里都会被打码
  */
 
 const MASKED = "****";
@@ -49,6 +50,19 @@ function truncate(text: string): string {
 
 export function redactText(text: string): string {
   return text
+    // 引号包裹的凭据键值对：`"token":"..."`、`"refreshToken":"eyJ..."`、
+    // `"oAuth_GitHub_accessToken":"ghu_..."` 等；值整体只留末 4 位
+    .replace(
+      /(["'])([A-Za-z0-9_-]*(?:access[_-]?token|refresh[_-]?token|token|password|passwd|secret|authorization|api[_-]?key)\b[A-Za-z0-9_-]*)\1\s*:\s*["']([A-Za-z0-9._~+/=-]{12,})["']/gi,
+      (_match, quote, key, value) =>
+        `${quote}${key}${quote}: "${maskCredential(value)}"`,
+    )
+    // JWT：以 eyJ 开头的一段或多段 base64url（含被截断的残缺值），
+    // 常见于 Authorization 头或裸值
+    .replace(
+      /\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,}){0,2}/g,
+      (match) => maskCredential(match),
+    )
     .replace(/gh[posur]_[A-Za-z0-9]{16,}/g, (match) => maskValue(match))
     .replace(/github_pat_[A-Za-z0-9_]{20,}/g, (match) => maskValue(match))
     .replace(/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, (match) => {

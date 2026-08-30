@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import RootLayout from "~/root";
+import RouteErrorFallback from "~/components/RouteErrorFallback";
 import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
 import Interactions from "~/routes/interactions";
@@ -23,6 +24,7 @@ import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
 import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
+import OauthCallbackPage from "./pages/oauth-callback";
 import { installFrontendLogBridge } from "~/logic/logging";
 import {
   NewResourcePublishPage,
@@ -37,6 +39,7 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
+    errorElement: <RouteErrorFallback />,
     children: [
       { index: true, element: <Home /> },
       { path: "analysis", element: <Analysis /> },
@@ -65,6 +68,10 @@ const router = createBrowserRouter([
   {
     path: "/callback",
     element: <LoginCallback />,
+  },
+  {
+    path: "/oauth-callback",
+    element: <OauthCallbackPage />,
   },
 ]);
 

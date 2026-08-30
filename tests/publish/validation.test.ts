@@ -3,6 +3,7 @@ import { strToU8, zipSync } from "fflate";
 import {
   containsUrlUnsafeFilename,
   normalizeLinkUrl,
+  readRpkManifestInfo,
   readRpkPackage,
   validateLink,
   validatePublish,
@@ -152,6 +153,34 @@ describe("filename sanitization", () => {
 });
 
 describe("RPK validation", () => {
+  test("reads versionName and versionCode from manifest", async () => {
+    const file = rpk({
+      "manifest.json": JSON.stringify({
+        package: "com.example.app",
+        versionName: "26.1.3",
+        versionCode: 2601003,
+      }),
+    });
+    expect(await readRpkManifestInfo(file)).toEqual({
+      packageName: "com.example.app",
+      versionName: "26.1.3",
+      versionCode: 2601003,
+    });
+  });
+
+  test("tolerates missing versionCode", async () => {
+    const file = rpk({
+      "manifest.json": JSON.stringify({
+        package: "com.example.app",
+        versionName: "1.0",
+      }),
+    });
+    const info = await readRpkManifestInfo(file);
+    expect(info.packageName).toBe("com.example.app");
+    expect(info.versionName).toBe("1.0");
+    expect(info.versionCode).toBeUndefined();
+  });
+
   test("reads nested manifest package", async () => {
     const file = rpk({ "nested/manifest.json": JSON.stringify({ package: "com.example.app" }) });
     expect(await readRpkPackage(file)).toBe("com.example.app");

@@ -6,12 +6,16 @@ import {
 } from "@phosphor-icons/react";
 import { Button, Table, Callout, Spinner, Tabs } from "@radix-ui/themes";
 import { useNavigate, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import Page from "~/layout/page";
+import { loadAccountState } from "~/logic/account/store";
 import {
   loadOwnedCatalogResourcesForCurrentUser,
+  buildInProgressEditContextFromPr,
   type ResourceCatalogContext,
   type ResourceEditContext,
 } from "~/logic/publish/resources";
+import { findOpenSubmissionForResourceId } from "~/logic/publish/staging-submission";
 import ResourcePublish from "./publish";
 import { SectionCard } from "./publish/components/shared";
 import { useLayoutEffect, useEffect, useRef, useState } from "react";
@@ -49,6 +53,7 @@ export default function ResourceManage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
+  const [selectingId, setSelectingId] = useState<string | null>(null);
   const [tab, setTab] = useState(
     searchParams.get("tab") === "publish" ? "publish" : "manage",
   );
@@ -80,16 +85,65 @@ export default function ResourceManage() {
     };
   }, []);
 
-  const handleSelect = (catalog: ResourceCatalogContext) => {
+  const handleSelect = async (catalog: ResourceCatalogContext) => {
     setSelectError("");
     if (catalog.entry.id?.includes("LegacyItem")) {
       setSelectError("旧版资源（LegacyItem）暂不支持在控制台编辑。");
       return;
     }
+    if (selectingId) return;
     const editContext: ResourceEditContext = {
       mode: "catalog",
       catalog,
     };
+    setSelectingId(catalog.entry.id);
+    try {
+      const token = loadAccountState().github?.token;
+      if (token) {
+        const open = await findOpenSubmissionForResourceId(
+          token,
+          catalog.entry.id,
+        );
+        if (open) {
+          try {
+            const username = loadAccountState().github?.username
+              ?.trim()
+              .toLowerCase();
+            const opened = await buildInProgressEditContextFromPr({
+              prNumber: open.prNumber,
+              token,
+            });
+            const isOwn =
+              !!username &&
+              opened.authorLogin?.trim().toLowerCase() === username;
+            if (!isOwn) {
+              toast.warning(
+                `资源「${catalog.entry.name}」已有他人进行中的提交 PR #${open.prNumber}《${open.prTitle}》，请等待其处理完成后再编辑。`,
+              );
+              return;
+            }
+            toast.warning(
+              `资源「${catalog.entry.name}」已有进行中的提交 PR #${open.prNumber}《${open.prTitle}》，已为你打开该提交继续编辑。`,
+            );
+            navigate("/publish/edit", {
+              state: { editContext: opened },
+            });
+            return;
+          } catch (err) {
+            toast.error(
+              `资源「${catalog.entry.name}」存在进行中的提交 PR #${open.prNumber}，但载入其编辑信息失败：${
+                (err as Error).message || "未知错误"
+              }`,
+            );
+            return;
+          }
+        }
+      }
+    } catch {
+      // 预检扫描失败不阻塞编辑，交给提交阶段的重复提交守卫兜底。
+    } finally {
+      setSelectingId(null);
+    }
     navigate("/manage/edit", { state: { editContext } });
   };
 
@@ -236,11 +290,18 @@ export default function ResourceManage() {
                       {items.map((item) => (
                         <Table.Row
                           key={item.entry.id}
-                          className="hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
-                          onClick={() => handleSelect(item)}
+                          className={`hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer ${
+                            selectingId === item.entry.id
+                              ? "opacity-60 pointer-events-none"
+                              : ""
+                          }`}
+                          onClick={() => void handleSelect(item)}
                         >
-                          <Table.RowHeaderCell>
-                            {item.entry.id}
+                          <Table.RowHeaderCell className="flex items-center gap-2">
+                            {selectingId === item.entry.id ? (
+                              <Spinner size="1" />
+                            ) : null}
+                            <span>{item.entry.id}</span>
                           </Table.RowHeaderCell>
                           <Table.Cell>{item.entry.name}</Table.Cell>
                           <Table.Cell>

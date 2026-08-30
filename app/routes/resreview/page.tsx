@@ -6,7 +6,10 @@ import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
-import { useAccountState } from "~/logic/account/store";
+import { useAccountState, getAstroboxToken } from "~/logic/account/store";
+import { sendCcNotice } from "~/logic/inbox/send";
+import type { CcNoticeSubtype } from "~/logic/inbox/types";
+import { resolveAuthorProStatuses } from "./owner-pro";
 import { useRepoEnv } from "~/config/repoEnv";
 import { useReviewMode } from "~/config/publishMode";
 import {
@@ -41,6 +44,7 @@ import {
   loadStagingPrResourcePreviews,
   getErrorMessage,
   extractOldCatalogEntriesFromFiles,
+  runWithConcurrency,
 } from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
@@ -48,6 +52,55 @@ import { hasSubmissionFiles } from "~/logic/publish/submission-protocol";
 import { parseReviewCommentBody } from "./utils/comment";
 import type { PrResourcePreview } from "./types";
 import { ReviewAccessMessage, PRReviewPageSkeleton } from "./components/ReviewAccessMessage";
+
+function buildPrUrl(number: number): string {
+  return `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${number}`;
+}
+
+const CC_NOTICE_TITLES: Record<CcNoticeSubtype, (name: string) => string> = {
+  "review-changes-requested": (name) => `《${name}》提交需要修改`,
+  "review-approved": (name) => `《${name}》资源提交已通过`,
+  "review-refused": (name) => `《${name}》资源提交被拒绝`,
+  "review-closed": (name) => `《${name}》资源提交已被关闭`,
+};
+
+/**
+ * 解析当前 PR 中「声明已绑定 AstroBox 账号」的作者（manifest.item.author 里
+ * bindABAccount 为 true 的 name），再按名称精确匹配 /admin/users，拿到真实 userId。
+ */
+async function resolveRecipientUserIds(
+  previews: PrResourcePreview[],
+  astroboxToken: string | undefined,
+): Promise<{ userIds: string[]; resourceName: string; resourceId: string }> {
+  const boundNames = new Set<string>();
+  let resourceName = "";
+  let resourceId = "";
+  for (const preview of previews) {
+    if (!resourceName) {
+      resourceName = preview.entry.name || "";
+      resourceId = preview.entry.id || "";
+    }
+    const authors = preview.manifest?.item.author ?? [];
+    for (const author of authors) {
+      if (author.bindABAccount && author.name?.trim()) {
+        boundNames.add(author.name.trim());
+      }
+    }
+  }
+  if (boundNames.size === 0) {
+    return { userIds: [], resourceName, resourceId };
+  }
+  const statuses = await resolveAuthorProStatuses(
+    Array.from(boundNames),
+    astroboxToken,
+  );
+  const userIds = new Set<string>();
+  for (const name of boundNames) {
+    const status = statuses[name];
+    if (status?.state === "found") userIds.add(status.user.userId);
+  }
+  return { userIds: Array.from(userIds), resourceName, resourceId };
+}
 
 export default function ResourceReviewPage() {
   const accountState = useAccountState();
@@ -71,13 +124,13 @@ export default function ResourceReviewPage() {
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
-  const [prStateFilter, setPrStateFilter] = useState<"all" | "open" | "closed">("open");
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
   const [rotate, setRotate] = useState(0);
   const [detailRotate, setDetailRotate] = useState(0);
-  const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] = useState(false);
+  const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] =
+    useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -158,22 +211,24 @@ export default function ResourceReviewPage() {
   const loadPulls = async () => {
     setLoadingPulls(true);
     try {
-      const list = await listReviewPullRequests("all");
-      const commentEntries = await Promise.all(
-        list.map(async (pull) => {
+      const list = await listReviewPullRequests("open");
+      const commentEntries = await runWithConcurrency(
+        list,
+        6,
+        async (pull) => {
           try {
-              return [
-                pull.number,
-                filterReviewTagComments(
-                  await listPullRequestTimeline(pull.number),
-                  orgMembers,
-                  pull.user?.login,
-                ),
-              ] as const;
+            return [
+              pull.number,
+              filterReviewTagComments(
+                await listPullRequestTimeline(pull.number),
+                orgMembers,
+                pull.user?.login,
+              ),
+            ] as const;
           } catch {
             return [pull.number, []] as const;
           }
-        }),
+        },
       );
       const commentMap = Object.fromEntries(commentEntries);
       const commentsByNumber = commentMap as Record<
@@ -198,26 +253,35 @@ export default function ResourceReviewPage() {
     }
   };
 
+  const handleRefreshList = () => {
+    setRotate((prev) => prev + 360);
+    setRefreshTick((prev) => prev + 1);
+  };
+
   const loadDetail = async (number: number) => {
     const callId = ++loadDetailRef.current;
     setLoadingDetail(true);
     setFiles([]);
     setResourcePreviews([]);
     try {
+      const detailPull =
+        openPull ??
+        (await getPullRequest(number).catch(() => null));
+      if (callId !== loadDetailRef.current) return;
       const [nextComments, nextFiles] = await Promise.all([
         listPullRequestTimeline(number).then((comments) =>
-          filterReviewTagComments(comments, orgMembers, openPull?.user?.login),
+          filterReviewTagComments(comments, orgMembers, detailPull?.user?.login),
         ),
         listPullRequestFiles(number),
       ]);
       if (callId !== loadDetailRef.current) return;
       const nextResourcePreviews =
-        openPull &&
+        detailPull &&
         (publishMode === "staging" || hasSubmissionFiles(nextFiles))
           ? await loadStagingPrResourcePreviews(
               nextFiles,
               accountState.github?.token || "",
-              openPull,
+              detailPull,
             )
           : await loadPrResourcePreviews(
               nextFiles,
@@ -273,7 +337,8 @@ export default function ResourceReviewPage() {
   }, []);
 
   useEffect(() => {
-    if (canReview) void loadPulls();
+    if (!canReview) return;
+    void loadPulls();
   }, [canReview, refreshTick, orgMembers]);
 
   useEffect(() => {
@@ -292,17 +357,12 @@ export default function ResourceReviewPage() {
 
   const visiblePulls = useMemo(() => {
     let list = pulls;
-    if (prStateFilter === "open") {
-      list = list.filter((pull) => pull.state !== "closed");
-    } else if (prStateFilter === "closed") {
-      list = list.filter((pull) => pull.state === "closed");
-    }
     if (stateFilter === "all") return list;
     return list.filter((pull) => {
       const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
       return status.state === stateFilter;
     });
-  }, [commentsByPr, pulls, stateFilter, prStateFilter]);
+  }, [commentsByPr, pulls, stateFilter]);
 
   const refreshDetail = () => {
     if (!openNumber) return;
@@ -358,6 +418,15 @@ export default function ResourceReviewPage() {
       setReplyTarget(null);
       setEditingTarget(null);
       await loadDetail(number);
+      if (isNewNeedFix) {
+        const parsed = parseReviewCommentBody(body);
+        void notifyCc({
+          subtype: "review-changes-requested",
+          prNumber: number,
+          tagId: parsed.tagId || undefined,
+          content: parsed.content,
+        });
+      }
       toast.success(
         editingTarget
           ? "评论已更新"
@@ -392,6 +461,7 @@ export default function ResourceReviewPage() {
     setMerging(true);
     try {
       await mergePullRequest(number);
+      void notifyCc({ subtype: "review-approved", prNumber: number });
       toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
       await loadPulls();
       if (openNumber === number) {
@@ -414,6 +484,12 @@ export default function ResourceReviewPage() {
         ? `[ABCC_CLOSE] ${reason}`
         : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
       await createPullRequestComment(number, commentBody);
+      void notifyCc({
+        subtype: "review-closed",
+        prNumber: number,
+        content: reason,
+        senderNote: reason,
+      });
       toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
       await loadPulls();
       await loadDetail(number);
@@ -434,6 +510,12 @@ export default function ResourceReviewPage() {
         ? `[ABCC_REFUSE] ${reason}`
         : "[ABCC_REFUSE] 该 PR 已被审核成员拒绝。";
       await createPullRequestComment(number, commentBody);
+      void notifyCc({
+        subtype: "review-refused",
+        prNumber: number,
+        content: reason,
+        senderNote: reason,
+      });
       toast.success("PR 已拒绝，不再显示在审核列表中。");
       await loadPulls();
       navigate("/resreview", { replace: true });
@@ -442,6 +524,34 @@ export default function ResourceReviewPage() {
     } finally {
       setRefusing(false);
     }
+  };
+
+  const notifyCc = async (params: {
+    subtype: CcNoticeSubtype;
+    prNumber: number;
+    tagId?: string;
+    content?: string;
+    senderNote?: string;
+  }) => {
+    const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
+      resourcePreviews,
+      getAstroboxToken(),
+    );
+    if (userIds.length === 0) return;
+    await sendCcNotice({
+      subtype: params.subtype,
+      tagId: params.tagId,
+      content: params.content,
+      senderNote: params.senderNote,
+      prNumber: params.prNumber,
+      prUrl: buildPrUrl(params.prNumber),
+      resourceId: resourceId || undefined,
+      resourceName: resourceName || undefined,
+      deepLink: `/resreview?pr=${params.prNumber}`,
+      userIds,
+      title: CC_NOTICE_TITLES[params.subtype](resourceName),
+      body: params.content ?? params.senderNote ?? "",
+    });
   };
 
   const topbarActions = null;
@@ -470,7 +580,6 @@ export default function ResourceReviewPage() {
 
   const handleSelectPull = (pull: GithubPullRequest) => {
     navigate(`/resreview/detail?pr=${pull.number}`);
-    setIsWorkbenchSidebarCollapsed(false);
   };
 
   const handleSelectSidebar = (pull: GithubPullRequest) => {
@@ -514,10 +623,7 @@ export default function ResourceReviewPage() {
                 canMerge={reviewModeForOpenPr === "staging"}
                 onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                 onSelectPull={handleSelectSidebar}
-                onRefreshList={() => {
-                  setRotate((prev) => prev + 360);
-                  setRefreshTick((prev) => prev + 1);
-                }}
+                onRefreshList={handleRefreshList}
                 onGeneralCommentChange={setGeneralComment}
                 onSubmitComment={submitComment}
                 onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
@@ -549,21 +655,6 @@ export default function ResourceReviewPage() {
                 <div className="flex items-center gap-3">
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
                     <div className="min-w-0 flex-1">
-                      <Select.Root
-                        value={prStateFilter}
-                        onValueChange={(val) =>
-                          setPrStateFilter(val as "all" | "open" | "closed")
-                        }
-                      >
-                        <Select.Trigger radius="large" className="w-full" />
-                        <Select.Content position="popper">
-                          <Select.Item value="all">全部 PR</Select.Item>
-                          <Select.Item value="open">进行中</Select.Item>
-                          <Select.Item value="closed">已关闭</Select.Item>
-                        </Select.Content>
-                      </Select.Root>
-                    </div>
-                    <div className="min-w-0 flex-1">
                     <Select.Root
                       value={stateFilter}
                       onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
@@ -582,12 +673,20 @@ export default function ResourceReviewPage() {
                     variant="ghost"
                     color="gray"
                     className="shrink-0"
-                    onClick={() => {
-                      setRotate((prev) => prev + 360);
-                      setRefreshTick((prev) => prev + 1);
-                    }}
+                    disabled={loadingPulls}
+                    onClick={handleRefreshList}
                   >
-                    <ArrowClockwiseIcon size={15} />
+                    <motion.div
+                      animate={{ rotate: loadingPulls ? 360 : 0 }}
+                      transition={{
+                        duration: 0.7,
+                        ease: "easeInOut",
+                        repeat: loadingPulls ? Infinity : 0,
+                      }}
+                      style={{ display: "flex" }}
+                    >
+                      <ArrowClockwiseIcon size={15} />
+                    </motion.div>
                     刷新
                   </Button>
                 </div>

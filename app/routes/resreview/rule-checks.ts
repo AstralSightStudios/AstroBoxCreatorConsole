@@ -12,6 +12,7 @@ import {
 } from "./owner-pro";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
+import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
@@ -1081,6 +1082,95 @@ export async function runResourceRuleChecks(options: {
           ? "下载文件均存在"
           : `缺失文件：${missingFiles.join(", ")}`,
   });
+
+  // --- check: versionCode 随包体更新（warn，非强制） ---
+  {
+    const nextDownloads = manifest?.downloads ?? {};
+    const nextDeviceIds = Object.keys(nextDownloads);
+    const baseEntry = preview.baseEntry;
+    let checkStatus: RuleCheckItem["status"] = "pass";
+    let checkDetail = "未检测到 downloads 字典，跳过 versionCode 比对";
+    if (nextDeviceIds.length > 0) {
+      let baseDownloads: Record<
+        string,
+        { file_name?: string; version?: string; versionCode?: number }
+      > = {};
+      let baseError = "";
+      if (baseEntry) {
+        try {
+          const fetched = await fetchManifestForCatalogEntry({
+            entry: baseEntry,
+            token,
+            ref: baseEntry.repo_commit_hash,
+          });
+          baseDownloads = fetched.manifest?.downloads ?? {};
+        } catch (err) {
+          baseError = err instanceof Error ? err.message : String(err);
+        }
+      }
+      if (baseEntry && baseError && Object.keys(baseDownloads).length === 0) {
+        checkStatus = "manual";
+        checkDetail = `无法读取旧版本 manifest，跳过 versionCode 比对${
+          baseError ? `：${baseError}` : ""
+        }`;
+      } else {
+        const issues: string[] = [];
+        for (const deviceId of nextDeviceIds) {
+          const next = nextDownloads[deviceId] ?? {};
+          const hasPackage = Boolean((next.file_name ?? "").trim());
+          if (!hasPackage) continue;
+          const nextCode = next.versionCode;
+          const base = baseDownloads[deviceId];
+          if (nextCode === undefined || nextCode === null) {
+            if (base) {
+              const packageChanged =
+                (base.file_name ?? "") !== (next.file_name ?? "") ||
+                (base.version ?? "") !== (next.version ?? "");
+              if (packageChanged) {
+                issues.push(
+                  `${deviceId}：包体已更新但未填写 versionCode（旧 ${
+                    base.versionCode ?? "无"
+                  } → 新 无）`,
+                );
+                continue;
+              }
+            }
+            issues.push(
+              `${deviceId}：未填写 versionCode，用户将无法自动检测更新`,
+            );
+            continue;
+          }
+          if (
+            base &&
+            ((base.file_name ?? "") !== (next.file_name ?? "") ||
+              (base.version ?? "") !== (next.version ?? "")) &&
+            nextCode === base.versionCode
+          ) {
+            issues.push(
+              `${deviceId}：包体已更新但 versionCode 未变化（${
+                base.versionCode ?? "无"
+              } → ${nextCode}）`,
+            );
+          }
+        }
+        if (issues.length > 0) {
+          checkStatus = "warn";
+          checkDetail = issues.join("；");
+        } else if (!baseEntry) {
+          checkStatus = "pass";
+          checkDetail = "所有正式包体均已填写 versionCode";
+        } else {
+          checkStatus = "pass";
+          checkDetail = "更新包体的 versionCode 均已递增或未涉及包体变更";
+        }
+      }
+    }
+    checks.push({
+      title: "更新包体 versionCode 已递增",
+      status: checkStatus,
+      detail: checkDetail,
+    });
+  }
 
   // --- check: manifest 支持设备与 CSV devices 一致 ---
   const csvDevicesRaw = entry.devices
