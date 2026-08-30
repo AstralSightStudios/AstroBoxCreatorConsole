@@ -361,13 +361,15 @@ export function WallpaperEditor({
             .join(";");
     }, [resolved]);
 
+    const resourceTemplates = useMemo(() => resolved, [resourceKey]);
+
     // Load per-template resources (assets / masks / fonts) through the engine loaders.
     useEffect(() => {
-        if (!config || resolved.length === 0) return;
+        if (resourceTemplates.length === 0) return;
         let cancelled = false;
         const load = async () => {
             const map: Record<string, WallpaperResources> = {};
-            for (const template of resolved) {
+            for (const template of resourceTemplates) {
                 try {
                     const result = await loadTemplateResources(template, {
                         resolvePath: (path) => assetFiles[path]?.url,
@@ -385,7 +387,7 @@ export function WallpaperEditor({
         return () => {
             cancelled = true;
         };
-    }, [config, resolved, resourceKey, assetFiles]);
+    }, [resourceTemplates, assetFiles]);
 
     // JSON view draft sync.
     const openJsonView = useCallback(() => {
