@@ -10,7 +10,8 @@
     "test": "bun test",
     "android": "tauri android build --target aarch64",
     "android:debug": "tauri android build --target aarch64 --debug",
-    "macos:release": "bash ./scripts/build_dmg.sh"
+    "macos:release": "bash ./scripts/build_dmg.sh",
+    "linux:release": "bash ./scripts/build-linux.sh"
   },
   "dependencies": {
     "@antv/l7": "^2.23.2",

@@ -25,10 +25,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            rpm
+            rpm \
+            rpm2cpio \
+            cpio \
+            squashfs-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -64,17 +66,36 @@ jobs:
           tauriScript: bun tauri
           args: ''
 
+      - name: Repackage Linux packages (astrobox-creator-console)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: bash ./scripts/build-linux.sh --no-build deb rpm appimage
+
+      - name: Build Arch Linux package
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          docker run --rm -v "${{ github.workspace }}":/work -w /work archlinux:base-devel \
+            bash -lc 'set -e
+              pacman -Sy --noconfirm --needed curl
+              chmod -R a+rwX /work/scripts/archpkg
+              mkdir -p /work/dist/linux
+              chmod a+rwX /work/dist /work/dist/linux
+              useradd -m builder
+              su builder -c "/work/scripts/archpkg/build.sh prebuilt"
+              cp /work/scripts/archpkg/astrobox-creator-console-*.pkg.tar.zst /work/dist/linux/'
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tauri-build-${{ matrix.platform }}
           path: |
+            src-tauri/target/release/astrobox-creator-console
             src-tauri/target/release/bundle/**/*.AppImage
             src-tauri/target/release/bundle/**/*.deb
             src-tauri/target/release/bundle/**/*.rpm
             src-tauri/target/release/bundle/**/*.dmg
             src-tauri/target/release/bundle/**/*.msi
             src-tauri/target/release/bundle/**/*.exe
+            dist/linux/*
           if-no-files-found: error
 
   build-android:

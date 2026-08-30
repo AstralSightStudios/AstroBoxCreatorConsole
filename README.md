@@ -83,6 +83,13 @@ bun run android:debug      # debug 构建（aarch64）
 bash ./scripts/build_dmg.sh
 ```
 
+### Linux 与 AUR
+```shell
+./scripts/build-linux.sh   # deb / rpm / arch / appimage 四种包，统一命名为 astrobox-creator-console
+```
+
+构建细节与 AUR 发布流程（`scripts/archpkg/`）见 [scripts/archpkg/README.md](scripts/archpkg/README.md)。
+
 ## 测试
 ```shell
 bun test                                            # 前端业务逻辑测试
