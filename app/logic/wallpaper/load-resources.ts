@@ -34,6 +34,39 @@ async function loadImage(
     }
 }
 
+/** 根据原始素材生成镜像文件，让不支持镜像变换的引擎也能正常渲染。 */
+export async function createWallpaperAssetVariant(
+    source: WallpaperAssetFile,
+    variantPath: string,
+    flipX: boolean,
+    flipY: boolean,
+): Promise<WallpaperAssetFile> {
+    const image = await loadWallpaperImage(source.url);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (!width || !height) throw new Error("素材尺寸无效，无法生成镜像。");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建素材处理画布。");
+    context.translate(flipX ? width : 0, flipY ? height : 0);
+    context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    context.drawImage(image, 0, 0, width, height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("镜像素材生成失败。");
+    const fileName = variantPath.split("/").pop() || "wallpaper-asset.png";
+    const file = new File([blob], fileName, { type: "image/png" });
+    return {
+        path: variantPath,
+        url: URL.createObjectURL(file),
+        file,
+        skipUpload: false,
+    };
+}
+
 /** Build the engine `WallpaperResources` (assets + masks + fonts) for one resolved template. */
 export async function loadTemplateResources(
     template: ResolvedWallpaperTemplate,

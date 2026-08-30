@@ -42,7 +42,8 @@ export interface CanvasStageProps {
     onActiveTemplateChange: (index: number) => void;
     onSelectCanvas: () => void;
     onTransformChange: (templateId: string, transform: WallpaperTransformState) => void;
-    onLayerTransformChange: (patch: Partial<WallpaperLayerConfig>) => void;
+    onLayerTransformChange: (layerId: string, patch: Partial<WallpaperLayerConfig>) => void;
+    onSelectLayer: (layerId: string) => void;
     onDuplicateTemplate: (index: number) => void;
     onRemoveTemplate: (index: number) => void;
 }
@@ -170,14 +171,18 @@ function LayerEditOverlay({
     layer,
     canvasWidth,
     previewWidth,
+    selected,
     onPatch,
+    onSelect,
     onBegin,
     onEnd,
 }: {
     layer: ResolvedWallpaperTemplate["layers"][number];
     canvasWidth: number;
     previewWidth: number;
-    onPatch: (patch: Partial<WallpaperLayerConfig>) => void;
+    selected: boolean;
+    onPatch: (layerId: string, patch: Partial<WallpaperLayerConfig>) => void;
+    onSelect: () => void;
     onBegin: () => void;
     onEnd: () => void;
 }) {
@@ -207,6 +212,7 @@ function LayerEditOverlay({
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
+        onSelect();
         const startPointerAngle =
             (Math.atan2(point.y - frame.centerY, point.x - frame.centerX) * 180) / Math.PI;
         interactionRef.current = {
@@ -230,7 +236,7 @@ function LayerEditOverlay({
 
         const { startFrame } = interaction;
         if (interaction.mode === "move") {
-            onPatch({
+            onPatch(startFrame.layerId, {
                 transform:
                     startFrame.kind === "glass"
                         ? {
@@ -256,7 +262,7 @@ function LayerEditOverlay({
             const rotation = normalizeAngle(
                 startFrame.rotation + currentAngle - interaction.startPointerAngle,
             );
-            onPatch({
+            onPatch(startFrame.layerId, {
                 transform:
                     startFrame.kind === "glass"
                         ? { x: startFrame.transformX, y: startFrame.transformY, scaleX: startFrame.scaleX, scaleY: startFrame.scaleY, rotation }
@@ -302,7 +308,7 @@ function LayerEditOverlay({
         };
 
         if (startFrame.kind === "glass") {
-            onPatch({
+            onPatch(startFrame.layerId, {
                 transform: {
                     x: nextCenter.x - nextWidth / 2,
                     y: nextCenter.y - nextHeight / 2,
@@ -312,7 +318,7 @@ function LayerEditOverlay({
                 },
             });
         } else {
-            onPatch({
+            onPatch(startFrame.layerId, {
                 transform: {
                     x: nextCenter.x - (startFrame.baseX + startFrame.baseWidth / 2),
                     y: nextCenter.y - (startFrame.baseY + startFrame.baseHeight / 2),
@@ -358,43 +364,51 @@ function LayerEditOverlay({
             onPointerCancel={endInteraction}
         >
             <div
-                className="pointer-events-auto absolute inset-0 cursor-move border border-dashed border-[var(--color-editor-blue-fg)]"
-                style={{ borderRadius: frame.kind === "glass" ? "var(--editor-control-radius)" : 2 }}
+                className={`pointer-events-auto absolute inset-0 cursor-move ${
+                    selected ? "border border-dashed border-[var(--color-editor-blue-fg)]" : ""
+                }`}
+                style={{
+                    borderRadius: frame.kind === "glass" ? "var(--editor-control-radius)" : 2,
+                }}
                 onPointerDown={(event) => beginInteraction(event, "move")}
             >
-                <span
-                    className="absolute left-0 top-0 -translate-y-full whitespace-nowrap px-1 text-[10px] leading-[14px] text-white"
-                    style={{
-                        background: "var(--color-editor-blue-bg)",
-                        borderRadius: 3,
-                    }}
-                >
-                    {layer.name || (frame.kind === "glass" ? "玻璃" : frame.kind === "text" ? "文字" : "图片")}
-                </span>
-                <div
-                    role="button"
-                    tabIndex={0}
-                    aria-label="拖拽旋转"
-                    className="absolute -top-5 left-1/2 grid h-4 w-4 -translate-x-1/2 cursor-grab place-items-center rounded-full border border-[var(--color-editor-blue-fg)] bg-[var(--color-editor-blue-bg)] text-[9px] text-white"
-                    onPointerDown={(event) => beginInteraction(event, "rotate")}
-                    onKeyDown={(event) => {
-                        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                            event.preventDefault();
-                            const rotation = normalizeAngle(
-                                frame.rotation + (event.key === "ArrowLeft" ? -15 : 15),
-                            );
-                            onPatch({
-                                transform:
-                                    frame.kind === "glass"
-                                        ? { x: frame.transformX, y: frame.transformY, scaleX: frame.scaleX, scaleY: frame.scaleY, rotation }
-                                        : { x: frame.transformX, y: frame.transformY, scale: frame.scaleX, rotation },
-                            });
-                        }
-                    }}
-                >
-                    ↻
-                </div>
-                {handles.map((handle) => (
+                {selected && (
+                    <>
+                        <span
+                            className="absolute left-0 top-0 -translate-y-full whitespace-nowrap px-1 text-[10px] leading-[14px] text-white"
+                            style={{
+                                background: "var(--color-editor-blue-bg)",
+                                borderRadius: 3,
+                            }}
+                        >
+                            {layer.name || (frame.kind === "glass" ? "玻璃" : frame.kind === "text" ? "文字" : "图片")}
+                        </span>
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            aria-label="拖拽旋转"
+                            className="absolute -top-5 left-1/2 grid h-4 w-4 -translate-x-1/2 cursor-grab place-items-center rounded-full border border-[var(--color-editor-blue-fg)] bg-[var(--color-editor-blue-bg)] text-[9px] text-white"
+                            onPointerDown={(event) => beginInteraction(event, "rotate")}
+                            onKeyDown={(event) => {
+                                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                                    event.preventDefault();
+                                    const rotation = normalizeAngle(
+                                        frame.rotation + (event.key === "ArrowLeft" ? -15 : 15),
+                                    );
+                                    onPatch(frame.layerId, {
+                                        transform:
+                                            frame.kind === "glass"
+                                                ? { x: frame.transformX, y: frame.transformY, scaleX: frame.scaleX, scaleY: frame.scaleY, rotation }
+                                                : { x: frame.transformX, y: frame.transformY, scale: frame.scaleX, rotation },
+                                    });
+                                }
+                            }}
+                        >
+                            ↻
+                        </div>
+                    </>
+                )}
+                {selected && handles.map((handle) => (
                     <div
                         key={`${handle.x}-${handle.y}`}
                         role="button"
@@ -458,6 +472,7 @@ export function CanvasStage({
     onSelectCanvas,
     onTransformChange,
     onLayerTransformChange,
+    onSelectLayer,
     onDuplicateTemplate,
     onRemoveTemplate,
     onRenderError,
@@ -593,23 +608,25 @@ export function CanvasStage({
                                         />
                                     </div>
                                 )}
-                                {isActive && selectedLayerId && (() => {
-                                    const selectedLayer = template.layers.find((layer) => layer.id === selectedLayerId);
-                                    if (!selectedLayer) return null;
-                                    return (
+                                {isActive && template.layers
+                                    .filter((layer) => layer.type === "asset" || layer.type === "text" || layer.type === "glass")
+                                    .sort((left, right) => Number(left.id === selectedLayerId) - Number(right.id === selectedLayerId))
+                                    .map((layer) => (
                                         <LayerEditOverlay
-                                            layer={selectedLayer}
+                                            key={layer.id}
+                                            layer={layer}
                                             canvasWidth={template.canvas?.width ?? 1}
                                             previewWidth={previewW}
+                                            selected={layer.id === selectedLayerId}
                                             onPatch={onLayerTransformChange}
+                                            onSelect={() => onSelectLayer(layer.id)}
                                             onBegin={() => {
                                                 gestureCountRef.current += 1;
                                                 setGestureActive(true);
                                             }}
                                             onEnd={() => undefined}
                                         />
-                                    );
-                                })()}
+                                    ))}
                             </div>
                         </div>
                     );

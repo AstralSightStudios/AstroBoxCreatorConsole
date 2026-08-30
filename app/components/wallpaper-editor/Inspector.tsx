@@ -52,6 +52,7 @@ export interface InspectorProps {
     layer: WallpaperLayerConfig | null;
     onLayerPatch: (patch: Partial<WallpaperLayerConfig>) => void;
     onAssetUpload: (file: File) => void;
+    onAssetFlip: (axis: "x" | "y") => void;
     onMaskUpload: (file: File) => void;
     onFontUpload: (file: File) => void;
     onFitTextBox: () => void;
@@ -611,6 +612,7 @@ export function Inspector({
     layer,
     onLayerPatch,
     onAssetUpload,
+    onAssetFlip,
     onMaskUpload,
     onFontUpload,
     onFitTextBox,
@@ -777,7 +779,9 @@ export function Inspector({
         onLayerPatch({ [field]: patchControlValue(layer[field], { [key]: value }) } as Partial<WallpaperLayerConfig>);
     };
 
-    const patchTransform = (patch: Partial<{ x: number; y: number; scale: number; rotation: number }>) => {
+    const patchTransform = (
+        patch: Partial<{ x: number; y: number; scale: number; rotation: number }>,
+    ) => {
         onLayerPatch({ transform: { ...transform, ...patch } });
     };
 
@@ -1433,7 +1437,7 @@ export function Inspector({
                             <EditorField label="旋转">
                                 <div
                                     className="grid w-full"
-                                    style={{ gridTemplateColumns: "minmax(0, 3fr) repeat(2, minmax(0, 1fr))", gap: "var(--editor-control-gap)" }}
+                                    style={{ gridTemplateColumns: isAsset ? "minmax(0, 3fr) repeat(3, minmax(0, 1fr))" : "minmax(0, 3fr) minmax(0, 1fr)", gap: "var(--editor-control-gap)" }}
                                 >
                                     <EditorNumberField
                                         value={transform.rotation ?? 0}
@@ -1448,13 +1452,34 @@ export function Inspector({
                                     >
                                         <ArrowClockwiseIcon size={16} weight="regular" />
                                     </EditorIconButton>
-                                    <EditorIconButton
-                                        title="旋转 180°"
-                                        style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
-                                        onClick={() => patchTransform({ rotation: (transform.rotation ?? 0) + 180 })}
-                                    >
-                                        <ArrowClockwiseIcon size={16} weight="regular" />
-                                    </EditorIconButton>
+                                    {isAsset ? (
+                                        <>
+                                            <EditorIconButton
+                                                title="水平镜像"
+                                                selected={transform.flipX === true}
+                                                style={{ borderRadius: 0 }}
+                                                onClick={() => onAssetFlip("x")}
+                                            >
+                                                <FlipHorizontalIcon size={16} weight="regular" />
+                                            </EditorIconButton>
+                                            <EditorIconButton
+                                                title="垂直镜像"
+                                                selected={transform.flipY === true}
+                                                style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
+                                                onClick={() => onAssetFlip("y")}
+                                            >
+                                                <FlipVerticalIcon size={16} weight="regular" />
+                                            </EditorIconButton>
+                                        </>
+                                    ) : (
+                                        <EditorIconButton
+                                            title="旋转 180°"
+                                            style={{ borderRadius: "0 var(--editor-control-radius) var(--editor-control-radius) 0" }}
+                                            onClick={() => patchTransform({ rotation: (transform.rotation ?? 0) + 180 })}
+                                        >
+                                            <ArrowClockwiseIcon size={16} weight="regular" />
+                                        </EditorIconButton>
+                                    )}
                                 </div>
                             </EditorField>
                             {isAsset && rect && (

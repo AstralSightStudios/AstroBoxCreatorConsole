@@ -70,6 +70,11 @@ export interface WallpaperTransformConfig {
     scaleX?: number;
     scaleY?: number;
     rotation?: number;
+    /** 图片素材专用：以原始素材为基准进行镜像。 */
+    flipX?: boolean;
+    flipY?: boolean;
+    /** 编辑器专用：镜像变体对应的原始素材路径。 */
+    mirrorSource?: string;
 }
 
 export interface WallpaperFontAxisConfig {

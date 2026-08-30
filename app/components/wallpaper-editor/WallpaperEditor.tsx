@@ -40,6 +40,7 @@ import {
 import {
     assetFileForRepoPath,
     configPathToRepoPath,
+    createWallpaperAssetVariant,
     loadTemplateResources,
     repoPathToConfigPath,
 } from "~/logic/wallpaper/load-resources";
@@ -78,6 +79,17 @@ export interface WallpaperEditorProps {
 
 function genId(prefix: string): string {
     return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function mirroredAssetPath(sourcePath: string, layerId: string, flipX: boolean, flipY: boolean): string {
+    const normalized = sourcePath.replace(/^\.\//, "");
+    const slashIndex = normalized.lastIndexOf("/");
+    const directory = slashIndex >= 0 ? normalized.slice(0, slashIndex + 1) : "";
+    const fileName = slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
+    const baseName = fileName.replace(/\.[^.]+$/, "") || "asset";
+    const safeLayerId = layerId.replace(/[^a-zA-Z0-9_-]+/g, "-");
+    const axes = `${flipX ? "x" : ""}${flipY ? "y" : ""}`;
+    return `./${directory}${baseName}--${safeLayerId}-mirror-${axes}.png`;
 }
 
 function measureTextSize(
@@ -418,22 +430,29 @@ export function WallpaperEditor({
     const patchLayerById = useCallback(
         (layerId: string, patch: Partial<WallpaperLayerConfig>) => {
             if (!config || !layerId) return;
-            const patchKeys = Object.keys(patch);
+            const currentLayer = getLayer(config, activeIndex, layerId);
+            const effectivePatch = patch.transform
+                ? {
+                      ...patch,
+                      transform: { ...(currentLayer?.transform ?? {}), ...patch.transform },
+                  }
+                : patch;
+            const patchKeys = Object.keys(effectivePatch);
             const isSyncFlagPatch =
                 patchKeys.length === 1 && patchKeys[0] === "syncAcrossDevices";
 
             // 多设备同步按图层独立配置。同步开关/样式改动应用到所有设备；
             // 某设备缺少该图层时自动复制创建（仅在开启同步时）。
             if (isSyncFlagPatch) {
-                const enabling = patch.syncAcrossDevices === true;
-                const sourceLayer = getLayer(config, activeIndex, layerId);
+                const enabling = effectivePatch.syncAcrossDevices === true;
+                const sourceLayer = currentLayer;
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
                         layerId,
                         sourceLayer,
-                        patch,
+                        effectivePatch,
                         enabling,
                     );
                 });
@@ -444,22 +463,22 @@ export function WallpaperEditor({
                 patchKeys.length > 0 &&
                 patchKeys.every((key) => SYNC_LAYER_KEYS.has(key));
             const layerSync =
-                getLayer(config, activeIndex, layerId)?.syncAcrossDevices === true;
+                currentLayer?.syncAcrossDevices === true;
             if (layerSync && isSyncPatch) {
-                const sourceLayer = getLayer(config, activeIndex, layerId);
+                const sourceLayer = currentLayer;
                 setConfig((prev) => {
                     if (!prev) return prev;
                     return syncLayerAcrossTemplates(
                         prev,
                         layerId,
                         sourceLayer,
-                        patch,
+                        effectivePatch,
                         true,
                     );
                 });
                 return;
             }
-            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, layerId, patch) : prev));
+            setConfig((prev) => (prev ? updateLayer(prev, activeIndex, layerId, effectivePatch) : prev));
         },
         [activeIndex, config],
     );
@@ -582,6 +601,76 @@ export function WallpaperEditor({
     const handleSelectLayer = useCallback((layerId: string) => {
         setSelection({ kind: "layer", layerId });
     }, []);
+
+    const handleAssetFlip = useCallback(
+        async (axis: "x" | "y") => {
+            if (!config || !selectedLayerId) return;
+            const layer = getLayer(config, activeIndex, selectedLayerId);
+            if (!layer || layer.type !== "asset" || !layer.src) return;
+
+            const nextFlipX = axis === "x" ? layer.transform?.flipX !== true : layer.transform?.flipX === true;
+            const nextFlipY = axis === "y" ? layer.transform?.flipY !== true : layer.transform?.flipY === true;
+            const sourcePath = layer.transform?.mirrorSource ?? layer.src;
+
+            if (!nextFlipX && !nextFlipY) {
+                setConfig((prev) => {
+                    if (!prev) return prev;
+                    const current = getLayer(prev, activeIndex, selectedLayerId);
+                    if (!current) return prev;
+                    const transform = { ...(current.transform ?? {}) };
+                    delete transform.flipX;
+                    delete transform.flipY;
+                    delete transform.mirrorSource;
+                    return updateLayer(prev, activeIndex, selectedLayerId, {
+                        src: sourcePath,
+                        transform,
+                    });
+                });
+                setApplyError("");
+                return;
+            }
+
+            const sourceAsset = assetFiles[sourcePath];
+            if (!sourceAsset) {
+                setApplyError("找不到原始图片素材，无法生成镜像。");
+                return;
+            }
+
+            const variantPath = mirroredAssetPath(sourcePath, selectedLayerId, nextFlipX, nextFlipY);
+            let variantAsset = assetFiles[variantPath];
+            if (!variantAsset) {
+                try {
+                    variantAsset = await createWallpaperAssetVariant(
+                        sourceAsset,
+                        configPathToRepoPath(variantPath),
+                        nextFlipX,
+                        nextFlipY,
+                    );
+                } catch (error) {
+                    setApplyError(`镜像素材生成失败：${(error as Error).message ?? "未知错误"}`);
+                    return;
+                }
+                setAssetFiles((prev) => ({ ...prev, [variantPath]: variantAsset! }));
+            }
+
+            setConfig((prev) => {
+                if (!prev) return prev;
+                const current = getLayer(prev, activeIndex, selectedLayerId);
+                if (!current) return prev;
+                return updateLayer(prev, activeIndex, selectedLayerId, {
+                    src: variantPath,
+                    transform: {
+                        ...(current.transform ?? {}),
+                        flipX: nextFlipX,
+                        flipY: nextFlipY,
+                        mirrorSource: sourcePath,
+                    },
+                });
+            });
+            setApplyError("");
+        },
+        [activeIndex, assetFiles, config, selectedLayerId],
+    );
 
     const handleAssetChosen = useCallback(
         async (file: File) => {
@@ -988,7 +1077,8 @@ export function WallpaperEditor({
                                 onActiveTemplateChange={setActiveTemplate}
                                 onSelectCanvas={handleSelectCanvas}
                                 onTransformChange={handleTransformChange}
-                                onLayerTransformChange={handleLayerPatch}
+                                onLayerTransformChange={patchLayerById}
+                                onSelectLayer={handleSelectLayer}
                                 onDuplicateTemplate={handleDuplicateTemplate}
                                 onRemoveTemplate={handleRemoveTemplate}
                                 onRenderError={(message) =>
@@ -1002,6 +1092,7 @@ export function WallpaperEditor({
                             layer={selectedLayer}
                             onLayerPatch={handleLayerPatch}
                             onAssetUpload={(file) => void handleAssetReplace(file)}
+                            onAssetFlip={(axis) => void handleAssetFlip(axis)}
                             onMaskUpload={(file) => void handleMaskUpload(file)}
                             onFontUpload={(file) => void handleFontUpload(file)}
                             onFitTextBox={() => void handleFitTextBox()}
