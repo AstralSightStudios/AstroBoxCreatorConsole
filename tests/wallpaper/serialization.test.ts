@@ -27,6 +27,7 @@ import {
     controlStep,
     patchControl,
     patchControlValue,
+    patchNumericControlValue,
 } from "../../app/logic/wallpaper/control";
 import {
     createWallpaperBlendControl,
@@ -58,6 +59,7 @@ describe("wallpaper preset", () => {
         expect(template.wallpaperTransform?.scale).toBeDefined();
         expect(template.wallpaperTransform?.rotation).toBeDefined();
         expect(template.layers?.[0].blendMode).toEqual(createWallpaperBlendControl());
+        expect(template.layers?.[0].opacity).toBe(1);
     });
 });
 
@@ -318,6 +320,27 @@ describe("wallpaper control helpers", () => {
         const plain = patchControlValue(Number.NaN, { default: 7 });
         expect(plain).toBe(7);
         expect(controlDefault(patchControlValue(Number.NaN, {}), 0)).toBe(0);
+    });
+
+    test("enabling adjustment completes a valid numeric control", () => {
+        const control = patchNumericControlValue(
+            undefined,
+            { adjustable: true },
+            { default: 1, min: 0, max: 1, step: 0.1 },
+        );
+        expect(control).toEqual({
+            default: 1,
+            min: 0,
+            max: 1,
+            step: 0.1,
+            adjustable: true,
+        });
+
+        const config = validConfig();
+        config.templates[0].layers = [
+            { id: "photo", type: "wallpaper", opacity: control },
+        ];
+        expect(() => normalizeWallpaperConfig(config, "")).not.toThrow();
     });
 });
 

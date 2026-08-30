@@ -1,5 +1,12 @@
 import type { WallpaperControlConfig, WallpaperControlValue } from "./types";
 
+export interface WallpaperControlDefaults {
+    default: number;
+    min: number;
+    max: number;
+    step: number;
+}
+
 export function isControlObject(value: unknown): value is WallpaperControlConfig {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -87,4 +94,21 @@ export function patchControlValue(
         return toFinite(patch.default) ?? 0;
     }
     return merged;
+}
+
+export function patchNumericControlValue(
+    value: WallpaperControlValue | undefined,
+    patch: Partial<WallpaperControlConfig>,
+    defaults: WallpaperControlDefaults,
+): WallpaperControlValue {
+    if (patch.adjustable !== true) return patchControlValue(value, patch);
+
+    const complete: WallpaperControlConfig = {
+        ...(isControlObject(value) ? value : {}),
+        default: controlDefault(value, defaults.default),
+        min: controlMin(value, defaults.min),
+        max: controlMax(value, defaults.max),
+        step: controlStep(value, defaults.step),
+    };
+    return patchControlValue(complete, patch);
 }

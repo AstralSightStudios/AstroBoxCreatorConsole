@@ -128,7 +128,7 @@ function clampAxis(value: number, min: number, max: number): number {
 }
 
 function prepareWallpaperConfigForEditor(config: WallpaperConfigRaw, baseUrl?: string): WallpaperConfigRaw {
-    const next = migrateWallpaperConfigForEngine031(config);
+    const next = flattenAllTemplates(migrateWallpaperConfigForEngine031(config));
     const base = baseUrl?.replace(/\/+$/, "");
     const toRelative = (src: string) => {
         if (base && src.startsWith(`${base}/`)) return `./${src.slice(base.length + 1)}`;
@@ -136,6 +136,7 @@ function prepareWallpaperConfigForEditor(config: WallpaperConfigRaw, baseUrl?: s
     };
     for (const template of next.templates) {
         for (const layer of template.layers ?? []) {
+            if (layer.opacity === undefined) layer.opacity = 1;
             if (layer.type === "asset" && layer.src) layer.src = toRelative(layer.src);
             if (layer.mask) layer.mask = toRelative(layer.mask);
             if (layer.font && typeof layer.font !== "string") {

@@ -83,6 +83,7 @@ function defaultLayers(): WallpaperLayerConfig[] {
             name: "壁纸",
             type: "wallpaper",
             clip: "frame",
+            opacity: 1,
             blur: 0,
             blendMode: createWallpaperBlendControl(),
         },

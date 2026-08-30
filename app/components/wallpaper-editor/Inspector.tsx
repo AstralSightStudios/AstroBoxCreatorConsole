@@ -33,7 +33,11 @@ import {
     GLASS_MATERIAL_DEFAULTS,
     LAYER_BLEND_MODES,
 } from "~/logic/wallpaper/types";
-import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
+import {
+    controlAdjustable,
+    controlDefault,
+    patchNumericControlValue,
+} from "~/logic/wallpaper/control";
 import { generateTemplateId } from "~/logic/wallpaper/presets";
 import {
     EditorColorOpacityField,
@@ -225,6 +229,30 @@ function readBoxNumber(value: WallpaperControlValue | undefined, fallback: numbe
 function clampAxis(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
+
+type LayerNumericControlField =
+    | "opacity"
+    | "blur"
+    | "backdropBlur"
+    | "amount"
+    | "fontSize"
+    | "fontWeight"
+    | "letterSpacing"
+    | "lineHeight";
+
+const LAYER_NUMERIC_CONTROL_DEFAULTS: Record<
+    LayerNumericControlField,
+    { default: number; min: number; max: number; step: number }
+> = {
+    opacity: { default: 1, min: 0, max: 1, step: 0.1 },
+    blur: { default: 0, min: 0, max: 30, step: 1 },
+    backdropBlur: { default: 0, min: 0, max: 30, step: 1 },
+    amount: { default: 0, min: -1, max: 1, step: 0.1 },
+    fontSize: { default: 32, min: 8, max: 120, step: 1 },
+    fontWeight: { default: 400, min: 100, max: 900, step: 100 },
+    letterSpacing: { default: 0, min: -4, max: 20, step: 1 },
+    lineHeight: { default: 1.2, min: 0.5, max: 3, step: 0.1 },
+};
 
 function axisStep(axis: { min: number; max: number }): number {
     const range = axis.max - axis.min;
@@ -923,11 +951,17 @@ export function Inspector({
     };
 
     const patchControl = (
-        field: "opacity" | "blur" | "backdropBlur" | "amount" | "fontSize" | "fontWeight" | "letterSpacing" | "lineHeight",
+        field: LayerNumericControlField,
         key: "default" | "min" | "max" | "step" | "adjustable",
         value: number | boolean,
     ) => {
-        onLayerPatch({ [field]: patchControlValue(layer[field], { [key]: value }) } as Partial<WallpaperLayerConfig>);
+        onLayerPatch({
+            [field]: patchNumericControlValue(
+                layer[field],
+                { [key]: value },
+                LAYER_NUMERIC_CONTROL_DEFAULTS[field],
+            ),
+        } as Partial<WallpaperLayerConfig>);
     };
 
     const patchTransform = (
