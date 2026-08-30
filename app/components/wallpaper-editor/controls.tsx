@@ -23,6 +23,14 @@ import {
 } from "./color-opacity";
 import { ScrubbableNumberField } from "./ScrubbableNumberField";
 
+const MIN_CONTROL_STEP = 0.1;
+
+function controlStepAdjustment(value: number): number {
+  if (!Number.isFinite(value) || value < MIN_CONTROL_STEP) return MIN_CONTROL_STEP;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  return Math.max(MIN_CONTROL_STEP, magnitude / 10);
+}
+
 export function EditorSlider({
   value,
   min,
@@ -80,10 +88,15 @@ export function NumericControlEditor({
   const def = controlDefault(control, 0);
   const min = controlMin(control, 0);
   const max = controlMax(control, 100);
-  const step = controlStep(control, 0.01);
+  const step = Math.max(MIN_CONTROL_STEP, controlStep(control, MIN_CONTROL_STEP));
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const patch = (key: "default" | "min" | "max" | "step", value: number) =>
-    onChange({ [key]: value });
+    onChange({
+      [key]:
+        key === "step"
+          ? Math.max(MIN_CONTROL_STEP, Number.isFinite(value) ? value : MIN_CONTROL_STEP)
+          : value,
+    });
   return (
     <div className="flex w-full flex-col" style={{ gap: 6 }}>
       <div className="flex items-center justify-between px-1.5">
@@ -107,7 +120,7 @@ export function NumericControlEditor({
                 <div
                   className="grid w-full"
                   style={{
-                    gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+                    gridTemplateColumns: "minmax(0, 1fr) 106px",
                     gap: "var(--editor-control-gap)",
                   }}
                 >
@@ -149,13 +162,23 @@ export function NumericControlEditor({
         </div>
         {headerRight}
       </div>
-      <div className="flex w-full items-center" style={{ gap: 8 }}>
-        <div className="min-w-0 flex-1">
+      <div
+        className={`grid w-full gap-x-0.5 transition-[row-gap] duration-200 ease-out ${
+          advancedOpen ? "gap-y-0.5" : "gap-y-0"
+        }`}
+        style={{ gridTemplateColumns: "minmax(0, 1fr) 72px 34px" }}
+      >
+        <div className="col-span-2 min-w-0 w-full">
           <EditorNumberField
             value={def}
             min={min}
             max={max}
             step={step}
+            radius={
+              advancedOpen
+                ? "var(--editor-control-radius) 0 0 0"
+                : "var(--editor-control-radius) 0 0 var(--editor-control-radius)"
+            }
             onChange={(v) => patch("default", v)}
             onScrubStateChange={onDragStateChange}
           />
@@ -163,43 +186,64 @@ export function NumericControlEditor({
         <button
           type="button"
           aria-expanded={advancedOpen}
+          aria-label={advancedOpen ? "收起范围设置" : "展开范围设置"}
           onClick={() => setAdvancedOpen((open) => !open)}
-          className="flex h-[var(--editor-control-height)] w-[96px] shrink-0 items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
+          className="col-start-3 flex h-[var(--editor-control-height)] w-full shrink-0 items-center justify-center text-white/55 transition hover:text-white/80"
           style={{
-            borderRadius: "var(--editor-control-radius)",
+            borderRadius: advancedOpen
+              ? "0 var(--editor-control-radius) 0 0"
+              : "0 var(--editor-control-radius) var(--editor-control-radius) 0",
             background: "var(--color-editor-control)",
           }}
         >
-          <span>范围设置</span>
           <CaretDownIcon
             size={14}
             weight="regular"
+            className="transition-transform duration-200 ease-out"
             style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
           />
         </button>
-      </div>
-      {advancedOpen && (
         <div
-          className="grid w-full"
+          aria-hidden={!advancedOpen}
+          inert={!advancedOpen}
+          className="col-span-3 overflow-hidden"
           style={{
-            gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
-            gap: "var(--editor-control-gap)",
+            maxHeight: advancedOpen ? "var(--editor-control-height)" : 0,
+            opacity: advancedOpen ? 1 : 0,
+            pointerEvents: advancedOpen ? "auto" : "none",
+            transitionProperty: "max-height, opacity",
+            transitionDuration: advancedOpen ? "280ms, 160ms" : "280ms, 100ms",
+            transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1), ease",
+            transitionDelay: advancedOpen ? "0ms, 70ms" : "0ms, 170ms",
           }}
         >
-          <EditorRangeField
-            min={min}
-            max={max}
-            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
-            onMinChange={(value) => patch("min", value)}
-            onMaxChange={(value) => patch("max", value)}
-          />
-          <EditorNumberField
-            value={step}
-            radius="0 var(--editor-control-radius) var(--editor-control-radius) 0"
-            onChange={(v) => patch("step", v)}
-          />
+          <div
+            className="grid gap-x-0.5"
+            style={{ gridTemplateColumns: "minmax(0, 1fr) 72px 34px" }}
+          >
+            <div className="min-w-0">
+              <EditorRangeField
+                min={min}
+                max={max}
+                step={step}
+                radius="0 0 0 var(--editor-control-radius)"
+                onMinChange={(value) => patch("min", value)}
+                onMaxChange={(value) => patch("max", value)}
+                onScrubStateChange={onDragStateChange}
+              />
+            </div>
+            <div className="col-span-2 min-w-0">
+              <EditorNumberField
+                value={step}
+                min={MIN_CONTROL_STEP}
+                step={controlStepAdjustment(step)}
+                radius="0 0 var(--editor-control-radius) 0"
+                onChange={(v) => patch("step", v)}
+              />
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -347,15 +391,19 @@ export function EditorNumberField({
 function EditorRangeField({
     min,
     max,
+    step,
     radius,
     onMinChange,
     onMaxChange,
+    onScrubStateChange,
 }: {
     min: number;
     max: number;
+    step: number;
     radius?: React.CSSProperties["borderRadius"];
     onMinChange: (value: number) => void;
     onMaxChange: (value: number) => void;
+    onScrubStateChange?: (scrubbing: boolean) => void;
 }) {
     return (
         <div
@@ -366,28 +414,26 @@ function EditorRangeField({
                 gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
             }}
         >
-            <input
-                type="number"
+            <ScrubbableNumberField
                 value={min}
                 max={max}
-                aria-label="区间最小值"
-                onChange={(event) => {
-                    const value = event.target.valueAsNumber;
-                    onMinChange(Number.isFinite(value) ? value : 0);
-                }}
-                className="editor-number-input h-full min-w-0 w-full bg-transparent pl-2 pr-1 font-mono text-sm text-white outline-none"
+                step={step}
+                radius={0}
+                ariaLabel="区间最小值"
+                showStepper={false}
+                onChange={onMinChange}
+                onScrubStateChange={onScrubStateChange}
             />
             <span className="select-none text-xs text-white/35">~</span>
-            <input
-                type="number"
+            <ScrubbableNumberField
                 value={max}
                 min={min}
-                aria-label="区间最大值"
-                onChange={(event) => {
-                    const value = event.target.valueAsNumber;
-                    onMaxChange(Number.isFinite(value) ? value : min);
-                }}
-                className="editor-number-input h-full min-w-0 w-full bg-transparent pl-1 pr-2 font-mono text-sm text-white outline-none"
+                step={step}
+                radius={0}
+                ariaLabel="区间最大值"
+                showStepper={false}
+                onChange={onMaxChange}
+                onScrubStateChange={onScrubStateChange}
             />
         </div>
     );

@@ -82,6 +82,7 @@ export interface ScrubbableNumberFieldProps {
     disabled?: boolean;
     readOnly?: boolean;
     ariaLabel?: string;
+    showStepper?: boolean;
     onScrubStateChange?: (scrubbing: boolean) => void;
 }
 
@@ -175,6 +176,7 @@ export function ScrubbableNumberField({
     disabled = false,
     readOnly = false,
     ariaLabel,
+    showStepper = true,
     onScrubStateChange,
 }: ScrubbableNumberFieldProps) {
     const normalizedStep = normalizeNumericStep(step);
@@ -435,6 +437,7 @@ export function ScrubbableNumberField({
     const beginScrub = (
         event: ReactPointerEvent<HTMLElement>,
         buttonDirection?: -1 | 1,
+        preserveClick = false,
     ) => {
         if (
             !canAdjust ||
@@ -444,7 +447,7 @@ export function ScrubbableNumberField({
         ) {
             return;
         }
-        event.preventDefault();
+        if (!preserveClick) event.preventDefault();
         inputRef.current?.focus({ preventScroll: true });
         event.currentTarget.setPointerCapture(event.pointerId);
         const session: ScrubSession = {
@@ -658,7 +661,10 @@ export function ScrubbableNumberField({
             className={`scrubbable-number-field${scrubVisual.active ? " is-scrubbing" : ""}`}
             data-adjustable={canAdjust}
             data-has-suffix={Boolean(suffix)}
+            data-has-stepper={showStepper}
             style={{ borderRadius: radius }}
+            onPointerDown={(event) => beginScrub(event, undefined, true)}
+            onLostPointerCapture={() => finishScrub(true)}
         >
             <div className="scrubbable-number-content">
                 <span
@@ -718,28 +724,30 @@ export function ScrubbableNumberField({
                     />
                 </div>
                 {suffix && <span className="scrubbable-number-suffix">{suffix}</span>}
-                <div className="scrubbable-number-stepper">
-                    <button
-                        type="button"
-                        aria-label="增加数值"
-                        data-enabled={canIncrease}
-                        onPointerDown={(event) => beginScrub(event, 1)}
-                        onLostPointerCapture={() => finishScrub(true)}
-                        onClick={() => handleStepperClick(1)}
-                    >
-                        <CaretUpIcon size={11} className="-mb-[1px]" weight="bold" />
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="减少数值"
-                        data-enabled={canDecrease}
-                        onPointerDown={(event) => beginScrub(event, -1)}
-                        onLostPointerCapture={() => finishScrub(true)}
-                        onClick={() => handleStepperClick(-1)}
-                    >
-                        <CaretDownIcon size={11} className="-mt-[1px]" weight="bold" />
-                    </button>
-                </div>
+                {showStepper && (
+                    <div className="scrubbable-number-stepper">
+                        <button
+                            type="button"
+                            aria-label="增加数值"
+                            data-enabled={canIncrease}
+                            onPointerDown={(event) => beginScrub(event, 1)}
+                            onLostPointerCapture={() => finishScrub(true)}
+                            onClick={() => handleStepperClick(1)}
+                        >
+                            <CaretUpIcon size={11} className="-mb-[1px]" weight="bold" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="减少数值"
+                            data-enabled={canDecrease}
+                            onPointerDown={(event) => beginScrub(event, -1)}
+                            onLostPointerCapture={() => finishScrub(true)}
+                            onClick={() => handleStepperClick(-1)}
+                        >
+                            <CaretDownIcon size={11} className="-mt-[1px]" weight="bold" />
+                        </button>
+                    </div>
+                )}
             </div>
             {scrubVisual.active && (
                 <ScrubRuler
