@@ -2,7 +2,7 @@
 # 使用预编译二进制文件打包（跳过编译）
 
 pkgname=astrobox-creator-console
-pkgver=0.2.1
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="AstroBox CreatorConsole - all-in-one creator console for the AstroBox ecosystem"
 arch=('x86_64')

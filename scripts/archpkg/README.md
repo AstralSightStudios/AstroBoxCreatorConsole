@@ -36,10 +36,10 @@ Arch Linux 本机需要：`sudo pacman -S --needed base-devel squashfs-tools`（
 
 ```
 dist/linux/
-├── astrobox-creator-console_0.2.1_amd64.deb
-├── astrobox-creator-console-0.2.1-1.x86_64.rpm
-├── astrobox-creator-console-0.2.1-1-x86_64.pkg.tar.zst
-└── astrobox-creator-console_0.2.1_amd64.AppImage
+├── astrobox-creator-console_0.3.0_amd64.deb
+├── astrobox-creator-console-0.3.0-1.x86_64.rpm
+├── astrobox-creator-console-0.3.0-1-x86_64.pkg.tar.zst
+└── astrobox-creator-console_0.3.0_amd64.AppImage
 ```
 
 非交互模式（CI 使用，跳过菜单）：
@@ -51,7 +51,7 @@ dist/linux/
 
 ## 2. 上传 Release
 
-将 `dist/linux/` 下的全部包上传到 [Releases](https://github.com/AstralSightStudios/AstroBoxCreatorConsole/releases)，版本号 `v0.2.1` 形式的 tag，arch 包文件名保持
+将 `dist/linux/` 下的全部包上传到 [Releases](https://github.com/AstralSightStudios/AstroBoxCreatorConsole/releases)，版本号 `v0.3.0` 形式的 tag，arch 包文件名保持
 `astrobox-creator-console-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst` 不变。
 
 ## 3. 发布 AUR
