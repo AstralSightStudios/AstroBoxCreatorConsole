@@ -110,6 +110,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.25",
  "rsa",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sys-locale",

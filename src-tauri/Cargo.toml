@@ -36,6 +36,7 @@ chrono = "0.4"
 cbc = { version = "0.1", features = ["alloc", "block-padding"] }
 rand = "0.8"
 rsa = { version = "0.9", features = ["pem"] }
+rust_decimal = "1"
 tokio = { version = "1", features = ["macros"] }
 flate2 = "1"
 tar = "0.4"

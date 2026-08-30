@@ -2,11 +2,13 @@ use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use aes::Aes256;
 use base64::{engine::general_purpose, Engine as _};
 use cbc::Encryptor as CbcEncryptor;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, Timelike, Utc};
 use rand::{rngs::OsRng, RngCore};
 use rsa::{pkcs8::DecodePublicKey, Pkcs1v15Encrypt, RsaPublicKey};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::{collections::HashSet, str::FromStr};
 
 use crate::AppHttpClient;
 
@@ -55,6 +57,8 @@ pub(crate) struct AfdianQuickCodeResult {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianIncomeOverview {
     current_month: Option<String>,
+    previous_month: String,
+    withdrawable: Option<String>,
     today: String,
     yesterday: String,
     as_of: String,
@@ -242,22 +246,95 @@ pub(crate) async fn afdian_income_overview(
     http_client: tauri::State<'_, AppHttpClient>,
 ) -> Result<AfdianIncomeOverview, String> {
     let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
-    let dashboard_url = format!("{IFDIAN_BASE_URL}/api/my/dashboard");
-    let stats_url = format!("{IFDIAN_BASE_URL}/api/my/stat");
-    let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
-    let stats = authenticated_get(
-        &http_client.0,
-        &stats_url,
-        &session.auth_token,
-        &[("page", "1"), ("type", "day")],
-    );
-    let (dashboard, stats) = tokio::try_join!(dashboard, stats)?;
-    ensure_api_success(&dashboard, "本月收入加载失败")?;
-    ensure_api_success(&stats, "每日收入加载失败")?;
-
     let timezone = FixedOffset::east_opt(8 * 60 * 60).expect("固定时区有效");
     let now = Utc::now().with_timezone(&timezone);
-    Ok(extract_income_overview(&dashboard, &stats, now))
+    let current_month_start = now.date_naive().with_day(1).expect("当月首日有效");
+    let previous_month_date = current_month_start.pred_opt().expect("上月最后一天有效");
+    let settlement_window = now.day() == 1 && now.hour() < 10;
+    let aggregation_start_key = if settlement_window {
+        previous_month_date.format("%Y%m01").to_string()
+    } else {
+        current_month_start.format("%Y%m%d").to_string()
+    };
+    let dashboard_url = format!("{IFDIAN_BASE_URL}/api/my/dashboard");
+    let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
+    let orders = fetch_received_orders(
+        &http_client.0,
+        &session.auth_token,
+        &aggregation_start_key,
+        &timezone,
+    );
+    let (dashboard, orders) = tokio::try_join!(dashboard, orders)?;
+    ensure_api_success(&dashboard, "结算信息加载失败")?;
+
+    Ok(aggregate_order_income(&orders, &dashboard, now))
+}
+
+async fn fetch_received_orders(
+    client: &reqwest::Client,
+    token: &str,
+    aggregation_start_key: &str,
+    timezone: &FixedOffset,
+) -> Result<Vec<Value>, String> {
+    let orders_url = format!("{IFDIAN_BASE_URL}/api/my/sponsored-bill-filter");
+    let mut orders = Vec::new();
+
+    for page in 1..=100 {
+        let page_value = page.to_string();
+        let response = authenticated_get(
+            client,
+            &orders_url,
+            token,
+            &[
+                ("page", page_value.as_str()),
+                ("sort_field", "create_time"),
+                ("sort_value", "desc"),
+                ("is_redeem", "0"),
+                ("plan_id", ""),
+                ("sign_status", ""),
+                ("has_remark", "0"),
+                ("status", ""),
+                ("order_id", ""),
+                ("nick_name", ""),
+                ("user_id", ""),
+                ("remark", ""),
+                ("order_remark", ""),
+                ("express_no", ""),
+                ("last_cart_order_id", ""),
+                ("last_order_id", ""),
+                ("begin_time", ""),
+                ("end_time", ""),
+            ],
+        )
+        .await?;
+        ensure_api_success(&response, "订单收入加载失败")?;
+        let page_orders = response
+            .pointer("/data/list")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let order_count = page_orders.len();
+        let reached_before_range = page_orders.iter().any(|order| {
+            order_date_key(order, timezone)
+                .is_some_and(|date_key| date_key.as_str() < aggregation_start_key)
+        });
+        orders.extend(page_orders);
+
+        let has_more = response.pointer("/data/has_more").and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|raw| raw.parse().ok()))
+        });
+        if order_count == 0
+            || reached_before_range
+            || has_more == Some(0)
+            || (has_more.is_none() && order_count < 10)
+        {
+            break;
+        }
+    }
+
+    Ok(orders)
 }
 
 async fn complete_login(
@@ -382,48 +459,123 @@ fn api_message(response: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn extract_income_overview(
+fn aggregate_order_income(
+    orders: &[Value],
     dashboard: &Value,
-    stats: &Value,
     now: DateTime<FixedOffset>,
 ) -> AfdianIncomeOverview {
+    let month_key = now.format("%Y%m").to_string();
+    let previous_month_key = now
+        .date_naive()
+        .with_day(1)
+        .and_then(|date| date.pred_opt())
+        .map(|date| date.format("%Y%m").to_string())
+        .unwrap_or_default();
     let today_key = now.format("%Y%m%d").to_string();
     let yesterday_key = now
         .date_naive()
         .pred_opt()
         .map(|date| date.format("%Y%m%d").to_string())
         .unwrap_or_default();
-    let records = stats
-        .pointer("/data/list")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let timezone = *now.offset();
+    let mut seen_orders = HashSet::new();
+    let mut current_month = Decimal::ZERO;
+    let mut previous_month = Decimal::ZERO;
+    let mut today = Decimal::ZERO;
+    let mut yesterday = Decimal::ZERO;
+
+    for order in orders {
+        if let Some(identity) = order_identity(order) {
+            if !seen_orders.insert(identity) {
+                continue;
+            }
+        }
+        if !is_income_order(order) {
+            continue;
+        }
+        let Some(date_key) = order_date_key(order, &timezone) else {
+            continue;
+        };
+        let Some(amount) = order
+            .get("total_amount")
+            .and_then(value_to_amount)
+            .and_then(|value| parse_decimal(&value))
+        else {
+            continue;
+        };
+
+        if date_key.starts_with(&month_key) {
+            current_month += amount;
+        } else if date_key.starts_with(&previous_month_key) {
+            previous_month += amount;
+        }
+        if date_key == today_key {
+            today += amount;
+        } else if date_key == yesterday_key {
+            yesterday += amount;
+        }
+    }
 
     AfdianIncomeOverview {
-        current_month: dashboard
-            .pointer("/data/summary/month_amount")
+        current_month: Some(format_decimal(current_month)),
+        previous_month: format_decimal(previous_month),
+        withdrawable: dashboard
+            .pointer("/data/balance_after_tax")
             .and_then(value_to_amount),
-        today: find_daily_amount(&records, &today_key).unwrap_or_else(|| "0".into()),
-        yesterday: find_daily_amount(&records, &yesterday_key).unwrap_or_else(|| "0".into()),
+        today: format_decimal(today),
+        yesterday: format_decimal(yesterday),
         as_of: now.to_rfc3339(),
     }
 }
 
-fn find_daily_amount(records: &[Value], date_key: &str) -> Option<String> {
-    records.iter().find_map(|record| {
-        let date = record.get("date_str").and_then(|value| {
-            value
-                .as_str()
-                .map(str::to_string)
-                .or_else(|| value.as_i64().map(|number| number.to_string()))
-        })?;
-        if date != date_key {
-            return None;
-        }
-        record
-            .get("paid_order_real_amount")
-            .and_then(value_to_amount)
-    })
+fn is_income_order(order: &Value) -> bool {
+    matches!(order.get("status").and_then(value_to_i64), Some(2 | 8 | 9))
+}
+
+fn order_identity(order: &Value) -> Option<String> {
+    order
+        .get("out_trade_no")
+        .or_else(|| order.get("id"))
+        .and_then(|value| match value {
+            Value::String(raw) if !raw.trim().is_empty() => Some(raw.trim().to_string()),
+            Value::Number(number) => Some(number.to_string()),
+            _ => None,
+        })
+}
+
+fn order_date_key(order: &Value, timezone: &FixedOffset) -> Option<String> {
+    let timestamp = order.get("create_time").and_then(value_to_timestamp)?;
+    DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .map(|date| date.with_timezone(timezone).format("%Y%m%d").to_string())
+}
+
+fn value_to_timestamp(value: &Value) -> Option<i64> {
+    let raw = value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))?;
+    if !raw.is_finite() || raw <= 0.0 {
+        return None;
+    }
+    let seconds = if raw >= 10_000_000_000.0 {
+        raw / 1_000.0
+    } else {
+        raw
+    };
+    Some(seconds.floor() as i64)
+}
+
+fn value_to_i64(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|raw| raw.trim().parse().ok()))
+}
+
+fn parse_decimal(value: &str) -> Option<Decimal> {
+    Decimal::from_str(value.trim().replace(',', "").as_str()).ok()
+}
+
+fn format_decimal(value: Decimal) -> String {
+    value.round_dp(2).normalize().to_string()
 }
 
 fn value_to_amount(value: &Value) -> Option<String> {
@@ -533,44 +685,88 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn extracts_income_for_shanghai_dates() {
-        let dashboard = json!({
-            "ec": 200,
-            "data": { "summary": { "month_amount": "123.45" } }
-        });
-        let stats = json!({
-            "ec": 200,
-            "data": {
-                "list": [
-                    { "date_str": "20260830", "paid_order_real_amount": "12.30" },
-                    { "date_str": 20260829, "paid_order_real_amount": 8.5 }
-                ]
-            }
-        });
+    fn calculates_income_from_paid_orders() {
         let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
         let now = timezone.with_ymd_and_hms(2026, 8, 30, 12, 0, 0).unwrap();
+        let orders = vec![
+            json!({
+                "out_trade_no": "today-1",
+                "status": 2,
+                "create_time": timezone.with_ymd_and_hms(2026, 8, 30, 9, 0, 0).unwrap().timestamp(),
+                "total_amount": "10.00"
+            }),
+            json!({
+                "out_trade_no": "today-2",
+                "status": "8",
+                "create_time": timezone.with_ymd_and_hms(2026, 8, 30, 10, 0, 0).unwrap().timestamp_millis(),
+                "total_amount": "12.00"
+            }),
+            json!({
+                "out_trade_no": "yesterday",
+                "status": 9,
+                "create_time": timezone.with_ymd_and_hms(2026, 8, 29, 23, 0, 0).unwrap().timestamp(),
+                "total_amount": 8.5
+            }),
+            json!({
+                "out_trade_no": "month",
+                "status": 2,
+                "create_time": timezone.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).unwrap().timestamp(),
+                "total_amount": "1.20"
+            }),
+            json!({
+                "out_trade_no": "previous-month",
+                "status": 2,
+                "create_time": timezone.with_ymd_and_hms(2026, 7, 31, 23, 0, 0).unwrap().timestamp(),
+                "total_amount": "40.00"
+            }),
+        ];
+        let dashboard = json!({ "data": { "balance_after_tax": "0.00" } });
 
-        let overview = extract_income_overview(&dashboard, &stats, now);
+        let overview = aggregate_order_income(&orders, &dashboard, now);
 
-        assert_eq!(overview.current_month.as_deref(), Some("123.45"));
-        assert_eq!(overview.today, "12.30");
+        assert_eq!(overview.current_month.as_deref(), Some("31.7"));
+        assert_eq!(overview.previous_month, "40");
+        assert_eq!(overview.withdrawable.as_deref(), Some("0.00"));
+        assert_eq!(overview.today, "22");
         assert_eq!(overview.yesterday, "8.5");
         assert_eq!(overview.as_of, "2026-08-30T12:00:00+08:00");
     }
 
     #[test]
-    fn defaults_missing_daily_income_to_zero() {
+    fn defaults_missing_order_income_to_zero() {
         let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
         let now = timezone.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-        let overview = extract_income_overview(
-            &json!({ "data": { "summary": {} } }),
-            &json!({ "data": { "list": [] } }),
-            now,
-        );
+        let overview = aggregate_order_income(&[], &json!({ "data": {} }), now);
 
-        assert_eq!(overview.current_month, None);
+        assert_eq!(overview.current_month.as_deref(), Some("0"));
+        assert_eq!(overview.previous_month, "0");
+        assert_eq!(overview.withdrawable, None);
         assert_eq!(overview.today, "0");
         assert_eq!(overview.yesterday, "0");
+    }
+
+    #[test]
+    fn excludes_invalid_and_duplicate_orders() {
+        let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
+        let timestamp = timezone
+            .with_ymd_and_hms(2026, 8, 30, 10, 0, 0)
+            .unwrap()
+            .timestamp();
+        let orders = vec![
+            json!({ "out_trade_no": "paid", "status": 2, "create_time": timestamp, "total_amount": "22" }),
+            json!({ "out_trade_no": "paid", "status": 2, "create_time": timestamp, "total_amount": "22" }),
+            json!({ "out_trade_no": "pending", "status": 1, "create_time": timestamp, "total_amount": "100" }),
+            json!({ "out_trade_no": "refunded", "status": 3, "create_time": timestamp, "total_amount": "100" }),
+            json!({ "out_trade_no": "invalid", "status": 2, "create_time": timestamp, "total_amount": "invalid" }),
+        ];
+        let now = timezone.with_ymd_and_hms(2026, 8, 30, 20, 0, 0).unwrap();
+        let dashboard = json!({ "data": { "balance_after_tax": 20.68 } });
+
+        let overview = aggregate_order_income(&orders, &dashboard, now);
+
+        assert_eq!(overview.today, "22");
+        assert_eq!(overview.current_month.as_deref(), Some("22"));
+        assert_eq!(overview.withdrawable.as_deref(), Some("20.68"));
     }
 
     #[test]

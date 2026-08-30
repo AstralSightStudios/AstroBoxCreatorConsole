@@ -11,8 +11,9 @@ import {
 } from "~/api/afdian-account";
 import DataCard from "~/components/cards/datacard";
 import {
-  estimateAfdianMonthlyNet,
   formatAfdianCurrency,
+  getAfdianIncomeMonthLabel,
+  resolveAfdianSettlementDisplay,
 } from "~/logic/afdian/income";
 
 function formatUpdatedAt(value?: string) {
@@ -47,17 +48,13 @@ export default function AfdianIncomeOverview() {
   if (!nativeAvailable) return null;
 
   const loading = sessionQuery.isLoading || incomeQuery.isLoading;
-  const projectedNet = incomeQuery.data
-    ? estimateAfdianMonthlyNet(
-        incomeQuery.data.currentMonth,
-        incomeQuery.data.asOf,
-      )
-    : null;
+  const incomeMonthLabel = getAfdianIncomeMonthLabel(
+    incomeQuery.data?.asOf ?? "",
+  );
+  const settlement = incomeQuery.data
+    ? resolveAfdianSettlementDisplay(incomeQuery.data)
+    : { label: "预计到手" as const, amount: null };
   const cards = [
-    {
-      label: "本月收入",
-      value: formatAfdianCurrency(incomeQuery.data?.currentMonth),
-    },
     {
       label: "今日收入",
       value: formatAfdianCurrency(incomeQuery.data?.today),
@@ -65,11 +62,6 @@ export default function AfdianIncomeOverview() {
     {
       label: "昨日收入",
       value: formatAfdianCurrency(incomeQuery.data?.yesterday),
-    },
-    {
-      label: "预计本月到手",
-      secondaryLabel: "扣除 6%",
-      value: formatAfdianCurrency(projectedNet),
     },
   ];
 
@@ -103,12 +95,31 @@ export default function AfdianIncomeOverview() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2.5 py-1.5 lg:grid-cols-4">
-            {cards.map(({ label, secondaryLabel, value }) => (
+            <div className="col-span-2">
               <DataCard
-                key={label}
-                label={label}
-                secondaryLabel={secondaryLabel}
+                label={incomeMonthLabel}
+                secondaryLabel={
+                  settlement.label === "可提现"
+                    ? "可提现"
+                    : "预计到手 · 扣除 6%"
+                }
               >
+                <div className="flex items-end justify-between gap-3">
+                  <p className="card-num">
+                    {loading
+                      ? "..."
+                      : formatAfdianCurrency(incomeQuery.data?.currentMonth)}
+                  </p>
+                  <p className="card-num text-right">
+                    {loading
+                      ? "..."
+                      : formatAfdianCurrency(settlement.amount)}
+                  </p>
+                </div>
+              </DataCard>
+            </div>
+            {cards.map(({ label, value }) => (
+              <DataCard key={label} label={label}>
                 <p className="card-num">{loading ? "..." : value}</p>
               </DataCard>
             ))}

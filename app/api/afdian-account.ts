@@ -16,6 +16,8 @@ export interface AfdianQuickCodeResult {
 
 export interface AfdianIncomeOverview {
   currentMonth?: string | null;
+  previousMonth: string;
+  withdrawable?: string | null;
   today: string;
   yesterday: string;
   asOf: string;

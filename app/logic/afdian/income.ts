@@ -1,5 +1,34 @@
 const AFDIAN_CREATOR_RATE = 0.94;
 
+function getShanghaiDateParts(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, Number(part.value)]),
+  );
+  if (!values.year || !values.month || !values.day) return null;
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: values.hour ?? 0,
+  };
+}
+
+function roundCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export function parseAfdianAmount(value?: string | null) {
   if (!value) return null;
   const amount = Number(value.replaceAll(",", "").trim());
@@ -11,28 +40,52 @@ export function estimateAfdianMonthlyNet(
   asOf: string,
 ) {
   const amount = parseAfdianAmount(currentMonthAmount);
-  const date = new Date(asOf);
-  if (amount === null || Number.isNaN(date.getTime())) return null;
+  const dateParts = getShanghaiDateParts(asOf);
+  if (amount === null || !dateParts) return null;
 
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(date);
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, Number(part.value)]),
+  const daysInMonth = new Date(
+    Date.UTC(dateParts.year, dateParts.month, 0),
+  ).getUTCDate();
+  return roundCurrency(
+    (amount / dateParts.day) * daysInMonth * AFDIAN_CREATOR_RATE,
   );
-  const year = values.year;
-  const month = values.month;
-  const elapsedDays = values.day;
-  if (!year || !month || !elapsedDays) return null;
+}
 
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return Math.round(
-    ((amount / elapsedDays) * daysInMonth * AFDIAN_CREATOR_RATE + Number.EPSILON) *
-      100,
-  ) / 100;
+export function getAfdianIncomeMonthLabel(asOf: string) {
+  const dateParts = getShanghaiDateParts(asOf);
+  return dateParts ? `${dateParts.month}月收入` : "本月收入";
+}
+
+export function resolveAfdianSettlementDisplay(input: {
+  currentMonth?: string | null;
+  previousMonth?: string | null;
+  withdrawable?: string | null;
+  asOf: string;
+}) {
+  const withdrawable = parseAfdianAmount(input.withdrawable);
+  if (withdrawable !== null && withdrawable > 0) {
+    return { label: "可提现" as const, amount: withdrawable };
+  }
+
+  const dateParts = getShanghaiDateParts(input.asOf);
+  if (!dateParts) {
+    return { label: "预计到手" as const, amount: null };
+  }
+  if (dateParts.day === 1 && dateParts.hour < 10) {
+    const previousMonth = parseAfdianAmount(input.previousMonth);
+    return {
+      label: "预计到手" as const,
+      amount:
+        previousMonth === null
+          ? null
+          : roundCurrency(previousMonth * AFDIAN_CREATOR_RATE),
+    };
+  }
+
+  return {
+    label: "预计到手" as const,
+    amount: estimateAfdianMonthlyNet(input.currentMonth, input.asOf),
+  };
 }
 
 export function formatAfdianCurrency(value?: number | string | null) {
