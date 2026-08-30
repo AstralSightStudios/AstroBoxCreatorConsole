@@ -5,7 +5,6 @@ import { setGithubAccount, type GithubAccount } from "./store";
 
 const isWeb = typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__;
 
-const AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const DEVICE_CODE_URL = isWeb
   ? "/github-login/login/device/code"
   : "https://github.com/login/device/code";
@@ -19,7 +18,7 @@ const EMAILS_URL = isWeb
   ? "/github-api/user/emails"
   : "https://api.github.com/user/emails";
 
-export function isTauriEnvironment() {
+function isTauriEnvironment() {
     return (
         typeof window !== "undefined" &&
         Boolean(
@@ -28,20 +27,6 @@ export function isTauriEnvironment() {
                 (window as any).__TAURI_IPC__,
         )
     );
-}
-
-/** OAuth 回调 scheme,对应 tauri.conf.json deep-link schemes。 */
-export const GITHUB_TAURI_REDIRECT_URI = "astroboxcc://oauth/callback";
-
-/**
- * GitHub OAuth 回调地址必须与 OAuth App 后台注册的 redirect URI 逐字一致。
- * - Tauri 桌面端:自定义 scheme,由 deep-link 插件接住。
- * - Web 端:站内路由,由 /oauth-callback 页接收。
- */
-export function getGithubRedirectUri(): string {
-    return isTauriEnvironment()
-        ? GITHUB_TAURI_REDIRECT_URI
-        : `${window.location.origin}/oauth-callback`;
 }
 
 async function githubRequest<T>(options: {
@@ -80,6 +65,16 @@ async function githubRequest<T>(options: {
     return response.data;
 }
 
+export interface GithubDeviceSession {
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete?: string;
+    expiresIn: number;
+    interval: number;
+    scopes: string[];
+}
+
 interface GithubTokenResponse {
     access_token?: string;
     token_type?: string;
@@ -92,6 +87,11 @@ export interface GithubTokenPayload {
     accessToken: string;
     tokenType: string;
     scopes: string[];
+}
+
+export interface GithubPollOptions {
+    signal?: AbortSignal;
+    onStatusChange?: (status: string) => void;
 }
 
 function ensureClientId() {
@@ -110,105 +110,6 @@ function parseScopes(value?: string): string[] {
         .filter(Boolean);
 }
 
-function base64UrlEncode(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/** 生成 PKCE code_verifier(32 字节随机 → base64url,符合 43–128 字符要求)。 */
-export function generateCodeVerifier(): string {
-    const bytes = new Uint8Array(32);
-    crypto.getRandomValues(bytes);
-    return base64UrlEncode(bytes.buffer);
-}
-
-/** S256 code_challenge = base64url(sha256(code_verifier))。 */
-export async function generateCodeChallenge(verifier: string): Promise<string> {
-    const digest = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(verifier),
-    );
-    return base64UrlEncode(digest);
-}
-
-/** 构造 GitHub 授权页 URL(public client + PKCE,无 client_secret)。 */
-export function buildGithubAuthorizeUrl(
-    state: string,
-    codeChallenge: string,
-): string {
-    const params = new URLSearchParams({
-        client_id: GITHUB_OAUTH_CONFIG.clientId,
-        redirect_uri: getGithubRedirectUri(),
-        scope: GITHUB_OAUTH_CONFIG.scopes.join(" "),
-        state,
-        code_challenge: codeChallenge,
-        code_challenge_method: "S256",
-        allow_signup: "false",
-    });
-    return `${AUTHORIZE_URL}?${params.toString()}`;
-}
-
-/** 用一次性授权 code + code_verifier 换取 access token。 */
-export async function exchangeGithubCode(
-    code: string,
-    codeVerifier: string,
-): Promise<GithubTokenPayload> {
-    ensureClientId();
-
-    const params = new URLSearchParams({
-        client_id: GITHUB_OAUTH_CONFIG.clientId,
-        redirect_uri: getGithubRedirectUri(),
-        code,
-        code_verifier: codeVerifier,
-    });
-
-    const data = await githubRequest<GithubTokenResponse>({
-        url: TOKEN_URL,
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "application/json",
-        },
-        body: params.toString(),
-    });
-
-    if (data.error) {
-        throw new Error(data.error_description || data.error);
-    }
-
-    if (!data.access_token || !data.token_type) {
-        throw new Error("GitHub 登录失败：令牌为空。");
-    }
-
-    const parsedScopes = parseScopes(data.scope);
-
-    return {
-        accessToken: data.access_token,
-        tokenType: data.token_type,
-        scopes: parsedScopes.length ? parsedScopes : GITHUB_OAUTH_CONFIG.scopes,
-    };
-}
-
-export interface GithubDeviceSession {
-    deviceCode: string;
-    userCode: string;
-    verificationUri: string;
-    verificationUriComplete?: string;
-    expiresIn: number;
-    interval: number;
-    scopes: string[];
-}
-
-export interface GithubPollOptions {
-    signal?: AbortSignal;
-    onStatusChange?: (status: string) => void;
-}
-
-/** 设备码流程:作为 Auth Code + PKCE(deep-link 回调)失效时的回退。 */
 export async function startGithubDeviceSession(): Promise<GithubDeviceSession> {
     ensureClientId();
 

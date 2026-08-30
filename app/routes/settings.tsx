@@ -37,12 +37,6 @@ import {
   useLoginMethod,
   type AstroboxLoginMethod,
 } from "~/config/loginMethod";
-import {
-  GITHUB_LOGIN_METHODS,
-  saveGithubLoginMethod,
-  useGithubLoginMethod,
-  type GithubLoginMethod,
-} from "~/config/githubLoginMethod";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import {
   checkForUpdate,
@@ -367,7 +361,6 @@ export default function Settings() {
   const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
-  const currentGithubLoginMethod = useGithubLoginMethod();
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -393,12 +386,6 @@ export default function Settings() {
     if (id === currentLoginMethod) return;
     saveLoginMethod(id);
     toast.success(`已切换到 ${LOGIN_METHODS[id].label}`);
-  };
-
-  const handleSelectGithubLoginMethod = (id: GithubLoginMethod) => {
-    if (id === currentGithubLoginMethod) return;
-    saveGithubLoginMethod(id);
-    toast.success(`已切换到 ${GITHUB_LOGIN_METHODS[id].label}`);
   };
 
   const handleSelect = (id: RepoEnvId) => {
@@ -542,28 +529,6 @@ export default function Settings() {
                 key={method.id}
                 selected={method.id === currentLoginMethod}
                 onClick={() => handleSelectLoginMethod(method.id)}
-                title={method.label}
-                description={method.description}
-              />
-            ))}
-          </div>
-        </SectionCard>
-
-        {/* GitHub 登录方式 */}
-        <SectionCard
-          title="GitHub 登录方式"
-          description="默认授权码(PKCE)登录,设备码用于兼容性回退"
-        >
-          <div className="grid gap-2.5 md:grid-cols-2">
-            {(
-              Object.values(GITHUB_LOGIN_METHODS) as Array<
-                (typeof GITHUB_LOGIN_METHODS)[GithubLoginMethod]
-              >
-            ).map((method) => (
-              <OptionCard
-                key={method.id}
-                selected={method.id === currentGithubLoginMethod}
-                onClick={() => handleSelectGithubLoginMethod(method.id)}
                 title={method.label}
                 description={method.description}
               />

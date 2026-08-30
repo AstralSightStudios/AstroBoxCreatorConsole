@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowUpRightIcon,
   CheckCircleIcon,
   GithubLogoIcon,
   SignOutIcon,
@@ -9,16 +10,13 @@ import {
   UserCircleDashedIcon,
 } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import NavItem from "~/components/nav/navitem";
 import FunctionButton from "~/components/nav/function-button";
 import {
   useGithubLoginState,
   startGithubLogin,
   cancelGithubLogin,
-  switchToDeviceFlow,
   type GithubLoginState,
-  type GithubLoginMode,
   type GithubDeviceSession,
 } from "~/logic/account/github-login-state";
 import {
@@ -40,6 +38,7 @@ import InboxBell from "~/components/inbox/InboxBell";
 import InboxDrawer from "~/components/inbox/InboxDrawer";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 
@@ -293,14 +292,6 @@ function NavHeader({
     setShowGithubLogoutConfirm(true);
   };
 
-  const handleCancelGithubLogin = () => {
-    cancelGithubLogin();
-  };
-
-  const handleSwitchToDeviceFlow = () => {
-    void switchToDeviceFlow();
-  };
-
   const confirmGithubLogout = () => {
     cancelGithubLogin();
     logoutAccount("github");
@@ -338,8 +329,6 @@ function NavHeader({
           onGithubLogin={handleGithubLogin}
           onAstroLogout={handleAstroLogout}
           onGithubLogout={handleGithubLogout}
-          onCancelGithubLogin={handleCancelGithubLogin}
-          onSwitchToDeviceFlow={handleSwitchToDeviceFlow}
         />
       </Popover.Root>
 
@@ -432,8 +421,6 @@ interface AccountMenuProps {
   onGithubLogin: () => void;
   onAstroLogout: () => void;
   onGithubLogout: () => void;
-  onCancelGithubLogin: () => void;
-  onSwitchToDeviceFlow: () => void;
 }
 
 function AccountMenu({
@@ -444,14 +431,10 @@ function AccountMenu({
   onGithubLogin,
   onAstroLogout,
   onGithubLogout,
-  onCancelGithubLogin,
-  onSwitchToDeviceFlow,
 }: AccountMenuProps) {
   const hasAstrobox = Boolean(accountState.astrobox);
   const hasGithub = Boolean(accountState.github);
-  const showDeviceCard =
-    githubLoginState.status === "requesting" ||
-    githubLoginState.status === "waiting";
+  const showDeviceCard = githubLoginState.session && githubLoginState.status !== "idle";
 
   return (
     <Popover.Content
@@ -538,11 +521,8 @@ function AccountMenu({
 
         {showDeviceCard && (
           <GithubDeviceCard
-            mode={githubLoginState.mode}
-            session={githubLoginState.session}
+            session={githubLoginState.session!}
             status={githubLoginState.statusMessage}
-            onCancel={onCancelGithubLogin}
-            onSwitchToDevice={onSwitchToDeviceFlow}
           />
         )}
       </div>
@@ -638,29 +618,17 @@ function ConnectedAccountRow({
 }
 
 interface GithubDeviceCardProps {
-  mode?: GithubLoginMode;
-  session?: GithubDeviceSession;
+  session: GithubDeviceSession;
   status?: string;
-  onCancel: () => void;
-  onSwitchToDevice: () => void;
 }
 
-function GithubDeviceCard({
-  mode,
-  session,
-  status,
-  onCancel,
-  onSwitchToDevice,
-}: GithubDeviceCardProps) {
-  const isDevice = mode === "device";
+function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
+  const deepLink =
+    session.verificationUriComplete || session.verificationUri || "";
 
-  const handleOpenLink = () => {
-    const link = session?.verificationUriComplete || session?.verificationUri;
-    if (!link) return;
-    try {
-      void openUrl(link);
-    } catch {
-      window.open(link, "_blank", "noopener,noreferrer");
+  const handleOpen = () => {
+    if (deepLink) {
+      openUrl(deepLink);
     }
   };
 
@@ -668,7 +636,7 @@ function GithubDeviceCard({
     <div className="rounded-xl corner-rounded border border-white/10 bg-nav-item p-3 space-y-1 select-none">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[15px] font-semibold m-0">等待 GitHub 授权中</p>
-        {status === "登录成功" ? (
+        {status === "Login Successful" ? (
           <div className="w-4 h-4 flex items-center justify-center">
             <CheckCircleIcon size={20} className="text-green-500 shrink-0" />
           </div>
@@ -676,47 +644,20 @@ function GithubDeviceCard({
           <Spinner />
         )}
       </div>
-
-      {isDevice && session ? (
-        <>
-          <p className="text-[20px] font-mono-sarasa tracking-wide select-all leading-5">
-            {session.userCode}
-          </p>
-          <p className="text-size-small text-white/60">
-            在浏览器中打开页面并输入上方代码以登录
-          </p>
-          <button
-            className="text-size-medium font-mono-sarasa rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-            onClick={handleOpenLink}
-          >
-            {session.verificationUri}
-          </button>
-        </>
-      ) : (
-        <>
-          <p className="text-size-small text-white/60">
-            已打开浏览器授权页,请点击 Authorize 完成登录。
-          </p>
-          <Button
-            variant="soft"
-            size="1"
-            className="w-full"
-            onClick={onSwitchToDevice}
-          >
-            改用设备码登录
-          </Button>
-        </>
-      )}
-
-      {status && <p className="text-xs text-white/70 pt-1">{status}</p>}
-      <Button
-        variant="soft"
-        size="1"
-        className="w-full"
-        onClick={onCancel}
+      <p className="text-[20px] font-mono-sarasa tracking-wide select-all leading-5">
+        {session.userCode}
+      </p>
+      <p className="text-size-small text-white/60">
+        在浏览器中打开页面并输入上方代码以登录
+      </p>
+      <button
+        className="text-size-medium font-mono-sarasa rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+        onClick={handleOpen}
       >
-        取消授权
-      </Button>
+        {session.verificationUri}
+        <ArrowUpRightIcon size={16} />
+      </button>
+      {status && <p className="text-xs text-white/70 pt-1">{status}</p>}
     </div>
   );
 }
