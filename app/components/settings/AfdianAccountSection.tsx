@@ -148,7 +148,7 @@ function AfdianLoginDialog({
       <Dialog.Content maxWidth="460px">
         <Dialog.Title>登录爱发电</Dialog.Title>
         <Dialog.Description size="2" className="mb-4 text-white/60">
-          登录凭据保存在系统安全存储中，密码不会保存。
+          登录会话保存在应用私有目录中，密码不会保存。
         </Dialog.Description>
 
         <Tabs.Root value={mode} onValueChange={setMode}>

@@ -207,6 +207,7 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
+            afdian::initialize_session_store(app.handle()).map_err(std::io::Error::other)?;
             logger::init_logger(app.handle())?;
             Ok(())
         })

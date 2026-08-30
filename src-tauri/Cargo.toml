@@ -45,9 +45,6 @@ regex = "1"
 sys-locale = "0.3"
 sysinfo = "0.33"
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
-keyring = "2"
-
 # Patch swift-rs (transitive build-dep of tauri, used for the iOS Swift bridge)
 # to our fork, which fixes cross-compilation pulling in the macOS SDK during
 # iOS builds (Xcode 27). See https://github.com/searchstars/swift-rs

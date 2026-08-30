@@ -8,7 +8,14 @@ use rsa::{pkcs8::DecodePublicKey, Pkcs1v15Encrypt, RsaPublicKey};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashSet, str::FromStr};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{Mutex, OnceLock},
+};
+use tauri::Manager;
 
 use crate::AppHttpClient;
 
@@ -16,8 +23,7 @@ const AFDIAN_BASE_URL: &str = "https://afdian.com";
 const IFDIAN_BASE_URL: &str = "https://ifdian.net";
 const AFDIAN_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 AstroBoxCreatorConsole";
-const AFDIAN_KEYRING_SERVICE: &str = "moe.astralsight.astroboxcc.afdian";
-const AFDIAN_KEYRING_ACCOUNT: &str = "session";
+const AFDIAN_SESSION_FILE_NAME: &str = "afdian-session.json";
 const LOGIN_AES_IV: &[u8; 16] = b"7brVHncu7wIDAQAB";
 const LOGIN_PUBLIC_KEY: &str = r#"-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Top/Mt2ofZeAIMh9AHw
@@ -36,6 +42,26 @@ type Aes256CbcEncryptor = CbcEncryptor<Aes256>;
 struct StoredSession {
     auth_token: String,
     display_name: String,
+}
+
+#[derive(Default)]
+struct SessionCache {
+    loaded: bool,
+    session: Option<StoredSession>,
+}
+
+static AFDIAN_SESSION_CACHE: OnceLock<Mutex<SessionCache>> = OnceLock::new();
+static AFDIAN_SESSION_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+pub(crate) fn initialize_session_store(app_handle: &tauri::AppHandle) -> Result<(), String> {
+    let path = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("无法确定爱发电会话存储目录：{error}"))?
+        .join(AFDIAN_SESSION_FILE_NAME);
+    AFDIAN_SESSION_PATH
+        .set(path)
+        .map_err(|_| "爱发电会话存储已初始化".to_string())
 }
 
 #[derive(Debug, Serialize)]
@@ -1093,54 +1119,133 @@ fn mask_account(value: &str) -> String {
     "爱发电用户".into()
 }
 
-#[cfg(not(target_os = "android"))]
-fn keyring_entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(AFDIAN_KEYRING_SERVICE, AFDIAN_KEYRING_ACCOUNT)
-        .map_err(|error| format!("系统凭据存储不可用：{error}"))
+fn session_path() -> Result<&'static Path, String> {
+    AFDIAN_SESSION_PATH
+        .get()
+        .map(PathBuf::as_path)
+        .ok_or_else(|| "爱发电会话存储未初始化".to_string())
 }
 
 #[cfg(not(target_os = "android"))]
-fn load_session() -> Result<Option<StoredSession>, String> {
-    let entry = keyring_entry()?;
-    match entry.get_password() {
+fn load_persisted_session() -> Result<Option<StoredSession>, String> {
+    load_session_file(session_path()?)
+}
+
+#[cfg(not(target_os = "android"))]
+fn load_session_file(path: &Path) -> Result<Option<StoredSession>, String> {
+    match fs::read_to_string(path) {
         Ok(raw) => serde_json::from_str(&raw)
             .map(Some)
             .map_err(|_| "爱发电登录凭据已损坏，请重新登录".into()),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(format!("无法读取系统凭据：{error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("无法读取爱发电会话：{error}")),
     }
 }
 
 #[cfg(not(target_os = "android"))]
-fn save_session(session: &StoredSession) -> Result<(), String> {
-    let raw = serde_json::to_string(session).map_err(|_| "无法保存爱发电登录状态".to_string())?;
-    keyring_entry()?
-        .set_password(&raw)
-        .map_err(|error| format!("无法写入系统凭据：{error}"))
+fn save_persisted_session(session: &StoredSession) -> Result<(), String> {
+    save_session_file(session_path()?, session)
 }
 
 #[cfg(not(target_os = "android"))]
-fn clear_session() -> Result<(), String> {
-    let entry = keyring_entry()?;
-    match entry.delete_password() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(format!("无法清除系统凭据：{error}")),
+fn save_session_file(path: &Path, session: &StoredSession) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "爱发电会话存储路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("无法创建会话存储目录：{error}"))?;
+    let raw = serde_json::to_vec(session).map_err(|_| "无法保存爱发电登录状态".to_string())?;
+    write_session_file(path, &raw)
+}
+
+#[cfg(not(target_os = "android"))]
+fn clear_persisted_session() -> Result<(), String> {
+    clear_session_file(session_path()?)
+}
+
+#[cfg(not(target_os = "android"))]
+fn clear_session_file(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("无法清除爱发电会话：{error}")),
     }
+}
+
+#[cfg(all(unix, not(target_os = "android")))]
+fn write_session_file(path: &Path, raw: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| format!("无法写入爱发电会话：{error}"))?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|error| format!("无法限制爱发电会话文件权限：{error}"))?;
+    file.write_all(raw)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| format!("无法写入爱发电会话：{error}"))
+}
+
+#[cfg(all(not(unix), not(target_os = "android")))]
+fn write_session_file(path: &Path, raw: &[u8]) -> Result<(), String> {
+    fs::write(path, raw).map_err(|error| format!("无法写入爱发电会话：{error}"))
 }
 
 #[cfg(target_os = "android")]
+fn load_persisted_session() -> Result<Option<StoredSession>, String> {
+    Err("当前 Android 版本暂不支持爱发电登录".into())
+}
+
+#[cfg(target_os = "android")]
+fn save_persisted_session(_session: &StoredSession) -> Result<(), String> {
+    Err("当前 Android 版本暂不支持爱发电登录".into())
+}
+
+#[cfg(target_os = "android")]
+fn clear_persisted_session() -> Result<(), String> {
+    Err("当前 Android 版本暂不支持爱发电登录".into())
+}
+
+fn session_cache() -> &'static Mutex<SessionCache> {
+    AFDIAN_SESSION_CACHE.get_or_init(|| Mutex::new(SessionCache::default()))
+}
+
 fn load_session() -> Result<Option<StoredSession>, String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
+    let mut cache = session_cache()
+        .lock()
+        .map_err(|_| "爱发电会话缓存不可用".to_string())?;
+    if cache.loaded {
+        return Ok(cache.session.clone());
+    }
+
+    let session = load_persisted_session()?;
+    cache.loaded = true;
+    cache.session = session.clone();
+    Ok(session)
 }
 
-#[cfg(target_os = "android")]
-fn save_session(_session: &StoredSession) -> Result<(), String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
+fn save_session(session: &StoredSession) -> Result<(), String> {
+    let mut cache = session_cache()
+        .lock()
+        .map_err(|_| "爱发电会话缓存不可用".to_string())?;
+    save_persisted_session(session)?;
+    cache.loaded = true;
+    cache.session = Some(session.clone());
+    Ok(())
 }
 
-#[cfg(target_os = "android")]
 fn clear_session() -> Result<(), String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
+    let mut cache = session_cache()
+        .lock()
+        .map_err(|_| "爱发电会话缓存不可用".to_string())?;
+    clear_persisted_session()?;
+    cache.loaded = true;
+    cache.session = None;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1299,5 +1404,38 @@ mod tests {
         assert_eq!(mask_account("creator@example.com"), "c***@example.com");
         assert_eq!(mask_account("13800138000"), "138****00");
         assert_eq!(mask_account("short"), "爱发电用户");
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn persists_session_without_keyring() {
+        let directory = std::env::temp_dir().join(format!(
+            "astrobox-afdian-session-{}-{}",
+            std::process::id(),
+            OsRng.next_u64()
+        ));
+        let path = directory.join(AFDIAN_SESSION_FILE_NAME);
+        let session = StoredSession {
+            auth_token: "test-token".into(),
+            display_name: "测试用户".into(),
+        };
+
+        save_session_file(&path, &session).unwrap();
+        let restored = load_session_file(&path).unwrap().unwrap();
+
+        assert_eq!(restored.auth_token, "test-token");
+        assert_eq!(restored.display_name, "测试用户");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        clear_session_file(&path).unwrap();
+        assert!(!path.exists());
+        fs::remove_dir(directory).unwrap();
     }
 }
