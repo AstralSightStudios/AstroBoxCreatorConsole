@@ -83,19 +83,20 @@ jobs:
               su builder -c "/work/scripts/archpkg/build.sh prebuilt"
               cp /work/scripts/archpkg/astrobox-creator-console-*.pkg.tar.zst /work/dist/linux/'
 
+      - name: Stage release artifacts (flat)
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
+          cp src-tauri/target/release/astrobox-creator-console release-artifacts/ 2>/dev/null || true
+          cp dist/linux/* release-artifacts/ 2>/dev/null || true
+          ls -la release-artifacts/
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tauri-build-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/astrobox-creator-console
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.rpm
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-            dist/linux/*
+          path: release-artifacts/*
           if-no-files-found: error
 
   build-android:
@@ -149,10 +150,16 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      - name: Stage APK (flat)
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk release-artifacts/
+          ls -la release-artifacts/
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: android-apk
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          path: release-artifacts/*
           if-no-files-found: error
