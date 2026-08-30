@@ -77,8 +77,10 @@ repackage_rpm() {
         esac
     done
 
-    local file_list
-    file_list=$(cd "$content_dir" && find . -type f | sed 's|^\.||')
+    # rpm 的 %files 按空白分词，desktop 等含空格的文件名需转义，
+    # 否则 rpmbuild 会报 "File must begin with /" 并触发静默降级。
+    local file_list_file="$build_dir/filelist"
+    (cd "$content_dir" && find . -type f | sed 's|^\.||' | sed 's/ /\\ /g') > "$file_list_file"
 
     cat > "$spec_file" << EOF
 Name: ${PKG_NAME}
@@ -95,15 +97,16 @@ AstroBox CreatorConsole is an all-in-one creator console for the AstroBox ecosys
 mkdir -p %{buildroot}
 cp -a $content_dir/* %{buildroot}/
 
-%files
-$file_list
+%files -f $file_list_file
 EOF
 
     mkdir -p "$build_dir/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
-    rpmbuild --define "_topdir $build_dir/rpmbuild" \
-             -bb "$spec_file" 2>/dev/null || {
+    local build_log
+    build_log=$(rpmbuild --define "_topdir $build_dir/rpmbuild" \
+                         -bb "$spec_file" 2>&1) || {
         echo "    Warning: rpmbuild failed, falling back to simple rename"
+        echo "$build_log" | tail -20
         cp "$abs_rpm" "$abs_out"
         rm -rf "$build_dir"
         return
