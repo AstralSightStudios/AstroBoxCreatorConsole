@@ -61,6 +61,7 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=6144"
         with:
           projectPath: .
+          tauriScript: bun tauri
           args: ''
 
       - name: Upload build artifacts
