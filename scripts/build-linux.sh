@@ -64,7 +64,9 @@ repackage_rpm() {
 
     cp "$abs_rpm" "$build_dir/"
     cd "$build_dir"
-    rpm2archive "$(basename "$abs_rpm")" -f cpio | gunzip | cpio -idm 2>/dev/null || true
+    # rpm2archive 在部分发行版（如 ubuntu 22.04）上会输出损坏的归档导致解包失败，
+    # 改用 rpm2cpio 直接输出 cpio 流，跨发行版稳定。
+    rpm2cpio "$abs_rpm" | cpio -idm 2>/dev/null || true
 
     local content_dir="$build_dir/content"
     mkdir -p "$content_dir"
