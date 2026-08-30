@@ -1,9 +1,11 @@
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpRightIcon,
   CheckCircleIcon,
+  CoinIcon,
   GithubLogoIcon,
   SignOutIcon,
   UploadIcon,
@@ -40,13 +42,52 @@ import { useInboxPolling } from "~/logic/inbox/use-inbox";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
+import { toast } from "sonner";
+import BlurEffect from "react-progressive-blur";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
+import {
+  AFDIAN_INCOME_QUERY_KEY,
+  AFDIAN_SESSION_QUERY_KEY,
+  getAfdianErrorMessage,
+  getAfdianSessionStatus,
+  isAfdianNativeAvailable,
+  logoutAfdian,
+  type AfdianSessionStatus,
+} from "~/api/afdian-account";
+
+const NAV_HEADER_COLLAPSE_THRESHOLD = 56;
+const NAV_HEADER_EXPANDED_HEIGHT = "clamp(218px, 30dvh, 342px)";
+const NAV_HEADER_MOBILE_EXPANDED_HEIGHT = "clamp(162px, 30dvh, 286px)";
+
+interface NavScrollState {
+  scrollTop: number;
+  canScrollUp: boolean;
+  canScrollDown: boolean;
+}
+
+function getNavGridTemplateRows(
+  scrollTop: number,
+  expandedHeight: string,
+) {
+  const collapseOffset = Math.max(
+    0,
+    scrollTop - NAV_HEADER_COLLAPSE_THRESHOLD,
+  );
+  const headerHeight = `clamp(100px, calc(${expandedHeight} - ${collapseOffset}px), ${expandedHeight})`;
+
+  return `${headerHeight} minmax(0, 1fr)`;
+}
 
 export default function Nav() {
   const accountState = useAccountState();
   const account = getDisplayAccount(accountState);
   const location = useLocation();
   const navigate = useNavigate();
+  const [navScrollState, setNavScrollState] = useState<NavScrollState>({
+    scrollTop: 0,
+    canScrollUp: false,
+    canScrollDown: true,
+  });
   useInboxPolling();
   const {
     isCollapsed,
@@ -81,6 +122,16 @@ export default function Nav() {
     }
   }, [isCollapsed, isDesktop]);
 
+  useEffect(() => {
+    if (!isDesktop && isCollapsed) {
+      setNavScrollState({
+        scrollTop: 0,
+        canScrollUp: false,
+        canScrollDown: true,
+      });
+    }
+  }, [isCollapsed, isDesktop]);
+
   const handleNavigate = (path: string) => {
     const drawerOpen = !isDesktop && !isCollapsed;
     const isNewRoute = location.pathname !== path;
@@ -101,11 +152,25 @@ export default function Nav() {
     }
   };
 
+  const handleNavScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
+    const maxScrollTop = Math.max(0, target.scrollHeight - target.clientHeight);
+    const scrollTop = Math.max(0, target.scrollTop);
+
+    setNavScrollState({
+      scrollTop,
+      canScrollUp: scrollTop > 1,
+      canScrollDown: scrollTop < maxScrollTop - 1,
+    });
+  }, []);
+
   const sharedProps = {
     account,
     accountState,
     pathname: location.pathname,
     onNavigate: handleNavigate,
+    navScrollState,
+    onNavScroll: handleNavScroll,
   };
 
   if (isDesktop) {
@@ -138,6 +203,8 @@ interface NavContentProps {
   pathname: string;
   onNavigate: (path: string) => void;
   onToggleNav: () => void;
+  navScrollState: NavScrollState;
+  onNavScroll: (event: React.UIEvent<HTMLDivElement>) => void;
   hideFunctionButton?: boolean;
 }
 
@@ -147,33 +214,72 @@ function NavContent({
   onToggleNav,
   pathname,
   onNavigate,
+  onNavScroll,
+  navScrollState,
   hideFunctionButton,
 }: NavContentProps) {
+  const navMaskImage = `linear-gradient(to bottom, ${
+    navScrollState.canScrollUp
+      ? "transparent 0, #000 56px, "
+      : "#000 0, "
+  }${
+    navScrollState.canScrollDown
+      ? "#000 calc(100% - 56px), transparent 100%"
+      : "#000 100%"
+  })`;
+
   return (
     <>
-      <NavHeader
-        account={account}
-        accountState={accountState}
-        onToggleNav={onToggleNav}
-        hideFunctionButton={hideFunctionButton}
-      />
-      <AccountInfo account={account} />
-      <div className="flex-1 min-h-0 overflow-y-auto nav-scroll-area pb-[calc(70px+env(safe-area-inset-bottom))]">
-        <div className="flex flex-col gap-2.5 pb-2">
-          {NAV_SECTIONS.map((section) => (
-            <NavSection
-              key={section.id}
-              {...section}
-              accountState={accountState}
-              pathname={pathname}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
+      <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <NavHeader
+          account={account}
+          accountState={accountState}
+          onToggleNav={onToggleNav}
+          hideFunctionButton={hideFunctionButton}
+        />
+        <AccountInfo account={account} />
       </div>
+      <div className="relative flex min-h-0 min-w-0 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div
+            className="nav-scroll-area h-full overflow-y-auto"
+            style={{
+              maskImage: navMaskImage,
+              WebkitMaskImage: navMaskImage,
+            }}
+            onScroll={onNavScroll}
+          >
+            <div className="flex flex-col gap-0 py-14">
+              {NAV_SECTIONS.map((section) => (
+                <NavSection
+                  key={section.id}
+                  {...section}
+                  accountState={accountState}
+                  pathname={pathname}
+                  onNavigate={onNavigate}
+                />
+              ))}
+              <div className="h-px w-[calc(100%-1rem)] bg-white/10 mt-2 mb-1 mx-2"></div>
+            </div>
+          </div>
 
-      <div className="absolute max-w-[299px] max-[1280px]:max-w-[calc(100vw-20px)] box-border w-full bottom-0 bg-linear-to-b from-0% from-nav/0 to-20% to-nav pt-4">
-        <div className="flex flex-col gap-2.5 p-2 pt-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] -mx-2 backdrop-blur-md">
+          {navScrollState.canScrollUp && (
+            <BlurEffect
+              className="!pointer-events-none h-10 w-full"
+              intensity={50}
+              position="top"
+            />
+          )}
+          {navScrollState.canScrollDown && (
+            <BlurEffect
+              className="!pointer-events-none h-18 w-full"
+              intensity={50}
+              position="bottom"
+            />
+          )}
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 z-50 min-w-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
           <NavItem
             key="publish"
             icon={UploadIcon}
@@ -196,13 +302,19 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
   const { isDesktop } = useNavVisibility();
   return (
     <aside
-      className={`shrink-0 transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-[315px]"}`}
+      className={`shrink-0 transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
       aria-hidden={isCollapsed}
     >
       {!isCollapsed && (
         <nav
-          className="flex h-screen w-[315px] flex-col gap-1.5 overflow-hidden bg-nav p-2 pb-0 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] z-10 relative"
-          style={{ height: "100dvh" }}
+          className="relative z-10 grid h-screen w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))]"
+          style={{
+            height: "100dvh",
+            gridTemplateRows: getNavGridTemplateRows(
+              contentProps.navScrollState.scrollTop,
+              NAV_HEADER_EXPANDED_HEIGHT,
+            ),
+          }}
         >
           <NavContent {...contentProps} />
         </nav>
@@ -234,11 +346,17 @@ function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
         transition={{ duration: 0.3 }}
       />
       <motion.nav
-        className="relative z-10 flex h-full w-full flex-col gap-1.5 overflow-hidden bg-nav p-2.5 pb-0 pt-[max(0.625rem,env(safe-area-inset-top))] pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))]"
-        initial={{ y: 10, scale: 0.97, opacity: 0.8 }}
-        animate={{ y: 0, scale: 1, opacity: 1 }}
-        exit={{ y: 10, scale: 0.97, opacity: 0.8 }}
+        className="relative z-10 grid h-full w-[75vw] grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
+        initial={{ x: "-100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "-100%" }}
         transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
+        style={{
+          gridTemplateRows: getNavGridTemplateRows(
+            contentProps.navScrollState.scrollTop,
+            NAV_HEADER_MOBILE_EXPANDED_HEIGHT,
+          ),
+        }}
         onClick={(event) => event.stopPropagation()}
       >
         <NavContent hideFunctionButton={true} {...contentProps} />
@@ -260,16 +378,31 @@ function NavHeader({
   onToggleNav,
   hideFunctionButton,
 }: NavHeaderProps) {
+  const queryClient = useQueryClient();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showGithubLogoutConfirm, setShowGithubLogoutConfirm] = useState(false);
   const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
+  const [showAfdianLogoutConfirm, setShowAfdianLogoutConfirm] = useState(false);
+  const [afdianLoggingOut, setAfdianLoggingOut] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const githubLoginState = useGithubLoginState();
   const navigate = useNavigate();
+  const afdianSessionQuery = useQuery({
+    queryKey: AFDIAN_SESSION_QUERY_KEY,
+    queryFn: getAfdianSessionStatus,
+    enabled: isAfdianNativeAvailable(),
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
     navigate("/login");
+  };
+
+  const handleAfdianLogin = () => {
+    setIsMenuOpen(false);
+    navigate("/settings");
   };
 
   const handleGithubLogin = async () => {
@@ -298,14 +431,40 @@ function NavHeader({
     window.location.reload();
   };
 
-  const hasAccount = account.hasAstrobox || account.hasGithub;
+  const handleAfdianLogout = () => {
+    if (!afdianSessionQuery.data?.connected) return;
+    setShowAfdianLogoutConfirm(true);
+  };
+
+  const confirmAfdianLogout = async () => {
+    setAfdianLoggingOut(true);
+    try {
+      await logoutAfdian();
+      queryClient.setQueryData<AfdianSessionStatus>(AFDIAN_SESSION_QUERY_KEY, {
+        connected: false,
+        displayName: null,
+      });
+      queryClient.removeQueries({ queryKey: AFDIAN_INCOME_QUERY_KEY });
+      setShowAfdianLogoutConfirm(false);
+      toast.success("已退出爱发电账户");
+    } catch (error) {
+      toast.error(getAfdianErrorMessage(error, "退出爱发电账户失败"));
+    } finally {
+      setAfdianLoggingOut(false);
+    }
+  };
+
+  const hasAccount =
+    account.hasAstrobox ||
+    account.hasGithub ||
+    Boolean(afdianSessionQuery.data?.connected);
   const isGithubBusy = githubLoginState.status === "requesting" || githubLoginState.status === "waiting";
 
   return (
     <>
       <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
         <div
-          className={`p-1.5 flex flex-row items-center self-stretch ${hideFunctionButton ? "justify-end" : "justify-between"}`}
+          className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
           {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
           <div className="flex items-center gap-2">
@@ -327,8 +486,12 @@ function NavHeader({
           isGithubBusy={isGithubBusy}
           onAstroLogin={handleAstroLogin}
           onGithubLogin={handleGithubLogin}
+          onAfdianLogin={handleAfdianLogin}
           onAstroLogout={handleAstroLogout}
           onGithubLogout={handleGithubLogout}
+          afdianSession={afdianSessionQuery.data}
+          afdianLoggingOut={afdianLoggingOut}
+          onAfdianLogout={handleAfdianLogout}
         />
       </Popover.Root>
 
@@ -362,6 +525,32 @@ function NavHeader({
               取消
             </Button>
             <Button variant="solid" onClick={confirmAstroLogout}>
+              退出
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root open={showAfdianLogoutConfirm} onOpenChange={setShowAfdianLogoutConfirm}>
+        <Dialog.Content className="max-w-[520px]">
+          <Dialog.Title>退出爱发电账号</Dialog.Title>
+          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
+            确认退出爱发电账号？退出后需要重新登录。
+          </Dialog.Description>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button
+              variant="soft"
+              onClick={() => setShowAfdianLogoutConfirm(false)}
+              disabled={afdianLoggingOut}
+            >
+              取消
+            </Button>
+            <Button
+              variant="solid"
+              onClick={() => void confirmAfdianLogout()}
+              disabled={afdianLoggingOut}
+            >
+              {afdianLoggingOut ? <Spinner size="1" /> : null}
               退出
             </Button>
           </div>
@@ -417,23 +606,32 @@ interface AccountMenuProps {
   accountState: AccountState;
   githubLoginState: GithubLoginState;
   isGithubBusy: boolean;
+  afdianSession?: AfdianSessionStatus;
+  afdianLoggingOut: boolean;
   onAstroLogin: () => void;
   onGithubLogin: () => void;
+  onAfdianLogin: () => void;
   onAstroLogout: () => void;
   onGithubLogout: () => void;
+  onAfdianLogout: () => void;
 }
 
 function AccountMenu({
   accountState,
   githubLoginState,
   isGithubBusy,
+  afdianSession,
+  afdianLoggingOut,
   onAstroLogin,
   onGithubLogin,
+  onAfdianLogin,
   onAstroLogout,
   onGithubLogout,
+  onAfdianLogout,
 }: AccountMenuProps) {
   const hasAstrobox = Boolean(accountState.astrobox);
   const hasGithub = Boolean(accountState.github);
+  const hasAfdian = Boolean(afdianSession?.connected);
   const showDeviceCard = githubLoginState.session && githubLoginState.status !== "idle";
 
   return (
@@ -456,7 +654,7 @@ function AccountMenu({
       }}
     >
       <div className="rounded-3xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-1.5 space-y-1.5">
-        {(hasAstrobox || hasGithub) && (
+        {(hasAstrobox || hasGithub || hasAfdian) && (
           <div className="flex flex-col gap-1.5">
             <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
               已登录账号
@@ -491,10 +689,19 @@ function AccountMenu({
                 onLogout={onGithubLogout}
               />
             )}
+            {hasAfdian && (
+              <ConnectedAccountRow
+                provider="afdian"
+                name={afdianSession?.displayName || "爱发电用户"}
+                detail="已连接爱发电"
+                onLogout={onAfdianLogout}
+                loggingOut={afdianLoggingOut}
+              />
+            )}
           </div>
         )}
 
-        {(!hasAstrobox || !hasGithub) && (
+        {(!hasAstrobox || !hasGithub || !hasAfdian) && (
           <div className="flex flex-col gap-1.5">
             <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
               登录新账号
@@ -514,6 +721,14 @@ function AccountMenu({
                 description="登录到GitHub账号以提交资源"
                 onClick={onGithubLogin}
                 loading={isGithubBusy}
+              />
+            )}
+            {!hasAfdian && (
+              <MenuButton
+                icon={<CoinIcon size={22} />}
+                label="爱发电登录"
+                description="登录爱发电账号以查看收入数据"
+                onClick={onAfdianLogin}
               />
             )}
           </div>
@@ -567,11 +782,12 @@ function MenuButton({
 }
 
 interface ConnectedAccountRowProps {
-  provider: AccountProvider;
+  provider: AccountProvider | "afdian";
   name: string;
   detail?: string;
   avatar?: string;
   onLogout: () => void;
+  loggingOut?: boolean;
 }
 
 function ConnectedAccountRow({
@@ -580,9 +796,11 @@ function ConnectedAccountRow({
   detail,
   avatar,
   onLogout,
+  loggingOut = false,
 }: ConnectedAccountRowProps) {
   const [avatarError, setAvatarError] = useState(false);
-  const initials = provider === "github" ? "GH" : "AB";
+  const initials =
+    provider === "github" ? "GH" : provider === "afdian" ? "AF" : "AB";
   const showAvatar = Boolean(avatar && !avatarError);
 
   return (
@@ -609,8 +827,9 @@ function ConnectedAccountRow({
       <button
         className="flex items-center gap-1 rounded-xs px-1 py-1 text-size-small text-white/80 hover:text-red-700 dark:hover:text-red-300 transition-colors"
         onClick={onLogout}
+        disabled={loggingOut}
       >
-        <SignOutIcon size={14} />
+        {loggingOut ? <Spinner size="1" /> : <SignOutIcon size={14} />}
         退出
       </button>
     </div>
@@ -662,9 +881,10 @@ function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
   );
 }
 
-function formatProvider(provider?: AccountProvider) {
+function formatProvider(provider?: AccountProvider | "afdian") {
   if (provider === "astrobox") return "AstroBox";
   if (provider === "github") return "GitHub";
+  if (provider === "afdian") return "爱发电";
   return undefined;
 }
 
@@ -674,19 +894,14 @@ interface AccountInfoProps {
 
 function AccountInfo({ account }: AccountInfoProps) {
   const name = account.name || "未登录";
-  const metaParts = [
-    account.plan?.trim(),
-    account.email?.trim(),
-    formatProvider(account.provider),
-  ].filter(Boolean);
-  const meta = metaParts.join(" · ");
+  const plan = account.plan?.trim() || "";
+  const email = account.email?.trim() || "";
 
   return (
-    <div className="flex flex-col px-3 py-3.5">
-      <p className="text-[17px] font-semibold">{name}</p>
-      {meta && (
-        <p className="font-mono-sarasa text-[13px] font-medium opacity-75">{meta}</p>
-      )}
+    <div className="flex flex-col px-3 pt-2.5 pb-6 h-full justify-center z-50">
+      <p className="truncate text-[15px] font-semibold leading-5">{name}</p>
+      <p className="truncate text-[15px] font-semibold leading-5 text-white/50">{email}</p>
+      <p className="truncate font-mono-sarasa text-xs font-medium text-white/60 mt-2">{plan}</p>
     </div>
   );
 }
@@ -714,10 +929,10 @@ function NavSection({
   if (visibleItems.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-1.5">
+    <section className="flex flex-col gap-0">
       {title && (
-        <div className="px-3 py-3 pb-0">
-          <p className="text-nav-item-title text-size-small font-[450] select-none">
+        <div className="px-3 pb-1 pt-4">
+          <p className="text-[12px] font-normal leading-4 text-white/45 select-none">
             {title}
           </p>
         </div>

@@ -13,7 +13,7 @@ export default function FunctionButton({
   const { isDesktop } = useNavVisibility();
 
   const mergedClassName = [
-    "z-50 flex gap-2.5 rounded-xl corner-rounded justify-center items-center w-[34px] h-[34px] hover:bg-btn-hover active:scale-95 active:opacity-75 transition-all duration-150 ease-in-out",
+    "z-50 flex h-9 w-9 items-center justify-center gap-2.5 rounded-[14px] corner-rounded transition-all duration-150 ease-in-out hover:bg-white/8 active:scale-95 active:opacity-75",
     className,
   ]
     .filter(Boolean)
