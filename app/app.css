@@ -228,7 +228,8 @@
 .scrubbable-number-suffix {
     flex: none;
     color: rgba(255, 255, 255, 0.45);
-    font-size: 12px;
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
     line-height: 1;
     user-select: none;
 }
@@ -250,11 +251,42 @@
     height: 16px;
 }
 
+.scrubbable-number-prefix[data-empty="true"] {
+    flex-basis: 6px;
+    width: 6px;
+    margin-left: 0;
+}
+
 .scrubbable-number-suffix {
     padding-right: 4px;
 }
 
+.scrubbable-number-value {
+    position: relative;
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+}
+
+.scrubbable-number-measure {
+    display: flex;
+    align-items: center;
+    width: max-content;
+    min-width: 0;
+    height: 100%;
+    padding: 0 8px;
+    overflow: hidden;
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
+    visibility: hidden;
+    white-space: pre;
+    pointer-events: none;
+}
+
 .scrubbable-number-input {
+    position: absolute;
+    inset: 0;
     width: 100%;
     min-width: 0;
     height: 100%;
@@ -267,29 +299,57 @@
     font-size: 14px;
 }
 
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-value {
+    flex: 0 1 auto;
+}
+
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-measure,
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-input {
+    padding-right: 2px;
+}
+
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-suffix {
+    margin-right: auto;
+    padding-right: 0;
+}
+
 .scrubbable-number-input::placeholder {
     color: rgba(255, 255, 255, 0.3);
 }
 
 .scrubbable-number-stepper {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    flex: 0 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
     align-self: stretch;
     touch-action: none;
+    margin: auto 5px auto 4px;
+    border-radius: 4px;
 }
 
 .scrubbable-number-stepper button {
     display: grid;
     place-items: center;
-    width: 24px;
+    width: 18px;
+    height: 12px;
     min-width: 0;
     min-height: 0;
     padding: 0;
     color: rgba(255, 255, 255, 0.2);
     background: transparent;
     border: 0;
-    cursor: ew-resize;
+}
+
+.scrubbable-number-stepper button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.scrubbable-number-stepper button:first-child {
+  border-radius: 4px 4px 1px 1px;
+}
+
+.scrubbable-number-stepper button:last-child {
+  border-radius: 1px 1px 4px 4px;
 }
 
 .scrubbable-number-stepper button[data-enabled="true"] {

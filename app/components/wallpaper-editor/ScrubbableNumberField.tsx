@@ -33,6 +33,8 @@ import {
 } from "./numeric-scrub";
 import type { NumericScrubTier } from "./numeric-scrub";
 
+const STEPPER_CLICK_SUPPRESSION_MS = 250;
+
 interface ScrubSession {
     pointerId: number;
     captureTarget: HTMLElement;
@@ -184,6 +186,7 @@ export function ScrubbableNumberField({
     const editingStartValueRef = useRef(normalizedValue);
     const onScrubStateChangeRef = useRef(onScrubStateChange);
     const sessionRef = useRef<ScrubSession | null>(null);
+    const suppressStepperClickUntilRef = useRef(0);
     const draftRef = useRef(formatNumericValue(normalizedValue));
     const [draft, setDraft] = useState(draftRef.current);
     const [scrubVisual, setScrubVisual] = useState<{
@@ -296,11 +299,11 @@ export function ScrubbableNumberField({
             // 指针捕获可能已由系统释放。
         }
 
-        if (!session.active) {
-            if (!canceled && session.buttonDirection) {
-                adjustBySteps(session.buttonDirection);
-            }
-            return;
+        if (!session.active) return;
+
+        if (session.buttonDirection) {
+            suppressStepperClickUntilRef.current =
+                performance.now() + STEPPER_CLICK_SUPPRESSION_MS;
         }
 
         if (canceled && session.currentValue !== session.startValue) {
@@ -365,9 +368,9 @@ export function ScrubbableNumberField({
         };
 
         void Promise.all([
-            appWindow.innerPosition(),
+            cursorPosition(),
             appWindow.scaleFactor(),
-        ]).then(([innerPosition, scaleFactor]) => {
+        ]).then(([initialPosition, scaleFactor]) => {
             if (
                 stopped ||
                 sessionRef.current !== session ||
@@ -377,19 +380,24 @@ export function ScrubbableNumberField({
                 return;
             }
 
+            let lastNativeX = initialPosition.x;
+            let lastNativeY = initialPosition.y;
+
             const poll = async () => {
                 if (
                     stopped ||
                     polling ||
-                    sessionRef.current !== session ||
-                    performance.now() - session.lastDomMoveAt <
-                        NUMERIC_SCRUB_METRICS.nativeFallbackDelay
+                    sessionRef.current !== session
                 ) {
                     return;
                 }
                 polling = true;
                 try {
                     const position = await cursorPosition();
+                    const deltaX = (position.x - lastNativeX) / scaleFactor;
+                    const deltaY = (position.y - lastNativeY) / scaleFactor;
+                    lastNativeX = position.x;
+                    lastNativeY = position.y;
                     if (
                         stopped ||
                         sessionRef.current !== session ||
@@ -401,8 +409,8 @@ export function ScrubbableNumberField({
                     handleScrubMove(
                         {
                             pointerId: session.pointerId,
-                            clientX: (position.x - innerPosition.x) / scaleFactor,
-                            clientY: (position.y - innerPosition.y) / scaleFactor,
+                            clientX: session.lastX + deltaX,
+                            clientY: session.lastY + deltaY,
                             preventDefault: () => undefined,
                         },
                         "native",
@@ -633,6 +641,14 @@ export function ScrubbableNumberField({
         }
     };
 
+    const handleStepperClick = (direction: -1 | 1) => {
+        if (performance.now() < suppressStepperClickUntilRef.current) {
+            suppressStepperClickUntilRef.current = 0;
+            return;
+        }
+        adjustBySteps(direction);
+    };
+
     const canIncrease = canStepNumericValue(normalizedValue, 1, min, max);
     const canDecrease = canStepNumericValue(normalizedValue, -1, min, max);
 
@@ -641,77 +657,87 @@ export function ScrubbableNumberField({
             ref={rootRef}
             className={`scrubbable-number-field${scrubVisual.active ? " is-scrubbing" : ""}`}
             data-adjustable={canAdjust}
+            data-has-suffix={Boolean(suffix)}
             style={{ borderRadius: radius }}
         >
             <div className="scrubbable-number-content">
-                {prefix !== undefined && prefix !== null && (
+                <span
+                    className="scrubbable-number-prefix"
+                    data-empty={prefix === undefined || prefix === null}
+                    aria-hidden="true"
+                    onPointerDown={(event) => beginScrub(event)}
+                    onLostPointerCapture={() => finishScrub(true)}
+                >
+                    {prefix}
+                </span>
+                <div className="scrubbable-number-value">
                     <span
-                        className="scrubbable-number-prefix"
+                        className="scrubbable-number-measure"
                         aria-hidden="true"
-                        onPointerDown={(event) => beginScrub(event)}
-                        onLostPointerCapture={() => finishScrub(true)}
                     >
-                        {prefix}
+                        {draft || placeholder || "0"}
                     </span>
-                )}
-                <input
-                    ref={inputRef}
-                    type="text"
-                    inputMode="decimal"
-                    role="spinbutton"
-                    aria-label={ariaLabel}
-                    aria-valuemin={Number.isFinite(min) ? min : undefined}
-                    aria-valuemax={Number.isFinite(max) ? max : undefined}
-                    aria-valuenow={Number.isFinite(normalizedValue) ? normalizedValue : undefined}
-                    value={draft}
-                    placeholder={placeholder}
-                    disabled={disabled}
-                    readOnly={readOnly}
-                    onFocus={() => {
-                        editingRef.current = true;
-                        editingStartValueRef.current = valueRef.current;
-                    }}
-                    onChange={(event) => {
-                        const nextDraft = event.target.value;
-                        updateDraft(nextDraft);
-                        const parsed = Number(nextDraft.trim());
-                        if (nextDraft.trim() === "" || !Number.isFinite(parsed)) return;
-                        const nextValue = clampNumericValue(parsed, min, max);
-                        if (nextValue !== valueRef.current) {
-                            valueRef.current = nextValue;
-                            onChange(nextValue);
-                        }
-                    }}
-                    onBlur={() => {
-                        if (sessionRef.current?.active) {
-                            editingRef.current = false;
-                            finishScrub(true);
-                            return;
-                        }
-                        commitDraft(false);
-                    }}
-                    onKeyDown={handleInputKeyDown}
-                    className="editor-number-input scrubbable-number-input"
-                />
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        inputMode="decimal"
+                        role="spinbutton"
+                        aria-label={ariaLabel}
+                        aria-valuemin={Number.isFinite(min) ? min : undefined}
+                        aria-valuemax={Number.isFinite(max) ? max : undefined}
+                        aria-valuenow={Number.isFinite(normalizedValue) ? normalizedValue : undefined}
+                        value={draft}
+                        placeholder={placeholder}
+                        disabled={disabled}
+                        readOnly={readOnly}
+                        onFocus={() => {
+                            editingRef.current = true;
+                            editingStartValueRef.current = valueRef.current;
+                        }}
+                        onChange={(event) => {
+                            const nextDraft = event.target.value;
+                            updateDraft(nextDraft);
+                            const parsed = Number(nextDraft.trim());
+                            if (nextDraft.trim() === "" || !Number.isFinite(parsed)) return;
+                            const nextValue = clampNumericValue(parsed, min, max);
+                            if (nextValue !== valueRef.current) {
+                                valueRef.current = nextValue;
+                                onChange(nextValue);
+                            }
+                        }}
+                        onBlur={() => {
+                            if (sessionRef.current?.active) {
+                                editingRef.current = false;
+                                finishScrub(true);
+                                return;
+                            }
+                            commitDraft(false);
+                        }}
+                        onKeyDown={handleInputKeyDown}
+                        className="editor-number-input scrubbable-number-input"
+                    />
+                </div>
                 {suffix && <span className="scrubbable-number-suffix">{suffix}</span>}
-                <div className="scrubbable-number-stepper" aria-hidden="true">
+                <div className="scrubbable-number-stepper">
                     <button
                         type="button"
-                        tabIndex={-1}
+                        aria-label="增加数值"
                         data-enabled={canIncrease}
                         onPointerDown={(event) => beginScrub(event, 1)}
                         onLostPointerCapture={() => finishScrub(true)}
+                        onClick={() => handleStepperClick(1)}
                     >
-                        <CaretUpIcon size={10} weight="bold" />
+                        <CaretUpIcon size={11} className="-mb-[1px]" weight="bold" />
                     </button>
                     <button
                         type="button"
-                        tabIndex={-1}
+                        aria-label="减少数值"
                         data-enabled={canDecrease}
                         onPointerDown={(event) => beginScrub(event, -1)}
                         onLostPointerCapture={() => finishScrub(true)}
+                        onClick={() => handleStepperClick(-1)}
                     >
-                        <CaretDownIcon size={10} weight="bold" />
+                        <CaretDownIcon size={11} className="-mt-[1px]" weight="bold" />
                     </button>
                 </div>
             </div>
