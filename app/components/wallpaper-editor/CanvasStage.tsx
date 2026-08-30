@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { WallpaperStage } from "@claralight-design/wallpaper-engine/react";
 import type {
     ResolvedWallpaperTemplate,
@@ -9,6 +9,7 @@ import type {
 } from "@claralight-design/wallpaper-engine";
 import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 import type { WallpaperLayerConfig } from "~/logic/wallpaper/types";
+import { getDeviceDisplayName, type DeviceOption } from "~/logic/devices/catalog";
 
 /**
  * 拖拽/捏合缩放期间临时去掉模糊、背景模糊与混合模式，避免实时重绘卡顿；
@@ -32,6 +33,7 @@ export interface CanvasStageProps {
     templateStates: Record<string, WallpaperEditorState>;
     resources: Record<string, WallpaperResources>;
     baseImage?: HTMLImageElement | null;
+    deviceOptions: DeviceOption[];
     activeTemplate: number;
     /** 当前选中的图层（用于在画布上叠加定界框）。 */
     selectedLayerId?: string | null;
@@ -427,9 +429,14 @@ function LayerEditOverlay({
     );
 }
 
-/** 设备预览标题优先展示面向用户的表盘名称。 */
-function deviceModel(template: ResolvedWallpaperTemplate): string {
+/** 设备预览标题使用设备库中的用户可读名称。 */
+function deviceModel(
+    template: ResolvedWallpaperTemplate,
+    deviceOptions: DeviceOption[],
+): string {
+    const option = deviceOptions.find((item) => item.id === template.deviceKey);
     return (
+        getDeviceDisplayName(option) ||
         template.watchface?.name ||
         template.aliases?.[0] ||
         template.deviceKey ||
@@ -437,17 +444,33 @@ function deviceModel(template: ResolvedWallpaperTemplate): string {
     );
 }
 
-/** Display size of a canvas preview: real canvas aspect ratio, scaled to fit the max box. */
-function previewDisplaySize(template: ResolvedWallpaperTemplate): {
+const PREVIEW_MAX_WIDTH = 252;
+const PREVIEW_MAX_HEIGHT = 360;
+
+/** 所有设备使用同一缩放比例，保持不同实际尺寸之间的视觉比例。 */
+function previewScale(templates: ResolvedWallpaperTemplate[]): number {
+    const maxWidth = Math.max(
+        1,
+        ...templates.map((template) => template.canvas?.width ?? 1),
+    );
+    const maxHeight = Math.max(
+        1,
+        ...templates.map((template) => template.canvas?.height ?? 1),
+    );
+    return Math.min(PREVIEW_MAX_WIDTH / maxWidth, PREVIEW_MAX_HEIGHT / maxHeight, 1);
+}
+
+/** 按统一缩放比例计算预览尺寸，并保留画布配置中的宽高比例。 */
+function previewDisplaySize(
+    template: ResolvedWallpaperTemplate,
+    scale: number,
+): {
     width: number;
     height: number;
     radius: number;
 } {
     const cw = template.canvas?.width ?? 1;
     const ch = template.canvas?.height ?? 1;
-    const maxW = 252;
-    const maxH = 360;
-    const scale = Math.min(maxW / cw, maxH / ch, 1);
     const width = Math.round(cw * scale);
     const height = Math.round(ch * scale);
     // The engine clips layer content to `frame.radius`, so the preview frame must
@@ -458,6 +481,15 @@ function previewDisplaySize(template: ResolvedWallpaperTemplate): {
         Math.min(Math.round(frameRadius * scale), width / 2, height / 2),
     );
     return { width, height, radius };
+}
+
+/** 将画布区域的鼠标滚轮转换为横向滚动，保留触控板的横向滚动方向。 */
+function scrollCanvasHorizontally(event: ReactWheelEvent<HTMLDivElement>) {
+    const container = event.currentTarget;
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    if (!delta || container.scrollWidth <= container.clientWidth) return;
+    event.preventDefault();
+    container.scrollLeft += delta;
 }
 
 export function CanvasStage({
@@ -476,6 +508,7 @@ export function CanvasStage({
     onDuplicateTemplate,
     onRemoveTemplate,
     onRenderError,
+    deviceOptions,
 }: CanvasStageProps) {
     const gestureCountRef = useRef(0);
     const [gestureActive, setGestureActive] = useState(false);
@@ -504,8 +537,13 @@ export function CanvasStage({
         );
     }
 
+    const sharedPreviewScale = previewScale(resolved);
+
     return (
-        <div className="wallpaper-canvas-scroll h-full w-full overflow-auto">
+        <div
+            className="wallpaper-canvas-scroll h-full w-full overflow-x-auto overflow-y-hidden"
+            onWheel={scrollCanvasHorizontally}
+        >
             <div
                 className="flex min-h-full items-center"
                 style={{
@@ -521,7 +559,7 @@ export function CanvasStage({
                     const isActive = index === activeTemplate;
                     const canDelete = resolved.length > 1;
                     const { width: previewW, height: previewH, radius: previewR } =
-                        previewDisplaySize(template);
+                        previewDisplaySize(template, sharedPreviewScale);
                     return (
                         <div
                             key={template.id}
@@ -529,12 +567,17 @@ export function CanvasStage({
                             style={{ gap: 12 }}
                         >
                             <div className="flex items-center justify-between" style={{ gap: 8 }}>
-                                <div
-                                    className="truncate text-sm leading-[18px] text-white/85"
+                                <button
+                                    type="button"
+                                    className="truncate border-0 bg-transparent p-0 text-left text-sm leading-[18px] text-white/85"
                                     style={{ paddingLeft: 2 }}
+                                    onClick={() => {
+                                        onActiveTemplateChange(index);
+                                        onSelectCanvas();
+                                    }}
                                 >
-                                    {deviceModel(template)}
-                                </div>
+                                    {deviceModel(template, deviceOptions)}
+                                </button>
                                 {isActive && (
                                     <div className="flex items-center" style={{ gap: 2 }}>
                                         <button

@@ -6,8 +6,9 @@ import {
   Switch,
 } from "@radix-ui/themes";
 import { CaretDownIcon, InfoIcon, PlusIcon } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { HexAlphaColorPicker } from "react-colorful";
 import type { WallpaperControlValue } from "~/logic/wallpaper/types";
 import {
   controlDefault,
@@ -15,6 +16,12 @@ import {
   controlMin,
   controlStep,
 } from "~/logic/wallpaper/control";
+import {
+  formatEditorColorOpacity,
+  normalizeEditorHexColor,
+  parseEditorColorOpacity,
+} from "./color-opacity";
+import { ScrubbableNumberField } from "./ScrubbableNumberField";
 
 export function EditorSlider({
   value,
@@ -54,7 +61,7 @@ export function EditorSlider({
   );
 }
 
-/** 可调数值控件：默认突出当前数值，范围设置按需展开。 */
+/** 可调数值控件：当前值支持拖拽调节，范围设置按需展开。 */
 export function NumericControlEditor({
   label,
   control,
@@ -100,20 +107,16 @@ export function NumericControlEditor({
                 <div
                   className="grid w-full"
                   style={{
-                    gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+                    gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
                     gap: "var(--editor-control-gap)",
                   }}
                 >
-                  <input
-                    readOnly
-                    tabIndex={-1}
-                    value="默认值"
-                    className="h-[var(--editor-control-height)] min-w-0 bg-[var(--color-editor-control)] px-2 text-center text-[11px] text-white/75 outline-none"
-                    style={{ borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)" }}
-                  />
                   <div
                     className="grid min-w-0 items-center overflow-hidden bg-[var(--color-editor-control)]"
-                    style={{ gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)" }}
+                    style={{
+                      borderRadius: "var(--editor-control-radius) 0 0 var(--editor-control-radius)",
+                      gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+                    }}
                   >
                     <input
                       readOnly
@@ -138,7 +141,7 @@ export function NumericControlEditor({
                   />
                 </div>
                 <p className="text-[11px] leading-4 text-gray-11">
-                  默认值是初始数值；最小值和最大值决定用户可调范围；步长决定每次调整的增量。
+                  最小值和最大值决定用户可调范围；步长决定每次调整的增量。
                 </p>
               </div>
             </Popover.Content>
@@ -148,57 +151,45 @@ export function NumericControlEditor({
       </div>
       <div className="flex w-full items-center" style={{ gap: 8 }}>
         <div className="min-w-0 flex-1">
-          <EditorSlider
+          <EditorNumberField
             value={def}
             min={min}
             max={max}
             step={step}
             onChange={(v) => patch("default", v)}
-            onDragStateChange={onDragStateChange}
+            onScrubStateChange={onDragStateChange}
           />
         </div>
-        <div className="w-[76px] shrink-0">
-          <EditorNumberField
-            value={def}
-            step={step}
-            onChange={(v) => patch("default", v)}
+        <button
+          type="button"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvancedOpen((open) => !open)}
+          className="flex h-[var(--editor-control-height)] w-[96px] shrink-0 items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
+          style={{
+            borderRadius: "var(--editor-control-radius)",
+            background: "var(--color-editor-control)",
+          }}
+        >
+          <span>范围设置</span>
+          <CaretDownIcon
+            size={14}
+            weight="regular"
+            style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
           />
-        </div>
+        </button>
       </div>
-      <button
-        type="button"
-        aria-expanded={advancedOpen}
-        onClick={() => setAdvancedOpen((open) => !open)}
-        className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[12px] text-white/55 transition hover:text-white/80"
-        style={{
-          borderRadius: "var(--editor-control-radius)",
-          background: "var(--color-editor-control)",
-        }}
-      >
-        <span>范围设置</span>
-        <CaretDownIcon
-          size={14}
-          weight="regular"
-          style={{ transform: advancedOpen ? "rotate(180deg)" : undefined }}
-        />
-      </button>
       {advancedOpen && (
         <div
           className="grid w-full"
           style={{
-            gridTemplateColumns: "minmax(70px, 0.85fr) minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
+            gridTemplateColumns: "minmax(118px, 1.3fr) minmax(70px, 0.85fr)",
             gap: "var(--editor-control-gap)",
           }}
         >
-          <EditorNumberField
-            value={def}
-            step={step}
-            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
-            onChange={(v) => patch("default", v)}
-          />
           <EditorRangeField
             min={min}
             max={max}
+            radius="var(--editor-control-radius) 0 0 var(--editor-control-radius)"
             onMinChange={(value) => patch("min", value)}
             onMaxChange={(value) => patch("max", value)}
           />
@@ -324,6 +315,7 @@ export function EditorNumberField({
     prefix,
     suffix,
     radius,
+    onScrubStateChange,
 }: {
     value: number;
     onChange: (value: number) => void;
@@ -331,59 +323,37 @@ export function EditorNumberField({
     max?: number;
     step?: number;
     placeholder?: string;
-    prefix?: string;
+    prefix?: ReactNode;
     suffix?: string;
     radius?: React.CSSProperties["borderRadius"];
+    onScrubStateChange?: (scrubbing: boolean) => void;
 }) {
-    const sanitize = (raw: number) => {
-        if (!Number.isFinite(raw)) raw = 0;
-        const lo = Number.isFinite(min) ? (min as number) : undefined;
-        const hi = Number.isFinite(max) ? (max as number) : undefined;
-        if (lo !== undefined && hi !== undefined && lo > hi) {
-            return raw;
-        }
-        if (lo !== undefined && raw < lo) raw = lo;
-        if (hi !== undefined && raw > hi) raw = hi;
-        return raw;
-    };
-
-    const displayValue = Number.isFinite(value) ? value : "";
     return (
-        <div
-            className="flex min-w-0 items-center overflow-hidden"
-            style={{ ...controlBase, borderRadius: radius ?? controlBase.borderRadius }}
-        >
-            {prefix && (
-                <span className="shrink-0 pl-2 text-xs text-white/45">{prefix}</span>
-            )}
-            <input
-                type="number"
-                value={displayValue}
-                min={min}
-                max={max}
-                step={step}
-                placeholder={placeholder}
-                onChange={(e) => {
-                    const parsed = e.target.valueAsNumber;
-                    onChange(sanitize(Number.isFinite(parsed) ? parsed : (min ?? 0)));
-                }}
-                className="editor-number-input h-full min-w-0 w-full bg-transparent px-2 font-mono text-sm text-white outline-none placeholder:text-white/30"
-            />
-            {suffix && (
-                <span className="shrink-0 pr-2 text-xs text-white/45">{suffix}</span>
-            )}
-        </div>
+        <ScrubbableNumberField
+            value={value}
+            min={min}
+            max={max}
+            step={step}
+            placeholder={placeholder}
+            prefix={prefix}
+            suffix={suffix}
+            radius={radius ?? controlBase.borderRadius}
+            onChange={onChange}
+            onScrubStateChange={onScrubStateChange}
+        />
     );
 }
 
 function EditorRangeField({
     min,
     max,
+    radius,
     onMinChange,
     onMaxChange,
 }: {
     min: number;
     max: number;
+    radius?: React.CSSProperties["borderRadius"];
     onMinChange: (value: number) => void;
     onMaxChange: (value: number) => void;
 }) {
@@ -392,7 +362,7 @@ function EditorRangeField({
             className="grid min-w-0 items-center overflow-hidden"
             style={{
                 ...controlBase,
-                borderRadius: 0,
+                borderRadius: radius ?? 0,
                 gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
             }}
         >
@@ -444,23 +414,171 @@ export function EditorTextInput({
     );
 }
 
+export function EditorColorOpacityField({
+    color,
+    opacity,
+    onColorChange,
+    onOpacityChange,
+    onChange,
+}: {
+    color: string;
+    opacity: number;
+    onColorChange: (color: string) => void;
+    onOpacityChange: (opacity: number) => void;
+    onChange?: (value: { color: string; opacity: number }) => void;
+}) {
+    const normalizedColor = normalizeEditorHexColor(color);
+    const normalizedOpacity = Number.isFinite(opacity)
+        ? Math.min(Math.max(opacity, 0), 1)
+        : 1;
+    const normalizedPercent = Math.round(normalizedOpacity * 100);
+    const [colorDraft, setColorDraft] = useState(normalizedColor.slice(1));
+    const [opacityDraft, setOpacityDraft] = useState(String(normalizedPercent));
+
+    useEffect(() => {
+        setColorDraft(normalizedColor.slice(1));
+    }, [normalizedColor]);
+
+    useEffect(() => {
+        setOpacityDraft(String(normalizedPercent));
+    }, [normalizedPercent]);
+
+    const commitColor = (draft: string) => {
+        const compact = draft.replace(/[^\da-f]/gi, "").slice(0, 6).toUpperCase();
+        const nextColor = compact.length === 3 || compact.length === 6
+            ? normalizeEditorHexColor(`#${compact}`, normalizedColor)
+            : normalizedColor;
+        setColorDraft(nextColor.slice(1));
+        if (nextColor !== normalizedColor) onColorChange(nextColor);
+    };
+
+    const commitOpacity = (draft: string) => {
+        const parsed = Number.parseFloat(draft);
+        const nextPercent = Number.isFinite(parsed)
+            ? Math.min(Math.max(parsed, 0), 100)
+            : normalizedPercent;
+        setOpacityDraft(String(nextPercent));
+        if (nextPercent !== normalizedPercent) onOpacityChange(nextPercent / 100);
+    };
+
+    return (
+        <div
+            className="grid w-full min-w-0 overflow-hidden bg-[var(--color-editor-control)]"
+            style={{
+                height: "var(--editor-control-height)",
+                borderRadius: "var(--editor-control-radius)",
+                gridTemplateColumns: "minmax(0, 1fr) 94px",
+            }}
+        >
+            <div className="flex min-w-0 items-center px-2" style={{ gap: 10 }}>
+                <Popover.Root>
+                    <Popover.Trigger>
+                        <button
+                            type="button"
+                            aria-label="选择颜色"
+                            title="选择颜色"
+                            className="block h-4 w-4 shrink-0 overflow-hidden border border-white/20"
+                            style={{
+                                borderRadius: 3,
+                                background: normalizedColor,
+                            }}
+                        />
+                    </Popover.Trigger>
+                    <Popover.Content
+                        size="1"
+                        style={{ width: 264, padding: 10, borderRadius: 16 }}
+                    >
+                        <HexAlphaColorPicker
+                            className="editor-color-picker"
+                            color={formatEditorColorOpacity(normalizedColor, normalizedOpacity)}
+                            onChange={(nextColor) => {
+                                const nextValue = parseEditorColorOpacity(nextColor);
+                                if (onChange) {
+                                    onChange(nextValue);
+                                    return;
+                                }
+                                onColorChange(nextValue.color);
+                                onOpacityChange(nextValue.opacity);
+                            }}
+                            style={{ width: "100%", height: 214 }}
+                        />
+                    </Popover.Content>
+                </Popover.Root>
+                <input
+                    type="text"
+                    value={colorDraft}
+                    maxLength={6}
+                    aria-label="十六进制颜色"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => {
+                        const nextDraft = event.target.value
+                            .replace(/[^\da-f]/gi, "")
+                            .slice(0, 6)
+                            .toUpperCase();
+                        setColorDraft(nextDraft);
+                        if (nextDraft.length === 6) {
+                            const nextColor = `#${nextDraft}`;
+                            if (nextColor !== normalizedColor) onColorChange(nextColor);
+                        }
+                    }}
+                    onBlur={() => commitColor(colorDraft)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="h-full min-w-0 flex-1 bg-transparent font-mono text-sm uppercase text-white outline-none"
+                />
+            </div>
+            <div className="flex min-w-0 items-center border-l border-white/10 px-2" style={{ gap: 8 }}>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    value={opacityDraft}
+                    aria-label="颜色透明度百分比"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => {
+                        const nextDraft = event.target.value;
+                        if (!/^\d*$/.test(nextDraft)) return;
+                        setOpacityDraft(nextDraft);
+                        if (nextDraft === "") return;
+                        const nextPercent = Number.parseFloat(nextDraft);
+                        if (Number.isFinite(nextPercent)) {
+                            onOpacityChange(Math.min(Math.max(nextPercent, 0), 100) / 100);
+                        }
+                    }}
+                    onBlur={() => commitOpacity(opacityDraft)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="h-full min-w-0 flex-1 bg-transparent text-right font-mono text-sm text-white outline-none"
+                />
+                <span className="shrink-0 select-none text-sm text-white/55">%</span>
+            </div>
+        </div>
+    );
+}
+
 export function EditorSelect({
     value,
     options,
     onChange,
     placeholder,
+    disabled = false,
 }: {
     value: string;
     options: Array<{ value: string; label: string }>;
     onChange: (value: string) => void;
     placeholder?: string;
+    disabled?: boolean;
 }) {
     const stringValue = typeof value === "string" ? value : "";
     const safeOptions = options.filter(
         (option) => option && typeof option.value === "string",
     );
     return (
-        <Select.Root value={stringValue || undefined} onValueChange={onChange}>
+        <Select.Root value={stringValue || undefined} onValueChange={onChange} disabled={disabled}>
             <Select.Trigger
                 placeholder={placeholder}
                 className="editor-select-trigger w-full!"
@@ -487,9 +605,11 @@ export function EditorSelect({
 export function EditorSwitch({
     checked,
     onCheckedChange,
+    compact = false,
 }: {
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
+    compact?: boolean;
 }) {
     return (
         <Switch
@@ -497,13 +617,14 @@ export function EditorSwitch({
             onCheckedChange={onCheckedChange}
             className="rt-SwitchRoot-editor"
             style={{
-                width: "var(--editor-switch-width)",
-                height: "var(--editor-switch-height)",
-                borderRadius: "var(--editor-switch-radius)",
-                "--switch-width": "var(--editor-switch-width)",
-                "--switch-height": "var(--editor-switch-height)",
-                "--switch-thumb-width": "calc(var(--editor-switch-height) - 4px)",
-                "--switch-thumb-height": "calc(var(--editor-switch-height) - 4px)",
+                width: compact ? 36 : "var(--editor-switch-width)",
+                height: compact ? 18 : "var(--editor-switch-height)",
+                borderRadius: compact ? 9 : "var(--editor-switch-radius)",
+                "--switch-width": compact ? "36px" : "var(--editor-switch-width)",
+                "--switch-height": compact ? "18px" : "var(--editor-switch-height)",
+                "--switch-border-radius": compact ? "9px" : "var(--editor-switch-radius)",
+                "--switch-thumb-width": compact ? "14px" : "calc(var(--editor-switch-height) - 4px)",
+                "--switch-thumb-height": compact ? "14px" : "calc(var(--editor-switch-height) - 4px)",
             } as React.CSSProperties}
         />
     );

@@ -191,10 +191,329 @@
     -moz-appearance: textfield;
 }
 
+.editor-color-picker {
+    box-sizing: border-box;
+    padding: 6px;
+}
+
+.editor-color-picker .react-colorful__pointer {
+    width: 24px;
+    height: 24px;
+}
+
+.editor-color-picker .react-colorful__saturation {
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.editor-color-picker .react-colorful__hue,
+.editor-color-picker .react-colorful__alpha {
+    overflow: hidden;
+    margin-top: 10px;
+    border-radius: 999px;
+}
+
+.editor-color-picker .react-colorful__saturation .react-colorful__interactive {
+    inset: 12px;
+}
+
+.editor-color-picker .react-colorful__hue .react-colorful__interactive,
+.editor-color-picker .react-colorful__alpha .react-colorful__interactive {
+    inset: 0 12px;
+}
+
 .editor-number-input::-webkit-inner-spin-button,
 .editor-number-input::-webkit-outer-spin-button {
     margin: 0;
     -webkit-appearance: none;
+}
+
+.wallpaper-editor-root,
+html.wallpaper-editor-active body * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.wallpaper-editor-narrow-screen-notice {
+    display: none;
+}
+
+@media (max-width: 1100px) {
+    .wallpaper-editor-root > :not(.wallpaper-editor-narrow-screen-notice) {
+        display: none !important;
+    }
+
+    .wallpaper-editor-narrow-screen-notice {
+        display: flex;
+        flex: 1;
+        width: 100%;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: 24px;
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 14px;
+        text-align: center;
+        background: var(--color-editor-bg);
+    }
+}
+
+html.wallpaper-editor-active input,
+html.wallpaper-editor-active textarea,
+html.wallpaper-editor-active [contenteditable="true"],
+html.wallpaper-editor-active .monaco-editor,
+html.wallpaper-editor-active .monaco-editor * {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.scrubbable-number-field {
+    position: relative;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    height: var(--editor-control-height);
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.9);
+    background: var(--color-editor-control);
+    border-radius: var(--editor-control-radius);
+}
+
+.scrubbable-number-field:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-editor-blue-fg);
+}
+
+.scrubbable-number-content {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.scrubbable-number-field.is-scrubbing .scrubbable-number-content {
+    opacity: 0;
+}
+
+.scrubbable-number-prefix,
+.scrubbable-number-suffix {
+    flex: none;
+    color: rgba(255, 255, 255, 0.45);
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+}
+
+.scrubbable-number-prefix {
+    display: grid;
+    place-items: center;
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    overflow: hidden;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.scrubbable-number-prefix svg {
+    width: 16px;
+    height: 16px;
+}
+
+.scrubbable-number-prefix[data-empty="true"] {
+    flex-basis: 6px;
+    width: 6px;
+    margin-left: 0;
+}
+
+.scrubbable-number-suffix {
+    padding-right: 4px;
+}
+
+.scrubbable-number-value {
+    position: relative;
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+}
+
+.scrubbable-number-measure {
+    display: flex;
+    align-items: center;
+    width: max-content;
+    min-width: 0;
+    height: 100%;
+    padding: 0 8px;
+    overflow: hidden;
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
+    visibility: hidden;
+    white-space: pre;
+    pointer-events: none;
+}
+
+.scrubbable-number-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0 8px;
+    color: rgba(255, 255, 255, 0.9);
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font-family: var(--font-mono-sarasa);
+    font-size: 14px;
+}
+
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-value {
+    flex: 0 1 auto;
+}
+
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-measure,
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-input {
+    padding-right: 2px;
+}
+
+.scrubbable-number-field[data-has-suffix="true"] .scrubbable-number-suffix {
+    margin-right: auto;
+    padding-right: 0;
+}
+
+.scrubbable-number-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.scrubbable-number-stepper {
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
+    align-self: stretch;
+    touch-action: none;
+    margin: auto 5px auto 4px;
+    border-radius: 4px;
+}
+
+.scrubbable-number-stepper button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 12px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.2);
+    background: transparent;
+    border: 0;
+}
+
+.scrubbable-number-stepper button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.scrubbable-number-stepper button:first-child {
+  border-radius: 4px 4px 1px 1px;
+}
+
+.scrubbable-number-stepper button:last-child {
+  border-radius: 1px 1px 4px 4px;
+}
+
+.scrubbable-number-stepper button[data-enabled="true"] {
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.scrubbable-number-stepper button[data-enabled="true"]:hover {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.scrubbable-number-field[data-adjustable="false"] .scrubbable-number-prefix,
+.scrubbable-number-field[data-adjustable="false"] .scrubbable-number-stepper button {
+    cursor: default;
+}
+
+.scrubbable-number-ruler {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: rgba(255, 255, 255, 0.9);
+    pointer-events: none;
+}
+
+.scrubbable-number-overlay {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    min-width: 80px;
+    box-sizing: border-box;
+    padding: 10px 16px 8px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.95);
+    background: var(--color-panel-solid, var(--color-editor-control));
+    border: 1px solid var(--gray-a6);
+    border-radius: var(--editor-control-radius);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -100%);
+    transform-origin: bottom center;
+    pointer-events: none;
+    animation: scrubbable-number-overlay-in 120ms ease-out;
+}
+
+.scrubbable-number-overlay::after {
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 8px;
+    height: 8px;
+    content: "";
+    background: inherit;
+    border-right: 1px solid var(--gray-a6);
+    border-bottom: 1px solid var(--gray-a6);
+    transform: translateX(-50%) rotate(45deg);
+}
+
+.scrubbable-number-overlay span {
+    font-family: var(--font-mono-sarasa);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.12;
+}
+
+.scrubbable-number-overlay small {
+    margin-left: 3px;
+    color: rgba(255, 255, 255, 0.45);
+    font-family: var(--font-mono-sarasa);
+    font-size: 18px;
+    line-height: 1.12;
+}
+
+html.numeric-scrub-active,
+html.numeric-scrub-active * {
+    cursor: ew-resize !important;
+    user-select: none !important;
+}
+
+@keyframes scrubbable-number-overlay-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -100%) scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -100%) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrubbable-number-overlay {
+        animation: none;
+    }
 }
 
 .editor-select-trigger,

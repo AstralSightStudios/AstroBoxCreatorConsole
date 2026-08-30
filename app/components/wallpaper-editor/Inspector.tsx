@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { HexColorPicker } from "react-colorful";
@@ -27,13 +27,16 @@ import type {
     WallpaperLayerKind,
     WallpaperTemplateConfig,
 } from "~/logic/wallpaper/types";
+import { getDeviceDisplayName, type DeviceOption } from "~/logic/devices/catalog";
 import {
     GLASS_BLEND_MODES,
     GLASS_MATERIAL_DEFAULTS,
     LAYER_BLEND_MODES,
 } from "~/logic/wallpaper/types";
 import { controlAdjustable, controlDefault, patchControlValue } from "~/logic/wallpaper/control";
+import { generateTemplateId } from "~/logic/wallpaper/presets";
 import {
+    EditorColorOpacityField,
     EditorColorDots,
     EditorField,
     EditorIconButton,
@@ -46,6 +49,7 @@ import {
     NumericControlEditor,
     TwoColumnGrid,
 } from "./controls";
+import { formatEditorColorOpacity, parseEditorColorOpacity } from "./color-opacity";
 
 export interface InspectorProps {
     mode: "layer" | "canvas";
@@ -59,13 +63,16 @@ export interface InspectorProps {
     onClearMask: () => void;
     canvas: WallpaperTemplateConfig | null;
     onCanvasPatch: (patch: Partial<WallpaperTemplateConfig>) => void;
+    deviceOptions: DeviceOption[];
+    deviceOptionsLoading: boolean;
+    deviceOptionsError: string;
     wallpaperTransform: {
         scale: WallpaperControlValue | undefined;
         rotation: WallpaperControlValue | undefined;
         onScaleChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
         onRotationChange: (patch: Partial<{ default: number; min: number; max: number; step: number; adjustable: boolean }>) => void;
     };
-    /** 滑块拖动时通知编辑器暂停模糊/混合模式渲染。 */
+    /** 数值拖动时通知编辑器暂停模糊/混合模式渲染。 */
     onRenderSimplifyChange?: (dragging: boolean) => void;
 }
 
@@ -274,6 +281,39 @@ function AdjustableToggle({
             <span className="text-[11px] leading-4 text-white/45">用户可修改</span>
             <EditorSwitch checked={checked} onCheckedChange={onToggle} />
         </span>
+    );
+}
+
+function AdjustableCheckboxRow({
+    label,
+    checked,
+    onCheckedChange,
+    disabled = false,
+}: {
+    label: string;
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div
+            className="flex items-center"
+            style={{
+                height: "var(--editor-control-height)",
+                gap: 8,
+                paddingInline: 10,
+                borderRadius: "var(--editor-control-radius)",
+                background: "var(--color-editor-control)",
+                opacity: disabled ? 0.4 : 1,
+            }}
+        >
+            <Checkbox
+                disabled={disabled}
+                checked={checked}
+                onCheckedChange={(value) => onCheckedChange(value === true)}
+            />
+            <span className="text-[13px] leading-[18px] text-white/75">{label}</span>
+        </div>
     );
 }
 
@@ -487,44 +527,132 @@ function GlassSliderField({
 function CanvasInspector({
     canvas,
     onCanvasPatch,
+    deviceOptions,
+    deviceOptionsLoading,
+    deviceOptionsError,
     wallpaperTransform,
     onRenderSimplifyChange,
 }: {
     canvas: WallpaperTemplateConfig;
     onCanvasPatch: InspectorProps["onCanvasPatch"];
+    deviceOptions: DeviceOption[];
+    deviceOptionsLoading: boolean;
+    deviceOptionsError: string;
     wallpaperTransform: InspectorProps["wallpaperTransform"];
     onRenderSimplifyChange?: (dragging: boolean) => void;
 }) {
     const patchCanvas = (patch: Partial<WallpaperTemplateConfig>) => onCanvasPatch(patch);
     const canvasSize = canvas.canvas ?? {};
+    const canvasBackground = parseEditorColorOpacity(canvasSize.background ?? "transparent");
     const frame = canvas.frame ?? {};
     const preview = canvas.preview ?? {};
     const aliases = Array.isArray(canvas.aliases) ? canvas.aliases : [];
+    const [identifiersOpen, setIdentifiersOpen] = useState(false);
+    const selectedDevice = deviceOptions.find((option) => option.id === canvas.deviceKey);
+    const deviceSelectOptions = useMemo(() => {
+        const options = deviceOptions
+            .map((option) => ({
+                value: option.id,
+                label: getDeviceDisplayName(option),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans", { sensitivity: "base" }));
+        if (canvas.deviceKey && !options.some((option) => option.value === canvas.deviceKey)) {
+            options.unshift({ value: canvas.deviceKey, label: `当前配置 · ${canvas.deviceKey}` });
+        }
+        return options;
+    }, [canvas.deviceKey, deviceOptions]);
+    const generatedAliases = selectedDevice?.aliases ?? [];
+    const displayAliases = aliases.length > 0 ? aliases : generatedAliases;
+
+    useEffect(() => {
+        if (!selectedDevice) return;
+        const patch: Partial<WallpaperTemplateConfig> = {};
+        if (aliases.length === 0 && generatedAliases.length > 0) {
+            patch.aliases = generatedAliases;
+        }
+        if (!canvas.id) {
+            patch.id = generateTemplateId(selectedDevice.id);
+        }
+        if (Object.keys(patch).length > 0) patchCanvas(patch);
+    }, [aliases.length, canvas.id, generatedAliases, patchCanvas, selectedDevice]);
+
+    const handleDeviceChange = (deviceId: string) => {
+        const device = deviceOptions.find((option) => option.id === deviceId);
+        if (!device) {
+            patchCanvas({ deviceKey: deviceId });
+            return;
+        }
+        patchCanvas({
+            deviceKey: device.id,
+            aliases: device.aliases ?? [],
+            id: generateTemplateId(device.id),
+        });
+    };
 
     return (
         <div className="wallpaper-layer-scroll min-h-0 flex-1 overflow-y-auto px-[9px] py-[9px]">
             <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
-                <EditorField label="设备型号">
-                    <EditorTextInput
+                <EditorField label="设备">
+                    <EditorSelect
                         value={canvas.deviceKey ?? ""}
-                        placeholder="例如 o67 / band-pro"
-                        onChange={(v) => patchCanvas({ deviceKey: v })}
+                        options={deviceSelectOptions}
+                        placeholder={deviceOptionsLoading ? "正在加载设备库…" : "选择设备"}
+                        disabled={deviceOptionsLoading || deviceSelectOptions.length === 0}
+                        onChange={handleDeviceChange}
                     />
+                    {deviceOptionsError && (
+                        <p className="px-1.5 text-[11px] leading-4 text-amber-300/75">
+                            {deviceOptionsError}，当前配置仍可继续编辑。
+                        </p>
+                    )}
                 </EditorField>
-                <EditorField label="设备别名（逗号分隔）">
-                    <EditorTextInput
-                        value={aliases.join(", ")}
-                        placeholder="例如 M2551B1, M2553B1"
-                        onChange={(v) =>
-                            patchCanvas({
-                                aliases: v
-                                    .split(/[,，]/)
-                                    .map((token) => token.trim())
-                                    .filter(Boolean),
-                            })
-                        }
+                <button
+                    type="button"
+                    aria-expanded={identifiersOpen}
+                    onClick={() => setIdentifiersOpen((open) => !open)}
+                    className="flex h-[var(--editor-control-height)] w-full items-center justify-between px-2 text-left text-[13px] text-white/65 transition hover:text-white"
+                    style={{
+                        borderRadius: "var(--editor-control-radius)",
+                        background: "var(--color-editor-control)",
+                    }}
+                >
+                    <span>设备标识</span>
+                    <CaretDownIcon
+                        size={14}
+                        weight="regular"
+                        style={{ transform: identifiersOpen ? "rotate(180deg)" : undefined }}
                     />
-                </EditorField>
+                </button>
+                {identifiersOpen && (
+                    <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
+                        <EditorField label="设备别名">
+                            <div
+                                className="flex min-h-[var(--editor-control-height)] items-center px-2 text-sm text-white/60"
+                                style={{
+                                    borderRadius: "var(--editor-control-radius)",
+                                    background: "var(--color-editor-control)",
+                                    WebkitUserSelect: "text",
+                                    userSelect: "text",
+                                }}
+                            >
+                                {displayAliases.length > 0 ? displayAliases.join(", ") : "由设备库自动生成"}
+                            </div>
+                        </EditorField>
+                        <EditorField label="模板 ID">
+                            <div
+                                className="flex min-h-[var(--editor-control-height)] items-center px-2 font-mono text-[12px] text-white/60"
+                                style={{
+                                    borderRadius: "var(--editor-control-radius)",
+                                    background: "var(--color-editor-control)",
+                                    WebkitUserSelect: "text",
+                                    userSelect: "text",
+                                }}
+                            >
+                                {canvas.id || "由设备库自动生成"}
+                            </div>
+                        </EditorField>
+                    </div>
+                )}
                 <TwoColumnGrid>
                     <EditorField label="画布宽">
                         <EditorNumberField
@@ -544,9 +672,27 @@ function CanvasInspector({
                     </EditorField>
                 </TwoColumnGrid>
                 <EditorField label="画布背景">
-                    <EditorTextInput
-                        value={canvasSize.background ?? "transparent"}
-                        onChange={(v) => patchCanvas({ canvas: { ...canvasSize, background: v } })}
+                    <EditorColorOpacityField
+                        color={canvasBackground.color}
+                        opacity={canvasBackground.opacity}
+                        onChange={({ color, opacity }) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(color, opacity),
+                            },
+                        })}
+                        onColorChange={(color) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(color, canvasBackground.opacity),
+                            },
+                        })}
+                        onOpacityChange={(opacity) => patchCanvas({
+                            canvas: {
+                                ...canvasSize,
+                                background: formatEditorColorOpacity(canvasBackground.color, opacity),
+                            },
+                        })}
                     />
                 </EditorField>
                 <TwoColumnGrid>
@@ -570,38 +716,37 @@ function CanvasInspector({
                 <p className="px-1 text-[11px] leading-4 text-white/45">
                     边框圆角决定设备屏幕形状，编辑器预览与此一致；预览圆角为客户端展示用元数据。
                 </p>
-                <EditorField label="模板 ID">
-                    <EditorTextInput
-                        value={canvas.id ?? ""}
-                        onChange={(v) => patchCanvas({ id: v })}
-                    />
-                </EditorField>
                 <div className="flex w-full flex-col pt-[9px]" style={{ gap: "var(--editor-field-group-gap)" }}>
                     <NumericControlEditor
                         label="整体缩放"
                         control={wallpaperTransform.scale}
                         onChange={wallpaperTransform.onScaleChange}
                         onDragStateChange={onRenderSimplifyChange}
-                        headerRight={
-                            <AdjustableToggle
-                                checked={controlAdjustable(wallpaperTransform.scale)}
-                                onToggle={(adjustable) => wallpaperTransform.onScaleChange({ adjustable })}
-                            />
-                        }
                     />
                     <NumericControlEditor
                         label="整体旋转"
                         control={wallpaperTransform.rotation}
                         onChange={wallpaperTransform.onRotationChange}
                         onDragStateChange={onRenderSimplifyChange}
-                        headerRight={
-                            <AdjustableToggle
-                                checked={controlAdjustable(wallpaperTransform.rotation)}
-                                onToggle={(adjustable) => wallpaperTransform.onRotationChange({ adjustable })}
-                            />
-                        }
                     />
                 </div>
+                <EditorSection title="用户可修改" noDivider className="pt-[9px]">
+                    <p className="px-1.5 text-[11px] leading-4 text-white/45">
+                        勾选后，用户可在使用壁纸时调整对应属性。
+                    </p>
+                    <div className="flex w-full flex-col" style={{ gap: "var(--editor-control-gap)", marginTop: 8 }}>
+                        <AdjustableCheckboxRow
+                            label="整体缩放"
+                            checked={controlAdjustable(wallpaperTransform.scale)}
+                            onCheckedChange={(adjustable) => wallpaperTransform.onScaleChange({ adjustable })}
+                        />
+                        <AdjustableCheckboxRow
+                            label="整体旋转"
+                            checked={controlAdjustable(wallpaperTransform.rotation)}
+                            onCheckedChange={(adjustable) => wallpaperTransform.onRotationChange({ adjustable })}
+                        />
+                    </div>
+                </EditorSection>
             </div>
         </div>
     );
@@ -619,6 +764,9 @@ export function Inspector({
     onClearMask,
     canvas,
     onCanvasPatch,
+    deviceOptions,
+    deviceOptionsLoading,
+    deviceOptionsError,
     wallpaperTransform,
     onRenderSimplifyChange,
 }: InspectorProps) {
@@ -713,6 +861,9 @@ export function Inspector({
                 <CanvasInspector
                     canvas={canvas}
                     onCanvasPatch={onCanvasPatch}
+                    deviceOptions={deviceOptions}
+                    deviceOptionsLoading={deviceOptionsLoading}
+                    deviceOptionsError={deviceOptionsError}
                     wallpaperTransform={wallpaperTransform}
                     onRenderSimplifyChange={onRenderSimplifyChange}
                 />
@@ -996,6 +1147,7 @@ export function Inspector({
                     同步
                     <EditorSwitch
                         checked={layer.syncAcrossDevices === true}
+                        compact
                         onCheckedChange={(value) => onLayerPatch({ syncAcrossDevices: value })}
                     />
                 </span>
@@ -1684,34 +1836,18 @@ export function Inspector({
                                     </button>
                                     {glassAdvancedOpen && (
                                         <div className="flex w-full flex-col" style={{ gap: "var(--editor-field-group-gap)" }}>
-                                            <EditorField label="着色 Tint">
-                                                <div className="flex items-center" style={{ gap: 6 }}>
-                                                    <span
-                                                        className="block shrink-0 rounded-full"
-                                                        style={{
-                                                            width: 14,
-                                                            height: 14,
-                                                            background: glassMaterial.tint,
-                                                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
-                                                        }}
-                                                    />
-                                                    <div className="min-w-0 flex-1">
-                                                        <EditorTextInput
-                                                            value={glassMaterial.tint}
-                                                            onChange={(v) => patchGlassMaterial({ tint: v })}
-                                                        />
-                                                    </div>
-                                                </div>
+                                            <EditorField label="着色">
+                                                <EditorColorOpacityField
+                                                    color={glassMaterial.tint}
+                                                    opacity={glassMaterial.tintOpacity}
+                                                    onChange={({ color, opacity }) => patchGlassMaterial({
+                                                        tint: color,
+                                                        tintOpacity: opacity,
+                                                    })}
+                                                    onColorChange={(tint) => patchGlassMaterial({ tint })}
+                                                    onOpacityChange={(tintOpacity) => patchGlassMaterial({ tintOpacity })}
+                                                />
                                             </EditorField>
-                                            <GlassSliderField
-                                                label="着色不透明度"
-                                                value={glassMaterial.tintOpacity}
-                                                min={0}
-                                                max={1}
-                                                step={0.01}
-                                                onChange={(v) => patchGlassMaterial({ tintOpacity: v })}
-                                                onDragStateChange={onRenderSimplifyChange}
-                                            />
                                             <GlassSliderField
                                                 label="饱和度"
                                                 value={glassMaterial.saturation}

@@ -24,6 +24,7 @@ import {
 import {
     addLayer,
     cloneConfig,
+    duplicateLayer,
     duplicateTemplateAt,
     flattenAllTemplates,
     getExpandedTemplate,
@@ -60,6 +61,7 @@ import {
     GLASS_MATERIAL_DEFAULTS,
 } from "~/logic/wallpaper/types";
 import { controlDefault } from "~/logic/wallpaper/control";
+import { loadDeviceOptions, type DeviceOption } from "~/logic/devices/catalog";
 import { getImageDimensions } from "~/routes/resource/publish/components/uploadUtils";
 import { Sidebar } from "./Sidebar";
 import { CanvasStage } from "./CanvasStage";
@@ -190,6 +192,9 @@ export function WallpaperEditor({
     const [templateStates, setTemplateStates] = useState<Record<string, WallpaperEditorState>>({});
     const [resources, setResources] = useState<Record<string, WallpaperResources>>({});
     const [renderSimplify, setRenderSimplify] = useState(false);
+    const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+    const [deviceOptionsLoading, setDeviceOptionsLoading] = useState(true);
+    const [deviceOptionsError, setDeviceOptionsError] = useState("");
     const [jsonDraft, setJsonDraft] = useState("");
     const [jsonIssues, setJsonIssues] = useState<string[]>([]);
     const [applyError, setApplyError] = useState("");
@@ -200,6 +205,35 @@ export function WallpaperEditor({
     const resetTransformOnChangeRef = useRef(false);
     const pendingAssetLayerRef = useRef<null | { kind: "asset" }>(null);
     const lastValidResolvedRef = useRef<ResolvedWallpaperTemplate[]>([]);
+
+    useEffect(() => {
+        document.documentElement.classList.add("wallpaper-editor-active");
+        return () => {
+            document.documentElement.classList.remove("wallpaper-editor-active");
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        setDeviceOptionsLoading(true);
+        setDeviceOptionsError("");
+        loadDeviceOptions()
+            .then((options) => {
+                if (!cancelled) setDeviceOptions(options);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setDeviceOptions([]);
+                    setDeviceOptionsError("设备库加载失败");
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setDeviceOptionsLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const { resolved, configIssues } = useMemo(() => {
         if (!config) {
@@ -841,6 +875,47 @@ export function WallpaperEditor({
         [activeIndex, config, selectedLayerId],
     );
 
+    const handleDuplicateLayer = useCallback(
+        (id: string) => {
+            if (!config || !getLayer(config, activeIndex, id)) return;
+            const newLayerId = `${id}-copy-${Date.now().toString(36)}`;
+            setConfig((prev) =>
+                prev ? duplicateLayer(prev, activeIndex, id, newLayerId) : prev,
+            );
+            setSelection({ kind: "layer", layerId: newLayerId });
+        },
+        [activeIndex, config],
+    );
+
+    // 编辑器未聚焦文本控件时，删除键操作当前图层，避免 WebView 将 Backspace 当作返回。
+    useEffect(() => {
+        const handleEditorKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            const isEditable =
+                target?.isContentEditable === true ||
+                target?.tagName === "INPUT" ||
+                target?.tagName === "TEXTAREA" ||
+                target?.tagName === "SELECT";
+            if (viewMode !== "visual" || isEditable || !selectedLayerId) return;
+
+            const key = event.key.toLowerCase();
+            if (key === "backspace" || key === "delete") {
+                event.preventDefault();
+                event.stopPropagation();
+                handleRemoveLayer(selectedLayerId);
+                return;
+            }
+            if ((event.metaKey || event.ctrlKey) && key === "d") {
+                event.preventDefault();
+                event.stopPropagation();
+                handleDuplicateLayer(selectedLayerId);
+            }
+        };
+
+        window.addEventListener("keydown", handleEditorKeyDown);
+        return () => window.removeEventListener("keydown", handleEditorKeyDown);
+    }, [handleDuplicateLayer, handleRemoveLayer, selectedLayerId, viewMode]);
+
     const handleMoveLayerTo = useCallback(
         (layerId: string, toIndex: number) => {
             if (!config) return;
@@ -864,6 +939,14 @@ export function WallpaperEditor({
         },
         [config],
     );
+
+    const handleAddCanvas = useCallback(() => {
+        if (!config || config.templates.length === 0) return;
+        const newIndex = activeIndex + 1;
+        setConfig((prev) => (prev ? duplicateTemplateAt(prev, activeIndex) : prev));
+        setActiveTemplate(newIndex);
+        setSelection({ kind: "canvas" });
+    }, [activeIndex, config]);
 
     const handleRemoveTemplate = useCallback(
         (index: number) => {
@@ -955,9 +1038,12 @@ export function WallpaperEditor({
     if (!config) {
         return (
             <div
-                className="flex h-full w-full flex-col items-center justify-center gap-6 p-8"
+                className="wallpaper-editor-root flex h-full w-full flex-col items-center justify-center gap-6 p-8"
                 style={{ background: "var(--color-editor-canvas)" }}
             >
+                <div className="wallpaper-editor-narrow-screen-notice" role="status">
+                    请切换至宽屏幕使用壁纸编辑器
+                </div>
                 {onBack && (
                     <button
                         type="button"
@@ -1011,7 +1097,13 @@ export function WallpaperEditor({
     }
 
     return (
-        <div className="flex h-full w-full flex-col" style={{ background: "var(--color-editor-bg)" }}>
+        <div
+            className="wallpaper-editor-root flex h-full w-full flex-col"
+            style={{ background: "var(--color-editor-bg)" }}
+        >
+            <div className="wallpaper-editor-narrow-screen-notice" role="status">
+                请切换至宽屏幕使用壁纸编辑器
+            </div>
             {configIssues.length > 0 && viewMode === "visual" && (
                 <div className="shrink-0 border-t border-amber-400/30 bg-amber-400/10 px-3 py-2">
                     <div className="flex items-center justify-between gap-3">
@@ -1060,7 +1152,9 @@ export function WallpaperEditor({
                             selectedLayerId={selectedLayerId}
                             onSelectLayer={handleSelectLayer}
                             onAddLayer={handleAddLayer}
+                            onAddCanvas={handleAddCanvas}
                             onRemoveLayer={handleRemoveLayer}
+                            onDuplicateLayer={handleDuplicateLayer}
                             onMoveLayerTo={handleMoveLayerTo}
                         />
                         <div style={{ width: "var(--editor-divider-width)", background: "var(--color-editor-divider)" }} />
@@ -1073,6 +1167,7 @@ export function WallpaperEditor({
                                 templateStates={templateStates}
                                 resources={resources}
                                 baseImage={baseImage}
+                                deviceOptions={deviceOptions}
                                 activeTemplate={activeIndex}
                                 selectedLayerId={selectedLayerId}
                                 simplify={renderSimplify}
@@ -1101,6 +1196,9 @@ export function WallpaperEditor({
                             onClearMask={() => handleLayerPatch({ mask: undefined })}
                             canvas={expandedActiveTemplate}
                             onCanvasPatch={handleCanvasPatch}
+                            deviceOptions={deviceOptions}
+                            deviceOptionsLoading={deviceOptionsLoading}
+                            deviceOptionsError={deviceOptionsError}
                             wallpaperTransform={{
                                 scale: transformControls.scale,
                                 rotation: transformControls.rotation,
