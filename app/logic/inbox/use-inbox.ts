@@ -40,9 +40,16 @@ export function useInboxPolling() {
 
     const intervalId = window.setInterval(refresh, POLL_INTERVAL_MS);
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState === "visible") {
+        void refresh();
+        // 切回前台时顺手补发上次失败的审核通知。
+        void flushCcNoticeQueue();
+      }
     };
-    const onFocus = () => void refresh();
+    const onFocus = () => {
+      void refresh();
+      void flushCcNoticeQueue();
+    };
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", onFocus);
 

@@ -59,9 +59,21 @@ function buildPrUrl(number: number): string {
 
 const CC_NOTICE_TITLES: Record<CcNoticeSubtype, (name: string) => string> = {
   "review-changes-requested": (name) => `《${name}》提交需要修改`,
-  "review-approved": (name) => `《${name}》资源提交已通过`,
+  "review-approved": (name) => `《${name}》资源提交已通过审核`,
   "review-refused": (name) => `《${name}》资源提交被拒绝`,
-  "review-closed": (name) => `《${name}》资源提交已被关闭`,
+  "review-closed": (name) => `《${name}》资源提交PR已被关闭`,
+};
+
+// 服务端 /admin/inbox 要求 title/body 均非空（minLength: 1），
+// 审核人未填写具体意见时用默认正文兜底；已通过（合入）的正文单独拼接。
+const CC_NOTICE_BODIES: Record<
+  Exclude<CcNoticeSubtype, "review-approved">,
+  string
+> = {
+  "review-changes-requested":
+    "审核人要求对本次提交进行修改，请查看 PR 中的修改意见。",
+  "review-refused": "你的资源提交未通过审核。",
+  "review-closed": "你的资源提交已被关闭。",
 };
 
 /**
@@ -461,7 +473,24 @@ export default function ResourceReviewPage() {
     setMerging(true);
     try {
       await mergePullRequest(number);
-      void notifyCc({ subtype: "review-approved", prNumber: number });
+      // 产品只有 create / edit 两种模式（无 update）：
+      // staging 提交协议 request.json 直接带 mode；legacy 退回用目录旧条目启发式。
+      const protocolModes = resourcePreviews
+        .map((preview) => preview.request?.mode)
+        .filter(
+          (mode): mode is "create" | "edit" =>
+            mode === "create" || mode === "edit",
+        );
+      const isCreateMode =
+        protocolModes.length > 0
+          ? protocolModes.every((mode) => mode === "create")
+          : repoFileChanges.length === 0 ||
+            repoFileChanges.every((change) => change.isNew);
+      void notifyCc({
+        subtype: "review-approved",
+        prNumber: number,
+        createMode: isCreateMode,
+      });
       toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
       await loadPulls();
       if (openNumber === number) {
@@ -532,6 +561,7 @@ export default function ResourceReviewPage() {
     tagId?: string;
     content?: string;
     senderNote?: string;
+    createMode?: boolean;
   }) => {
     const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
       resourcePreviews,
@@ -549,8 +579,18 @@ export default function ResourceReviewPage() {
       resourceName: resourceName || undefined,
       deepLink: `/resreview?pr=${params.prNumber}`,
       userIds,
-      title: CC_NOTICE_TITLES[params.subtype](resourceName),
-      body: params.content ?? params.senderNote ?? "",
+      title:
+        params.subtype === "review-approved"
+          ? params.createMode === false
+            ? `《${resourceName}》资源更新已通过审核`
+            : CC_NOTICE_TITLES["review-approved"](resourceName)
+          : CC_NOTICE_TITLES[params.subtype](resourceName),
+      body:
+        params.subtype === "review-approved"
+          ? `您的《${resourceName}》资源提交已通过审核并加入官方源索引，随后可于 AstroBox 刷新查看。`
+          : params.content?.trim() ||
+            params.senderNote?.trim() ||
+            CC_NOTICE_BODIES[params.subtype],
     });
   };
 

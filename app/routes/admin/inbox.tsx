@@ -1,6 +1,8 @@
 import { Button } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { GithubLogoIcon } from "@phosphor-icons/react";
 import { AdminApi, type InboxMessage } from "~/api/astrobox/admin";
 import {
   AdminPage,
@@ -11,6 +13,10 @@ import {
   inputClass,
   textareaClass,
 } from "~/components/admin/AdminPage";
+import {
+  CC_NOTICE_BADGES,
+  isCcNoticeMetadata,
+} from "~/logic/inbox/types";
 
 type TargetType = "userIds" | "role" | "all";
 
@@ -189,26 +195,87 @@ export default function AdminInboxPage() {
             <Button className="w-full" onClick={loadMessages}>查询</Button>
           </div>
           <div className="flex flex-col gap-2">
-            {messages.map((message) => (
-              <div key={message.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/65">{message.kind}</span>
-                  <span className="text-xs text-white/45">{formatDateTime(message.createdAt)}</span>
-                  <span className="font-mono-sarasa text-xs text-white/45">{message.userId}</span>
-                  {message.bulkId && <span className="font-mono-sarasa text-xs text-white/35">bulk {message.bulkId}</span>}
-                  <Button size="1" color="red" variant="soft" onClick={() => deleteMessage(message.id)}>
-                    撤回
-                  </Button>
-                </div>
-                <h3 className="text-sm font-semibold text-white">{message.title}</h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-white/65">{message.body}</p>
-                {message.metadata ? (
-                  <p className="mt-2 truncate font-mono-sarasa text-xs text-white/35">
-                    {formatList(message.metadata)}
+            {messages.map((message) => {
+              const ccNotice = isCcNoticeMetadata(message.metadata)
+                ? message.metadata
+                : null;
+              const ccNoticeBadge = ccNotice
+                ? CC_NOTICE_BADGES[ccNotice.subtype]
+                : null;
+              return (
+                <div
+                  key={message.id}
+                  className="rounded-xl border border-white/10 bg-black/20 p-3"
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/65">
+                      {message.kind === "cc-notice" ? "创作者通知" : message.kind}
+                    </span>
+                    {ccNoticeBadge ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${ccNoticeBadge.className}`}
+                      >
+                        {ccNoticeBadge.label}
+                      </span>
+                    ) : null}
+                    <span className="text-xs text-white/45">
+                      {formatDateTime(message.createdAt)}
+                    </span>
+                    <span className="font-mono-sarasa text-xs text-white/45">
+                      {message.userId}
+                    </span>
+                    {message.bulkId && (
+                      <span className="font-mono-sarasa text-xs text-white/35">
+                        bulk {message.bulkId}
+                      </span>
+                    )}
+                    <Button
+                      size="1"
+                      color="red"
+                      variant="soft"
+                      onClick={() => deleteMessage(message.id)}
+                    >
+                      撤回
+                    </Button>
+                  </div>
+                  <h3 className="text-sm font-semibold text-white">
+                    {message.title}
+                  </h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-white/65">
+                    {message.body}
                   </p>
-                ) : null}
-              </div>
-            ))}
+                  {ccNotice ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/55">
+                      {ccNotice.resourceName ? (
+                        <span>资源：{ccNotice.resourceName}</span>
+                      ) : null}
+                      {typeof ccNotice.prNumber === "number" ? (
+                        <span>PR #{ccNotice.prNumber}</span>
+                      ) : null}
+                      {ccNotice.resourceId ? (
+                        <span className="font-mono-sarasa text-white/40">
+                          {ccNotice.resourceId}
+                        </span>
+                      ) : null}
+                      {ccNotice.prUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => void openUrl(ccNotice.prUrl!)}
+                          className="inline-flex items-center gap-1 text-white/60 transition-colors hover:text-white"
+                        >
+                          <GithubLogoIcon size={13} weight="fill" />
+                          GitHub
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : message.metadata ? (
+                    <p className="mt-2 truncate font-mono-sarasa text-xs text-white/35">
+                      {formatList(message.metadata)}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
             {messages.length === 0 && (
               <div className="rounded-xl border border-white/10 px-4 py-10 text-center text-sm text-white/50">
                 暂无消息
