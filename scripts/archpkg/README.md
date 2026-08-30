@@ -38,7 +38,7 @@ Arch Linux 本机需要：`sudo pacman -S --needed base-devel squashfs-tools`（
 dist/linux/
 ├── astrobox-creator-console_0.3.0_amd64.deb
 ├── astrobox-creator-console-0.3.0-1.x86_64.rpm
-├── astrobox-creator-console-0.3.0-1-x86_64.pkg.tar.zst
+├── AstroBoxCreatorConsole-0.3.0-x86_64.pkg.tar.zst
 └── astrobox-creator-console_0.3.0_amd64.AppImage
 ```
 
@@ -51,8 +51,8 @@ dist/linux/
 
 ## 2. 上传 Release
 
-将 `dist/linux/` 下的全部包上传到 [Releases](https://github.com/AstralSightStudios/AstroBoxCreatorConsole/releases)，版本号 `v0.3.0` 形式的 tag，arch 包文件名保持
-`astrobox-creator-console-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst` 不变。
+将 `dist/linux/` 下的全部包上传到 [Releases](https://github.com/AstralSightStudios/AstroBoxCreatorConsole/releases)，版本号 `v0.3.0` 形式的 tag。arch 包上传时文件名统一为
+`AstroBoxCreatorConsole-${pkgver}-x86_64.pkg.tar.zst`（不含 pkgrel，与 AUR PKGBUILD 中的下载地址保持一致），否则 AUR 构建时下载会 404。
 
 ## 3. 发布 AUR
 
@@ -62,7 +62,7 @@ dist/linux/
 ./scripts/archpkg/update-aur.sh
 ```
 
-脚本从 `src-tauri/tauri.conf.json` 提取版本号，查询 AUR 自动递增 `pkgrel`，从 `dist/linux/` 的产物计算 sha256。
+脚本从 `src-tauri/tauri.conf.json` 提取版本号，查询 AUR 自动递增 `pkgrel`，从 `dist/linux/` 的产物计算 sha256（优先取 `AstroBoxCreatorConsole-${APP_VERSION}-x86_64.pkg.tar.zst`，找不到再退回本地构建名）。
 
 ### 3.1 测试
 

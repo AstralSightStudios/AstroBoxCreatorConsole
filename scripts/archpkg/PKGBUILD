@@ -37,9 +37,9 @@ depends=(
 makedepends=('curl')
 
 prepare() {
-    local _base="AstralSightStudios/AstroBoxCreatorConsole/releases/download/v${pkgver}/astrobox-creator-console-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
-    local _file="astrobox-creator-console-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
-    local _expected="0000000000000000000000000000000000000000000000000000000000000000"
+    local _base="AstralSightStudios/AstroBoxCreatorConsole/releases/download/v${pkgver}/AstroBoxCreatorConsole-${pkgver}-x86_64.pkg.tar.zst"
+    local _file="AstroBoxCreatorConsole-${pkgver}-x86_64.pkg.tar.zst"
+    local _expected="32bba98eb4ad3e7d8e748f4db837e236d3b2d62c745273af2b8a722dfb5073e6"
     local _mirrors=(
         "https://github.com/${_base}|GitHub"
         "https://ghfast.top/https://github.com/${_base}|ghfast"

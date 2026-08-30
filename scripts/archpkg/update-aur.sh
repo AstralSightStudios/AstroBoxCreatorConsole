@@ -27,9 +27,12 @@ else
     echo "    无法查询 AUR, pkgrel 默认 1"
 fi
 
-PKG_FILE="$PROJECT_ROOT/dist/linux/astrobox-creator-console-${APP_VERSION}-${PKGREL}-x86_64.pkg.tar.zst"
+PKG_FILE="$PROJECT_ROOT/dist/linux/AstroBoxCreatorConsole-${APP_VERSION}-x86_64.pkg.tar.zst"
 if [ ! -f "$PKG_FILE" ]; then
-    echo "错误：找不到 $PKG_FILE"
+    PKG_FILE="$PROJECT_ROOT/dist/linux/astrobox-creator-console-${APP_VERSION}-${PKGREL}-x86_64.pkg.tar.zst"
+fi
+if [ ! -f "$PKG_FILE" ]; then
+    echo "错误：找不到 dist/linux 下的 arch 包（期望 AstroBoxCreatorConsole-${APP_VERSION}-x86_64.pkg.tar.zst 或 astrobox-creator-console-${APP_VERSION}-${PKGREL}-x86_64.pkg.tar.zst）"
     echo "请先运行 build-linux.sh"
     exit 1
 fi
