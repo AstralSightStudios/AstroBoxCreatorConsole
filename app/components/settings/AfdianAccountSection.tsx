@@ -34,6 +34,8 @@ import {
 } from "~/api/afdian-account";
 import { SectionCard } from "~/routes/resource/publish/components/shared";
 
+const AFDIAN_DISCLAIMER_ACCEPTED_KEY = "afdian-disclaimer-accepted";
+
 function normalizeCaptchaSource(source: string) {
   if (/^(data:|https?:\/\/)/.test(source)) return source;
   return `data:image/png;base64,${source}`;
@@ -283,6 +285,7 @@ export default function AfdianAccountSection() {
   const queryClient = useQueryClient();
   const nativeAvailable = isAfdianNativeAvailable();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const sessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
@@ -314,11 +317,33 @@ export default function AfdianAccountSection() {
     }
   };
 
+  const handleOpenLogin = () => {
+    try {
+      if (localStorage.getItem(AFDIAN_DISCLAIMER_ACCEPTED_KEY) === "true") {
+        setLoginOpen(true);
+        return;
+      }
+    } catch {
+      // 本地存储不可用时仍允许用户确认后继续登录
+    }
+    setDisclaimerOpen(true);
+  };
+
+  const handleAcceptDisclaimer = () => {
+    try {
+      localStorage.setItem(AFDIAN_DISCLAIMER_ACCEPTED_KEY, "true");
+    } catch {
+      // 本地存储不可用不影响当前登录流程
+    }
+    setDisclaimerOpen(false);
+    setLoginOpen(true);
+  };
+
   return (
     <>
       <SectionCard
         title="爱发电账户"
-        description="登录后可在概览页查看收入数据"
+        description="登录后可查看收入、订单与赞助者数据"
       >
         {!nativeAvailable ? (
           <Callout.Root color="amber">
@@ -381,10 +406,32 @@ export default function AfdianAccountSection() {
                 支持账号密码或短信验证码登录
               </p>
             </div>
-            <Button onClick={() => setLoginOpen(true)}>登录爱发电</Button>
+            <Button onClick={handleOpenLogin}>登录爱发电</Button>
           </div>
         )}
       </SectionCard>
+
+      <Dialog.Root open={disclaimerOpen} onOpenChange={setDisclaimerOpen}>
+        <Dialog.Content maxWidth="460px">
+          <Dialog.Title>免责声明</Dialog.Title>
+          <Dialog.Description size="2" className="text-white/70">
+            本应用仅供学习和参考使用，与爱发电官方无隶属、授权或合作关系。请遵守平台规则和当地法律法规。
+          </Dialog.Description>
+          <div className="mt-5 flex flex-col gap-2">
+            <Button className="w-full" onClick={handleAcceptDisclaimer}>
+              同意
+            </Button>
+            <Button
+              className="w-full"
+              color="gray"
+              variant="soft"
+              onClick={() => setDisclaimerOpen(false)}
+            >
+              不同意
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
 
       <AfdianLoginDialog
         open={loginOpen}

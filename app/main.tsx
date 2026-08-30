@@ -8,6 +8,7 @@ import RouteErrorFallback from "~/components/RouteErrorFallback";
 import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
 import Interactions from "~/routes/interactions";
+import AfdianIncomePage from "~/routes/afdian-income";
 import Profile from "~/routes/profile";
 import CloudControl from "~/routes/cloudcontrol";
 import ResourceEncrypt from "~/routes/resource/encrypt";
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
       { index: true, element: <Home /> },
       { path: "analysis", element: <Analysis /> },
       { path: "interactions", element: <Interactions /> },
+      { path: "afdian-income", element: <AfdianIncomePage /> },
       { path: "publish", element: <NewResourcePublishPage /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },

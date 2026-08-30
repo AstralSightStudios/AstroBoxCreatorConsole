@@ -20,6 +20,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   login: "登录",
   settings: "设置",
   analysis: "数据分析",
+  "afdian-income": "爱发电收入",
   profile: "个人主页管理",
   encrypt: "资源加解密与激活",
   manage: "资源管理",

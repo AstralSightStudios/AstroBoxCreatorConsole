@@ -64,6 +64,88 @@ pub(crate) struct AfdianIncomeOverview {
     as_of: String,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianManagementOverview {
+    today_income: String,
+    today_order_count: usize,
+    month_income: Option<String>,
+    all_income: Option<String>,
+    recent_sponsor_count: Option<i64>,
+    all_sponsor_count: Option<i64>,
+    uv: Option<i64>,
+    pv: Option<i64>,
+    balance: Option<String>,
+    balance_after_tax: Option<String>,
+    as_of: String,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianIncomeStatItem {
+    date: String,
+    income: String,
+    order_count: Option<i64>,
+    sponsor_count: Option<i64>,
+    returning_sponsor_count: Option<i64>,
+    uv: Option<i64>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianIncomeStatPage {
+    items: Vec<AfdianIncomeStatItem>,
+    page: usize,
+    has_more: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianReceivedOrder {
+    id: String,
+    title: String,
+    amount: String,
+    status: Option<i64>,
+    created_at: Option<String>,
+    sponsor_name: String,
+    sponsor_avatar: Option<String>,
+    plan_name: Option<String>,
+    remark: Option<String>,
+    product_type: Option<i64>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianReceivedOrderPage {
+    items: Vec<AfdianReceivedOrder>,
+    page: usize,
+    has_more: bool,
+    next_order_id: Option<String>,
+    next_cart_order_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianSponsorItem {
+    id: String,
+    name: String,
+    avatar: Option<String>,
+    total_amount: String,
+    first_sponsored_at: Option<String>,
+    last_sponsored_at: Option<String>,
+    plan_names: Vec<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianSponsorPage {
+    items: Vec<AfdianSponsorItem>,
+    page: usize,
+    total_count: Option<i64>,
+    total_page: Option<i64>,
+    has_more: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct PasswordLoginPayload {
     account: String,
@@ -270,6 +352,171 @@ pub(crate) async fn afdian_income_overview(
     Ok(aggregate_order_income(&orders, &dashboard, now))
 }
 
+#[tauri::command]
+pub(crate) async fn afdian_management_overview(
+    http_client: tauri::State<'_, AppHttpClient>,
+) -> Result<AfdianManagementOverview, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let timezone = shanghai_timezone();
+    let now = Utc::now().with_timezone(&timezone);
+    let dashboard_url = format!("{AFDIAN_BASE_URL}/api/my/dashboard");
+    let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
+    let today_orders = fetch_today_income_orders(&http_client.0, &session.auth_token, &timezone);
+    let (dashboard, today_orders) = tokio::try_join!(dashboard, today_orders)?;
+    ensure_api_success(&dashboard, "收入概况加载失败")?;
+    let (today_income, today_order_count) = sum_income_orders(&today_orders);
+
+    Ok(AfdianManagementOverview {
+        today_income: format_decimal(today_income),
+        today_order_count,
+        month_income: dashboard
+            .pointer("/data/summary/month_amount")
+            .and_then(value_to_amount),
+        all_income: dashboard
+            .pointer("/data/summary/all_sum_amount")
+            .and_then(value_to_amount),
+        recent_sponsor_count: dashboard
+            .pointer("/data/summary/month_sponsor_count")
+            .and_then(value_to_i64),
+        all_sponsor_count: dashboard
+            .pointer("/data/summary/all_sponsor_count")
+            .and_then(value_to_i64),
+        uv: dashboard.pointer("/data/summary/uv").and_then(value_to_i64),
+        pv: dashboard.pointer("/data/summary/pv").and_then(value_to_i64),
+        balance: dashboard.pointer("/data/balance").and_then(value_to_amount),
+        balance_after_tax: dashboard
+            .pointer("/data/balance_after_tax")
+            .and_then(value_to_amount),
+        as_of: now.to_rfc3339(),
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn afdian_income_stats(
+    http_client: tauri::State<'_, AppHttpClient>,
+    page: usize,
+) -> Result<AfdianIncomeStatPage, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let page = page.max(1);
+    let page_value = page.to_string();
+    let response = authenticated_get(
+        &http_client.0,
+        &format!("{AFDIAN_BASE_URL}/api/my/stat"),
+        &session.auth_token,
+        &[("page", page_value.as_str()), ("type", "day")],
+    )
+    .await?;
+    ensure_api_success(&response, "收入统计加载失败")?;
+    let records = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let has_more = match response.pointer("/data/has_more").and_then(value_to_i64) {
+        Some(value) => value == 1,
+        None => records.len() >= 10,
+    };
+    let items = records
+        .iter()
+        .map(|record| AfdianIncomeStatItem {
+            date: record
+                .get("date_str")
+                .and_then(value_to_text)
+                .and_then(|value| normalize_date_key(&value))
+                .map(|value| format!("{}-{}-{}", &value[..4], &value[4..6], &value[6..8]))
+                .unwrap_or_else(|| "--".into()),
+            income: record
+                .get("paid_order_real_amount")
+                .and_then(value_to_amount)
+                .unwrap_or_else(|| "0".into()),
+            order_count: record.get("paid_order_count").and_then(value_to_i64),
+            sponsor_count: record.get("paid_user_count").and_then(value_to_i64),
+            returning_sponsor_count: record.get("paid_old_user_count").and_then(value_to_i64),
+            uv: record.get("uv").and_then(value_to_i64),
+        })
+        .collect();
+
+    Ok(AfdianIncomeStatPage {
+        items,
+        page,
+        has_more,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn afdian_received_orders(
+    http_client: tauri::State<'_, AppHttpClient>,
+    page: usize,
+    last_order_id: Option<String>,
+    last_cart_order_id: Option<String>,
+) -> Result<AfdianReceivedOrderPage, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let page = page.max(1);
+    let response = fetch_received_order_page(
+        &http_client.0,
+        &session.auth_token,
+        page,
+        last_order_id.as_deref(),
+        last_cart_order_id.as_deref(),
+        "update_time",
+    )
+    .await?;
+    let items = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(parse_received_order)
+        .collect();
+
+    Ok(AfdianReceivedOrderPage {
+        items,
+        page,
+        has_more: response.pointer("/data/has_more").and_then(value_to_i64) == Some(1),
+        next_order_id: response
+            .pointer("/data/last_order_id")
+            .and_then(value_to_text),
+        next_cart_order_id: response
+            .pointer("/data/last_cart_order_id")
+            .and_then(value_to_text),
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn afdian_sponsors(
+    http_client: tauri::State<'_, AppHttpClient>,
+    page: usize,
+) -> Result<AfdianSponsorPage, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let page = page.max(1);
+    let page_value = page.to_string();
+    let response = authenticated_get(
+        &http_client.0,
+        &format!("{AFDIAN_BASE_URL}/api/my/who-sponsored-me"),
+        &session.auth_token,
+        &[("page", page_value.as_str())],
+    )
+    .await?;
+    ensure_api_success(&response, "赞助者管理加载失败")?;
+    let total_count = response.pointer("/data/total_count").and_then(value_to_i64);
+    let total_page = response.pointer("/data/total_page").and_then(value_to_i64);
+    let items = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(parse_sponsor_item)
+        .collect();
+
+    Ok(AfdianSponsorPage {
+        items,
+        page,
+        total_count,
+        total_page,
+        has_more: total_page.is_some_and(|total| page < total.max(0) as usize),
+    })
+}
+
 async fn fetch_received_orders(
     client: &reqwest::Client,
     token: &str,
@@ -335,6 +582,201 @@ async fn fetch_received_orders(
     }
 
     Ok(orders)
+}
+
+async fn fetch_received_order_page(
+    client: &reqwest::Client,
+    token: &str,
+    page: usize,
+    last_order_id: Option<&str>,
+    last_cart_order_id: Option<&str>,
+    sort_field: &str,
+) -> Result<Value, String> {
+    let page_value = page.to_string();
+    let mut query = vec![
+        ("page", page_value.as_str()),
+        ("sort_field", sort_field),
+        ("sort_value", "desc"),
+        ("is_redeem", "0"),
+        ("plan_id", ""),
+        ("sign_status", ""),
+        ("has_remark", "0"),
+        ("status", ""),
+        ("order_id", ""),
+        ("nick_name", ""),
+        ("user_id", ""),
+        ("remark", ""),
+        ("order_remark", ""),
+        ("express_no", ""),
+        ("begin_time", ""),
+        ("end_time", ""),
+    ];
+    if let Some(value) = last_order_id.filter(|value| !value.is_empty()) {
+        query.push(("last_order_id", value));
+    }
+    if let Some(value) = last_cart_order_id.filter(|value| !value.is_empty()) {
+        query.push(("last_cart_order_id", value));
+    }
+    let response = authenticated_get(
+        client,
+        &format!("{AFDIAN_BASE_URL}/api/my/sponsored-bill-filter"),
+        token,
+        &query,
+    )
+    .await?;
+    ensure_api_success(&response, "收到发电加载失败")?;
+    Ok(response)
+}
+
+async fn fetch_today_income_orders(
+    client: &reqwest::Client,
+    token: &str,
+    timezone: &FixedOffset,
+) -> Result<Vec<Value>, String> {
+    let today_key = Utc::now()
+        .with_timezone(timezone)
+        .format("%Y%m%d")
+        .to_string();
+    let mut orders = Vec::new();
+    let mut last_order_id: Option<String> = None;
+    let mut last_cart_order_id: Option<String> = None;
+
+    for page in 1..=50 {
+        let response = fetch_received_order_page(
+            client,
+            token,
+            page,
+            last_order_id.as_deref(),
+            last_cart_order_id.as_deref(),
+            "create_time",
+        )
+        .await?;
+        let page_orders = response
+            .pointer("/data/list")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut reached_previous_day = false;
+        for order in page_orders {
+            let date_key = order_date_key(&order, timezone);
+            match date_key.as_deref() {
+                Some(value) if value < today_key.as_str() => {
+                    reached_previous_day = true;
+                }
+                Some(value) if value == today_key && is_income_order(&order) => orders.push(order),
+                _ => {}
+            }
+        }
+        if reached_previous_day
+            || response.pointer("/data/has_more").and_then(value_to_i64) != Some(1)
+        {
+            break;
+        }
+        last_order_id = response
+            .pointer("/data/last_order_id")
+            .and_then(value_to_text);
+        last_cart_order_id = response
+            .pointer("/data/last_cart_order_id")
+            .and_then(value_to_text);
+        if last_order_id.as_deref().unwrap_or_default().is_empty() {
+            break;
+        }
+    }
+
+    Ok(orders)
+}
+
+fn sum_income_orders(orders: &[Value]) -> (Decimal, usize) {
+    let mut seen = HashSet::new();
+    orders
+        .iter()
+        .fold((Decimal::ZERO, 0), |(amount, count), order| {
+            if !is_income_order(order) {
+                return (amount, count);
+            }
+            if let Some(identity) = order_identity(order) {
+                if !seen.insert(identity) {
+                    return (amount, count);
+                }
+            }
+            let order_amount = order
+                .get("total_amount")
+                .and_then(value_to_amount)
+                .and_then(|value| parse_decimal(&value))
+                .unwrap_or(Decimal::ZERO);
+            (amount + order_amount, count + 1)
+        })
+}
+
+fn parse_received_order(order: &Value) -> AfdianReceivedOrder {
+    let id = order
+        .get("out_trade_no")
+        .and_then(value_to_text)
+        .or_else(|| order.get("id").and_then(value_to_text))
+        .or_else(|| order.get("order_id").and_then(value_to_text))
+        .unwrap_or_else(|| "unknown".into());
+    AfdianReceivedOrder {
+        id,
+        title: order
+            .get("title")
+            .and_then(value_to_text)
+            .unwrap_or_else(|| "发电订单".into()),
+        amount: order
+            .get("total_amount")
+            .and_then(value_to_amount)
+            .unwrap_or_else(|| "0".into()),
+        status: order.get("status").and_then(value_to_i64),
+        created_at: order
+            .get("create_time")
+            .and_then(|value| timestamp_to_rfc3339(value, &shanghai_timezone())),
+        sponsor_name: order
+            .pointer("/user/name")
+            .and_then(value_to_text)
+            .unwrap_or_else(|| "爱发电用户".into()),
+        sponsor_avatar: order.pointer("/user/avatar").and_then(value_to_text),
+        plan_name: order.pointer("/plan/name").and_then(value_to_text),
+        remark: order
+            .get("remark")
+            .and_then(value_to_text)
+            .filter(|value| !value.trim().is_empty()),
+        product_type: order.get("product_type").and_then(value_to_i64),
+    }
+}
+
+fn parse_sponsor_item(item: &Value) -> AfdianSponsorItem {
+    let plan_names = item
+        .get("sponsor_plans")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|plan| {
+            plan.get("name")
+                .or_else(|| plan.pointer("/plan/name"))
+                .and_then(value_to_text)
+        })
+        .collect();
+    AfdianSponsorItem {
+        id: item
+            .pointer("/user/user_id")
+            .and_then(value_to_text)
+            .unwrap_or_else(|| "unknown".into()),
+        name: item
+            .pointer("/user/name")
+            .and_then(value_to_text)
+            .unwrap_or_else(|| "爱发电用户".into()),
+        avatar: item.pointer("/user/avatar").and_then(value_to_text),
+        total_amount: item
+            .get("all_sum_amount")
+            .and_then(value_to_amount)
+            .unwrap_or_else(|| "0".into()),
+        first_sponsored_at: item
+            .get("create_time")
+            .and_then(|value| timestamp_to_rfc3339(value, &shanghai_timezone())),
+        last_sponsored_at: item
+            .get("last_pay_time")
+            .and_then(|value| timestamp_to_rfc3339(value, &shanghai_timezone())),
+        plan_names,
+    }
 }
 
 async fn complete_login(
@@ -549,6 +991,21 @@ fn order_date_key(order: &Value, timezone: &FixedOffset) -> Option<String> {
         .map(|date| date.with_timezone(timezone).format("%Y%m%d").to_string())
 }
 
+fn shanghai_timezone() -> FixedOffset {
+    FixedOffset::east_opt(8 * 60 * 60).expect("固定时区有效")
+}
+
+fn timestamp_to_rfc3339(value: &Value, timezone: &FixedOffset) -> Option<String> {
+    let timestamp = value_to_timestamp(value)?;
+    DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .map(|date| date.with_timezone(timezone).to_rfc3339())
+}
+
+fn normalize_date_key(value: &str) -> Option<String> {
+    let digits: String = value.chars().filter(char::is_ascii_digit).take(8).collect();
+    (digits.len() == 8).then_some(digits)
+}
+
 fn value_to_timestamp(value: &Value) -> Option<i64> {
     let raw = value
         .as_f64()
@@ -568,6 +1025,14 @@ fn value_to_i64(value: &Value) -> Option<i64> {
     value
         .as_i64()
         .or_else(|| value.as_str().and_then(|raw| raw.trim().parse().ok()))
+}
+
+fn value_to_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(raw) if !raw.trim().is_empty() => Some(raw.trim().to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
 }
 
 fn parse_decimal(value: &str) -> Option<Decimal> {
@@ -767,6 +1232,48 @@ mod tests {
         assert_eq!(overview.today, "22");
         assert_eq!(overview.current_month.as_deref(), Some("22"));
         assert_eq!(overview.withdrawable.as_deref(), Some("20.68"));
+    }
+
+    #[test]
+    fn parses_management_order_and_sponsor_items() {
+        let timestamp = 1_788_060_000;
+        let order = parse_received_order(&json!({
+            "out_trade_no": "order-1",
+            "title": "发电商品",
+            "total_amount": "22.50",
+            "status": 2,
+            "create_time": timestamp,
+            "product_type": 1,
+            "user": { "name": "赞助者", "avatar": "https://example.com/avatar.png" },
+            "plan": { "name": "支持计划" },
+            "remark": "加油"
+        }));
+        let sponsor = parse_sponsor_item(&json!({
+            "all_sum_amount": "100.00",
+            "create_time": timestamp,
+            "last_pay_time": timestamp,
+            "user": { "user_id": "user-1", "name": "赞助者" },
+            "sponsor_plans": [{ "name": "支持计划" }]
+        }));
+
+        assert_eq!(order.id, "order-1");
+        assert_eq!(order.amount, "22.50");
+        assert_eq!(order.sponsor_name, "赞助者");
+        assert_eq!(order.plan_name.as_deref(), Some("支持计划"));
+        assert_eq!(sponsor.id, "user-1");
+        assert_eq!(sponsor.total_amount, "100.00");
+        assert_eq!(sponsor.plan_names, vec!["支持计划"]);
+        assert!(sponsor.last_sponsored_at.is_some());
+    }
+
+    #[test]
+    fn normalizes_management_dates_and_timestamps() {
+        let timezone = shanghai_timezone();
+        let timestamp = json!(1_788_060_000_000_i64);
+
+        assert_eq!(normalize_date_key("2026-08-30"), Some("20260830".into()));
+        assert!(timestamp_to_rfc3339(&timestamp, &timezone)
+            .is_some_and(|value| value.ends_with("+08:00")));
     }
 
     #[test]
