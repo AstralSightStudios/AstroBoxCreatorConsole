@@ -63,6 +63,7 @@ export default function TopDownloads({ data, loading, error }: TopDownloadsProps
                                             width={40}
                                             height={40}
                                             style={{ objectFit: "scale-down" }}
+                                            className="rounded-full"
                                             src={imageSrc}
                                             alt={name}
                                         />
