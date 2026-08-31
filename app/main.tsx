@@ -55,7 +55,7 @@ const router = createBrowserRouter([
       { path: "analysis", element: <Analysis /> },
       { path: "interactions", element: <Interactions /> },
       { path: "afdian-income", element: <AfdianIncomePage /> },
-      { path: "publish", element: <NewResourcePublishPage /> },
+      { path: "publish", element: <ResourcePublish /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },
       { path: "cloudcontrol", element: <CloudControl /> },

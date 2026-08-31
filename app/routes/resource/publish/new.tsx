@@ -1826,7 +1826,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         log.info("pr/submit", "已更新现有 PR", { data: { prNumber: editContext.prNumber } });
         reportSuccess("publish/pr", "已更新现有 PR。");
         await endResourceSession("completed", `已更新现有 PR #${editContext.prNumber ?? "?"}`);
-        navigate("/manage", { replace: true });
+        navigate("/publish", { replace: true });
         return;
       }
 
@@ -1915,7 +1915,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         "pr_created",
         `PR #${createdPr?.number ?? "?"}${createdPr?.html_url ? ` ${createdPr.html_url}` : ""}`,
       );
-      navigate("/manage", { replace: true });
+      navigate("/publish", { replace: true });
     } catch (error) {
       setPrStatus("error");
       setPrMessage((error as Error).message);
@@ -2642,7 +2642,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             <div className="mx-3 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-5 text-sky-100">
               如需修改正在审核中的资源，请前往{" "}
               <Link
-                to="/manage?tab=publish"
+                to="/publish"
                 className="font-medium underline underline-offset-2 transition hover:text-white"
               >
                 审核列表

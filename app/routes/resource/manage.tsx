@@ -1,11 +1,10 @@
 import {
   ArchiveIcon,
   WarningOctagonIcon,
-  ListMagnifyingGlassIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
-import { Button, Table, Callout, Spinner, Tabs } from "@radix-ui/themes";
-import { useNavigate, useSearchParams } from "react-router";
+import { Table, Callout, Spinner } from "@radix-ui/themes";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import Page from "~/layout/page";
 import { loadAccountState } from "~/logic/account/store";
@@ -16,54 +15,16 @@ import {
   type ResourceEditContext,
 } from "~/logic/publish/resources";
 import { findOpenSubmissionForResourceId } from "~/logic/publish/staging-submission";
-import ResourcePublish from "./publish";
-import { SectionCard } from "./publish/components/shared";
-import { useLayoutEffect, useEffect, useRef, useState } from "react";
-import { useSetHeaderBreadcrumb } from "~/layout/header-actions";
+import { useEffect, useState } from "react";
 import { formatResourceType } from "~/logic/publish/resource-type";
-
-function useElementWidth() {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    if (!ref.current) return;
-
-    const el = ref.current;
-
-    const update = () => {
-      setWidth(el.getBoundingClientRect().width);
-    };
-
-    update();
-
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-
-    return () => ro.disconnect();
-  }, []);
-
-  return { ref, width };
-}
 
 export default function ResourceManage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [items, setItems] = useState<ResourceCatalogContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
   const [selectingId, setSelectingId] = useState<string | null>(null);
-  const [tab, setTab] = useState(
-    searchParams.get("tab") === "publish" ? "publish" : "manage",
-  );
-  const setHeaderBreadcrumb = useSetHeaderBreadcrumb();
-  const { ref, width } = useElementWidth();
-
-  useEffect(() => {
-    setHeaderBreadcrumb(tab === "manage" ? "已发布资源" : "审核列表");
-    return () => setHeaderBreadcrumb(null);
-  }, [tab, setHeaderBreadcrumb]);
 
   useEffect(() => {
     let active = true;
@@ -149,187 +110,99 @@ export default function ResourceManage() {
 
   return (
     <Page>
-      <div className="z-1 max-[1024px]:bg-linear-to-b max-[1024px]:bottom-0 from-0% from-bg/0 to-65% max-[1024px]:to-[rgba(17,17,19,0.75)] fixed inset-x-0 max-[1024px]:h-16" />
-      <Tabs.Root value={tab} onValueChange={setTab}>
-        <div
-          style={width ? { width: width } : { width: "100vw" }}
-          className={`z-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] fixed bottom-0 flex justify-center min-[1024px]:top-0 min-[1024px]:sticky min-[1024px]:w-full!`}
-        >
-          <Tabs.List
-            className={`rounded-full flex gap-0.5 space-x-2 p-1 shadow-[0px_2px_4px_#111113]! justify-center w-fit! mx-auto bg-[rgba(17,17,19,0.5)] border border-white/10 backdrop-blur-xl`}
-          >
-            <Tabs.Trigger
-              value="manage"
-              className="
-                      px-1.5! py-1! font-medium text-white/50!
-                      rounded-full!
-                      transition!
-                      data-[state=active]:bg-nav-item!
-                      data-[state=active]:text-white!
-                      hover:bg-nav-item/75!
-                      data-[state=active]:hover:bg-nav-item-selected!
-                      before:content-none!
-                      h-fit!
-                      active:scale-95!
-                      *:hover:bg-transparent!
-                      *:active:bg-transparent!
-                      *:focus:bg-transparent!
-                      *:bg-transparent!
-                      *:flex! *:gap-1! *:items-center!
-                    "
-            >
-              <ArchiveIcon size={22} />
-              已发布资源
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="publish"
-              className="
-                      px-1.5! py-1! font-medium text-white/50!
-                      rounded-full!
-                      transition!
-                      data-[state=active]:bg-nav-item!
-                      data-[state=active]:text-white!
-                      hover:bg-nav-item/75!
-                      data-[state=active]:hover:bg-nav-item-selected!
-                      before:content-none!
-                      h-fit!
-                      active:scale-95!
-                      *:hover:bg-transparent!
-                      *:active:bg-transparent!
-                      *:focus:bg-transparent!
-                      *:bg-transparent!
-                      *:flex! *:gap-1! *:items-center!
-                    "
-            >
-              <ListMagnifyingGlassIcon size={22} />
-              审核列表
-            </Tabs.Trigger>
-          </Tabs.List>
+      <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <ArchiveIcon size={25} className="text-purple-300" />
+            <h1 className="text-2xl font-medium text-white">已发布资源</h1>
+          </div>
+          <p className="mt-1 text-sm text-white/50">管理已通过审核的资源</p>
         </div>
-        <div
-          className="flex flex-col gap-2 max-w-6xl mx-auto w-full px-2 pb-[54px]"
-          ref={ref}
-        >
-          <Tabs.Content value="manage">
-            <SectionCard
-              title="已发布资源"
-              description="管理已通过审核的资源"
-              padding={false}
-            >
-              {selectError && (
-                <Callout.Root
-                  color="yellow"
-                  variant="soft"
-                  highContrast
-                  className="-mb-2 bg-transparent! p-3!"
-                >
-                  <Callout.Icon>
-                    <WarningOctagonIcon size={16} weight="fill" />
-                  </Callout.Icon>
-                  <Callout.Text className="font-semibold text-white/45">
-                    {selectError}
-                  </Callout.Text>
-                </Callout.Root>
-              )}
-              {loading && (
-                <Callout.Root
-                  color="gray"
-                  variant="soft"
-                  highContrast
-                  className="-mb-2 bg-transparent! p-3!"
-                >
-                  <Callout.Icon>
-                    <Spinner size="2" />
-                  </Callout.Icon>
-                  <Callout.Text className="font-semibold text-white/45">
-                    正在载入资源目录...
-                  </Callout.Text>
-                </Callout.Root>
-              )}
-              {error && (
-                <Callout.Root
-                  color="red"
-                  variant="soft"
-                  className="-mb-2.5 bg-transparent! p-3!"
-                >
-                  <Callout.Icon>
-                    <WarningOctagonIcon size={16} weight="fill" />
-                  </Callout.Icon>
-                  <Callout.Text className="font-semibold">
-                    <p>加载失败：{error}</p>
-                  </Callout.Text>
-                </Callout.Root>
-              )}
-              {!loading && !error && items.length === 0 && (
-                <Callout.Root
-                  variant="soft"
-                  className="-mb-2.5 bg-transparent! p-3!"
-                >
-                  <Callout.Icon>
-                    <TrayIcon size={16} weight="fill" />
-                  </Callout.Icon>
-                  <Callout.Text className="font-semibold">
-                    <p>暂无已发布的资源</p>
-                  </Callout.Text>
-                </Callout.Root>
-              )}
-              {!loading && !error && items.length > 0 && (
-                <div className="p-0.5 w-full overflow-x-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-                  <Table.Root className="pt-1.5 min-w-max">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeaderCell>
-                          唯一标识
-                        </Table.ColumnHeaderCell>
-                        <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
-                        <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
-                        <Table.ColumnHeaderCell>仓库</Table.ColumnHeaderCell>
-                      </Table.Row>
-                    </Table.Header>
-                    <Table.Body>
-                      {items.map((item) => (
-                        <Table.Row
-                          key={item.entry.id}
-                          className={`hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer ${
-                            selectingId === item.entry.id
-                              ? "opacity-60 pointer-events-none"
-                              : ""
-                          }`}
-                          onClick={() => void handleSelect(item)}
-                        >
-                          <Table.RowHeaderCell className="flex items-center gap-2">
-                            {selectingId === item.entry.id ? (
-                              <Spinner size="1" />
-                            ) : null}
-                            <span>{item.entry.id}</span>
-                          </Table.RowHeaderCell>
-                          <Table.Cell>{item.entry.name}</Table.Cell>
-                          <Table.Cell>
-                            {formatResourceType(item.entry.restype)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {item.entry.repo_owner}/{item.entry.repo_name}
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Root>
-                </div>
-              )}
-              <div className="flex flex-col px-3.5 pb-3 pt-1.5 w-full">
-                <p className="text-xs text-white/60">
-                  旧版资源（LegacyItem）暂不支持在控制台编辑，您仍需要按照 v1
-                  操作方式修改它们。
-                </p>
-              </div>
-            </SectionCard>
-          </Tabs.Content>
 
-          <Tabs.Content value="publish">
-            <ResourcePublish />
-          </Tabs.Content>
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
+          {selectError && (
+            <Callout.Root color="yellow" variant="soft" highContrast>
+              <Callout.Icon>
+                <WarningOctagonIcon size={16} weight="fill" />
+              </Callout.Icon>
+              <Callout.Text className="font-semibold text-white/45">
+                {selectError}
+              </Callout.Text>
+            </Callout.Root>
+          )}
+          {loading && (
+            <Callout.Root color="gray" variant="soft" highContrast>
+              <Callout.Icon>
+                <Spinner size="2" />
+              </Callout.Icon>
+              <Callout.Text className="font-semibold text-white/45">
+                正在载入资源目录...
+              </Callout.Text>
+            </Callout.Root>
+          )}
+          {error && (
+            <Callout.Root color="red" variant="soft">
+              <Callout.Icon>
+                <WarningOctagonIcon size={16} weight="fill" />
+              </Callout.Icon>
+              <Callout.Text className="font-semibold">
+                <p>加载失败：{error}</p>
+              </Callout.Text>
+            </Callout.Root>
+          )}
+          {!loading && !error && items.length === 0 && (
+            <Callout.Root variant="soft">
+              <Callout.Icon>
+                <TrayIcon size={16} weight="fill" />
+              </Callout.Icon>
+              <Callout.Text className="font-semibold">
+                <p>暂无已发布的资源</p>
+              </Callout.Text>
+            </Callout.Root>
+          )}
+          {!loading && !error && items.length > 0 && (
+            <div className="w-full overflow-x-auto rounded-xl bg-nav-item p-0.5 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+              <Table.Root className="min-w-max pt-1.5">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeaderCell>唯一标识</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>仓库</Table.ColumnHeaderCell>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {items.map((item) => (
+                    <Table.Row
+                      key={item.entry.id}
+                      className={`cursor-pointer hover:bg-neutral-700 active:bg-neutral-700 ${
+                        selectingId === item.entry.id
+                          ? "pointer-events-none opacity-60"
+                          : ""
+                      }`}
+                      onClick={() => void handleSelect(item)}
+                    >
+                      <Table.RowHeaderCell className="flex items-center gap-2">
+                        {selectingId === item.entry.id ? <Spinner size="1" /> : null}
+                        <span>{item.entry.id}</span>
+                      </Table.RowHeaderCell>
+                      <Table.Cell>{item.entry.name}</Table.Cell>
+                      <Table.Cell>{formatResourceType(item.entry.restype)}</Table.Cell>
+                      <Table.Cell>
+                        {item.entry.repo_owner}/{item.entry.repo_name}
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          )}
+          <p className="px-3.5 pt-1.5 text-xs text-white/60">
+            旧版资源（LegacyItem）暂不支持在控制台编辑，您仍需要按照 v1
+            操作方式修改它们。
+          </p>
         </div>
-      </Tabs.Root>
+      </div>
     </Page>
   );
 }

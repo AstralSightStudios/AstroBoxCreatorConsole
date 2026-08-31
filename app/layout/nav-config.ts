@@ -1,5 +1,6 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
+  ArchiveIcon,
   BinocularsIcon,
   BoxArrowUpIcon,
   ChartBarIcon,
@@ -13,7 +14,7 @@ import {
   GearFineIcon,
   GitPullRequestIcon,
   IdentificationBadgeIcon,
-  ListStarIcon,
+  ListMagnifyingGlassIcon,
   ReceiptIcon,
   RocketLaunchIcon,
   UsersThreeIcon,
@@ -70,9 +71,15 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
     items: [
       {
         id: "resource-manage",
-        icon: ListStarIcon,
-        label: "资源管理",
+        icon: ArchiveIcon,
+        label: "已发布资源",
         path: "/manage",
+      },
+      {
+        id: "resource-review-list",
+        icon: ListMagnifyingGlassIcon,
+        label: "审核列表",
+        path: "/publish",
       },
       {
         id: "resource-encrypt",

@@ -3,6 +3,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   FileArrowUpIcon,
+  ListMagnifyingGlassIcon,
   PencilSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
@@ -28,8 +29,6 @@ import {
   submissionRequestPath,
 } from "~/logic/publish/submission-protocol";
 import { formatResourceType } from "~/logic/publish/resource-type";
-
-import { SectionCard } from "./publish/components/shared";
 
 function useInProgressResources(refreshTick: number) {
   const [data, setData] = useState<PublishingResource[]>([]);
@@ -328,22 +327,27 @@ export default function ResourcePublish() {
           </div>
         </AlertDialog.Content>
       </AlertDialog.Root>
-      <SectionCard
-        title="审核列表"
-        description="查看你已上传资源的审核状态"
-        padding={false}
-      >
-        <div className="p-0.5">{content}</div>
-        <Button
-          className="border border-white/10 p-3! min-h-9! flex items-center mx-2! mb-2!"
-          onClick={() => navigate("/publish/new")}
-          size="2"
-          radius="large"
-          variant="soft"
-        >
-          <FileArrowUpIcon size={18} weight="fill" /> 发布资源
-        </Button>
-      </SectionCard>
+      <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <ListMagnifyingGlassIcon size={25} className="text-purple-300" />
+              <h1 className="text-2xl font-medium text-white">审核列表</h1>
+            </div>
+            <p className="mt-1 text-sm text-white/50">
+              查看你已上传资源的审核状态
+            </p>
+          </div>
+          <Button variant="soft" onClick={() => navigate("/publish/new")}>
+            <FileArrowUpIcon size={15} weight="fill" />
+            发布资源
+          </Button>
+        </div>
+
+        <div className="mx-auto w-full max-w-6xl rounded-xl bg-nav-item p-0.5">
+          {content}
+        </div>
+      </div>
     </Page>
   );
 }

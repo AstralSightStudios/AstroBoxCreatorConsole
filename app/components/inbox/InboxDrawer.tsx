@@ -274,7 +274,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
       if (!meta) return;
       const approved = meta.subtype === "review-approved";
       onClose();
-      navigate(approved ? "/manage?tab=manage" : "/manage?tab=publish");
+      navigate(approved ? "/manage" : "/publish");
     },
     [navigate, onClose],
   );
