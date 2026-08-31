@@ -416,7 +416,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
       {open ? (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-black/40"
+            className="fixed inset-0 z-[110] bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -424,7 +424,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
           />
           {isDesktop ? (
             <motion.aside
-              className="fixed z-50 flex w-[min(387px,calc(100vw-1rem))] flex-col overflow-hidden rounded-[18px] text-white shadow-[var(--nav-panel-shadow)]"
+              className="fixed z-[120] flex w-[min(387px,calc(100vw-1rem))] flex-col overflow-hidden rounded-[18px] text-white shadow-[var(--nav-panel-shadow)]"
               style={{
                 top: "max(0.5rem, env(safe-area-inset-top))",
                 bottom: "max(0.5rem, env(safe-area-inset-bottom))",
@@ -446,7 +446,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
             </motion.aside>
           ) : (
             <motion.div
-              className="fixed inset-x-0 top-0 z-50 w-screen"
+              className="fixed inset-x-0 top-0 z-[120] w-screen"
               style={{
                 height: "100dvh",
                 paddingTop: "max(100px, calc(env(safe-area-inset-top) + 56px))",

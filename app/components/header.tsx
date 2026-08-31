@@ -14,6 +14,7 @@ import {
 } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { CreatorConsoleLogoIcon } from "./svgs";
+import TitlebarEffect from "./TitlebarEffect";
 
 const PAGE_NAME_MAP: Record<string, string> = {
   "": "概览",
@@ -41,6 +42,9 @@ const PAGE_NAME_MAP: Record<string, string> = {
 };
 
 export default function Header() {
+  const isMacOS =
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("macos");
   const location = useLocation();
   const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
   const headerActions = useHeaderActions();
@@ -108,8 +112,10 @@ export default function Header() {
   return (
     <header
       ref={headerRef}
-      className={`relative flex flex-row flex-wrap gap-2 ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex flex-row flex-wrap gap-2 ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      data-tauri-drag-region={isMacOS ? true : undefined}
     >
+      <TitlebarEffect />
       {isMobile ? (
         <FunctionButton
           onClick={toggleNav}
@@ -119,7 +125,7 @@ export default function Header() {
       ) : null}
       {isMobile ? (
         <div
-          className={`transition-all ${!isMobile || isCollapsed ? "blur-none opacity-100" : "blur-sm opacity-50"}`}
+          className={`creator-console-mobile-logo transition-all ${!isMobile || isCollapsed ? "blur-none opacity-100" : "blur-sm opacity-50"}`}
         >
           <CreatorConsoleLogoIcon />
         </div>

@@ -23,7 +23,7 @@ export default function FunctionButton({
     return (
       <button
         type="button"
-        className={mergedClassName}
+        className={`${mergedClassName} creator-console-logo-button`}
         title={title ?? "CreatorConsole"}
         style={{ pointerEvents: "none" }}
       >

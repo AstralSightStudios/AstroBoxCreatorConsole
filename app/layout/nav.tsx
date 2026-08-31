@@ -39,6 +39,7 @@ import { AstroBoxLogo } from "~/components/svgs";
 import InboxBell from "~/components/inbox/InboxBell";
 import InboxDrawer from "~/components/inbox/InboxDrawer";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
+import TitlebarEffect from "~/components/TitlebarEffect";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
@@ -307,7 +308,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
     >
       {!isCollapsed && (
         <nav
-          className="relative z-10 grid h-screen w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))]"
+          className="app-desktop-nav relative z-10 grid h-screen w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))]"
           style={{
             height: "100dvh",
             gridTemplateRows: getNavGridTemplateRows(
@@ -316,6 +317,7 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
             ),
           }}
         >
+          <TitlebarEffect className="titlebar-effect-sidebar" />
           <NavContent {...contentProps} />
         </nav>
       )}
@@ -467,7 +469,7 @@ function NavHeader({
           className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
           {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
-          <div className="flex items-center gap-2">
+          <div className="nav-account-actions flex items-center gap-2">
             <InboxBell onClick={() => setInboxOpen(true)} />
             <Popover.Trigger>
               <button

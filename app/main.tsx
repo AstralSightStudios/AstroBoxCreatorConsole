@@ -32,6 +32,15 @@ import {
   ResourceEditPage,
 } from "./routes/resource/publish/new";
 
+const isMacOS =
+  typeof navigator !== "undefined" &&
+  (/Macintosh|Mac OS X/i.test(navigator.userAgent) ||
+    /^Mac/i.test(navigator.platform));
+
+if (isMacOS && typeof document !== "undefined") {
+  document.documentElement.classList.add("macos");
+}
+
 installFrontendLogBridge();
 
 const queryClient = new QueryClient();
@@ -78,6 +87,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <div className="bg-bg">
+        {isMacOS && (
+          <div className="tauri-drag-bar" data-tauri-drag-region aria-hidden />
+        )}
         <RouterProvider router={router} />
       </div>
     </QueryClientProvider>

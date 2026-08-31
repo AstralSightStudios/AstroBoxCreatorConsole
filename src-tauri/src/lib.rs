@@ -7,6 +7,10 @@ mod buildinfo;
 mod logger;
 mod logs_archive;
 mod resource_log;
+
+#[cfg(target_os = "macos")]
+mod macos;
+
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -209,6 +213,10 @@ pub fn run() {
             }
             afdian::initialize_session_store(app.handle()).map_err(std::io::Error::other)?;
             logger::init_logger(app.handle())?;
+
+            #[cfg(target_os = "macos")]
+            macos::custom_window::adopt_tahoe_round_corners_style(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

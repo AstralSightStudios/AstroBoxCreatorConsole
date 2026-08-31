@@ -258,6 +258,121 @@ html.wallpaper-editor-active body * {
     display: none;
 }
 
+/* ---- macOS 沉浸式标题栏 ---- */
+.tauri-drag-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    height: 8px;
+    pointer-events: auto;
+    -webkit-app-region: drag;
+}
+
+.tauri-drag-region {
+    -webkit-app-region: drag;
+}
+
+.tauri-no-drag,
+.tauri-drag-region :where(a, button, input, textarea, select, [role="button"], [data-tauri-drag-region="false"]) {
+    -webkit-app-region: no-drag;
+}
+
+.titlebar-effect {
+    display: none;
+}
+
+@media (min-width: 1280px) {
+    .app-header {
+        padding-right: 6rem;
+    }
+
+    .nav-account-actions {
+        position: fixed;
+        top: max(0.5rem, env(safe-area-inset-top));
+        right: max(0.75rem, env(safe-area-inset-right));
+        z-index: 100;
+    }
+
+    .macos .nav-account-actions {
+        top: max(0.5rem, env(safe-area-inset-top));
+        right: max(0.5rem, env(safe-area-inset-right));
+    }
+
+    .app-desktop-nav {
+        isolation: isolate;
+    }
+
+    .macos .app-desktop-nav {
+        padding-top: max(52px, env(safe-area-inset-top));
+    }
+}
+
+.macos .creator-console-logo-button,
+.macos .creator-console-mobile-logo {
+    display: none;
+}
+
+@media (min-width: 400px) {
+    .app-page-content {
+        padding-top: 0;
+    }
+
+    .app-header {
+        position: absolute;
+        top: 0;
+        right: max(0.5rem, env(safe-area-inset-right));
+        left: max(0.5rem, env(safe-area-inset-left));
+        isolation: isolate;
+        z-index: 5;
+        min-height: 52px;
+    }
+
+    .app-page-scroll-content {
+        padding-top: calc(52px + 0.5rem);
+    }
+
+    .titlebar-effect {
+        display: block;
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: -1;
+        height: calc(52px + 2rem);
+        pointer-events: none;
+        background: linear-gradient(
+            to bottom,
+            var(--color-bg) 0%,
+            color-mix(in srgb, var(--color-bg) 72%, transparent) 52%,
+            transparent 100%
+        );
+    }
+
+    .titlebar-effect-sidebar {
+        position: absolute;
+    }
+}
+
+@media (min-width: 400px) and (max-width: 1279.98px) {
+    .macos .app-header {
+        padding-left: calc(58px + 2rem);
+    }
+}
+
+@media (max-width: 399.98px) {
+    .macos .tauri-drag-bar {
+        height: 40px;
+    }
+
+    .macos .app-page-content {
+        padding-top: 40px;
+    }
+
+    .macos .app-header {
+        padding-left: 58px;
+    }
+}
+
 @media (max-width: 1100px) {
     .wallpaper-editor-root > :not(.wallpaper-editor-narrow-screen-notice) {
         display: none !important;
