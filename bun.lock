@@ -26,6 +26,8 @@
         "isbot": "^5.1.31",
         "markdown-it": "^14.3.0",
         "monaco-editor": "^0.55.1",
+        "overlayscrollbars": "^2.16.0",
+        "overlayscrollbars-react": "^0.5.6",
         "react": "^19.2.1",
         "react-colorful": "^5.8.0",
         "react-dom": "^19.2.1",
@@ -877,6 +879,10 @@
     "no-case": ["no-case@3.0.4", "", { "dependencies": { "lower-case": "^2.0.2", "tslib": "^2.0.3" } }, "sha512-fgAN3jGAh+RoxUGZHTSOLJIqUc2wmoBwGR4tbpNAKmmovFoWq0OdRkb0VkldReO2a2iBT/OEulG9XSUc10r3zg=="],
 
     "node-releases": ["node-releases@2.0.27", "", {}, "sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA=="],
+
+    "overlayscrollbars": ["overlayscrollbars@2.16.0", "", {}, "sha512-N03oje/q7j93D0aLZtoCdsDSYLmhheSsv8H7oSLE7HhdV9P/bmCURtLV/KbPye7P/bpfyt/obSfDpGUYoJ0OWg=="],
+
+    "overlayscrollbars-react": ["overlayscrollbars-react@0.5.6", "", { "peerDependencies": { "overlayscrollbars": "^2.0.0", "react": ">=16.8.0" } }, "sha512-E5To04bL5brn9GVCZ36SnfGanxa2I2MDkWoa4Cjo5wol7l+diAgi4DBc983V7l2nOk/OLJ6Feg4kySspQEGDBw=="],
 
     "pako": ["pako@3.0.1", "", {}, "sha512-GupotUUI0mlhugKjUs4bjOwLt3nrehy9Ys2dxC0GtgVef5cnKggkDMmf2bq2poCCuVXopWPmqsc9VDT2iJUy+w=="],
 

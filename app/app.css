@@ -1,6 +1,7 @@
 @config "../tailwind.config.js";
 @import "tailwindcss";
 @import "@radix-ui/themes/styles.css";
+@import "overlayscrollbars/overlayscrollbars.css";
 
 @font-face {
     font-family: "Sarasa Mono SC";
@@ -119,6 +120,13 @@
 
 .no-scrollbar::-webkit-scrollbar {
     display: none;
+}
+
+/* ---- 页面滚动条 ---- */
+.app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+    top: 0.5rem;
+    right: 0;
+    bottom: 0.5rem;
 }
 
 /* ---- Wallpaper editor ---- */
@@ -331,6 +339,10 @@ html.wallpaper-editor-active body * {
 
     .app-page-scroll-content {
         padding-top: calc(52px + 0.5rem);
+    }
+
+    .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+        top: calc(52px + 1rem);
     }
 
     .titlebar-effect {

@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { useContext, useMemo, useRef } from "react";
 import {
   UNSAFE_DataRouterContext,
@@ -164,7 +165,7 @@ export default function PageTransition() {
             <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
               <motion.div
                 key={motionKey}
-                className="absolute inset-0 w-full h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+                className="absolute inset-0 h-full w-full overflow-hidden"
                 custom={transitionMeta}
                 variants={{
                   initial: (meta: TransitionMeta) => ({
@@ -195,9 +196,22 @@ export default function PageTransition() {
                 animate="animate"
                 exit="exit"
               >
-                <div className="app-page-scroll-content h-full">
-                  {frozenOutlet}
-                </div>
+                <OverlayScrollbarsComponent
+                  defer
+                  className="app-page-scroll-area h-full w-full overscroll-contain"
+                  options={{
+                    overflow: { x: "hidden", y: "scroll" },
+                    scrollbars: {
+                      theme: "os-theme-light",
+                      autoHide: "scroll",
+                      autoHideDelay: 700,
+                    },
+                  }}
+                >
+                  <div className="app-page-scroll-content h-full pb-[env(safe-area-inset-bottom)]">
+                    {frozenOutlet}
+                  </div>
+                </OverlayScrollbarsComponent>
               </motion.div>
             </AnimatePresence>
           </div>

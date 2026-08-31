@@ -35,6 +35,8 @@
     "isbot": "^5.1.31",
     "markdown-it": "^14.3.0",
     "monaco-editor": "^0.55.1",
+    "overlayscrollbars": "^2.16.0",
+    "overlayscrollbars-react": "^0.5.6",
     "react": "^19.2.1",
     "react-colorful": "^5.8.0",
     "react-dom": "^19.2.1",
