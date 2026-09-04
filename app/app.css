@@ -22,7 +22,7 @@
         "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
         "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --color-bg: #191919;
-    --color-nav: rgba(31, 31, 32, 0.85);
+    --color-nav: var(--color-background);
     --color-nav-item: rgba(71, 71, 75, 0.3);
     --color-nav-item-hover: rgba(71, 71, 75, 0.4);
     --color-nav-item-selected: rgba(71, 71, 75, 0.55);
@@ -290,6 +290,7 @@ html.wallpaper-editor-active body * {
 
 .titlebar-effect {
     display: none;
+    background-color: var(--color-background);
 }
 
 .macos .wallpaper-editor-root {
@@ -372,12 +373,12 @@ html.wallpaper-editor-active body * {
         z-index: -1;
         height: calc(52px + 2rem);
         pointer-events: none;
-        background: linear-gradient(
+        background-image: linear-gradient(
             to bottom,
-            var(--color-bg) 0%,
-            color-mix(in srgb, var(--color-bg) 72%, transparent) 52%,
+            var(--color-background) 0%,
             transparent 100%
         );
+        background-color: transparent !important;
     }
 
     .titlebar-effect-sidebar {
@@ -440,12 +441,12 @@ html.wallpaper-editor-active body * {
         z-index: -1;
         height: calc(var(--macos-titlebar-height) + 44px + 2rem);
         pointer-events: none;
-        background: linear-gradient(
+        background-image: linear-gradient(
             to bottom,
-            var(--color-bg) 0%,
-            color-mix(in srgb, var(--color-bg) 72%, transparent) 52%,
+            var(--color-background) 0%,
             transparent 100%
         );
+        background-color: transparent !important;
     }
 }
 
