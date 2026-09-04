@@ -42,6 +42,10 @@ import {
   UI_SCALE_OPTIONS,
   useUiScale,
 } from "~/config/uiScale";
+import {
+  saveNavAccountCollapse,
+  useNavAccountCollapse,
+} from "~/config/nav";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
 import {
@@ -357,7 +361,11 @@ function ToggleRow({
         <span className="text-[13.5px] font-medium text-white">{title}</span>
         <span className="truncate text-[12px] text-white/45">{subtitle}</span>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
+        onClick={(event) => event.stopPropagation()}
+      />
     </div>
   );
 }
@@ -371,6 +379,7 @@ export default function Settings() {
   const selectedUiScaleOption =
     UI_SCALE_OPTIONS.find((option) => option.factor === currentUiScale) ??
     UI_SCALE_OPTIONS.find((option) => option.factor === 1)!;
+  const collapseAccountOnScroll = useNavAccountCollapse();
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -497,6 +506,20 @@ export default function Settings() {
               此设置仅保存在本设备。
             </p>
           </div>
+        </SectionCard>
+
+        {/* 导航 */}
+        <SectionCard
+          title="导航"
+          description="调整导航栏的显示方式"
+        >
+          <ToggleRow
+            title="账号区域随滚动收缩"
+            subtitle="滚动导航内容时收起顶部账号信息，方便浏览更多功能"
+            checked={collapseAccountOnScroll}
+            onChange={saveNavAccountCollapse}
+            last
+          />
         </SectionCard>
 
         {/* 资源仓库环境 */}

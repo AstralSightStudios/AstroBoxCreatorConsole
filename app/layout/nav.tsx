@@ -41,6 +41,7 @@ import InboxDrawer from "~/components/inbox/InboxDrawer";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
 import TitlebarEffect from "~/components/TitlebarEffect";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { useNavAccountCollapse } from "~/config/nav";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "~/components/ScaleAwareThemes";
@@ -60,6 +61,8 @@ import {
 const NAV_HEADER_COLLAPSE_THRESHOLD = 56;
 const NAV_HEADER_EXPANDED_HEIGHT = "clamp(218px, var(--ui-viewport-height-30pct), 342px)";
 const NAV_HEADER_MOBILE_EXPANDED_HEIGHT = "clamp(162px, var(--ui-viewport-height-30pct), 286px)";
+const NAV_HEADER_RESTING_HEIGHT = "clamp(132px, 18dvh, 200px)";
+const NAV_HEADER_MOBILE_RESTING_HEIGHT = "clamp(112px, 18dvh, 180px)";
 
 interface NavScrollState {
   scrollTop: number;
@@ -70,12 +73,13 @@ interface NavScrollState {
 function getNavGridTemplateRows(
   scrollTop: number,
   expandedHeight: string,
+  restingHeight: string,
+  collapseAccountOnScroll: boolean,
 ) {
-  const collapseOffset = Math.max(
-    0,
-    scrollTop - NAV_HEADER_COLLAPSE_THRESHOLD,
-  );
-  const headerHeight = `clamp(100px, calc(${expandedHeight} - ${collapseOffset}px), ${expandedHeight})`;
+  const collapseOffset = Math.max(0, scrollTop - NAV_HEADER_COLLAPSE_THRESHOLD);
+  const headerHeight = collapseAccountOnScroll
+    ? `clamp(100px, calc(${expandedHeight} - ${collapseOffset}px), ${expandedHeight})`
+    : restingHeight;
 
   return `${headerHeight} minmax(0, 1fr)`;
 }
@@ -83,6 +87,7 @@ function getNavGridTemplateRows(
 export default function Nav() {
   const accountState = useAccountState();
   const account = getDisplayAccount(accountState);
+  const collapseAccountOnScroll = useNavAccountCollapse();
   const location = useLocation();
   const navigate = useNavigate();
   const [navScrollState, setNavScrollState] = useState<NavScrollState>({
@@ -173,6 +178,7 @@ export default function Nav() {
     onNavigate: handleNavigate,
     navScrollState,
     onNavScroll: handleNavScroll,
+    collapseAccountOnScroll,
   };
 
   if (isDesktop) {
@@ -203,6 +209,7 @@ interface NavContentProps {
   onToggleNav: () => void;
   navScrollState: NavScrollState;
   onNavScroll: (event: React.UIEvent<HTMLDivElement>) => void;
+  collapseAccountOnScroll: boolean;
   hideFunctionButton?: boolean;
 }
 
@@ -310,6 +317,8 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
             gridTemplateRows: getNavGridTemplateRows(
               contentProps.navScrollState.scrollTop,
               NAV_HEADER_EXPANDED_HEIGHT,
+              NAV_HEADER_RESTING_HEIGHT,
+              contentProps.collapseAccountOnScroll,
             ),
           }}
         >
@@ -350,6 +359,8 @@ function MobileNav({ open, onDismiss, ...contentProps }: MobileNavProps) {
               gridTemplateRows: getNavGridTemplateRows(
                 contentProps.navScrollState.scrollTop,
                 NAV_HEADER_MOBILE_EXPANDED_HEIGHT,
+                NAV_HEADER_MOBILE_RESTING_HEIGHT,
+                contentProps.collapseAccountOnScroll,
               ),
             }}
           >
