@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion } from "framer-motion";
+import { Drawer } from "vaul";
 import {
   ArrowUpRightIcon,
   CheckCircleIcon,
@@ -185,16 +185,12 @@ export default function Nav() {
   }
 
   return (
-    <AnimatePresence>
-      {!isCollapsed && (
-        <MobileNav
-          key="mobile-nav"
-          {...sharedProps}
-          onToggleNav={collapseNav}
-          onDismiss={collapseNav}
-        />
-      )}
-    </AnimatePresence>
+    <MobileNav
+      {...sharedProps}
+      open={!isCollapsed}
+      onToggleNav={collapseNav}
+      onDismiss={collapseNav}
+    />
   );
 }
 
@@ -326,44 +322,42 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
 }
 
 interface MobileNavProps extends NavContentProps {
+  open: boolean;
   onDismiss: () => void;
   onToggleNav: () => void;
 }
 
-function MobileNav({ onDismiss, ...contentProps }: MobileNavProps) {
+function MobileNav({ open, onDismiss, ...contentProps }: MobileNavProps) {
   return (
-    <motion.div
-      className="fixed inset-0 z-40 flex"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
-      onClick={onDismiss}
+    <Drawer.Root
+      open={open}
+      direction="left"
+      noBodyStyles
+      shouldScaleBackground={false}
+      setBackgroundColorOnScale={false}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onDismiss();
+      }}
     >
-      <motion.div
-        className="absolute inset-0 bg-black/40 backdrop-blur-lg"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.3 }}
-      />
-      <motion.nav
-        className="relative z-10 grid h-full w-[75vw] grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
-        initial={{ x: "-100%" }}
-        animate={{ x: 0 }}
-        exit={{ x: "-100%" }}
-        transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
-        style={{
-          gridTemplateRows: getNavGridTemplateRows(
-            contentProps.navScrollState.scrollTop,
-            NAV_HEADER_MOBILE_EXPANDED_HEIGHT,
-          ),
-        }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <NavContent hideFunctionButton={true} {...contentProps} />
-      </motion.nav>
-    </motion.div>
+      <Drawer.Portal>
+        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-lg" />
+        <Drawer.Content asChild>
+          <nav
+            className="app-mobile-nav fixed inset-y-0 left-0 z-50 grid h-full w-[clamp(218px,75vw,342px)] grid-cols-1 gap-2 overflow-hidden bg-bg p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] outline-none"
+            style={{
+              gridTemplateRows: getNavGridTemplateRows(
+                contentProps.navScrollState.scrollTop,
+                NAV_HEADER_MOBILE_EXPANDED_HEIGHT,
+              ),
+            }}
+          >
+            <Drawer.Title className="sr-only">功能导航</Drawer.Title>
+            <Drawer.Description className="sr-only">滑动或点击遮罩可关闭导航</Drawer.Description>
+            <NavContent hideFunctionButton={true} {...contentProps} />
+          </nav>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }
 

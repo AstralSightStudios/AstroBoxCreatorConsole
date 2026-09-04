@@ -76,6 +76,7 @@
 
 /* ---- 信箱 / 浮层面板 ---- */
 :root {
+    --macos-titlebar-height: 42px;
     --nav-btn-bg: rgba(255, 255, 255, 0.05);
     --nav-indicator: rgba(255, 255, 255, 0.08);
     --nav-indicator-active: rgba(255, 255, 255, 0.12);
@@ -291,6 +292,26 @@ html.wallpaper-editor-active body * {
     display: none;
 }
 
+.macos .wallpaper-editor-root {
+    position: relative;
+    padding-top: var(--macos-titlebar-height);
+}
+
+.macos .wallpaper-editor-root::before {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 10;
+    height: var(--macos-titlebar-height);
+    content: "";
+    -webkit-app-region: drag;
+}
+
+.macos .wallpaper-editor-empty-back {
+    top: calc(var(--macos-titlebar-height) + 0.75rem);
+}
+
 @media (min-width: 1280px) {
     .app-header {
         padding-right: 6rem;
@@ -317,8 +338,7 @@ html.wallpaper-editor-active body * {
     }
 }
 
-.macos .creator-console-logo-button,
-.macos .creator-console-mobile-logo {
+.macos .creator-console-logo-button {
     display: none;
 }
 
@@ -372,16 +392,60 @@ html.wallpaper-editor-active body * {
 }
 
 @media (max-width: 399.98px) {
+    .macos {
+        --macos-titlebar-height: 32px;
+    }
+
     .macos .tauri-drag-bar {
-        height: 40px;
+        height: var(--macos-titlebar-height);
     }
 
     .macos .app-page-content {
-        padding-top: 40px;
+        padding-top: 0;
     }
 
     .macos .app-header {
-        padding-left: 58px;
+        position: absolute;
+        top: var(--macos-titlebar-height);
+        right: max(0.5rem, env(safe-area-inset-right));
+        left: max(0.5rem, env(safe-area-inset-left));
+        z-index: 5;
+        height: 44px;
+        min-height: 44px;
+        padding: 0;
+        isolation: isolate;
+    }
+
+    .macos .app-header-breadcrumb {
+        gap: 0.125rem;
+        padding-left: 0;
+    }
+
+    .macos .app-mobile-nav {
+        padding-top: calc(var(--macos-titlebar-height) + 0.75rem);
+    }
+
+    .macos .app-page-scroll-content {
+        padding-top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
+    }
+
+    .macos .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+        top: calc(var(--macos-titlebar-height) + 44px + 1rem);
+    }
+
+    .macos .titlebar-effect {
+        display: block;
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: -1;
+        height: calc(var(--macos-titlebar-height) + 44px + 2rem);
+        pointer-events: none;
+        background: linear-gradient(
+            to bottom,
+            var(--color-bg) 0%,
+            color-mix(in srgb, var(--color-bg) 72%, transparent) 52%,
+            transparent 100%
+        );
     }
 }
 

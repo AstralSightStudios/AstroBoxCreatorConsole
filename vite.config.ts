@@ -10,6 +10,9 @@ const monacoEditorPlugin =
     .default ?? monacoEditorPluginModule;
 
 export default defineConfig({
+  resolve: {
+    dedupe: ["react", "react-dom"],
+  },
   plugins: [
     tailwindcss(),
     react(),

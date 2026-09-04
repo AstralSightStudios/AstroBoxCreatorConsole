@@ -112,12 +112,13 @@ export default function Header() {
   return (
     <header
       ref={headerRef}
-      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex flex-row flex-wrap gap-2 ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-hidden ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
       data-tauri-drag-region={isMacOS ? true : undefined}
     >
       <TitlebarEffect />
       {isMobile ? (
         <FunctionButton
+          className={`app-header-function-button ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
           onClick={toggleNav}
           aria-label="展开导航"
           title="展开导航"
@@ -125,13 +126,16 @@ export default function Header() {
       ) : null}
       {isMobile ? (
         <div
-          className={`creator-console-mobile-logo transition-all ${!isMobile || isCollapsed ? "blur-none opacity-100" : "blur-sm opacity-50"}`}
+          className={`creator-console-mobile-logo shrink-0 transition-all ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
           <CreatorConsoleLogoIcon />
         </div>
       ) : null}
 
-      <div ref={breadcrumbRef} className="flex flex-row items-center gap-1 pl-1">
+      <div
+        ref={breadcrumbRef}
+        className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 transition-all ${!isMobile || isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
+      >
         {(
           breadcrumbOverride
             ? [...breadcrumbKeys, `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`]
@@ -153,12 +157,12 @@ export default function Header() {
           return (
             <div
               key={key}
-              className={`flex flex-row items-center gap-1 transition-all ${!isMobile || isCollapsed ? "blur-none opacity-100" : "blur-sm opacity-50"}`}
+              className="flex min-w-0 flex-row items-center gap-1"
             >
               {(isMobile || index > 0) && <Slash />}
               <Link
                 to={to}
-                className={`font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded-lg px-1.5 py-0.5 cursor-pointer transition-all hover:bg-neutral-800 active:scale-95 active:opacity-90`}
+                className={`min-w-0 truncate font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded-lg px-1.5 py-0.5 cursor-pointer transition-all hover:bg-neutral-800 active:scale-95 active:opacity-90`}
               >
                 {label}
               </Link>
@@ -178,7 +182,7 @@ export default function Header() {
             </div>
           </div>
           {headerActionsFit && (
-            <div className="ml-auto flex flex-row items-center gap-2">
+            <div className="ml-auto flex shrink-0 flex-row items-center gap-2">
               {headerActions}
             </div>
           )}

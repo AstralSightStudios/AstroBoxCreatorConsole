@@ -1157,7 +1157,7 @@ export function WallpaperEditor({
                     <button
                         type="button"
                         onClick={onBack}
-                        className="absolute left-3 top-3 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/60 transition hover:bg-white/10 hover:text-white"
+                        className="wallpaper-editor-empty-back absolute left-3 top-3 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/60 transition hover:bg-white/10 hover:text-white"
                     >
                         <ArrowLeftIcon size={16} weight="regular" />
                         返回
