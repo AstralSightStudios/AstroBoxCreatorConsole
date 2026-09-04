@@ -133,20 +133,25 @@ export default function DownloadsDistributionCard({
                 </PieChart>
                 <div className="flex flex-col w-full gap-2">
                     {entries.map(({ id, name, color, percentage, downloads }) => (
-                        <div key={id || name} className="flex flex-row w-full">
-                            <div className="flex flex-row gap-2 items-center">
+                        <div
+                            key={id || name}
+                            className="flex w-full flex-wrap items-center gap-x-2 gap-y-1"
+                        >
+                            <div className="flex min-w-0 basis-full items-center gap-2 md:flex-1 md:basis-auto">
                                 <div
                                     className="w-2 h-2 rounded-full"
                                     style={{ backgroundColor: color }}
                                 />
-                                <p className="font-[450] text-size-medium">{name}</p>
-                            </div>
-                            <div className="flex flex-row gap-4 items-center ml-auto">
-                                <p className="font-[450] text-size-medium">
-                                    占比{formatPercent(percentage)}%
+                                <p className="min-w-0 break-words font-[450] text-size-medium">
+                                    {name}
                                 </p>
-                                <p className="font-[450] text-size-medium">
-                                    下载{formatInteger(downloads)}次
+                            </div>
+                            <div className="ml-4 flex shrink-0 items-center gap-4 opacity-75 md:ml-auto">
+                                <p className="whitespace-nowrap font-[450] text-size-medium">
+                                    占比{renderDistributionNumber(percentage, 1)}%
+                                </p>
+                                <p className="whitespace-nowrap font-[450] text-size-medium">
+                                    下载{renderDistributionNumber(downloads, 0)}次
                                 </p>
                             </div>
                         </div>
