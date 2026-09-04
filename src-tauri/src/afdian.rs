@@ -1126,12 +1126,10 @@ fn session_path() -> Result<&'static Path, String> {
         .ok_or_else(|| "爱发电会话存储未初始化".to_string())
 }
 
-#[cfg(not(target_os = "android"))]
 fn load_persisted_session() -> Result<Option<StoredSession>, String> {
     load_session_file(session_path()?)
 }
 
-#[cfg(not(target_os = "android"))]
 fn load_session_file(path: &Path) -> Result<Option<StoredSession>, String> {
     match fs::read_to_string(path) {
         Ok(raw) => serde_json::from_str(&raw)
@@ -1142,12 +1140,10 @@ fn load_session_file(path: &Path) -> Result<Option<StoredSession>, String> {
     }
 }
 
-#[cfg(not(target_os = "android"))]
 fn save_persisted_session(session: &StoredSession) -> Result<(), String> {
     save_session_file(session_path()?, session)
 }
 
-#[cfg(not(target_os = "android"))]
 fn save_session_file(path: &Path, session: &StoredSession) -> Result<(), String> {
     let parent = path
         .parent()
@@ -1157,12 +1153,10 @@ fn save_session_file(path: &Path, session: &StoredSession) -> Result<(), String>
     write_session_file(path, &raw)
 }
 
-#[cfg(not(target_os = "android"))]
 fn clear_persisted_session() -> Result<(), String> {
     clear_session_file(session_path()?)
 }
 
-#[cfg(not(target_os = "android"))]
 fn clear_session_file(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -1171,7 +1165,7 @@ fn clear_session_file(path: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(all(unix, not(target_os = "android")))]
+#[cfg(unix)]
 fn write_session_file(path: &Path, raw: &[u8]) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -1190,24 +1184,9 @@ fn write_session_file(path: &Path, raw: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("无法写入爱发电会话：{error}"))
 }
 
-#[cfg(all(not(unix), not(target_os = "android")))]
+#[cfg(not(unix))]
 fn write_session_file(path: &Path, raw: &[u8]) -> Result<(), String> {
     fs::write(path, raw).map_err(|error| format!("无法写入爱发电会话：{error}"))
-}
-
-#[cfg(target_os = "android")]
-fn load_persisted_session() -> Result<Option<StoredSession>, String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
-}
-
-#[cfg(target_os = "android")]
-fn save_persisted_session(_session: &StoredSession) -> Result<(), String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
-}
-
-#[cfg(target_os = "android")]
-fn clear_persisted_session() -> Result<(), String> {
-    Err("当前 Android 版本暂不支持爱发电登录".into())
 }
 
 fn session_cache() -> &'static Mutex<SessionCache> {
@@ -1406,9 +1385,8 @@ mod tests {
         assert_eq!(mask_account("short"), "爱发电用户");
     }
 
-    #[cfg(not(target_os = "android"))]
     #[test]
-    fn persists_session_without_keyring() {
+    fn persists_session_in_app_private_storage() {
         let directory = std::env::temp_dir().join(format!(
             "astrobox-afdian-session-{}-{}",
             std::process::id(),
@@ -1420,11 +1398,22 @@ mod tests {
             display_name: "测试用户".into(),
         };
 
+        assert!(load_session_file(&path).unwrap().is_none());
         save_session_file(&path, &session).unwrap();
         let restored = load_session_file(&path).unwrap().unwrap();
 
         assert_eq!(restored.auth_token, "test-token");
         assert_eq!(restored.display_name, "测试用户");
+
+        let replacement = StoredSession {
+            auth_token: "replacement-token".into(),
+            display_name: "替换用户".into(),
+        };
+        save_session_file(&path, &replacement).unwrap();
+        let restored = load_session_file(&path).unwrap().unwrap();
+
+        assert_eq!(restored.auth_token, "replacement-token");
+        assert_eq!(restored.display_name, "替换用户");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1435,7 +1424,28 @@ mod tests {
         }
 
         clear_session_file(&path).unwrap();
+        clear_session_file(&path).unwrap();
         assert!(!path.exists());
+        fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_corrupted_session_file() {
+        let directory = std::env::temp_dir().join(format!(
+            "astrobox-afdian-corrupted-session-{}-{}",
+            std::process::id(),
+            OsRng.next_u64()
+        ));
+        let path = directory.join(AFDIAN_SESSION_FILE_NAME);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, b"invalid-session").unwrap();
+
+        assert_eq!(
+            load_session_file(&path).unwrap_err(),
+            "爱发电登录凭据已损坏，请重新登录"
+        );
+
+        fs::remove_file(path).unwrap();
         fs::remove_dir(directory).unwrap();
     }
 }

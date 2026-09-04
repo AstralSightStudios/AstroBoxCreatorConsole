@@ -35,20 +35,9 @@ export function parseAfdianAmount(value?: string | null) {
   return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
-export function estimateAfdianMonthlyNet(
-  currentMonthAmount: string | null | undefined,
-  asOf: string,
-) {
-  const amount = parseAfdianAmount(currentMonthAmount);
-  const dateParts = getShanghaiDateParts(asOf);
-  if (amount === null || !dateParts) return null;
-
-  const daysInMonth = new Date(
-    Date.UTC(dateParts.year, dateParts.month, 0),
-  ).getUTCDate();
-  return roundCurrency(
-    (amount / dateParts.day) * daysInMonth * AFDIAN_CREATOR_RATE,
-  );
+export function calculateAfdianNet(amountValue: string | null | undefined) {
+  const amount = parseAfdianAmount(amountValue);
+  return amount === null ? null : roundCurrency(amount * AFDIAN_CREATOR_RATE);
 }
 
 export function getAfdianIncomeMonthLabel(asOf: string) {
@@ -84,7 +73,7 @@ export function resolveAfdianSettlementDisplay(input: {
 
   return {
     label: "预计到手" as const,
-    amount: estimateAfdianMonthlyNet(input.currentMonth, input.asOf),
+    amount: calculateAfdianNet(input.currentMonth),
   };
 }
 
