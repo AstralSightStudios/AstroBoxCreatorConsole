@@ -643,10 +643,11 @@ function AccountMenu({
         background: "transparent",
         boxShadow: "none",
         border: "none",
-        borderRadius: 24,
+        borderRadius: 20,
         width: "min(400px, var(--radix-popover-content-available-width))",
         maxHeight: "var(--radix-popover-content-available-height)",
         overflow: "visible",
+        zIndex: "999",
       }}
     >
       <div className="rounded-3xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-1.5 space-y-1.5">

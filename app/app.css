@@ -345,12 +345,12 @@ html.wallpaper-editor-active body * {
 
 @media (min-width: 400px) {
     .app-page-content {
-        padding-top: 0;
+        padding-top: env(safe-area-inset-top);
     }
 
     .app-header {
         position: absolute;
-        top: 0;
+        top: env(safe-area-inset-top);
         right: max(0.5rem, env(safe-area-inset-right));
         left: max(0.5rem, env(safe-area-inset-left));
         isolation: isolate;
