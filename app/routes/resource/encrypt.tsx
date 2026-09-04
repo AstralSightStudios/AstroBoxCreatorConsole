@@ -32,6 +32,7 @@ import {
   filterAfdianOrdersBySku,
   type AfdianOrder,
 } from "~/api/afdian";
+import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
 import { SectionCard } from "./publish/components/shared";
 import { useDisplayAccount } from "~/logic/account/store";
@@ -341,12 +342,12 @@ export default function ResourceEncrypt() {
   return (
     <Page>
       <div className="mx-auto max-w-6xl px-2 w-full pt-1.5 pb-6 flex flex-col gap-4">
-        <div className="flex flex-col px-3 py-3.5">
-          <div className="flex items-center gap-2 mb-2">
-            <FingerprintSimpleIcon size={24} className="text-blue-500" />
-            <p className="text-lg font-semibold">资源加解密与激活</p>
-          </div>
-          <p className="text-sm text-white/70">配置付费平台与资源激活方式</p>
+        <div className="px-3 py-3.5">
+          <PageHeader
+            title="资源加解密与激活"
+            description="配置付费平台与资源激活方式"
+            icon={<FingerprintSimpleIcon size={25} className="text-purple-300" />}
+          />
         </div>
 
         <SectionCard

@@ -10,6 +10,8 @@ import {
   useHeaderActions,
   useHeaderActionsFit,
   useHeaderBreadcrumb,
+  useHeaderLargeTitle,
+  useHeaderLargeTitleProgress,
   useSetHeaderActionsFit,
 } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
@@ -50,9 +52,18 @@ export default function Header() {
   const headerActions = useHeaderActions();
   const headerActionsFit = useHeaderActionsFit();
   const breadcrumbOverride = useHeaderBreadcrumb();
+  const largeTitle = useHeaderLargeTitle();
+  const largeTitleProgress = useHeaderLargeTitleProgress();
   const setHeaderActionsFit = useSetHeaderActionsFit();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
+  const isHeaderAvailable = !isMobile || isCollapsed;
+  const breadcrumbOpacity = isHeaderAvailable
+    ? largeTitle
+      ? largeTitleProgress
+      : 1
+    : 0;
+  const isBreadcrumbInteractive = breadcrumbOpacity >= 0.95;
 
   const headerRef = useRef<HTMLElement>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
@@ -134,7 +145,12 @@ export default function Header() {
 
       <div
         ref={breadcrumbRef}
-        className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 transition-all ${!isMobile || isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        aria-hidden={!isBreadcrumbInteractive}
+        style={{
+          opacity: breadcrumbOpacity,
+          transform: `translateY(${(1 - breadcrumbOpacity) * 4}px)`,
+        }}
+        className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 ${isBreadcrumbInteractive ? "" : "pointer-events-none"}`}
       >
         {(
           breadcrumbOverride
@@ -146,7 +162,9 @@ export default function Header() {
               ? index === breadcrumbKeys.length
               : index === breadcrumbKeys.length - 1;
           const label =
-            breadcrumbOverride && isLast
+            largeTitle && isLast
+              ? largeTitle
+              : breadcrumbOverride && isLast
               ? breadcrumbOverride
               : PAGE_NAME_MAP[key] ?? key;
           const to =
@@ -162,6 +180,7 @@ export default function Header() {
               {(isMobile || index > 0) && <Slash />}
               <Link
                 to={to}
+                tabIndex={isBreadcrumbInteractive ? undefined : -1}
                 className={`min-w-0 truncate font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded-lg px-1.5 py-0.5 cursor-pointer transition-all hover:bg-neutral-800 active:scale-95 active:opacity-90`}
               >
                 {label}

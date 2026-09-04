@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { useContext, useMemo, useRef } from "react";
+import { useCallback, useContext, useMemo, useRef, type UIEvent } from "react";
 import {
   UNSAFE_DataRouterContext,
   UNSAFE_DataRouterStateContext,
@@ -11,7 +11,10 @@ import {
   useOutlet,
 } from "react-router";
 import Header from "~/components/header";
-import { HeaderActionsProvider } from "~/layout/header-actions";
+import {
+  HeaderActionsProvider,
+  useUpdateHeaderScroll,
+} from "~/layout/header-actions";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
 
 type Axis = "x" | "y";
@@ -98,8 +101,17 @@ function getExitOffset(meta: TransitionMeta) {
 }
 
 export default function PageTransition() {
+  return (
+    <HeaderActionsProvider>
+      <PageTransitionContent />
+    </HeaderActionsProvider>
+  );
+}
+
+function PageTransitionContent() {
   const location = useLocation();
   const outlet = useOutlet();
+  const updateHeaderScroll = useUpdateHeaderScroll();
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
   const locationContext = useContext(UNSAFE_LocationContext);
@@ -126,6 +138,15 @@ export default function PageTransition() {
 
   const { meta: transitionMeta, path: motionKey } =
     transitionSnapshotRef.current;
+  const handlePageScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (!target.hasAttribute("data-overlayscrollbars-viewport")) return;
+      updateHeaderScroll(target.scrollTop);
+    },
+    [updateHeaderScroll],
+  );
   const frozenOutlet = useMemo(() => {
     if (!outlet) {
       return outlet;
@@ -154,69 +175,68 @@ export default function PageTransition() {
   ]);
 
   return (
-    <HeaderActionsProvider>
-      <div
-        className="relative h-full min-h-screen overflow-hidden select-none"
-        style={{ minHeight: "100dvh" }}
-      >
-        <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
-          <Header />
-          <div className="relative flex-1 min-h-0 overflow-hidden">
-            <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
-              <motion.div
-                key={motionKey}
-                className="absolute inset-0 h-full w-full overflow-hidden"
-                custom={transitionMeta}
-                variants={{
-                  initial: (meta: TransitionMeta) => ({
-                    x: meta.axis === "x" ? getInitialOffset(meta) : 0,
-                    y: meta.axis === "y" ? getInitialOffset(meta) : 0,
-                    opacity: 0,
-                  }),
-                  animate: {
-                    x: 0,
-                    y: 0,
-                    opacity: 1,
-                    transition: {
-                      duration: ENTER_DURATION,
-                      ease: ENTER_EASE,
-                    },
+    <div
+      className="relative h-full min-h-screen overflow-hidden select-none"
+      style={{ minHeight: "100dvh" }}
+    >
+      <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
+        <Header />
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
+            <motion.div
+              key={motionKey}
+              className="absolute inset-0 h-full w-full overflow-hidden"
+              custom={transitionMeta}
+              variants={{
+                initial: (meta: TransitionMeta) => ({
+                  x: meta.axis === "x" ? getInitialOffset(meta) : 0,
+                  y: meta.axis === "y" ? getInitialOffset(meta) : 0,
+                  opacity: 0,
+                }),
+                animate: {
+                  x: 0,
+                  y: 0,
+                  opacity: 1,
+                  transition: {
+                    duration: ENTER_DURATION,
+                    ease: ENTER_EASE,
                   },
-                  exit: (meta: TransitionMeta) => ({
-                    x: meta.axis === "x" ? getExitOffset(meta) : 0,
-                    y: meta.axis === "y" ? getExitOffset(meta) : 0,
-                    opacity: 0,
-                    transition: {
-                      duration: EXIT_DURATION,
-                      ease: EXIT_EASE,
-                    },
-                  }),
+                },
+                exit: (meta: TransitionMeta) => ({
+                  x: meta.axis === "x" ? getExitOffset(meta) : 0,
+                  y: meta.axis === "y" ? getExitOffset(meta) : 0,
+                  opacity: 0,
+                  transition: {
+                    duration: EXIT_DURATION,
+                    ease: EXIT_EASE,
+                  },
+                }),
+              }}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              onScrollCapture={handlePageScroll}
+            >
+              <OverlayScrollbarsComponent
+                defer
+                className="app-page-scroll-area h-full w-full overscroll-contain"
+                options={{
+                  overflow: { x: "hidden", y: "scroll" },
+                  scrollbars: {
+                    theme: "os-theme-light",
+                    autoHide: "scroll",
+                    autoHideDelay: 700,
+                  },
                 }}
-                initial="initial"
-                animate="animate"
-                exit="exit"
               >
-                <OverlayScrollbarsComponent
-                  defer
-                  className="app-page-scroll-area h-full w-full overscroll-contain"
-                  options={{
-                    overflow: { x: "hidden", y: "scroll" },
-                    scrollbars: {
-                      theme: "os-theme-light",
-                      autoHide: "scroll",
-                      autoHideDelay: 700,
-                    },
-                  }}
-                >
-                  <div className="app-page-scroll-content h-full pb-[env(safe-area-inset-bottom)]">
-                    {frozenOutlet}
-                  </div>
-                </OverlayScrollbarsComponent>
-              </motion.div>
-            </AnimatePresence>
-          </div>
+                <div className="app-page-scroll-content h-full pb-[env(safe-area-inset-bottom)]">
+                  {frozenOutlet}
+                </div>
+              </OverlayScrollbarsComponent>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
-    </HeaderActionsProvider>
+    </div>
   );
 }

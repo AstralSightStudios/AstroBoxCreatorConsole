@@ -11,6 +11,7 @@ import { AlertDialog, Button, Table, Callout, Spinner } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
 import {
   createPullRequestComment,
@@ -328,21 +329,17 @@ export default function ResourcePublish() {
         </AlertDialog.Content>
       </AlertDialog.Root>
       <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <ListMagnifyingGlassIcon size={25} className="text-purple-300" />
-              <h1 className="text-2xl font-medium text-white">审核列表</h1>
-            </div>
-            <p className="mt-1 text-sm text-white/50">
-              查看你已上传资源的审核状态
-            </p>
-          </div>
-          <Button variant="soft" onClick={() => navigate("/publish/new")}>
-            <FileArrowUpIcon size={15} weight="fill" />
-            发布资源
-          </Button>
-        </div>
+        <PageHeader
+          title="审核列表"
+          description="查看你已上传资源的审核状态"
+          icon={<ListMagnifyingGlassIcon size={25} className="text-purple-300" />}
+          action={
+            <Button variant="soft" onClick={() => navigate("/publish/new")}>
+              <FileArrowUpIcon size={15} weight="fill" />
+              发布资源
+            </Button>
+          }
+        />
 
         <div className="mx-auto w-full max-w-6xl rounded-xl bg-nav-item p-0.5">
           {content}

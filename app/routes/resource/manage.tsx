@@ -6,6 +6,7 @@ import {
 import { Table, Callout, Spinner } from "@radix-ui/themes";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
 import { loadAccountState } from "~/logic/account/store";
 import {
@@ -111,13 +112,11 @@ export default function ResourceManage() {
   return (
     <Page>
       <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <ArchiveIcon size={25} className="text-purple-300" />
-            <h1 className="text-2xl font-medium text-white">已发布资源</h1>
-          </div>
-          <p className="mt-1 text-sm text-white/50">管理已通过审核的资源</p>
-        </div>
+        <PageHeader
+          title="已发布资源"
+          description="管理已通过审核的资源"
+          icon={<ArchiveIcon size={25} className="text-purple-300" />}
+        />
 
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
           {selectError && (

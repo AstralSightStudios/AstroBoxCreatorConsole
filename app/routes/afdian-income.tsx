@@ -32,6 +32,7 @@ import {
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
 import DataCard from "~/components/cards/datacard";
+import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
 import { formatAfdianCurrency } from "~/logic/afdian/income";
 
@@ -382,23 +383,17 @@ export default function AfdianIncomePage() {
   return (
     <Page>
       <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <CurrencyCircleDollarIcon size={25} className="text-purple-300" />
-              <h1 className="text-2xl font-medium text-white">爱发电收入</h1>
-            </div>
-            <p className="mt-1 text-sm text-white/50">
-              收入、订单与赞助者数据
-            </p>
-          </div>
-          {connected && (
+        <PageHeader
+          title="爱发电收入"
+          description="收入、订单与赞助者数据"
+          icon={<CurrencyCircleDollarIcon size={25} className="text-purple-300" />}
+          action={connected ? (
             <Button variant="soft" onClick={() => void refresh()}>
               <ArrowClockwiseIcon size={15} />
               刷新
             </Button>
-          )}
-        </div>
+          ) : undefined}
+        />
 
         {!nativeAvailable ? (
           <div className="rounded-xl bg-nav-item px-5 py-12 text-center text-sm text-white/55">
