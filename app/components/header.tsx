@@ -4,7 +4,9 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  type MouseEvent,
 } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import FunctionButton from "~/components/nav/function-button";
 import {
   useHeaderActions,
@@ -69,6 +71,32 @@ export default function Header() {
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const actionsMeasureRef = useRef<HTMLDivElement>(null);
 
+  const handleHeaderMouseDown = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!isMacOS || event.button !== 0) return;
+
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "a, button, input, textarea, select, [role=\"button\"], [data-tauri-drag-region=\"false\"]",
+        )
+      ) {
+        return;
+      }
+
+      if (
+        typeof window === "undefined" ||
+        !("__TAURI_INTERNALS__" in window)
+      ) {
+        return;
+      }
+
+      void getCurrentWindow().startDragging();
+    },
+    [isMacOS],
+  );
+
   const segments = pathname.replace(/^\//, "").split("/").filter(Boolean);
 
   const breadcrumbKeys: string[] = [];
@@ -125,6 +153,7 @@ export default function Header() {
       ref={headerRef}
       className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-hidden ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
       data-tauri-drag-region={isMacOS ? true : undefined}
+      onMouseDown={handleHeaderMouseDown}
     >
       <TitlebarEffect />
       {isMobile ? (

@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-cursor-position",
+    "core:window:allow-start-dragging",
     "dialog:default",
     "opener:default",
     "opener:allow-open-url",
