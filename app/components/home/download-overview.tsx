@@ -1,11 +1,6 @@
 import DataCard from "~/components/cards/datacard";
 import type { DashboardOverviewData } from "~/api/astrobox/dashboard";
-
-interface DownloadSummaryCard {
-    label: string;
-    value: string;
-    isPlus?: boolean;
-}
+import AnimatedNumber from "~/components/animated-number";
 
 interface DownloadOverviewProps {
     data?: DashboardOverviewData;
@@ -13,11 +8,19 @@ interface DownloadOverviewProps {
     error?: string;
 }
 
-function formatInteger(value?: number | null) {
-    if (typeof value !== "number" || Number.isNaN(value)) {
-        return "--";
-    }
-    return value.toString();
+function renderInteger(value?: number | null, loading?: boolean) {
+    if (loading) return "...";
+    if (typeof value !== "number" || Number.isNaN(value)) return "--";
+
+    return (
+        <AnimatedNumber
+            value={value}
+            initial
+            locales="zh-CN"
+            format={{ useGrouping: false, maximumFractionDigits: 0 }}
+            className="font-mono-sarasa"
+        />
+    );
 }
 
 function getDayOverDayLabel(data?: DashboardOverviewData) {
@@ -33,7 +36,7 @@ function getDayOverDayValue(data?: DashboardOverviewData, loading?: boolean) {
     if (data.dayOverDayChangeIsPlus && !data.dayOverDayChangeAccessible) {
         return "捐赠计划专享";
     }
-    return formatInteger(data.dayOverDayChangeValue);
+    return renderInteger(data.dayOverDayChangeValue);
 }
 
 export default function DownloadOverview({
@@ -41,14 +44,14 @@ export default function DownloadOverview({
     loading,
     error,
 }: DownloadOverviewProps) {
-    const cards: DownloadSummaryCard[] = [
+    const cards = [
         {
             label: "今日下载量",
-            value: loading ? "..." : formatInteger(data?.todayDownloads),
+            value: renderInteger(data?.todayDownloads, loading),
         },
         {
             label: "本周下载量",
-            value: loading ? "..." : formatInteger(data?.weekDownloads),
+            value: renderInteger(data?.weekDownloads, loading),
         },
         {
             label: getDayOverDayLabel(data),

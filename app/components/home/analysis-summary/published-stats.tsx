@@ -1,10 +1,11 @@
 import DataCard from "~/components/cards/datacard";
+import AnimatedNumber from "~/components/animated-number";
 import { useEffect, useMemo, useState } from "react";
 import { loadOwnedCatalogResourcesForCurrentUser } from "~/logic/publish/resources";
 
 interface PublishedStat {
     label: string;
-    value: string;
+    value: number | null;
 }
 
 function isPaidType(paidType: string) {
@@ -72,30 +73,30 @@ export default function PublishedStats() {
     const stats = useMemo<PublishedStat[]>(() => {
         if (loading) {
             return [
-                { label: "已发布资源数", value: "..." },
-                { label: "已发布付费资源数", value: "..." },
-                { label: "已发布表盘数", value: "..." },
-                { label: "已发布快应用数", value: "..." },
-                { label: "已发布模块数", value: "..." },
+                { label: "已发布资源数", value: null },
+                { label: "已发布付费资源数", value: null },
+                { label: "已发布表盘数", value: null },
+                { label: "已发布快应用数", value: null },
+                { label: "已发布模块数", value: null },
             ];
         }
 
         if (error) {
             return [
-                { label: "已发布资源数", value: "--" },
-                { label: "已发布付费资源数", value: "--" },
-                { label: "已发布表盘数", value: "--" },
-                { label: "已发布快应用数", value: "--" },
-                { label: "已发布模块数", value: "--" },
+                { label: "已发布资源数", value: null },
+                { label: "已发布付费资源数", value: null },
+                { label: "已发布表盘数", value: null },
+                { label: "已发布快应用数", value: null },
+                { label: "已发布模块数", value: null },
             ];
         }
 
         return [
-            { label: "已发布资源数", value: total.toString() },
-            { label: "已发布付费资源数", value: paid.toString() },
-            { label: "已发布表盘数", value: watchface.toString() },
-            { label: "已发布快应用数", value: quickApp.toString() },
-            { label: "已发布模块数", value: canopus.toString() },
+            { label: "已发布资源数", value: total },
+            { label: "已发布付费资源数", value: paid },
+            { label: "已发布表盘数", value: watchface },
+            { label: "已发布快应用数", value: quickApp },
+            { label: "已发布模块数", value: canopus },
         ];
     }, [canopus, error, loading, paid, quickApp, total, watchface]);
 
@@ -104,7 +105,24 @@ export default function PublishedStats() {
             <div className="py-1.5 gap-2.5 datacard-grid-[150px]">
                 {stats.map(({ label, value }) => (
                     <DataCard key={label} label={label}>
-                        <p className="card-num">{value}</p>
+                        <p className="card-num">
+                            {loading ? (
+                                "..."
+                            ) : value === null ? (
+                                "--"
+                            ) : (
+                                <AnimatedNumber
+                                    value={value}
+                                    initial
+                                    locales="zh-CN"
+                                    format={{
+                                        useGrouping: false,
+                                        maximumFractionDigits: 0,
+                                    }}
+                                    className="font-mono-sarasa"
+                                />
+                            )}
+                        </p>
                     </DataCard>
                 ))}
             </div>

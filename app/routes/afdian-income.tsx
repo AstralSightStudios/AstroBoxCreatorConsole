@@ -32,16 +32,47 @@ import {
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
 import DataCard from "~/components/cards/datacard";
+import AnimatedNumber from "~/components/animated-number";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
-import { formatAfdianCurrency } from "~/logic/afdian/income";
+import { parseAfdianAmount } from "~/logic/afdian/income";
 
 type ManagementTab = "overview" | "stats" | "orders" | "sponsors";
 
-function formatInteger(value?: number | null) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("zh-CN")
-    : "--";
+const CURRENCY_FORMAT: Intl.NumberFormatOptions = {
+  style: "currency",
+  currency: "CNY",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+};
+
+function renderInteger(value?: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+
+  return (
+    <AnimatedNumber
+      value={value}
+      initial
+      locales="zh-CN"
+      format={{ maximumFractionDigits: 0 }}
+      className="font-mono-sarasa"
+    />
+  );
+}
+
+function renderCurrency(value?: number | string | null) {
+  const amount = parseAfdianAmount(value == null ? null : String(value));
+  if (amount === null) return "--";
+
+  return (
+    <AnimatedNumber
+      value={amount}
+      initial
+      locales="zh-CN"
+      format={CURRENCY_FORMAT}
+      className="font-mono-sarasa"
+    />
+  );
 }
 
 function formatDateTime(value?: string | null) {
@@ -109,16 +140,16 @@ function OverviewSection({ enabled }: { enabled: boolean }) {
 
   const data = query.data;
   const metrics = [
-    { label: "今日收入", value: formatAfdianCurrency(data?.todayIncome) },
-    { label: "今日订单数", value: formatInteger(data?.todayOrderCount) },
-    { label: getIncomeMonthLabel(data?.asOf), value: formatAfdianCurrency(data?.monthIncome) },
-    { label: "累计收入", value: formatAfdianCurrency(data?.allIncome) },
-    { label: "近 31 天赞助者", value: formatInteger(data?.recentSponsorCount) },
-    { label: "历史赞助者", value: formatInteger(data?.allSponsorCount) },
-    { label: "主页访问人数", value: formatInteger(data?.uv) },
-    { label: "主页访问次数", value: formatInteger(data?.pv) },
-    { label: "当前可提现", value: formatAfdianCurrency(data?.balance) },
-    { label: "当前可提现（税后）", value: formatAfdianCurrency(data?.balanceAfterTax) },
+    { label: "今日收入", value: renderCurrency(data?.todayIncome) },
+    { label: "今日订单数", value: renderInteger(data?.todayOrderCount) },
+    { label: getIncomeMonthLabel(data?.asOf), value: renderCurrency(data?.monthIncome) },
+    { label: "累计收入", value: renderCurrency(data?.allIncome) },
+    { label: "近 31 天赞助者", value: renderInteger(data?.recentSponsorCount) },
+    { label: "历史赞助者", value: renderInteger(data?.allSponsorCount) },
+    { label: "主页访问人数", value: renderInteger(data?.uv) },
+    { label: "主页访问次数", value: renderInteger(data?.pv) },
+    { label: "当前可提现", value: renderCurrency(data?.balance) },
+    { label: "当前可提现（税后）", value: renderCurrency(data?.balanceAfterTax) },
   ];
 
   return (
@@ -167,11 +198,11 @@ function IncomeStatsSection({ enabled }: { enabled: boolean }) {
             {items.map((item) => (
               <Table.Row key={item.date}>
                 <Table.RowHeaderCell>{item.date}</Table.RowHeaderCell>
-                <Table.Cell>{formatAfdianCurrency(item.income)}</Table.Cell>
-                <Table.Cell>{formatInteger(item.orderCount)}</Table.Cell>
-                <Table.Cell>{formatInteger(item.sponsorCount)}</Table.Cell>
-                <Table.Cell>{formatInteger(item.returningSponsorCount)}</Table.Cell>
-                <Table.Cell>{formatInteger(item.uv)}</Table.Cell>
+                <Table.Cell>{renderCurrency(item.income)}</Table.Cell>
+                <Table.Cell>{renderInteger(item.orderCount)}</Table.Cell>
+                <Table.Cell>{renderInteger(item.sponsorCount)}</Table.Cell>
+                <Table.Cell>{renderInteger(item.returningSponsorCount)}</Table.Cell>
+                <Table.Cell>{renderInteger(item.uv)}</Table.Cell>
               </Table.Row>
             ))}
           </Table.Body>
@@ -269,7 +300,7 @@ function ReceivedOrdersSection({ enabled }: { enabled: boolean }) {
                 )}
               </div>
               <p className="shrink-0 text-lg font-medium text-white">
-                {formatAfdianCurrency(order.amount)}
+                {renderCurrency(order.amount)}
               </p>
             </div>
           </article>
@@ -312,7 +343,7 @@ function SponsorsSection({ enabled }: { enabled: boolean }) {
   return (
     <div className="flex flex-col gap-2.5">
       <p className="px-1 text-sm text-white/50">
-        共 {formatInteger(totalCount)} 位赞助者
+        共 {renderInteger(totalCount)} 位赞助者
       </p>
       <div className="grid gap-2.5 lg:grid-cols-2">
         {sponsors.map((sponsor) => (
@@ -326,7 +357,7 @@ function SponsorsSection({ enabled }: { enabled: boolean }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-white">{sponsor.name}</p>
                 <p className="mt-1 text-sm text-white/55">
-                  累计发电 {formatAfdianCurrency(sponsor.totalAmount)}
+                  累计发电 {renderCurrency(sponsor.totalAmount)}
                 </p>
                 <p className="mt-1 text-xs text-white/40">
                   首次 {formatDateTime(sponsor.firstSponsoredAt)} · 最近{" "}

@@ -1,11 +1,12 @@
 import DataCard from "~/components/cards/datacard";
+import AnimatedNumber from "~/components/animated-number";
 import type { DashboardTopDownloadsData } from "~/api/astrobox/dashboard";
 
 interface TopDownloadEntry {
     label: string;
     secondaryLabel: string;
     name: string;
-    value: string;
+    value: number | null;
     imageSrc?: string;
 }
 
@@ -13,13 +14,6 @@ interface TopDownloadsProps {
     data?: DashboardTopDownloadsData;
     loading?: boolean;
     error?: string;
-}
-
-function formatInteger(value?: number | null) {
-    if (typeof value !== "number" || Number.isNaN(value)) {
-        return "--";
-    }
-    return value.toString();
 }
 
 function buildEntries(
@@ -31,14 +25,14 @@ function buildEntries(
             label: "资源下载最多",
             secondaryLabel: "下载量",
             name: loading ? "加载中..." : data?.topResource?.name || "--",
-            value: loading ? "..." : formatInteger(data?.topResource?.downloads),
+            value: loading ? null : data?.topResource?.downloads ?? null,
             imageSrc: data?.topResource?.imageUrl,
         },
         {
             label: "设备下载最多",
             secondaryLabel: "下载量",
             name: loading ? "加载中..." : data?.topDevice?.name || "--",
-            value: loading ? "..." : formatInteger(data?.topDevice?.downloads),
+            value: loading ? null : data?.topDevice?.downloads ?? null,
         },
     ];
 }
@@ -70,7 +64,24 @@ export default function TopDownloads({ data, loading, error }: TopDownloadsProps
                                     )}
                                     <p className="card-num">{name}</p>
                                 </div>
-                                <p className="card-num ml-auto">{value}</p>
+                                <p className="card-num ml-auto">
+                                    {loading ? (
+                                        "..."
+                                    ) : value === null || Number.isNaN(value) ? (
+                                        "--"
+                                    ) : (
+                                        <AnimatedNumber
+                                            value={value}
+                                            initial
+                                            locales="zh-CN"
+                                            format={{
+                                                useGrouping: false,
+                                                maximumFractionDigits: 0,
+                                            }}
+                                            className="font-mono-sarasa"
+                                        />
+                                    )}
+                                </p>
                             </div>
                         </DataCard>
                     ),

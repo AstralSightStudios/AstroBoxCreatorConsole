@@ -10,11 +10,38 @@ import {
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
 import DataCard from "~/components/cards/datacard";
+import AnimatedNumber from "~/components/animated-number";
 import {
-  formatAfdianCurrency,
   getAfdianIncomeMonthLabel,
+  parseAfdianAmount,
   resolveAfdianSettlementDisplay,
 } from "~/logic/afdian/income";
+
+const CURRENCY_FORMAT: Intl.NumberFormatOptions = {
+  style: "currency",
+  currency: "CNY",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+};
+
+function renderCurrency(
+  value?: number | string | null,
+  loading?: boolean,
+) {
+  if (loading) return "...";
+  const amount = parseAfdianAmount(value == null ? null : String(value));
+  if (amount === null) return "--";
+
+  return (
+    <AnimatedNumber
+      value={amount}
+      initial
+      locales="zh-CN"
+      format={CURRENCY_FORMAT}
+      className="font-mono-sarasa"
+    />
+  );
+}
 
 function formatUpdatedAt(value?: string) {
   if (!value) return "";
@@ -57,11 +84,11 @@ export default function AfdianIncomeOverview() {
   const cards = [
     {
       label: "今日收入",
-      value: formatAfdianCurrency(incomeQuery.data?.today),
+      value: incomeQuery.data?.today,
     },
     {
       label: "昨日收入",
-      value: formatAfdianCurrency(incomeQuery.data?.yesterday),
+      value: incomeQuery.data?.yesterday,
     },
   ];
 
@@ -106,21 +133,17 @@ export default function AfdianIncomeOverview() {
               >
                 <div className="flex items-end justify-between gap-3">
                   <p className="card-num">
-                    {loading
-                      ? "..."
-                      : formatAfdianCurrency(incomeQuery.data?.currentMonth)}
+                    {renderCurrency(incomeQuery.data?.currentMonth, loading)}
                   </p>
                   <p className="card-num text-right">
-                    {loading
-                      ? "..."
-                      : formatAfdianCurrency(settlement.amount)}
+                    {renderCurrency(settlement.amount, loading)}
                   </p>
                 </div>
               </DataCard>
             </div>
             {cards.map(({ label, value }) => (
               <DataCard key={label} label={label}>
-                <p className="card-num">{loading ? "..." : value}</p>
+                <p className="card-num">{renderCurrency(value, loading)}</p>
               </DataCard>
             ))}
           </div>

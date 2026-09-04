@@ -1,5 +1,6 @@
 import { Tabs } from "@radix-ui/themes";
 import { Cell, Pie, PieChart } from "recharts";
+import AnimatedNumber from "~/components/animated-number";
 import type {
     CreatorConsoleDashboardResponse,
     DashboardDistributionItem,
@@ -46,19 +47,24 @@ function normalizeEntries(entries?: DashboardDistributionItem[]) {
     });
 }
 
-function formatInteger(value?: number | null) {
-    if (typeof value !== "number" || Number.isNaN(value)) {
-        return "--";
-    }
-    return value.toString();
-}
+function renderDistributionNumber(
+    value: number | null | undefined,
+    maximumFractionDigits: number,
+) {
+    if (typeof value !== "number" || Number.isNaN(value)) return "--";
 
-function formatPercent(value?: number | null) {
-    if (typeof value !== "number" || Number.isNaN(value)) {
-        return "--";
-    }
-    const rounded = Math.round(value * 10) / 10;
-    return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
+    return (
+        <AnimatedNumber
+            value={value}
+            initial
+            locales="zh-CN"
+            format={{
+                useGrouping: false,
+                maximumFractionDigits,
+            }}
+            className="font-mono-sarasa"
+        />
+    );
 }
 
 export default function DownloadsDistributionCard({
