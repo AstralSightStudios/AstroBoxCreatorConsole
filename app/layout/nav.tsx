@@ -281,8 +281,8 @@ function NavContent({
             key="publish"
             icon={UploadIcon}
             label="发布新资源"
-            selected={isNavItemSelected(pathname, "/publish")}
-            onClick={() => onNavigate("/publish")}
+            selected={isNavItemSelected(pathname, "/new-resource")}
+            onClick={() => onNavigate("/new-resource")}
           />
         </div>
       </div>

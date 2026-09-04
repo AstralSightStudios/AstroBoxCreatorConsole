@@ -1412,7 +1412,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       state: {
         wallpaperInitial: editorInitial,
         title: itemName,
-        returnPath: isEditMode ? "/publish/edit" : "/publish/new",
+        returnPath: isEditMode ? "/publish/edit" : "/new-resource",
         editContext,
       },
     });

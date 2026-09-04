@@ -70,7 +70,7 @@ const router = createBrowserRouter([
       { path: "admin/inbox", element: <AdminInboxPage /> },
       { path: "admin/account-deletion", element: <AdminAccountDeletionPage /> },
       { path: "admin/hotupdate", element: <AdminHotUpdatePage /> },
-      { path: "publish/new", element: <NewResourcePublishPage /> },
+      { path: "new-resource", element: <NewResourcePublishPage /> },
       { path: "publish/edit", element: <ResourceEditPage /> },
       { path: "publish/wallpaper", element: <WallpaperEditorPage /> },
       { path: "manage/edit", element: <ResourceEditPage /> },

@@ -334,7 +334,7 @@ export default function ResourcePublish() {
           description="查看你已上传资源的审核状态"
           icon={<ListMagnifyingGlassIcon size={25} className="text-purple-300" />}
           action={
-            <Button variant="soft" onClick={() => navigate("/publish/new")}>
+            <Button variant="soft" onClick={() => navigate("/new-resource")}>
               <FileArrowUpIcon size={15} weight="fill" />
               发布资源
             </Button>

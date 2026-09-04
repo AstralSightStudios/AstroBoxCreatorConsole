@@ -28,7 +28,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   encrypt: "资源加解密与激活",
   manage: "已发布资源",
   publish: "审核列表",
-  "publish/new": "发布新资源",
+  "new-resource": "发布新资源",
   "publish/edit": "编辑资源",
   "manage/edit": "编辑资源",
   admin: "管理后台",

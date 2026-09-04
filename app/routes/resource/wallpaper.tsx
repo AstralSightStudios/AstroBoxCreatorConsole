@@ -46,7 +46,7 @@ export default function WallpaperEditorPage() {
                   baseUrl: state.wallpaperInitial?.baseUrl ?? "",
               }
             : undefined;
-        navigate(state.returnPath ?? "/publish/new", {
+        navigate(state.returnPath ?? "/new-resource", {
             state: {
                 wallpaperResult: result,
                 editContext: state.editContext ?? null,
@@ -66,7 +66,7 @@ export default function WallpaperEditorPage() {
         <div className="h-full min-h-0 w-full overflow-hidden">
             <WallpaperEditorErrorBoundary
                 onReset={() => {
-                    navigate(state.returnPath ?? "/publish/new", {
+                    navigate(state.returnPath ?? "/new-resource", {
                         state: { editContext: state.editContext ?? null },
                     });
                 }}
