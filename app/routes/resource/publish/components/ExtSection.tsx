@@ -6,7 +6,7 @@ import {
   Spinner,
   Switch,
   TextField,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -410,8 +410,8 @@ export function ExtSection({
         }}
       >
         <Dialog.Content
-          maxWidth="100vw"
-          className="flex w-[min(96vw,680px)]! max-w-none! flex-col gap-4 overflow-hidden p-4 sm:p-5"
+          maxWidth="var(--ui-viewport-width)"
+          className="flex w-[min(calc(var(--ui-viewport-width)-2rem),680px)]! max-w-none! flex-col gap-4 overflow-hidden p-4 sm:p-5"
         >
           <Dialog.Title className="m-0 min-w-0 text-base">
             添加捆绑项

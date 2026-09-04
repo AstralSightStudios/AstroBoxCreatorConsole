@@ -4,7 +4,7 @@ import {
   Popover,
   Select,
   Switch,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import { CaretDownIcon, InfoIcon, PlusIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";

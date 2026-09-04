@@ -26,16 +26,18 @@ import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
 import LoginPage from "./routes/login";
+import { isDesktopMac } from "~/config/uiScale";
 import { installFrontendLogBridge } from "~/logic/logging";
 import {
   NewResourcePublishPage,
   ResourceEditPage,
 } from "./routes/resource/publish/new";
 
-const isMacOS =
-  typeof navigator !== "undefined" &&
-  (/Macintosh|Mac OS X/i.test(navigator.userAgent) ||
-    /^Mac/i.test(navigator.platform));
+const isMacOS = typeof navigator !== "undefined" && isDesktopMac({
+  userAgent: navigator.userAgent,
+  platform: navigator.platform,
+  maxTouchPoints: navigator.maxTouchPoints,
+});
 
 if (isMacOS && typeof document !== "undefined") {
   document.documentElement.classList.add("macos");

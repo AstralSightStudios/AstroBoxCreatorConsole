@@ -11,6 +11,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize};
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
@@ -35,6 +36,7 @@ const TRAFFIC_LIGHT_WATCHDOG_INTERVAL_MS: u64 = 300;
 
 static WINDOW_OBSERVERS: OnceLock<Mutex<Vec<ObserverHandle>>> = OnceLock::new();
 static TRAFFIC_LIGHT_WATCHDOG_STARTED: OnceLock<Mutex<bool>> = OnceLock::new();
+static UI_SCALE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 fn window_observers() -> &'static Mutex<Vec<ObserverHandle>> {
     WINDOW_OBSERVERS.get_or_init(|| Mutex::new(Vec::new()))
@@ -231,7 +233,8 @@ unsafe fn replay_traffic_light_layout(ns_window: *mut NSWindow) {
     let frame: NSRect = msg_send![ns_window, frame];
     apply_traffic_light_layout(
         ns_window,
-        frame.size.width < COMPACT_TITLEBAR_WIDTH_BREAKPOINT,
+        UI_SCALE_ACTIVE.load(Ordering::Relaxed)
+            || frame.size.width < COMPACT_TITLEBAR_WIDTH_BREAKPOINT,
     );
 }
 
@@ -275,7 +278,8 @@ unsafe fn correct_traffic_light_frame(ns_window: *mut NSWindow) {
     };
 
     let frame: NSRect = msg_send![ns_window, frame];
-    let compact = frame.size.width < COMPACT_TITLEBAR_WIDTH_BREAKPOINT;
+    let compact = UI_SCALE_ACTIVE.load(Ordering::Relaxed)
+        || frame.size.width < COMPACT_TITLEBAR_WIDTH_BREAKPOINT;
     let (titlebar_height, button_x, button_y) = if compact {
         (
             STANDARD_TITLEBAR_HEIGHT,
@@ -356,4 +360,24 @@ pub fn adopt_tahoe_round_corners_style(app: &tauri::AppHandle) {
         }
     })
     .expect("无法在 macOS 主线程配置窗口");
+}
+
+pub fn set_ui_scale_active(app: &tauri::AppHandle, active: bool) -> Result<(), String> {
+    UI_SCALE_ACTIVE.store(active, Ordering::Relaxed);
+    let app_handle = app.clone();
+
+    app.run_on_main_thread(move || {
+        let Some(window) = app_handle.get_webview_window("main") else {
+            return;
+        };
+        let Ok(raw_window) = window.ns_window() else {
+            return;
+        };
+        let ns_window: *mut NSWindow = raw_window.cast();
+
+        unsafe {
+            replay_traffic_light_layout(ns_window);
+        }
+    })
+    .map_err(|error| error.to_string())
 }

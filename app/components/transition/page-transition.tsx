@@ -176,10 +176,9 @@ function PageTransitionContent() {
 
   return (
     <div
-      className="relative h-full min-h-screen overflow-hidden select-none"
-      style={{ minHeight: "100dvh" }}
+      className="relative h-full overflow-hidden select-none"
     >
-      <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
+      <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,var(--ui-safe-area-top))] pl-[max(0.5rem,var(--ui-safe-area-left))] pr-[max(0.5rem,var(--ui-safe-area-right))]">
         <Header />
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
@@ -229,7 +228,7 @@ function PageTransitionContent() {
                   },
                 }}
               >
-                <div className="app-page-scroll-content h-full pb-[env(safe-area-inset-bottom)]">
+                <div className="app-page-scroll-content h-full pb-[var(--ui-safe-area-bottom)]">
                   {frozenOutlet}
                 </div>
               </OverlayScrollbarsComponent>

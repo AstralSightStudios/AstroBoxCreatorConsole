@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, Select } from "@radix-ui/themes";
+import { Button, Select } from "~/components/ScaleAwareThemes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useNavigate, useSearchParams } from "react-router";

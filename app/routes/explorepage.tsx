@@ -1,4 +1,4 @@
-import { Button, Dialog } from "@radix-ui/themes";
+import { Button, Dialog } from "~/components/ScaleAwareThemes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -223,8 +223,8 @@ export default function ExplorePageManager() {
 
       <Dialog.Root open={previewOpen} onOpenChange={setPreviewOpen}>
         <Dialog.Content
-          maxWidth="100vw"
-          className="!w-[min(96vw,1600px)] !max-w-none !p-3"
+          maxWidth="var(--ui-viewport-width)"
+          className="!w-[min(calc(var(--ui-viewport-width)-2rem),1600px)] !max-w-none !p-3"
         >
           <Dialog.Title>探索页预览</Dialog.Title>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
@@ -244,7 +244,7 @@ export default function ExplorePageManager() {
               <Button size="1" variant="soft">关闭</Button>
             </Dialog.Close>
           </div>
-          <div className="max-h-[80vh] min-h-[420px] overflow-auto rounded-xl bg-[#101012] p-3">
+          <div className="max-h-[var(--ui-viewport-height-80pct)] min-h-[420px] overflow-auto rounded-xl bg-[#101012] p-3">
             {payload ? (
               <ExplorePreviewContent
                 payload={payload}

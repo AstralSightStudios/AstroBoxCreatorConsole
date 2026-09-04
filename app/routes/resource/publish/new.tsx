@@ -8,7 +8,7 @@ import {
   Text,
   AlertDialog,
   Dialog,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import {
   FileXIcon,
   UploadIcon,

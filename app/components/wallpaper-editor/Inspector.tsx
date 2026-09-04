@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { HexColorPicker } from "react-colorful";
-import { AlertDialog, Button, Checkbox, Popover } from "@radix-ui/themes";
+import { AlertDialog, Button, Checkbox, Popover } from "~/components/ScaleAwareThemes";
 import {
     ArrowClockwiseIcon,
     BoundingBoxIcon,

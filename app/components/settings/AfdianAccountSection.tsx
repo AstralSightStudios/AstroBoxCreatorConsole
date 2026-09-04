@@ -6,7 +6,7 @@ import {
   Spinner,
   Tabs,
   TextField,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import {
   ArrowClockwiseIcon,
   EyeIcon,

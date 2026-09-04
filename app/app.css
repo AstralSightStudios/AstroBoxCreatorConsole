@@ -77,6 +77,10 @@
 /* ---- 信箱 / 浮层面板 ---- */
 :root {
     --macos-titlebar-height: 42px;
+    --ui-safe-area-top: env(safe-area-inset-top);
+    --ui-safe-area-right: env(safe-area-inset-right);
+    --ui-safe-area-bottom: env(safe-area-inset-bottom);
+    --ui-safe-area-left: env(safe-area-inset-left);
     --nav-btn-bg: rgba(255, 255, 255, 0.05);
     --nav-indicator: rgba(255, 255, 255, 0.08);
     --nav-indicator-active: rgba(255, 255, 255, 0.12);
@@ -93,6 +97,66 @@
     --inbox-control-bg-hover: rgba(255, 255, 255, 0.12);
     --inbox-control-bg-active: rgba(255, 255, 255, 0.16);
     --inbox-link-decoration: rgba(255, 255, 255, 0.35);
+}
+
+/* ---- 界面缩放视口 ---- */
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.ui-scale-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--color-background);
+}
+
+.ui-scale-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    contain: layout paint;
+    isolation: isolate;
+}
+
+.ui-scale-stage[data-scale-renderer="zoom"] {
+    zoom: var(--ui-scale-factor);
+}
+
+.ui-scale-stage[data-scale-renderer="transform"] {
+    transform: scale(var(--ui-scale-factor));
+    transform-origin: top left;
+}
+
+.ui-scale-stage > .radix-themes:where([data-is-root-theme="true"]) {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.ui-scale-portal-host {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+}
+
+.ui-safe-area-probe {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .card-num {
@@ -313,141 +377,129 @@ html.wallpaper-editor-active body * {
     top: calc(var(--macos-titlebar-height) + 0.75rem);
 }
 
-@media (min-width: 1280px) {
-    .app-header {
-        padding-right: 6rem;
-    }
+html[data-ui-desktop="true"] .app-header {
+    padding-right: 6rem;
+}
 
-    .nav-account-actions {
-        position: fixed;
-        top: max(0.5rem, env(safe-area-inset-top));
-        right: max(0.75rem, env(safe-area-inset-right));
-        z-index: 100;
-    }
+html[data-ui-desktop="true"] .nav-account-actions {
+    position: fixed;
+    top: max(0.5rem, var(--ui-safe-area-top));
+    right: max(0.75rem, var(--ui-safe-area-right));
+    z-index: 100;
+}
 
-    .macos .nav-account-actions {
-        top: max(0.5rem, env(safe-area-inset-top));
-        right: max(0.5rem, env(safe-area-inset-right));
-    }
+html.macos[data-ui-desktop="true"] .nav-account-actions {
+    top: max(0.5rem, var(--ui-safe-area-top));
+    right: max(0.5rem, var(--ui-safe-area-right));
+}
 
-    .app-desktop-nav {
-        isolation: isolate;
-    }
+html[data-ui-desktop="true"] .app-desktop-nav {
+    isolation: isolate;
+}
 
-    .macos .app-desktop-nav {
-        padding-top: max(52px, env(safe-area-inset-top));
-    }
+html.macos[data-ui-desktop="true"] .app-desktop-nav {
+    padding-top: max(52px, var(--ui-safe-area-top));
 }
 
 .macos .creator-console-logo-button {
     display: none;
 }
 
-@media (min-width: 400px) {
-    .app-page-content {
-        padding-top: env(safe-area-inset-top);
-    }
-
-    .app-header {
-        position: absolute;
-        top: env(safe-area-inset-top);
-        right: max(0.5rem, env(safe-area-inset-right));
-        left: max(0.5rem, env(safe-area-inset-left));
-        isolation: isolate;
-        z-index: 5;
-        min-height: 52px;
-    }
-
-    .app-page-scroll-content {
-        padding-top: calc(52px + 0.5rem);
-    }
-
-    .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
-        top: calc(52px + 1rem);
-    }
-
-    .titlebar-effect {
-        display: block;
-        position: fixed;
-        inset: 0 0 auto;
-        z-index: -1;
-        height: calc(52px + 2rem);
-        pointer-events: none;
-        background-image: linear-gradient(
-            to bottom,
-            var(--color-background) 0%,
-            transparent 100%
-        );
-        background-color: transparent !important;
-    }
-
-    .titlebar-effect-sidebar {
-        position: absolute;
-    }
+html[data-ui-narrow="false"] .app-page-content {
+    padding-top: var(--ui-safe-area-top);
 }
 
-@media (min-width: 400px) and (max-width: 1279.98px) {
-    .macos .app-header {
-        padding-left: calc(58px + 2rem);
-    }
+html[data-ui-narrow="false"] .app-header {
+    position: absolute;
+    top: var(--ui-safe-area-top);
+    right: max(0.5rem, var(--ui-safe-area-right));
+    left: max(0.5rem, var(--ui-safe-area-left));
+    isolation: isolate;
+    z-index: 5;
+    min-height: 52px;
 }
 
-@media (max-width: 399.98px) {
-    .macos {
-        --macos-titlebar-height: 32px;
-    }
+html[data-ui-narrow="false"] .app-page-scroll-content {
+    padding-top: calc(52px + 0.5rem);
+}
 
-    .macos .tauri-drag-bar {
-        height: var(--macos-titlebar-height);
-    }
+html[data-ui-narrow="false"] .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+    top: calc(52px + 1rem);
+}
 
-    .macos .app-page-content {
-        padding-top: 0;
-    }
+html[data-ui-narrow="false"] .titlebar-effect {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: -1;
+    height: calc(52px + 2rem);
+    pointer-events: none;
+    background-image: linear-gradient(
+        to bottom,
+        var(--color-background) 0%,
+        transparent 100%
+    );
+    background-color: transparent !important;
+}
 
-    .macos .app-header {
-        position: absolute;
-        top: var(--macos-titlebar-height);
-        right: max(0.5rem, env(safe-area-inset-right));
-        left: max(0.5rem, env(safe-area-inset-left));
-        z-index: 5;
-        height: 44px;
-        min-height: 44px;
-        padding: 0;
-        isolation: isolate;
-    }
+html[data-ui-narrow="false"] .titlebar-effect-sidebar {
+    position: absolute;
+}
 
-    .macos .app-header-breadcrumb {
-        gap: 0.125rem;
-        padding-left: 0;
-    }
+html.macos[data-ui-desktop="false"][data-ui-narrow="false"][data-ui-scale-active="false"] .app-header {
+    padding-left: calc(58px + 2rem);
+}
 
-    .macos .app-mobile-nav {
-        padding-top: calc(var(--macos-titlebar-height) + 0.75rem);
-    }
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .tauri-drag-bar {
+    height: 32px;
+}
 
-    .macos .app-page-scroll-content {
-        padding-top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
-    }
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-content {
+    padding-top: 0;
+}
 
-    .macos .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
-        top: calc(var(--macos-titlebar-height) + 44px + 1rem);
-    }
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-header {
+    position: absolute;
+    top: var(--macos-titlebar-height);
+    right: max(0.5rem, var(--ui-safe-area-right));
+    left: max(0.5rem, var(--ui-safe-area-left));
+    z-index: 5;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    isolation: isolate;
+}
 
-    .macos .titlebar-effect {
-        display: block;
-        position: fixed;
-        inset: 0 0 auto;
-        z-index: -1;
-        height: calc(var(--macos-titlebar-height) + 44px + 2rem);
-        pointer-events: none;
-        background-image: linear-gradient(
-            to bottom,
-            var(--color-background) 0%,
-            transparent 100%
-        );
-        background-color: transparent !important;
-    }
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-header-breadcrumb {
+    gap: 0.125rem;
+    padding-left: 0;
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-mobile-nav {
+    padding-top: calc(var(--macos-titlebar-height) + 0.75rem);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-content {
+    padding-top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+    top: calc(var(--macos-titlebar-height) + 44px + 1rem);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: -1;
+    height: calc(var(--macos-titlebar-height) + 44px + 2rem);
+    pointer-events: none;
+    background-image: linear-gradient(
+        to bottom,
+        var(--color-background) 0%,
+        transparent 100%
+    );
+    background-color: transparent !important;
 }
 
 @media (max-width: 1100px) {

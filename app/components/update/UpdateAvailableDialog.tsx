@@ -1,5 +1,5 @@
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
-import { Button, Dialog, Flex } from "@radix-ui/themes";
+import { Button, Dialog, Flex } from "~/components/ScaleAwareThemes";
 import { useMemo } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -43,7 +43,7 @@ export default function UpdateAvailableDialog({
 
 
 
-        <div className="mb-4 max-h-[46vh] overflow-auto rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mb-4 max-h-[var(--ui-viewport-height-46pct)] overflow-auto rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {notesHtml ? (
             <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
           ) : (

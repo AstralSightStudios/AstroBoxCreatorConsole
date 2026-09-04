@@ -24,7 +24,7 @@ import {
   Text,
   AlertDialog,
   Dialog,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import { useMemo, useRef, useState } from "react";
 import { createUploadItem } from "./uploadUtils";
 import { type DeviceOption, type DownloadInput } from "./types";
@@ -719,7 +719,7 @@ export function DownloadsSection({
           <Dialog.Description size="2">
             按版本记录资源更新内容，发布后客户端可在资源更新时展示。
           </Dialog.Description>
-          <div className="mt-3 flex max-h-[52vh] flex-col gap-3 overflow-y-auto pr-1">
+          <div className="mt-3 flex max-h-[var(--ui-viewport-height-52pct)] flex-col gap-3 overflow-y-auto pr-1">
             {updateLogEditor?.entries.map((log, index) => (
               <div
                 key={index}
@@ -791,7 +791,7 @@ export function DownloadsSection({
       <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
         <Dialog.Content maxWidth="520px">
           <Dialog.Title>{title}字段说明</Dialog.Title>
-          <div className="mt-3 flex max-h-[56vh] flex-col gap-3 overflow-y-auto pr-1">
+          <div className="mt-3 flex max-h-[var(--ui-viewport-height-56pct)] flex-col gap-3 overflow-y-auto pr-1">
             {DOWNLOAD_FIELD_HELP.map((item) => (
               <div
                 key={item.label}

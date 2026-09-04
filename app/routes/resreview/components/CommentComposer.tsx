@@ -14,6 +14,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { GithubIssueComment } from "~/api/github/pr-review";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { renderCommentMarkdownHtml, buildReplyBody, parseReviewCommentBody } from "../utils/comment";
 import { makeNeedFixId } from "../utils";
 
@@ -71,6 +72,7 @@ export function CommentComposer({
   onCancelReply,
   onCancelEdit,
 }: CommentComposerProps) {
+  const { logicalHeight } = useUiScaleViewport();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [tagEnabled, setTagEnabled] = useState(false);
   const [tab, setTab] = useState<"write" | "preview">("write");
@@ -80,8 +82,8 @@ export function CommentComposer({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, Math.max(120, window.innerHeight * 0.4))}px`;
-  }, [value, tab]);
+    el.style.height = `${Math.min(el.scrollHeight, Math.max(120, logicalHeight * 0.4))}px`;
+  }, [logicalHeight, value, tab]);
 
   useEffect(() => {
     if (editingTarget) {

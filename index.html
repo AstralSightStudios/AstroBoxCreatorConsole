@@ -11,8 +11,10 @@
     <meta name="theme-color" content="#1C4D98" media="(prefers-color-scheme: dark)" />
     <script>
       if (
-        /Macintosh|Mac OS X/i.test(navigator.userAgent) ||
-        /^Mac/i.test(navigator.platform)
+        (/Macintosh|Mac OS X/i.test(navigator.userAgent) ||
+          /^Mac/i.test(navigator.platform)) &&
+        !/iPad/i.test(navigator.userAgent) &&
+        navigator.maxTouchPoints <= 1
       ) {
         document.documentElement.classList.add("macos");
       }

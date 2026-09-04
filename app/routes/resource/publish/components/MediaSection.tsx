@@ -680,11 +680,11 @@ export function MediaSection({
           <img
             src={lightboxItem.url}
             alt={lightboxItem.name}
-            className="max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] rounded-xl object-contain"
+            className="max-h-[calc(var(--ui-viewport-height)-2rem)] max-w-[calc(var(--ui-viewport-width)-2rem)] rounded-xl object-contain"
           />
 
           {showInfo && (
-            <div className="absolute right-0 top-0 flex h-full w-[min(88vw,360px)] flex-col border-l border-white/15 bg-[#111] p-5 shadow-2xl">
+            <div className="absolute right-0 top-0 flex h-full w-[min(88%,360px)] flex-col border-l border-white/15 bg-[#111] p-5 shadow-2xl">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-white">图片信息</h2>
                 <button

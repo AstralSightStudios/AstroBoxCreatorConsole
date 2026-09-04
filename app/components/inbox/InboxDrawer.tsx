@@ -10,6 +10,7 @@ import {
 } from "~/logic/inbox/types";
 import { useInbox } from "~/logic/inbox/use-inbox";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 import DynamicDrawerHandle from "./DynamicDrawerHandle";
 import InboxMessageCard from "./InboxMessageCard";
 import InboxReadStack from "./InboxReadStack";
@@ -28,6 +29,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const { count, markRead, markAllRead, remove } = useInbox();
   const navigate = useNavigate();
   const { isDesktop } = useNavVisibility();
+  const { factor, logicalHeight } = useUiScaleViewport();
   const [items, setItems] = useState<InboxNotification[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -48,10 +50,10 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const handleDragMove = useCallback((event: PointerEvent) => {
     const drag = dragStateRef.current;
     if (!drag) return;
-    const delta = event.clientY - drag.startY;
+    const delta = (event.clientY - drag.startY) / factor;
     sheetY.set(Math.max(0, drag.baseY + delta));
     setDragProgress(Math.min(1, Math.max(0, delta / 240)));
-  }, [sheetY]);
+  }, [factor, sheetY]);
 
   const handleDragEnd = useCallback(
     (event: PointerEvent) => {
@@ -61,12 +63,12 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
       dragStateRef.current = null;
       setDragProgress(0);
       if (!drag) return;
-      const delta = event.clientY - drag.startY;
+      const delta = (event.clientY - drag.startY) / factor;
       if (delta > 110) {
         // 先让 sheet 跟手滑出屏幕，再触发关闭动画，避免突兀跳走。
         void animate(
           sheetY,
-          typeof window !== "undefined" ? window.innerHeight : 800,
+          logicalHeight || 800,
           {
             type: "tween",
             duration: 0.18,
@@ -82,7 +84,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
         damping: 32,
       });
     },
-    [animate, handleDragMove, onClose, sheetY],
+    [factor, handleDragMove, logicalHeight, onClose, sheetY],
   );
 
   const handleDragStart = useCallback(
@@ -424,11 +426,11 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
           />
           {isDesktop ? (
             <motion.aside
-              className="fixed z-[120] flex w-[min(387px,calc(100vw-1rem))] flex-col overflow-hidden rounded-[18px] text-white shadow-[var(--nav-panel-shadow)]"
+              className="fixed z-[120] flex w-[min(387px,calc(var(--ui-viewport-width)-1rem))] flex-col overflow-hidden rounded-[18px] text-white shadow-[var(--nav-panel-shadow)]"
               style={{
-                top: "max(0.5rem, env(safe-area-inset-top))",
-                bottom: "max(0.5rem, env(safe-area-inset-bottom))",
-                right: "max(0.5rem, env(safe-area-inset-right))",
+                top: "max(0.5rem, var(--ui-safe-area-top))",
+                bottom: "max(0.5rem, var(--ui-safe-area-bottom))",
+                right: "max(0.5rem, var(--ui-safe-area-right))",
               }}
               initial={{ x: "calc(100% + 16px)" }}
               animate={{ x: 0 }}
@@ -446,10 +448,10 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
             </motion.aside>
           ) : (
             <motion.div
-              className="fixed inset-x-0 top-0 z-[120] w-screen"
+              className="fixed inset-x-0 top-0 z-[120] w-full"
               style={{
-                height: "100dvh",
-                paddingTop: "max(100px, calc(env(safe-area-inset-top) + 56px))",
+                height: "var(--ui-viewport-height)",
+                paddingTop: "max(100px, calc(var(--ui-safe-area-top) + 56px))",
               }}
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
@@ -474,7 +476,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
                 >
                   <DynamicDrawerHandle progress={dragProgress} direction="down" />
                 </button>
-                <div className="relative z-1 flex min-h-0 flex-1 flex-col pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                <div className="relative z-1 flex min-h-0 flex-1 flex-col pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
                   {panelContent}
                 </div>
               </motion.div>

@@ -6,20 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { UI_DESKTOP_MIN_WIDTH } from "~/config/uiScale";
 
-export const NAV_DESKTOP_MIN_WIDTH = 1280;
-const DESKTOP_MEDIA_QUERY = `(min-width: ${NAV_DESKTOP_MIN_WIDTH}px)`;
+export const NAV_DESKTOP_MIN_WIDTH = UI_DESKTOP_MIN_WIDTH;
 // Marker stored on the synthetic history entry we push while the mobile
 // drawer is open, so the hardware/Android back button closes the drawer
 // instead of exiting the app.
 const DRAWER_HISTORY_STATE = "__navDrawerOpen";
-
-function detectIsDesktop() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-  return window.matchMedia(DESKTOP_MEDIA_QUERY).matches;
-}
 
 interface NavVisibilityContextValue {
   isCollapsed: boolean;
@@ -40,37 +34,15 @@ const NavVisibilityContext = createContext<
 >(undefined);
 
 export function NavVisibilityProvider({ children }: React.PropsWithChildren) {
-  const initialDesktop = detectIsDesktop();
-  const [isDesktop, setIsDesktop] = useState(initialDesktop);
-  const [isCollapsed, setIsCollapsed] = useState(!initialDesktop);
+  const { isDesktop } = useUiScaleViewport();
+  const [isCollapsed, setIsCollapsed] = useState(!isDesktop);
   // Tracks whether we currently have a synthetic history entry on the stack
   // representing the open mobile drawer.
   const drawerHistoryActiveRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
-    const syncState = (matches: boolean) => {
-      setIsDesktop(matches);
-      setIsCollapsed(matches ? false : true);
-    };
-    syncState(mediaQuery.matches);
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      syncState(event.matches);
-    };
-
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
+    setIsCollapsed(!isDesktop);
+  }, [isDesktop]);
 
   // Hardware back button support: when the synthetic drawer entry is popped
   // (Android back button, or our own history.back call), close the drawer.

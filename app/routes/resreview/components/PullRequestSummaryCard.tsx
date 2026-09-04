@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Dialog, TextArea } from "@radix-ui/themes";
+import { Button, Dialog, TextArea } from "~/components/ScaleAwareThemes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GithubPullRequest } from "~/api/github/pr-review";
 import { deriveReviewStatus } from "~/logic/publish/review-status";

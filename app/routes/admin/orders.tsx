@@ -1,4 +1,4 @@
-import { Button, Dialog, Spinner } from "@radix-ui/themes";
+import { Button, Dialog, Spinner } from "~/components/ScaleAwareThemes";
 import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -410,7 +410,7 @@ export default function AdminOrdersPage() {
       )}
 
       <Dialog.Root open={openOrderId !== null} onOpenChange={(open) => !open && setOpenOrderId(null)}>
-        <Dialog.Content maxWidth="100vw" className="!w-[min(96vw,900px)] !max-w-none">
+        <Dialog.Content maxWidth="var(--ui-viewport-width)" className="!w-[min(calc(var(--ui-viewport-width)-2rem),900px)] !max-w-none">
           {openOrder && (
             <OrderDialog
               order={openOrder}
@@ -501,7 +501,7 @@ function OrderDialog({
       <Dialog.Description size="2" className="mb-3">
         {order.platform} · 卖家 {order.sellerUserId} · 创建于 {formatDateTime(order.createdAt)}
       </Dialog.Description>
-      <div className="grid max-h-[72vh] gap-3 overflow-y-auto md:grid-cols-2">
+      <div className="grid max-h-[var(--ui-viewport-height-72pct)] gap-3 overflow-y-auto md:grid-cols-2">
         <Field label="平台">
           <select className={inputClass} value={form.platform} onChange={(e) => setForm((v) => ({ ...v, platform: e.target.value as CommercePlatform }))}>
             {PLATFORMS.map((item) => <option key={item} value={item}>{item}</option>)}

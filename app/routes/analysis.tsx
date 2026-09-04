@@ -30,7 +30,7 @@ import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
 import { useDisplayAccount } from "~/logic/account/store";
 import Page from "~/layout/page";
 import { SectionCard } from "./resource/publish/components/shared";
-import { Select } from "@radix-ui/themes";
+import { Select } from "~/components/ScaleAwareThemes";
 
 const HEAT_COLORS = ["#4a67f5", "#3ea8f8", "#2fd67f", "#f5b14a", "#f55d4a"];
 const WORLD_VIEW_STATE = {

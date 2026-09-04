@@ -7,7 +7,7 @@ import {
   PencilSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
-import { AlertDialog, Button, Table, Callout, Spinner } from "@radix-ui/themes";
+import { AlertDialog, Button, Table, Callout, Spinner } from "~/components/ScaleAwareThemes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";

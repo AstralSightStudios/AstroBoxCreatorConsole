@@ -11,7 +11,7 @@ import {
   Switch,
   Table,
   TextField,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import {
   type ComponentType,
   type Dispatch,
@@ -546,8 +546,8 @@ export function AuthorsLinksSection({
         }}
       >
         <Dialog.Content
-          maxWidth="100vw"
-          className="flex w-[min(96vw,760px)]! max-w-none! flex-col gap-4 overflow-hidden p-4 sm:p-5"
+          maxWidth="var(--ui-viewport-width)"
+          className="flex w-[min(calc(var(--ui-viewport-width)-2rem),760px)]! max-w-none! flex-col gap-4 overflow-hidden p-4 sm:p-5"
         >
           <div className="flex items-start justify-between gap-4">
             <Dialog.Title className="m-0 min-w-0 text-base">

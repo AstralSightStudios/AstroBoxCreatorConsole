@@ -7,7 +7,7 @@ import {
   Spinner,
   Switch,
   TextField,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import {
   LinkSimpleIcon,
   PencilSimpleIcon,
@@ -542,7 +542,7 @@ export function EncryptConfigDialog({
                     </div>
                   </div>
 
-                  <div className="max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                  <div className="max-h-[var(--ui-viewport-height-52pct)] space-y-3 overflow-y-auto pr-1">
                     {rows.length === 0 && (
                       <div className="rounded-xl border border-dashed border-white/15 px-4 py-8 text-center text-sm text-white/55">
                         当前设备没有商品映射。点击下方按钮添加，保存后即可接收对应商品的权益。

@@ -37,6 +37,11 @@ import {
   useLoginMethod,
   type AstroboxLoginMethod,
 } from "~/config/loginMethod";
+import {
+  saveUiScale,
+  UI_SCALE_OPTIONS,
+  useUiScale,
+} from "~/config/uiScale";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
 import {
@@ -362,6 +367,10 @@ export default function Settings() {
   const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
   const currentLoginMethod = useLoginMethod();
+  const currentUiScale = useUiScale();
+  const selectedUiScaleOption =
+    UI_SCALE_OPTIONS.find((option) => option.factor === currentUiScale) ??
+    UI_SCALE_OPTIONS.find((option) => option.factor === 1)!;
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -387,6 +396,15 @@ export default function Settings() {
     if (id === currentLoginMethod) return;
     saveLoginMethod(id);
     toast.success(`已切换到 ${LOGIN_METHODS[id].label}`);
+  };
+
+  const handleSelectUiScale = (factor: number) => {
+    if (factor === currentUiScale) return;
+    const option = UI_SCALE_OPTIONS.find((item) => item.factor === factor);
+    saveUiScale(factor);
+    toast.success(
+      option ? `界面显示比例已调整为 ${option.label}` : "界面显示比例已更新",
+    );
   };
 
   const handleSelect = (id: RepoEnvId) => {
@@ -444,6 +462,43 @@ export default function Settings() {
   return (
     <Page>
       <div className="mx-auto max-w-6xl px-2 w-full pt-1.5 pb-6 flex flex-col gap-4">
+        {/* 界面显示比例 */}
+        <SectionCard
+          title="界面显示比例"
+          description="调整手机、平板和桌面窗口中的整体界面比例，修改立即生效"
+        >
+          <div className="flex flex-col gap-2 px-2 pb-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[12px] text-white/50">显示比例</span>
+              <div className="flex flex-wrap overflow-hidden rounded-lg border border-white/[0.08]">
+                {UI_SCALE_OPTIONS.map((option) => {
+                  const selected = option.factor === currentUiScale;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleSelectUiScale(option.factor)}
+                      aria-pressed={selected}
+                      className={`px-3 py-1.5 text-[12.5px] transition ${
+                        selected
+                          ? "bg-emerald-400/[0.15] text-emerald-300"
+                          : "text-white/55 hover:bg-white/[0.05] hover:text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="text-[11.5px] leading-snug text-white/40">
+              {selectedUiScaleOption.description}
+              导航、提示和浮层会同步缩放；系统安全区与 macOS 原生标题栏区域保持原始尺寸。壁纸编辑器不随比例缩放。
+              此设置仅保存在本设备。
+            </p>
+          </div>
+        </SectionCard>
+
         {/* 资源仓库环境 */}
         <SectionCard
           title="资源仓库环境"

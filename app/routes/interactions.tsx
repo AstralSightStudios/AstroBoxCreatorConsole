@@ -5,7 +5,7 @@ import {
     ChatCircleTextIcon,
     HeartIcon,
 } from "@phosphor-icons/react";
-import { Button, Select, Spinner } from "@radix-ui/themes";
+import { Button, Select, Spinner } from "~/components/ScaleAwareThemes";
 import { useEffect, useMemo, useState } from "react";
 import { CommunityApi, type CommentView } from "~/api/astrobox/community";
 import {

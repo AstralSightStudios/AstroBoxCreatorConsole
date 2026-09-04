@@ -3,6 +3,7 @@ import "./app.css";
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Theme } from "@radix-ui/themes";
+import UiScaleShell from "./components/UiScaleShell";
 import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
 import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
@@ -51,35 +52,37 @@ export default function RootLayout() {
     const isWallpaperEditor = location.pathname === "/publish/wallpaper";
 
     return (
-        <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
-            <AstroboxAccountRefresher />
-            <AutoUpdateChecker />
-            <BroadcastDialogHost />
-            {isWallpaperEditor ? (
-                <main
-                    className="h-screen min-h-screen w-screen overflow-hidden"
-                    style={{ height: "100dvh", minHeight: "100dvh" }}
-                >
-                    <Outlet />
-                </main>
-            ) : (
-                <NavVisibilityProvider>
-                    <div
-                        className="flex flex-row h-screen min-h-screen"
-                        style={{ height: "100dvh", minHeight: "100dvh" }}
-                    >
-                        <Nav />
-                        <main className="flex-1 h-full">
-                            <PageTransition />
-                        </main>
-                    </div>
-                </NavVisibilityProvider>
-            )}
-            <Toaster
-                position="bottom-right"
-                richColors
-                theme="dark"
-            />
-        </Theme>
+        <UiScaleShell disabled={isWallpaperEditor}>
+            <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
+                <AstroboxAccountRefresher />
+                <AutoUpdateChecker />
+                <BroadcastDialogHost />
+                {isWallpaperEditor ? (
+                    <main className="h-full min-h-0 w-full overflow-hidden">
+                        <Outlet />
+                    </main>
+                ) : (
+                    <NavVisibilityProvider>
+                        <div className="flex h-full min-h-0 w-full flex-row">
+                            <Nav />
+                            <main className="flex-1 h-full min-w-0">
+                                <PageTransition />
+                            </main>
+                        </div>
+                    </NavVisibilityProvider>
+                )}
+                <Toaster
+                    position="bottom-right"
+                    richColors
+                    theme="dark"
+                    offset={{
+                        top: "max(16px, var(--ui-safe-area-top))",
+                        right: "max(16px, var(--ui-safe-area-right))",
+                        bottom: "max(16px, var(--ui-safe-area-bottom))",
+                        left: "max(16px, var(--ui-safe-area-left))",
+                    }}
+                />
+            </Theme>
+        </UiScaleShell>
     );
 }

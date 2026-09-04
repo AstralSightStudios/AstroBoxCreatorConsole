@@ -1,4 +1,4 @@
-import { Button, Dialog } from "@radix-ui/themes";
+import { Button, Dialog } from "~/components/ScaleAwareThemes";
 import { CheckCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";

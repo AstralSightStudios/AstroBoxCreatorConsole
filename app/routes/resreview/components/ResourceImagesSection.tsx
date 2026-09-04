@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import type { PrResourcePreview } from "../types";
 
@@ -58,7 +59,7 @@ function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void })
           className={
             actual
               ? "max-h-none max-w-none cursor-zoom-out"
-              : "max-h-[88vh] max-w-[88vw] cursor-zoom-in object-contain"
+              : "max-h-[calc(var(--ui-viewport-height)-4rem)] max-w-[calc(var(--ui-viewport-width)-4rem)] cursor-zoom-in object-contain"
           }
         />
       </div>
@@ -122,6 +123,7 @@ function useImageMeta() {
 }
 
 export function ResourceImagesSection({ resource }: { resource: PrResourcePreview }) {
+  const { logicalHeight } = useUiScaleViewport();
   const {
     imageMetaMap,
     handleImageLoad,
@@ -239,7 +241,7 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
                     </span>
                   </div>
                   <a href={resource.coverUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-black/40">
-                    <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[30vh] w-full object-contain" onLoad={handleCoverLoad} />
+                    <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} />
                   </a>
                 </div>
               )}
@@ -265,10 +267,10 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
                   {resource.previewUrls.map((url, index) => {
                     const meta = imageMetaMap[url];
                     const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
-                    const cap = previewAvailWidth ? `${previewAvailWidth - 32}px` : "calc(100vw - 64px)";
+                    const cap = previewAvailWidth ? `${previewAvailWidth - 32}px` : "calc(var(--ui-viewport-width) - 64px)";
                     return (
                       <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2">
-                        <button type="button" onClick={() => setLightboxUrl(url)} className="inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, calc(40vh * ${ratio}), ${cap})` } : undefined}>
+                        <button type="button" onClick={() => setLightboxUrl(url)} className="inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, ${logicalHeight * 0.4 * ratio}px, ${cap})` } : undefined}>
                           <DimensionTrackedImage rawUrl={url} alt={`Preview ${index + 1}`} className="block h-auto w-full" onLoad={handlePreviewLoad(url)} />
                         </button>
                         <div className="mt-2 break-all text-xs text-white/45">{url.split("/").pop() || `预览 ${index + 1}`}</div>

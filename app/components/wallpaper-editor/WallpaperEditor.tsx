@@ -16,7 +16,7 @@ import type {
     WallpaperResources,
     WallpaperTransformState,
 } from "@claralight-design/wallpaper-engine";
-import { AlertDialog, Button } from "@radix-ui/themes";
+import { AlertDialog, Button } from "~/components/ScaleAwareThemes";
 import { FileCodeIcon, ArrowLeftIcon } from "@phosphor-icons/react";
 import { zipSync } from "fflate";
 import {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DropdownMenu, AlertDialog, Button } from "@radix-ui/themes";
+import { DropdownMenu, AlertDialog, Button } from "~/components/ScaleAwareThemes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowBendUpLeft,

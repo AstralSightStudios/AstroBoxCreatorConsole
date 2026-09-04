@@ -6,7 +6,7 @@ import {
   TrashIcon,
   UploadSimpleIcon,
 } from "@phosphor-icons/react";
-import { Button, Dialog, IconButton, Spinner, TextField } from "@radix-ui/themes";
+import { Button, Dialog, IconButton, Spinner, TextField } from "~/components/ScaleAwareThemes";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -160,8 +160,8 @@ export default function BlogsManagerDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content
-        maxWidth="100vw"
-        className="!w-[min(96vw,1100px)] !max-w-none"
+        maxWidth="var(--ui-viewport-width)"
+        className="!w-[min(calc(var(--ui-viewport-width)-2rem),1100px)] !max-w-none"
       >
         <Dialog.Title>素材管理</Dialog.Title>
         <Dialog.Description size="2" className="mb-3 text-white/55">
@@ -173,7 +173,7 @@ export default function BlogsManagerDialog({
         </Dialog.Description>
 
         <div className="grid gap-3 md:grid-cols-[320px_1fr]">
-          <section className="flex max-h-[64vh] min-h-[320px] flex-col rounded-xl border border-white/10 bg-black/25">
+          <section className="flex max-h-[var(--ui-viewport-height-64pct)] min-h-[320px] flex-col rounded-xl border border-white/10 bg-black/25">
             <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2 text-xs text-white/55">
               <span>blogs 目录</span>
               <Button size="1" variant="soft" onClick={reload} disabled={loading}>

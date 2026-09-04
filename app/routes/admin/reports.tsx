@@ -1,4 +1,4 @@
-import { Button, Dialog, IconButton, Spinner, Tooltip } from "@radix-ui/themes";
+import { Button, Dialog, IconButton, Spinner, Tooltip } from "~/components/ScaleAwareThemes";
 import { CopyIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -234,8 +234,8 @@ export default function AdminReportsPage() {
         }}
       >
         <Dialog.Content
-          maxWidth="100vw"
-          className="!w-[min(96vw,1100px)] !max-w-none"
+          maxWidth="var(--ui-viewport-width)"
+          className="!w-[min(calc(var(--ui-viewport-width)-2rem),1100px)] !max-w-none"
         >
           {openReport ? (
             <ReportDetail
@@ -277,7 +277,7 @@ function ReportDetail({
         分类：{report.reasonCategory || "--"} · 创建于 {formatDateTime(report.createdAt)}
       </Dialog.Description>
 
-      <div className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto pr-1">
+      <div className="flex max-h-[var(--ui-viewport-height-78pct)] flex-col gap-4 overflow-y-auto pr-1">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 rounded-xl bg-black/20 p-3 text-sm">
           <Info label="状态" value={STATUS_LABELS[report.status]} />
           <Info label="类型" value={report.reportType} />

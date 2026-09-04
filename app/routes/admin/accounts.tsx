@@ -1,4 +1,4 @@
-import { Badge, Button, IconButton, Select, Spinner, Tabs, Tooltip } from "@radix-ui/themes";
+import { Badge, Button, IconButton, Select, Spinner, Tabs, Tooltip } from "~/components/ScaleAwareThemes";
 import { CaretLeft, CopyIcon, GithubLogoIcon, ArrowSquareOutIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";

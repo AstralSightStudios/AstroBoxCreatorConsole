@@ -4,7 +4,7 @@ import {
     FunnelIcon,
     TrayArrowDownIcon,
 } from "@phosphor-icons/react";
-import { Button, DropdownMenu } from "@radix-ui/themes";
+import { Button, DropdownMenu } from "~/components/ScaleAwareThemes";
 import type { DashboardPeriod } from "~/api/astrobox/dashboard";
 
 export interface FilterBarResourceOption {

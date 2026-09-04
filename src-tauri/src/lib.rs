@@ -194,6 +194,20 @@ async fn write_text_file(path: String, content: String) -> Result<(), String> {
     fs::write(path_buf, content).map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn set_ui_scale_active(app: tauri::AppHandle, active: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::custom_window::set_ui_scale_active(&app, active);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, active);
+        Ok(())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -235,6 +249,7 @@ pub fn run() {
             afdian::afdian_sponsors,
             encrypt_aes_256_ecb,
             write_text_file,
+            set_ui_scale_active,
             fetch_media,
             logger::frontend_log,
             resource_log::resource_log_start,

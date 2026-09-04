@@ -40,9 +40,10 @@ import InboxBell from "~/components/inbox/InboxBell";
 import InboxDrawer from "~/components/inbox/InboxDrawer";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
 import TitlebarEffect from "~/components/TitlebarEffect";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertDialog, Button, Dialog, Popover, Spinner } from "@radix-ui/themes";
+import { AlertDialog, Button, Dialog, Popover, Spinner } from "~/components/ScaleAwareThemes";
 import { toast } from "sonner";
 import BlurEffect from "react-progressive-blur";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
@@ -57,8 +58,8 @@ import {
 } from "~/api/afdian-account";
 
 const NAV_HEADER_COLLAPSE_THRESHOLD = 56;
-const NAV_HEADER_EXPANDED_HEIGHT = "clamp(218px, 30dvh, 342px)";
-const NAV_HEADER_MOBILE_EXPANDED_HEIGHT = "clamp(162px, 30dvh, 286px)";
+const NAV_HEADER_EXPANDED_HEIGHT = "clamp(218px, var(--ui-viewport-height-30pct), 342px)";
+const NAV_HEADER_MOBILE_EXPANDED_HEIGHT = "clamp(162px, var(--ui-viewport-height-30pct), 286px)";
 
 interface NavScrollState {
   scrollTop: number;
@@ -276,7 +277,7 @@ function NavContent({
           )}
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 z-50 min-w-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+        <div className="absolute inset-x-0 bottom-0 z-50 min-w-0 pb-[max(0.75rem,var(--ui-safe-area-bottom))] pt-3">
           <NavItem
             key="publish"
             icon={UploadIcon}
@@ -304,9 +305,8 @@ function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
     >
       {!isCollapsed && (
         <nav
-          className="app-desktop-nav relative z-10 grid h-screen w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))]"
+          className="app-desktop-nav relative z-10 grid h-full w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]"
           style={{
-            height: "100dvh",
             gridTemplateRows: getNavGridTemplateRows(
               contentProps.navScrollState.scrollTop,
               NAV_HEADER_EXPANDED_HEIGHT,
@@ -328,6 +328,8 @@ interface MobileNavProps extends NavContentProps {
 }
 
 function MobileNav({ open, onDismiss, ...contentProps }: MobileNavProps) {
+  const { portalContainer } = useUiScaleViewport();
+
   return (
     <Drawer.Root
       open={open}
@@ -339,11 +341,11 @@ function MobileNav({ open, onDismiss, ...contentProps }: MobileNavProps) {
         if (!nextOpen) onDismiss();
       }}
     >
-      <Drawer.Portal>
+      <Drawer.Portal container={portalContainer ?? undefined}>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-lg" />
         <Drawer.Content asChild>
           <nav
-            className="app-mobile-nav fixed inset-y-0 left-0 z-50 grid h-full w-[clamp(218px,75vw,342px)] grid-cols-1 gap-2 overflow-hidden bg-bg p-3 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] outline-none"
+            className="app-mobile-nav fixed inset-y-0 left-0 z-50 grid h-full w-[clamp(218px,75%,342px)] grid-cols-1 gap-2 overflow-hidden bg-bg p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))] pr-[max(0.75rem,var(--ui-safe-area-right))] outline-none"
             style={{
               gridTemplateRows: getNavGridTemplateRows(
                 contentProps.navScrollState.scrollTop,

@@ -4,7 +4,7 @@ import {
   TextArea,
   TextField,
   SegmentedControl,
-} from "@radix-ui/themes";
+} from "~/components/ScaleAwareThemes";
 import { DiceFiveIcon } from "@phosphor-icons/react";
 import { Field, SectionCard } from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
