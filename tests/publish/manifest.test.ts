@@ -113,7 +113,7 @@ describe("manifest ext.bundledResources", () => {
         {
           platformId: "xmb10p",
           version: "1.0.0",
-          path: "downloads/trial/demo.bin",
+          pathOverride: "downloads/trial/demo.bin",
           file: new File([], "demo.bin"),
         },
       ],
@@ -155,7 +155,7 @@ describe("manifest downloads updatelogs", () => {
         {
           platformId: "m2345b1",
           version: "1.2.0",
-          path: "downloads/lyra.bin",
+          pathOverride: "downloads/lyra.bin",
           file: new File([], "lyra.bin"),
           updatelogs: [
             { version: "1.2.0", content: "修复若干问题\n新增离线解析" },
@@ -184,7 +184,7 @@ describe("manifest downloads updatelogs", () => {
         {
           platformId: "xmb10p",
           version: "1.0.0",
-          path: "downloads/a.bin",
+          pathOverride: "downloads/a.bin",
           file: new File([], "a.bin"),
           updatelogs: [
             { version: " ", content: "" },
@@ -194,7 +194,7 @@ describe("manifest downloads updatelogs", () => {
         {
           platformId: "xmb10",
           version: "1.0.0",
-          path: "downloads/b.bin",
+          pathOverride: "downloads/b.bin",
           file: new File([], "b.bin"),
           updatelogs: [],
         },
@@ -221,7 +221,7 @@ describe("manifest downloads updatelogs", () => {
         {
           platformId: "xmb10p",
           version: "0.9.0",
-          path: "downloads/trial/demo.bin",
+          pathOverride: "downloads/trial/demo.bin",
           file: new File([], "demo.bin"),
           updatelogs: [{ version: "0.9.0", content: "体验版" }],
         },
@@ -239,6 +239,40 @@ describe("manifest downloads updatelogs", () => {
     });
   });
 
+  test("appends platform id before extension for default download paths", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        { platformId: "xmb9", version: "1.0.0", file: new File([], "app.rpk") },
+        { platformId: "xmws4", version: "1.0.0", file: new File([], "app.rpk") },
+      ],
+      trialDownloads: [
+        { platformId: "xmb9", version: "1.0.0", file: new File([], "app.rpk") },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app-xmb9.rpk");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/app-xmws4.rpk");
+    expect(manifest.ext.trialDownloads.xmb9.file_name).toBe(
+      "downloads/trial/app-xmb9.rpk",
+    );
+  });
+
+  test("appends platform id after whole name when file has no extension", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        { platformId: "xmb9", version: "1.0.0", file: new File([], "package") },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/package-xmb9");
+  });
+
   test("writes numeric versionCode and omits it when invalid", () => {
     const result = buildManifest({
       ...baseInput,
@@ -246,14 +280,14 @@ describe("manifest downloads updatelogs", () => {
         {
           platformId: "m2345b1",
           version: "26.1.3",
-          path: "downloads/lyra.bin",
+          pathOverride: "downloads/lyra.bin",
           file: new File([], "lyra.bin"),
           versionCode: 2601003,
         },
         {
           platformId: "xmb10p",
           version: "1.0.0",
-          path: "downloads/a.bin",
+          pathOverride: "downloads/a.bin",
           file: new File([], "a.bin"),
           versionCode: 0,
         },

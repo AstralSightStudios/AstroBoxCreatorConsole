@@ -297,34 +297,46 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         ? previewPathMap.get(input.coverPreviewId ?? input.previews[0]?.id) || ""
         : coverAsset?.path || "";
 
+    /** 在扩展名前追加设备 ID，保证不同设备的同名包体在仓库中路径不冲突。 */
+    function withPlatformSuffix(fileName: string, platformId: string): string {
+        const dotIndex = fileName.lastIndexOf(".");
+        if (dotIndex <= 0) return `${fileName}-${platformId}`;
+        return `${fileName.slice(0, dotIndex)}-${platformId}${fileName.slice(dotIndex)}`;
+    }
+
     const downloadAssets: DownloadAssetDescriptor[] = input.downloads
         .filter((d) => d.platformId.trim() && d.file)
-        .map((d) => ({
-            platformId: d.platformId.trim(),
-            version: d.version.trim(),
-            path: d.file?.pathOverride || d.pathOverride || `${downloadsDir}/${d.file!.name}`,
-            file: d.file!.file,
-            skipUpload: d.file?.skipUpload ?? d.skipUpload,
-            encryptOnUpload: d.encryptOnUpload,
-            versionCode: normalizeVersionCode(d.versionCode),
-            updatelogs: normalizeUpdateLogs(d.updatelogs),
-        }));
+        .map((d) => {
+            const platformId = d.platformId.trim();
+            const defaultPath = `${downloadsDir}/${withPlatformSuffix(d.file!.name, platformId)}`;
+            return {
+                platformId,
+                version: d.version.trim(),
+                path: d.file?.pathOverride || d.pathOverride || defaultPath,
+                file: d.file!.file,
+                skipUpload: d.file?.skipUpload ?? d.skipUpload,
+                encryptOnUpload: d.encryptOnUpload,
+                versionCode: normalizeVersionCode(d.versionCode),
+                updatelogs: normalizeUpdateLogs(d.updatelogs),
+            };
+        });
 
     const trialDownloadAssets: DownloadAssetDescriptor[] = input.trialDownloads
         .filter((d) => d.platformId.trim() && d.file)
-        .map((d) => ({
-            platformId: d.platformId.trim(),
-            version: d.version.trim(),
-            path:
-                d.file?.pathOverride ||
-                d.pathOverride ||
-                `${trialDownloadsDir}/${d.file!.name}`,
-            file: d.file!.file,
-            skipUpload: d.file?.skipUpload ?? d.skipUpload,
-            encryptOnUpload: false,
-            versionCode: normalizeVersionCode(d.versionCode),
-            updatelogs: normalizeUpdateLogs(d.updatelogs),
-        }));
+        .map((d) => {
+            const platformId = d.platformId.trim();
+            const defaultPath = `${trialDownloadsDir}/${withPlatformSuffix(d.file!.name, platformId)}`;
+            return {
+                platformId,
+                version: d.version.trim(),
+                path: d.file?.pathOverride || d.pathOverride || defaultPath,
+                file: d.file!.file,
+                skipUpload: d.file?.skipUpload ?? d.skipUpload,
+                encryptOnUpload: false,
+                versionCode: normalizeVersionCode(d.versionCode),
+                updatelogs: normalizeUpdateLogs(d.updatelogs),
+            };
+        });
 
     const downloadsObject = buildDownloadsObject(downloadAssets);
     const trialDownloadsObject = buildDownloadsObject(trialDownloadAssets);
