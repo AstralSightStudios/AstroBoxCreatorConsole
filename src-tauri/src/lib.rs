@@ -105,6 +105,26 @@ async fn afdian_request(
 
     Ok(payload)
 }
+#[derive(Debug, serde::Serialize)]
+struct AppBuildInfo {
+    version: String,
+    git_commit_hash: &'static str,
+    build_time: &'static str,
+    build_user: &'static str,
+}
+
+/// 暴露构建期注入的元信息（build.rs 生成 buildinfo.rs），供前端在
+/// 提交 request.json 时附带当前客户端版本与构建来源。
+#[tauri::command]
+fn app_build_info(app: tauri::AppHandle) -> AppBuildInfo {
+    AppBuildInfo {
+        version: app.package_info().version.to_string(),
+        git_commit_hash: buildinfo::BuildInfo::GIT_COMMIT_HASH,
+        build_time: buildinfo::BuildInfo::BUILD_TIME,
+        build_user: buildinfo::BuildInfo::BUILD_USER,
+    }
+}
+
 #[tauri::command]
 async fn encrypt_aes_256_ecb(data_base64: String, key_base64: String) -> Result<String, String> {
     let data = general_purpose::STANDARD
@@ -248,6 +268,7 @@ pub fn run() {
             afdian::afdian_received_orders,
             afdian::afdian_sponsors,
             encrypt_aes_256_ecb,
+            app_build_info,
             write_text_file,
             set_ui_scale_active,
             fetch_media,
