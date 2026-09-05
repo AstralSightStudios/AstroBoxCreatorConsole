@@ -97,10 +97,9 @@ describe("submission protocol", () => {
 
   test("preserves client info through build/parse round-trip", () => {
     const client = {
-      name: "AstroBoxCreatorConsole",
       version: "0.3.0",
       git_commit_hash: "fd3dc67",
-      build_time: "2026-09-05T11:03:12+00:00",
+      build_time: "2026-09-05T19:03:12+08:00",
       build_user: "root",
     };
     const request = parseSubmissionRequestJson(
@@ -141,7 +140,6 @@ describe("submission protocol", () => {
       }),
     );
     expect(request.client).toEqual({
-      name: "unknown",
       version: "unknown",
       git_commit_hash: "unknown",
       build_time: "unknown",

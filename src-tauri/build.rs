@@ -1,3 +1,4 @@
+use chrono::{FixedOffset, Utc};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -9,20 +10,27 @@ fn main() {
     generate_build_info();
 }
 
-/// 构建期生成 `src/buildinfo.rs`（参考 AstroBox-NG）：记录提交哈希、
-/// UTC 构建时间与构建用户，供诊断信息/关于页读取。
+/// 构建期生成 `src/buildinfo.rs`：记录提交短哈希、UTC+8 构建时间与构建用户，
+/// 供诊断信息、日志包与资源提交 request.json 的 client 字段读取。
 fn generate_build_info() {
-    let git_commit_hash = Command::new("git")
+    let full_commit_hash = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
+    let git_commit_hash = if full_commit_hash.len() >= 7 {
+        full_commit_hash[..7].to_string()
+    } else {
+        full_commit_hash
+    };
 
     let build_user = env::var("USER")
         .or_else(|_| env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
 
-    let build_time = chrono::Utc::now().to_rfc3339();
+    let build_time = Utc::now()
+        .with_timezone(&FixedOffset::east_opt(8 * 3600).expect("valid UTC+8 offset"))
+        .to_rfc3339();
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let out_path = Path::new(&manifest_dir).join("src").join("buildinfo.rs");

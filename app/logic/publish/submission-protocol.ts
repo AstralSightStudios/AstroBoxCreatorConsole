@@ -13,7 +13,6 @@ export type SubmissionMode = "create" | "edit";
 
 /** 提交客户端信息：CC 版本与构建期注入的元信息（可缺失，历史 request.json 无此字段）。 */
 export interface SubmissionClientInfo {
-    name: string;
     version: string;
     git_commit_hash: string;
     build_time: string;
@@ -180,7 +179,6 @@ function parseSubmissionClientInfo(value: unknown): SubmissionClientInfo | null 
         return text || "unknown";
     };
     return {
-        name: read("name"),
         version: read("version"),
         git_commit_hash: read("git_commit_hash"),
         build_time: read("build_time"),
@@ -208,7 +206,6 @@ export async function buildClientInfo(): Promise<SubmissionClientInfo | null> {
         }>("app_build_info"),
     ]);
     return {
-        name: "AstroBoxCreatorConsole",
         version: version || info.version || "unknown",
         git_commit_hash: info.git_commit_hash || "unknown",
         build_time: info.build_time || "unknown",
