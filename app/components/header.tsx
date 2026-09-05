@@ -151,7 +151,7 @@ export default function Header() {
   return (
     <header
       ref={headerRef}
-      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-hidden ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-visible ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
       data-tauri-drag-region={isMacOS ? true : undefined}
       onMouseDown={handleHeaderMouseDown}
     >

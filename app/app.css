@@ -194,6 +194,10 @@ body,
     bottom: 0.5rem;
 }
 
+.app-page-scroll-content {
+    min-height: calc(100% + var(--ui-safe-area-bottom));
+}
+
 /* ---- Wallpaper editor ---- */
 .wallpaper-canvas-scroll {
     scrollbar-width: thin;
@@ -357,6 +361,15 @@ html.wallpaper-editor-active body * {
     background-color: var(--color-background);
 }
 
+.titlebar-effect-gradient,
+.titlebar-effect-blur-region {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 100%;
+}
+
 .macos .wallpaper-editor-root {
     position: relative;
     padding-top: var(--macos-titlebar-height);
@@ -434,12 +447,19 @@ html[data-ui-narrow="false"] .titlebar-effect {
     z-index: -1;
     height: calc(52px + 2rem);
     pointer-events: none;
+    background-color: transparent !important;
+}
+
+html[data-ui-narrow="false"] .titlebar-effect-gradient {
     background-image: linear-gradient(
         to bottom,
         var(--color-background) 0%,
         transparent 100%
     );
-    background-color: transparent !important;
+}
+
+html[data-ui-narrow="false"] .titlebar-effect-blur-region {
+    height: 50px;
 }
 
 html[data-ui-narrow="false"] .titlebar-effect-sidebar {
@@ -448,6 +468,11 @@ html[data-ui-narrow="false"] .titlebar-effect-sidebar {
 
 html.macos[data-ui-desktop="false"][data-ui-narrow="false"][data-ui-scale-active="false"] .app-header {
     padding-left: calc(58px + 2rem);
+}
+
+html[data-ui-narrow="true"] .app-header {
+    z-index: 5;
+    isolation: isolate;
 }
 
 html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .tauri-drag-bar {
@@ -487,19 +512,55 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-
     top: calc(var(--macos-titlebar-height) + 44px + 1rem);
 }
 
-html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
+html[data-ui-narrow="true"] .titlebar-effect,
+html.macos[data-ui-scale-active="true"] .titlebar-effect {
+    --titlebar-effect-height: calc(var(--ui-safe-area-top) + 48px + 1rem);
+
     display: block;
     position: fixed;
     inset: 0 0 auto;
     z-index: -1;
-    height: calc(var(--macos-titlebar-height) + 44px + 2rem);
+    height: var(--titlebar-effect-height);
     pointer-events: none;
+    background-image: none;
+    background-color: transparent !important;
+}
+
+html[data-ui-narrow="true"] .titlebar-effect-gradient,
+html.macos[data-ui-scale-active="true"] .titlebar-effect-gradient {
+    height: var(--titlebar-effect-height);
     background-image: linear-gradient(
         to bottom,
         var(--color-background) 0%,
+        color-mix(in srgb, var(--color-background) 78%, transparent) 58%,
         transparent 100%
     );
-    background-color: transparent !important;
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        #000 0%,
+        #000 68%,
+        transparent 100%
+    );
+    mask-image: linear-gradient(
+        to bottom,
+        #000 0%,
+        #000 68%,
+        transparent 100%
+    );
+}
+
+html[data-ui-narrow="true"] .titlebar-effect-blur-region,
+html.macos[data-ui-scale-active="true"] .titlebar-effect-blur-region {
+    top: 0;
+    height: var(--titlebar-effect-height);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
+    --titlebar-effect-height: calc(var(--macos-titlebar-height) + 44px + 1rem);
+}
+
+html.macos[data-ui-narrow="false"][data-ui-scale-active="true"] .titlebar-effect-blur-region {
+    height: 50px;
 }
 
 @media (max-width: 1100px) {
