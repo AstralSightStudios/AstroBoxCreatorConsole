@@ -23,7 +23,9 @@ import {
 } from "./catalog";
 import { syncForkDefaultBranch } from "./fork";
 import {
+    buildClientInfo,
     buildCreateSubmissionRequest,
+    buildEditSubmissionRequest,
     buildSubmissionCsv,
     buildSubmissionPath,
     buildSubmissionRequest,
@@ -354,19 +356,17 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
 
     let request: SubmissionRequest;
     if (intent.mode === "create") {
-        request = buildCreateSubmissionRequest(upstreamCommit);
+        request = await buildCreateSubmissionRequest(upstreamCommit);
     } else {
         const originalId = intent.originalId.trim();
         const original = latest.entries.find(
             (item) => item.id.trim() === originalId,
         )!;
-        request = {
-            schema_version: 1,
-            mode: "edit",
-            original_id: originalId,
-            base_entry_digest: await canonicalCatalogEntryDigest(original),
-            base_catalog_commit: upstreamCommit,
-        };
+        request = await buildEditSubmissionRequest({
+            originalId,
+            baseEntryDigest: await canonicalCatalogEntryDigest(original),
+            baseCatalogCommit: upstreamCommit,
+        });
     }
 
     await commitFilesToBranch({
@@ -428,6 +428,12 @@ export async function updateSubmissionEntryOnBranch(params: {
     submissionPath: string;
 }) {
     const { token, owner, repo, branch, entry, request, submissionPath } = params;
+    // 每次写入 request.json 都刷新 client 信息，确保反映当前使用的 CC 版本
+    // 与构建来源（编辑旧 PR 时可为历史请求补上缺失的 client 字段）。
+    const refreshed: SubmissionRequest = {
+        ...request,
+        client: await buildClientInfo(),
+    };
     await commitFilesToBranch({
         token,
         owner,
@@ -441,7 +447,7 @@ export async function updateSubmissionEntryOnBranch(params: {
             },
             {
                 path: submissionRequestPath(submissionPath),
-                content: buildSubmissionRequest(request),
+                content: buildSubmissionRequest(refreshed),
             },
         ],
     });

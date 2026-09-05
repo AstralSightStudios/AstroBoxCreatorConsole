@@ -1,4 +1,5 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { isTauriRuntime } from "../update/update-checker";
 import {
     CATALOG_CSV_HEADER,
     CATALOG_CSV_COLUMNS,
@@ -10,12 +11,22 @@ import {
 
 export type SubmissionMode = "create" | "edit";
 
+/** 提交客户端信息：CC 版本与构建期注入的元信息（可缺失，历史 request.json 无此字段）。 */
+export interface SubmissionClientInfo {
+    name: string;
+    version: string;
+    git_commit_hash: string;
+    build_time: string;
+    build_user: string;
+}
+
 export interface SubmissionRequest {
     schema_version: 1;
     mode: SubmissionMode;
     original_id: string | null;
     base_entry_digest: string | null;
     base_catalog_commit: string | null;
+    client: SubmissionClientInfo | null;
 }
 
 export interface SubmissionFileInfo {
@@ -151,11 +162,58 @@ export function parseSubmissionRequestJson(raw: string): SubmissionRequest {
         original_id: originalId,
         base_entry_digest: digest,
         base_catalog_commit: commit,
+        client: parseSubmissionClientInfo(value.client),
     };
 }
 
 export function buildSubmissionRequest(request: SubmissionRequest): string {
     return `${JSON.stringify(request, null, 2)}\n`;
+}
+
+/** 宽松解析 client 字段：历史/脏数据降级为 "unknown" 而不抛错，避免影响冲突检测。 */
+function parseSubmissionClientInfo(value: unknown): SubmissionClientInfo | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    const read = (key: string): string => {
+        const raw = record[key];
+        const text = typeof raw === "string" ? raw.trim() : "";
+        return text || "unknown";
+    };
+    return {
+        name: read("name"),
+        version: read("version"),
+        git_commit_hash: read("git_commit_hash"),
+        build_time: read("build_time"),
+        build_user: read("build_user"),
+    };
+}
+
+/**
+ * 采集当前客户端信息（CC 版本 + build.rs 注入的构建元信息）。
+ * 非 Tauri 运行时（纯浏览器 dev）拿不到，返回 null。
+ */
+export async function buildClientInfo(): Promise<SubmissionClientInfo | null> {
+    if (!isTauriRuntime()) return null;
+    const [{ invoke }, { getVersion }] = await Promise.all([
+        import("@tauri-apps/api/core"),
+        import("@tauri-apps/api/app"),
+    ]);
+    const [version, info] = await Promise.all([
+        getVersion(),
+        invoke<{
+            version: string;
+            git_commit_hash: string;
+            build_time: string;
+            build_user: string;
+        }>("app_build_info"),
+    ]);
+    return {
+        name: "AstroBoxCreatorConsole",
+        version: version || info.version || "unknown",
+        git_commit_hash: info.git_commit_hash || "unknown",
+        build_time: info.build_time || "unknown",
+        build_user: info.build_user || "unknown",
+    };
 }
 
 export async function canonicalCatalogEntryDigest(
@@ -172,14 +230,30 @@ export async function canonicalCatalogEntryDigest(
         .join("");
 }
 
-export function buildCreateSubmissionRequest(
+export async function buildCreateSubmissionRequest(
     baseCatalogCommit?: string | null,
-): SubmissionRequest {
+): Promise<SubmissionRequest> {
     return {
         schema_version: 1,
         mode: "create",
         original_id: null,
         base_entry_digest: null,
         base_catalog_commit: baseCatalogCommit ?? null,
+        client: await buildClientInfo(),
+    };
+}
+
+export async function buildEditSubmissionRequest(params: {
+    originalId: string;
+    baseEntryDigest: string;
+    baseCatalogCommit: string;
+}): Promise<SubmissionRequest> {
+    return {
+        schema_version: 1,
+        mode: "edit",
+        original_id: params.originalId,
+        base_entry_digest: params.baseEntryDigest,
+        base_catalog_commit: params.baseCatalogCommit,
+        client: await buildClientInfo(),
     };
 }

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildClientInfo,
+  buildCreateSubmissionRequest,
   buildSubmissionCsv,
   buildSubmissionPath,
   buildSubmissionRequest,
@@ -70,6 +72,7 @@ describe("submission protocol", () => {
         original_id: null,
         base_entry_digest: null,
         base_catalog_commit: null,
+        client: null,
       }),
     );
     expect(create.mode).toBe("create");
@@ -81,6 +84,7 @@ describe("submission protocol", () => {
         original_id: "old-id",
         base_entry_digest: "digest",
         base_catalog_commit: "commit",
+        client: null,
       }),
     );
     expect(edit).toMatchObject({
@@ -89,6 +93,74 @@ describe("submission protocol", () => {
       base_entry_digest: "digest",
       base_catalog_commit: "commit",
     });
+  });
+
+  test("preserves client info through build/parse round-trip", () => {
+    const client = {
+      name: "AstroBoxCreatorConsole",
+      version: "0.3.0",
+      git_commit_hash: "fd3dc67",
+      build_time: "2026-09-05T11:03:12+00:00",
+      build_user: "root",
+    };
+    const request = parseSubmissionRequestJson(
+      buildSubmissionRequest({
+        schema_version: 1,
+        mode: "create",
+        original_id: null,
+        base_entry_digest: null,
+        base_catalog_commit: null,
+        client,
+      }),
+    );
+    expect(request.client).toEqual(client);
+  });
+
+  test("parses legacy request.json without client as null", () => {
+    const request = parseSubmissionRequestJson(
+      JSON.stringify({
+        schema_version: 1,
+        mode: "create",
+        original_id: null,
+        base_entry_digest: null,
+        base_catalog_commit: null,
+      }),
+    );
+    expect(request.client).toBeNull();
+  });
+
+  test("degrades malformed client to unknown fields instead of throwing", () => {
+    const request = parseSubmissionRequestJson(
+      JSON.stringify({
+        schema_version: 1,
+        mode: "create",
+        original_id: null,
+        base_entry_digest: null,
+        base_catalog_commit: null,
+        client: { version: 42 },
+      }),
+    );
+    expect(request.client).toEqual({
+      name: "unknown",
+      version: "unknown",
+      git_commit_hash: "unknown",
+      build_time: "unknown",
+      build_user: "unknown",
+    });
+  });
+
+  test("builds request with null client outside Tauri runtime", async () => {
+    const create = await buildCreateSubmissionRequest("upstream-head");
+    expect(create.client).toBeNull();
+    expect(create.base_catalog_commit).toBe("upstream-head");
+
+    const edit = await buildCreateSubmissionRequest(null);
+    expect(edit.client).toBeNull();
+    expect(edit.base_catalog_commit).toBeNull();
+  });
+
+  test("buildClientInfo returns null outside Tauri runtime", async () => {
+    expect(await buildClientInfo()).toBeNull();
   });
 
   test("produces deterministic canonical digest", async () => {
