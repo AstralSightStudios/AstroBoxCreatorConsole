@@ -43,7 +43,9 @@ type UiScaleStyle = CSSProperties & {
     "--ui-safe-area-right": string;
     "--ui-safe-area-bottom": string;
     "--ui-safe-area-left": string;
+    "--ui-titlebar-gradient-height": string;
     "--macos-titlebar-height": string;
+    "--macos-titlebar-gradient-height": string;
 };
 
 const EMPTY_SAFE_AREA: SafeAreaInsets = {
@@ -187,7 +189,9 @@ export default function UiScaleShell({
         "--ui-safe-area-right": `${metrics.safeArea.right}px`,
         "--ui-safe-area-bottom": `${metrics.safeArea.bottom}px`,
         "--ui-safe-area-left": `${metrics.safeArea.left}px`,
+        "--ui-titlebar-gradient-height": `${metrics.safeArea.top + 96 / factor}px`,
         "--macos-titlebar-height": `${nativeTitlebarHeight}px`,
+        "--macos-titlebar-gradient-height": `${nativeTitlebarHeight + 92 / factor}px`,
     };
 
     const contextValue = useMemo(

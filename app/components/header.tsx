@@ -45,7 +45,11 @@ const PAGE_NAME_MAP: Record<string, string> = {
   explorepage: "探索页管理",
 };
 
-export default function Header() {
+interface HeaderProps {
+  scrollProgress?: number;
+}
+
+export default function Header({ scrollProgress = 0 }: HeaderProps) {
   const isMacOS =
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("macos");
@@ -155,7 +159,7 @@ export default function Header() {
       data-tauri-drag-region={isMacOS ? true : undefined}
       onMouseDown={handleHeaderMouseDown}
     >
-      <TitlebarEffect />
+      <TitlebarEffect gradientOpacity={scrollProgress} />
       {isMobile ? (
         <FunctionButton
           className={`app-header-function-button ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}

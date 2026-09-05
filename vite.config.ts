@@ -9,6 +9,8 @@ const monacoEditorPlugin =
   (monacoEditorPluginModule as unknown as { default: typeof monacoEditorPluginModule })
     .default ?? monacoEditorPluginModule;
 
+const tauriDevHost = process.env.TAURI_DEV_HOST;
+
 export default defineConfig({
   resolve: {
     dedupe: ["react", "react-dom"],
@@ -33,8 +35,20 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 5180,
+    host: tauriDevHost || false,
+    port: 6767,
+    strictPort: true,
+    hmr: tauriDevHost
+      ? {
+          protocol: "ws",
+          host: tauriDevHost,
+          port: 6768,
+        }
+      : undefined,
     allowedHosts: [".trycloudflare.com", ".ts.net"],
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
     proxy: {
       "/github-login": {
         target: "https://github.com",

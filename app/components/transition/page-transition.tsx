@@ -1,6 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { useCallback, useContext, useMemo, useRef, type UIEvent } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type UIEvent,
+} from "react";
 import {
   UNSAFE_DataRouterContext,
   UNSAFE_DataRouterStateContext,
@@ -35,6 +43,7 @@ const ENTER_EASE: [number, number, number, number] = [0.22, 0.82, 0.3, 1];
 const EXIT_EASE: [number, number, number, number] = [0.65, 0, 0.35, 1];
 const ENTER_DURATION = 0.3;
 const EXIT_DURATION = 0.2;
+const HEADER_GRADIENT_REVEAL_DISTANCE = 56;
 
 function isPrefixOf(base: string[], target: string[]) {
   if (base.length === 0) {
@@ -112,6 +121,7 @@ function PageTransitionContent() {
   const location = useLocation();
   const outlet = useOutlet();
   const updateHeaderScroll = useUpdateHeaderScroll();
+  const [headerScrollProgress, setHeaderScrollProgress] = useState(0);
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
   const locationContext = useContext(UNSAFE_LocationContext);
@@ -144,9 +154,16 @@ function PageTransitionContent() {
       if (!(target instanceof HTMLElement)) return;
       if (!target.hasAttribute("data-overlayscrollbars-viewport")) return;
       updateHeaderScroll(target.scrollTop);
+      setHeaderScrollProgress(
+        Math.min(1, Math.max(0, target.scrollTop / HEADER_GRADIENT_REVEAL_DISTANCE)),
+      );
     },
     [updateHeaderScroll],
   );
+
+  useEffect(() => {
+    setHeaderScrollProgress(0);
+  }, [normalizedPath]);
   const frozenOutlet = useMemo(() => {
     if (!outlet) {
       return outlet;
@@ -179,7 +196,7 @@ function PageTransitionContent() {
       className="relative h-full overflow-hidden select-none"
     >
       <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,var(--ui-safe-area-top))] pl-[max(0.5rem,var(--ui-safe-area-left))] pr-[max(0.5rem,var(--ui-safe-area-right))]">
-        <Header />
+        <Header scrollProgress={headerScrollProgress} />
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
             <motion.div

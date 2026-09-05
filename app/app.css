@@ -76,6 +76,7 @@
 
 /* ---- 信箱 / 浮层面板 ---- */
 :root {
+    --app-background: #111113;
     --macos-titlebar-height: 42px;
     --ui-safe-area-top: env(safe-area-inset-top);
     --ui-safe-area-right: env(safe-area-inset-right);
@@ -106,13 +107,14 @@ body,
     width: 100%;
     height: 100%;
     overflow: hidden;
+    background-color: var(--app-background);
 }
 
 .ui-scale-viewport {
     position: fixed;
     inset: 0;
     overflow: hidden;
-    background: var(--color-background);
+    background-color: var(--app-background);
 }
 
 .ui-scale-stage {
@@ -512,8 +514,7 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-
     top: calc(var(--macos-titlebar-height) + 44px + 1rem);
 }
 
-html[data-ui-narrow="true"] .titlebar-effect,
-html.macos[data-ui-scale-active="true"] .titlebar-effect {
+html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
     --titlebar-effect-height: calc(var(--ui-safe-area-top) + 48px + 1rem);
 
     display: block;
@@ -526,31 +527,21 @@ html.macos[data-ui-scale-active="true"] .titlebar-effect {
     background-color: transparent !important;
 }
 
-html[data-ui-narrow="true"] .titlebar-effect-gradient,
-html.macos[data-ui-scale-active="true"] .titlebar-effect-gradient {
-    height: var(--titlebar-effect-height);
+html:is([data-ui-desktop="false"], [data-ui-scale-active="true"]) .titlebar-effect-gradient {
+    height: var(--ui-titlebar-gradient-height);
     background-image: linear-gradient(
         to bottom,
         var(--color-background) 0%,
-        color-mix(in srgb, var(--color-background) 78%, transparent) 58%,
+        var(--color-background) 48%,
+        color-mix(in srgb, var(--color-background) 82%, transparent) 66%,
+        color-mix(in srgb, var(--color-background) 48%, transparent) 82%,
+        color-mix(in srgb, var(--color-background) 16%, transparent) 94%,
         transparent 100%
     );
-    -webkit-mask-image: linear-gradient(
-        to bottom,
-        #000 0%,
-        #000 68%,
-        transparent 100%
-    );
-    mask-image: linear-gradient(
-        to bottom,
-        #000 0%,
-        #000 68%,
-        transparent 100%
-    );
+    transition: opacity 120ms linear;
 }
 
-html[data-ui-narrow="true"] .titlebar-effect-blur-region,
-html.macos[data-ui-scale-active="true"] .titlebar-effect-blur-region {
+html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect-blur-region {
     top: 0;
     height: var(--titlebar-effect-height);
 }
@@ -559,8 +550,8 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-
     --titlebar-effect-height: calc(var(--macos-titlebar-height) + 44px + 1rem);
 }
 
-html.macos[data-ui-narrow="false"][data-ui-scale-active="true"] .titlebar-effect-blur-region {
-    height: 50px;
+html.macos:is([data-ui-desktop="false"], [data-ui-scale-active="true"]) .titlebar-effect-gradient {
+    height: var(--macos-titlebar-gradient-height);
 }
 
 @media (max-width: 1100px) {

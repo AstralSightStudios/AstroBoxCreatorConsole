@@ -3,17 +3,22 @@ import { useUiScaleViewport } from "~/components/UiScaleContext";
 
 interface TitlebarEffectProps {
   className?: string;
+  gradientOpacity?: number;
 }
 
 export default function TitlebarEffect({
   className = "",
+  gradientOpacity = 1,
 }: TitlebarEffectProps) {
   const { factor, isNarrow } = useUiScaleViewport();
   const blurIntensity = isNarrow || factor !== 1 ? 180 : 100;
 
   return (
     <div className={`titlebar-effect ${className}`} aria-hidden="true">
-      <div className="titlebar-effect-gradient" />
+      <div
+        className="titlebar-effect-gradient"
+        style={{ opacity: gradientOpacity }}
+      />
       <div className="titlebar-effect-blur-region">
         <BlurEffect
           className="!pointer-events-none h-full w-full"

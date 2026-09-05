@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite dev --port 6767",
+    "dev": "vite dev",
     "start": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
