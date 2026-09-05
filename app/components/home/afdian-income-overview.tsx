@@ -11,11 +11,8 @@ import {
 } from "~/api/afdian-account";
 import DataCard from "~/components/cards/datacard";
 import AnimatedNumber from "~/components/animated-number";
-import {
-  getAfdianIncomeMonthLabel,
-  parseAfdianAmount,
-  resolveAfdianSettlementDisplay,
-} from "~/logic/afdian/income";
+import AfdianMonthlyIncomeCard from "~/components/afdian/monthly-income-card";
+import { parseAfdianAmount } from "~/logic/afdian/income";
 
 const CURRENCY_FORMAT: Intl.NumberFormatOptions = {
   style: "currency",
@@ -75,12 +72,6 @@ export default function AfdianIncomeOverview() {
   if (!nativeAvailable) return null;
 
   const loading = sessionQuery.isLoading || incomeQuery.isLoading;
-  const incomeMonthLabel = getAfdianIncomeMonthLabel(
-    incomeQuery.data?.asOf ?? "",
-  );
-  const settlement = incomeQuery.data
-    ? resolveAfdianSettlementDisplay(incomeQuery.data)
-    : { label: "预计到手" as const, amount: null };
   const cards = [
     {
       label: "今日收入",
@@ -123,23 +114,13 @@ export default function AfdianIncomeOverview() {
         <>
           <div className="grid grid-cols-2 gap-2.5 py-1.5 lg:grid-cols-4">
             <div className="col-span-2">
-              <DataCard
-                label={incomeMonthLabel}
-                secondaryLabel={
-                  settlement.label === "可提现"
-                    ? "可提现"
-                    : "预计到手 · 扣除 6%"
-                }
-              >
-                <div className="flex items-end justify-between gap-3">
-                  <p className="card-num">
-                    {renderCurrency(incomeQuery.data?.currentMonth, loading)}
-                  </p>
-                  <p className="card-num text-right">
-                    {renderCurrency(settlement.amount, loading)}
-                  </p>
-                </div>
-              </DataCard>
+              <AfdianMonthlyIncomeCard
+                currentMonth={incomeQuery.data?.currentMonth}
+                previousMonth={incomeQuery.data?.previousMonth}
+                withdrawable={incomeQuery.data?.withdrawable}
+                asOf={incomeQuery.data?.asOf ?? ""}
+                loading={loading}
+              />
             </div>
             {cards.map(({ label, value }) => (
               <DataCard key={label} label={label}>

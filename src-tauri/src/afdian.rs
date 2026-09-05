@@ -90,7 +90,7 @@ pub(crate) struct AfdianIncomeOverview {
     as_of: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianManagementOverview {
     today_income: String,
@@ -103,10 +103,12 @@ pub(crate) struct AfdianManagementOverview {
     pv: Option<i64>,
     balance: Option<String>,
     balance_after_tax: Option<String>,
+    daily_stats: Vec<AfdianIncomeStatItem>,
+    monthly_income: Vec<AfdianMonthlyIncomeItem>,
     as_of: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianIncomeStatItem {
     date: String,
@@ -115,6 +117,16 @@ pub(crate) struct AfdianIncomeStatItem {
     sponsor_count: Option<i64>,
     returning_sponsor_count: Option<i64>,
     uv: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianMonthlyIncomeItem {
+    year: i32,
+    month: u32,
+    total_amount: String,
+    creator_amount: Option<String>,
+    sponsor_count: Option<i64>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -388,7 +400,14 @@ pub(crate) async fn afdian_management_overview(
     let dashboard_url = format!("{AFDIAN_BASE_URL}/api/my/dashboard");
     let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
     let today_orders = fetch_today_income_orders(&http_client.0, &session.auth_token, &timezone);
-    let (dashboard, today_orders) = tokio::try_join!(dashboard, today_orders)?;
+    let daily_stats = fetch_management_daily_stats(&http_client.0, &session.auth_token, &timezone);
+    let monthly_income = fetch_monthly_income(&http_client.0, &session.auth_token);
+    let (dashboard, today_orders, daily_stats, monthly_income) =
+        tokio::join!(dashboard, today_orders, daily_stats, monthly_income);
+    let dashboard = dashboard?;
+    let today_orders = today_orders?;
+    let daily_stats = daily_stats?;
+    let monthly_income = monthly_income.unwrap_or_default();
     ensure_api_success(&dashboard, "收入概况加载失败")?;
     let (today_income, today_order_count) = sum_income_orders(&today_orders);
 
@@ -413,6 +432,8 @@ pub(crate) async fn afdian_management_overview(
         balance_after_tax: dashboard
             .pointer("/data/balance_after_tax")
             .and_then(value_to_amount),
+        daily_stats,
+        monthly_income,
         as_of: now.to_rfc3339(),
     })
 }
@@ -424,43 +445,8 @@ pub(crate) async fn afdian_income_stats(
 ) -> Result<AfdianIncomeStatPage, String> {
     let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
     let page = page.max(1);
-    let page_value = page.to_string();
-    let response = authenticated_get(
-        &http_client.0,
-        &format!("{AFDIAN_BASE_URL}/api/my/stat"),
-        &session.auth_token,
-        &[("page", page_value.as_str()), ("type", "day")],
-    )
-    .await?;
-    ensure_api_success(&response, "收入统计加载失败")?;
-    let records = response
-        .pointer("/data/list")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let has_more = match response.pointer("/data/has_more").and_then(value_to_i64) {
-        Some(value) => value == 1,
-        None => records.len() >= 10,
-    };
-    let items = records
-        .iter()
-        .map(|record| AfdianIncomeStatItem {
-            date: record
-                .get("date_str")
-                .and_then(value_to_text)
-                .and_then(|value| normalize_date_key(&value))
-                .map(|value| format!("{}-{}-{}", &value[..4], &value[4..6], &value[6..8]))
-                .unwrap_or_else(|| "--".into()),
-            income: record
-                .get("paid_order_real_amount")
-                .and_then(value_to_amount)
-                .unwrap_or_else(|| "0".into()),
-            order_count: record.get("paid_order_count").and_then(value_to_i64),
-            sponsor_count: record.get("paid_user_count").and_then(value_to_i64),
-            returning_sponsor_count: record.get("paid_old_user_count").and_then(value_to_i64),
-            uv: record.get("uv").and_then(value_to_i64),
-        })
-        .collect();
+    let (items, has_more) =
+        fetch_income_stat_page(&http_client.0, &session.auth_token, page).await?;
 
     Ok(AfdianIncomeStatPage {
         items,
@@ -541,6 +527,151 @@ pub(crate) async fn afdian_sponsors(
         total_page,
         has_more: total_page.is_some_and(|total| page < total.max(0) as usize),
     })
+}
+
+async fn fetch_income_stat_page(
+    client: &reqwest::Client,
+    token: &str,
+    page: usize,
+) -> Result<(Vec<AfdianIncomeStatItem>, bool), String> {
+    let page_value = page.to_string();
+    let response = authenticated_get(
+        client,
+        &format!("{AFDIAN_BASE_URL}/api/my/stat"),
+        token,
+        &[("page", page_value.as_str()), ("type", "day")],
+    )
+    .await?;
+    ensure_api_success(&response, "收入统计加载失败")?;
+    let records = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let has_more = match response.pointer("/data/has_more").and_then(value_to_i64) {
+        Some(value) => value == 1,
+        None => records.len() >= 10,
+    };
+    let items = records.iter().map(parse_income_stat_item).collect();
+    Ok((items, has_more))
+}
+
+async fn fetch_management_daily_stats(
+    client: &reqwest::Client,
+    token: &str,
+    timezone: &FixedOffset,
+) -> Result<Vec<AfdianIncomeStatItem>, String> {
+    let now = Utc::now().with_timezone(timezone);
+    let previous_month_start = now
+        .date_naive()
+        .with_day(1)
+        .and_then(|date| date.pred_opt())
+        .and_then(|date| date.with_day(1))
+        .expect("上月首日有效")
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut items = Vec::new();
+    let mut seen_dates = HashSet::new();
+
+    for page in 1..=10 {
+        let (page_items, has_more) = fetch_income_stat_page(client, token, page).await?;
+        let reached_start = page_items
+            .iter()
+            .any(|item| item.date.as_str() <= previous_month_start.as_str());
+        for item in page_items {
+            if seen_dates.insert(item.date.clone()) {
+                items.push(item);
+            }
+        }
+        if reached_start || !has_more {
+            break;
+        }
+    }
+
+    items.sort_by(|left, right| left.date.cmp(&right.date));
+    Ok(items)
+}
+
+async fn fetch_monthly_income(
+    client: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<AfdianMonthlyIncomeItem>, String> {
+    let response = authenticated_get(
+        client,
+        &format!("{AFDIAN_BASE_URL}/api/my/income"),
+        token,
+        &[],
+    )
+    .await?;
+    ensure_api_success(&response, "月度收入加载失败")?;
+    Ok(parse_monthly_income(&response))
+}
+
+fn parse_monthly_income(response: &Value) -> Vec<AfdianMonthlyIncomeItem> {
+    let mut items = Vec::new();
+
+    for year_group in response
+        .pointer("/data/monthly_bill")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(year) = year_group
+            .get("year")
+            .and_then(value_to_i64)
+            .and_then(|value| i32::try_from(value).ok())
+        else {
+            continue;
+        };
+        for month_item in year_group
+            .get("data")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let Some(month) = month_item
+                .get("month")
+                .and_then(value_to_i64)
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| (1..=12).contains(value))
+            else {
+                continue;
+            };
+            let data = month_item.get("data").unwrap_or(&Value::Null);
+            items.push(AfdianMonthlyIncomeItem {
+                year,
+                month,
+                total_amount: data
+                    .get("total_amount")
+                    .and_then(value_to_amount)
+                    .unwrap_or_else(|| "0".into()),
+                creator_amount: data.get("creator_amount").and_then(value_to_amount),
+                sponsor_count: data.get("sponsor_count").and_then(value_to_i64),
+            });
+        }
+    }
+
+    items.sort_by_key(|item| (item.year, item.month));
+    items
+}
+
+fn parse_income_stat_item(record: &Value) -> AfdianIncomeStatItem {
+    AfdianIncomeStatItem {
+        date: record
+            .get("date_str")
+            .and_then(value_to_text)
+            .and_then(|value| normalize_date_key(&value))
+            .map(|value| format!("{}-{}-{}", &value[..4], &value[4..6], &value[6..8]))
+            .unwrap_or_else(|| "--".into()),
+        income: record
+            .get("paid_order_real_amount")
+            .and_then(value_to_amount)
+            .unwrap_or_else(|| "0".into()),
+        order_count: record.get("paid_order_count").and_then(value_to_i64),
+        sponsor_count: record.get("paid_user_count").and_then(value_to_i64),
+        returning_sponsor_count: record.get("paid_old_user_count").and_then(value_to_i64),
+        uv: record.get("uv").and_then(value_to_i64),
+    }
 }
 
 async fn fetch_received_orders(
@@ -1348,6 +1479,43 @@ mod tests {
         assert_eq!(sponsor.total_amount, "100.00");
         assert_eq!(sponsor.plan_names, vec!["支持计划"]);
         assert!(sponsor.last_sponsored_at.is_some());
+    }
+
+    #[test]
+    fn parses_monthly_income_in_chronological_order() {
+        let items = parse_monthly_income(&json!({
+            "data": {
+                "monthly_bill": [
+                    {
+                        "year": 2026,
+                        "data": [
+                            {
+                                "month": 8,
+                                "data": {
+                                    "total_amount": "100.00",
+                                    "creator_amount": "94.00",
+                                    "sponsor_count": 8
+                                }
+                            },
+                            {
+                                "month": 7,
+                                "data": {
+                                    "total_amount": 50,
+                                    "creator_amount": 47,
+                                    "sponsor_count": "4"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }));
+
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[0].year, items[0].month), (2026, 7));
+        assert_eq!(items[0].creator_amount.as_deref(), Some("47"));
+        assert_eq!(items[1].total_amount, "100.00");
+        assert_eq!(items[1].sponsor_count, Some(8));
     }
 
     #[test]

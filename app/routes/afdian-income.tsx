@@ -26,12 +26,14 @@ import {
   type AfdianReceivedOrder,
 } from "~/api/afdian-management";
 import {
+  AFDIAN_INCOME_QUERY_KEY,
   AFDIAN_SESSION_QUERY_KEY,
   getAfdianErrorMessage,
+  getAfdianIncomeOverview,
   getAfdianSessionStatus,
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
-import DataCard from "~/components/cards/datacard";
+import AfdianOverviewDashboard from "~/components/afdian/overview-dashboard";
 import AnimatedNumber from "~/components/animated-number";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
@@ -90,17 +92,6 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function getIncomeMonthLabel(asOf?: string) {
-  if (!asOf) return "本月收入";
-  const date = new Date(asOf);
-  if (Number.isNaN(date.getTime())) return "本月收入";
-  const month = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "numeric",
-  }).format(date);
-  return `${month}收入`;
-}
-
 function LoadingState() {
   return (
     <div className="flex items-center justify-center gap-2 py-16 text-sm text-white/55">
@@ -125,41 +116,41 @@ function ErrorState({ error, retry }: { error: unknown; retry: () => void }) {
 }
 
 function OverviewSection({ enabled }: { enabled: boolean }) {
-  const query = useQuery({
+  const managementQuery = useQuery({
     queryKey: AFDIAN_MANAGEMENT_OVERVIEW_QUERY_KEY,
     queryFn: getAfdianManagementOverview,
     enabled,
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  const incomeQuery = useQuery({
+    queryKey: AFDIAN_INCOME_QUERY_KEY,
+    queryFn: getAfdianIncomeOverview,
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
-  if (query.isLoading) return <LoadingState />;
-  if (query.isError) {
-    return <ErrorState error={query.error} retry={() => void query.refetch()} />;
+  if (managementQuery.isLoading || incomeQuery.isLoading) return <LoadingState />;
+  if (managementQuery.isError || incomeQuery.isError) {
+    const error = managementQuery.error ?? incomeQuery.error;
+    return (
+      <ErrorState
+        error={error}
+        retry={() => {
+          void managementQuery.refetch();
+          void incomeQuery.refetch();
+        }}
+      />
+    );
   }
-
-  const data = query.data;
-  const metrics = [
-    { label: "今日收入", value: renderCurrency(data?.todayIncome) },
-    { label: "今日订单数", value: renderInteger(data?.todayOrderCount) },
-    { label: getIncomeMonthLabel(data?.asOf), value: renderCurrency(data?.monthIncome) },
-    { label: "累计收入", value: renderCurrency(data?.allIncome) },
-    { label: "近 31 天赞助者", value: renderInteger(data?.recentSponsorCount) },
-    { label: "历史赞助者", value: renderInteger(data?.allSponsorCount) },
-    { label: "主页访问人数", value: renderInteger(data?.uv) },
-    { label: "主页访问次数", value: renderInteger(data?.pv) },
-    { label: "当前可提现", value: renderCurrency(data?.balance) },
-    { label: "当前可提现（税后）", value: renderCurrency(data?.balanceAfterTax) },
-  ];
+  if (!managementQuery.data || !incomeQuery.data) return null;
 
   return (
-    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
-      {metrics.map((metric) => (
-        <DataCard key={metric.label} label={metric.label}>
-          <p className="card-num">{metric.value}</p>
-        </DataCard>
-      ))}
-    </div>
+    <AfdianOverviewDashboard
+      data={managementQuery.data}
+      incomeOverview={incomeQuery.data}
+    />
   );
 }
 

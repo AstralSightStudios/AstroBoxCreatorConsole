@@ -16,6 +16,8 @@ export interface AfdianManagementOverview {
   pv?: number | null;
   balance?: string | null;
   balanceAfterTax?: string | null;
+  dailyStats: AfdianIncomeStatItem[];
+  monthlyIncome: AfdianMonthlyIncomeItem[];
   asOf: string;
 }
 
@@ -26,6 +28,14 @@ export interface AfdianIncomeStatItem {
   sponsorCount?: number | null;
   returningSponsorCount?: number | null;
   uv?: number | null;
+}
+
+export interface AfdianMonthlyIncomeItem {
+  year: number;
+  month: number;
+  totalAmount: string;
+  creatorAmount?: string | null;
+  sponsorCount?: number | null;
 }
 
 export interface AfdianIncomeStatPage {
