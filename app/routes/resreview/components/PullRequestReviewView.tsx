@@ -116,32 +116,32 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-4">
-          <Tabs.Root value={tabValue} onValueChange={setTabValue} className="min-w-0">
-            <Tabs.List className="flex min-w-0 gap-0 overflow-x-auto border-b border-white/10 no-scrollbar">
+          <Tabs.Root value={tabValue} onValueChange={setTabValue}>
+            <Tabs.List className="flex gap-0 border-b border-white/10">
               <Tabs.Trigger
                 value="resources"
-                className="shrink-0 px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
               >
                 <Info size={16} weight="duotone" className="mr-2 inline-block" style={{ verticalAlign: 'text-bottom' }} />
                 资源信息
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="checks"
-                className="shrink-0 px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
               >
                 <SealCheck size={16} weight="duotone" className="mr-2 inline-block" style={{ verticalAlign: 'text-bottom' }} />
                 自动检查
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="files"
-                className="shrink-0 px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
               >
                 <GitDiff size={16} weight="duotone" className="mr-2 inline-block" style={{ verticalAlign: 'text-bottom' }} />
                 改动文件
               </Tabs.Trigger>
               <Tabs.Trigger
                 value="comments"
-                className="shrink-0 px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
+                className="px-4! py-2! text-sm! text-white/55! data-[state=active]:text-white! data-[state=active]:border-b-2! data-[state=active]:border-white! rounded-none! before:content-none! transition!"
               >
                 <Chats size={16} weight="duotone" className="mr-2 inline-block" style={{ verticalAlign: 'text-bottom' }} />
                 评论
