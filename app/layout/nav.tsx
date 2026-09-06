@@ -465,7 +465,8 @@ interface NavHeaderProps {
   account: DisplayAccount;
   accountState: AccountState;
   onToggleNav: () => void;
-  onNavigate: (path: string) => void;
+  /** 主导航侧栏传入（含移动端 Drawer 的 replace/收起逻辑）；独立侧栏缺省时直接导航。 */
+  onNavigate?: (path: string) => void;
   hideFunctionButton?: boolean;
   desktopFunctionButtonInteractive?: boolean;
 }
@@ -479,6 +480,7 @@ function NavHeader({
   desktopFunctionButtonInteractive,
 }: NavHeaderProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showGithubLogoutConfirm, setShowGithubLogoutConfirm] = useState(false);
   const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
@@ -498,12 +500,20 @@ function NavHeader({
     setIsMenuOpen(false);
     // 走 handleNavigate：Drawer 打开时以 replace 替换 synthetic history entry
     // 并立即收起侧栏，避免之后点遮罩关闭侧栏时 history.back() 弹回原页面。
-    onNavigate("/login");
+    if (onNavigate) {
+      onNavigate("/login");
+      return;
+    }
+    navigate("/login");
   };
 
   const handleAfdianLogin = () => {
     setIsMenuOpen(false);
-    onNavigate("/settings");
+    if (onNavigate) {
+      onNavigate("/settings");
+      return;
+    }
+    navigate("/settings");
   };
 
   const handleGithubLogin = async () => {
