@@ -26,6 +26,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   settings: "设置",
   analysis: "数据分析",
   "afdian-income": "爱发电收入",
+  "afdian-messages": "爱发电私信",
   profile: "个人主页管理",
   encrypt: "资源加解密与激活",
   manage: "已发布资源",

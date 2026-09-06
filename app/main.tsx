@@ -9,6 +9,7 @@ import Home from "~/routes/index";
 import Analysis from "~/routes/analysis";
 import Interactions from "~/routes/interactions";
 import AfdianIncomePage from "~/routes/afdian-income";
+import AfdianMessagesPage from "~/routes/afdian-messages";
 import Profile from "~/routes/profile";
 import CloudControl from "~/routes/cloudcontrol";
 import ResourceEncrypt from "~/routes/resource/encrypt";
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
       { path: "analysis", element: <Analysis /> },
       { path: "interactions", element: <Interactions /> },
       { path: "afdian-income", element: <AfdianIncomePage /> },
+      { path: "afdian-messages", element: <AfdianMessagesPage /> },
       { path: "publish", element: <ResourcePublish /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },

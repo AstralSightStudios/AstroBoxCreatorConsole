@@ -63,6 +63,12 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         label: "爱发电收入",
         path: "/afdian-income",
       },
+      {
+        id: "afdian-messages",
+        icon: ChatsCircleIcon,
+        label: "爱发电私信",
+        path: "/afdian-messages",
+      },
     ],
   },
   {

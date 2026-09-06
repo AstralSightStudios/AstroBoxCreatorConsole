@@ -12,6 +12,7 @@ import {
 import DataCard from "~/components/cards/datacard";
 import AnimatedNumber from "~/components/animated-number";
 import AfdianMonthlyIncomeCard from "~/components/afdian/monthly-income-card";
+import AfdianRecentConversations from "~/components/afdian/recent-conversations";
 import { parseAfdianAmount } from "~/logic/afdian/income";
 
 const CURRENCY_FORMAT: Intl.NumberFormatOptions = {
@@ -68,6 +69,7 @@ export default function AfdianIncomeOverview() {
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  const connected = sessionQuery.data?.connected === true;
 
   if (!nativeAvailable) return null;
 
@@ -101,7 +103,7 @@ export default function AfdianIncomeOverview() {
             "无法读取爱发电登录状态",
           )}
         </div>
-      ) : !sessionQuery.isLoading && !sessionQuery.data?.connected ? (
+      ) : !sessionQuery.isLoading && !connected ? (
         <div className="flex items-center justify-between gap-3 px-1.5 py-3">
           <p className="text-size-small text-white/55">
             登录爱发电后即可查看收入数据。
@@ -141,6 +143,7 @@ export default function AfdianIncomeOverview() {
               </Button>
             </div>
           )}
+          <AfdianRecentConversations enabled={connected} limit={10} />
         </>
       )}
     </section>

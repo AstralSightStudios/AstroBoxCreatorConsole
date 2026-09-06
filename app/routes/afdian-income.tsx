@@ -34,6 +34,7 @@ import {
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
 import AfdianOverviewDashboard from "~/components/afdian/overview-dashboard";
+import AfdianRecentConversations from "~/components/afdian/recent-conversations";
 import AnimatedNumber from "~/components/animated-number";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
@@ -435,30 +436,33 @@ export default function AfdianIncomePage() {
             <Button onClick={() => navigate("/settings")}>前往设置</Button>
           </div>
         ) : (
-          <Tabs.Root value={tab} onValueChange={(value) => setTab(value as ManagementTab)}>
-            <div className="overflow-x-auto">
-              <Tabs.List>
-                <Tabs.Trigger value="overview">整体概况</Tabs.Trigger>
-                <Tabs.Trigger value="stats">收入统计</Tabs.Trigger>
-                <Tabs.Trigger value="orders">收到发电</Tabs.Trigger>
-                <Tabs.Trigger value="sponsors">赞助者管理</Tabs.Trigger>
-              </Tabs.List>
-            </div>
-            <div className="pt-4">
-              <Tabs.Content value="overview">
-                <OverviewSection enabled={tab === "overview"} />
-              </Tabs.Content>
-              <Tabs.Content value="stats">
-                <IncomeStatsSection enabled={tab === "stats"} />
-              </Tabs.Content>
-              <Tabs.Content value="orders">
-                <ReceivedOrdersSection enabled={tab === "orders"} />
-              </Tabs.Content>
-              <Tabs.Content value="sponsors">
-                <SponsorsSection enabled={tab === "sponsors"} />
-              </Tabs.Content>
-            </div>
-          </Tabs.Root>
+          <>
+            <AfdianRecentConversations enabled={connected} limit={20} />
+            <Tabs.Root value={tab} onValueChange={(value) => setTab(value as ManagementTab)}>
+              <div className="overflow-x-auto">
+                <Tabs.List>
+                  <Tabs.Trigger value="overview">整体概况</Tabs.Trigger>
+                  <Tabs.Trigger value="stats">收入统计</Tabs.Trigger>
+                  <Tabs.Trigger value="orders">收到发电</Tabs.Trigger>
+                  <Tabs.Trigger value="sponsors">赞助者管理</Tabs.Trigger>
+                </Tabs.List>
+              </div>
+              <div className="pt-4">
+                <Tabs.Content value="overview">
+                  <OverviewSection enabled={tab === "overview"} />
+                </Tabs.Content>
+                <Tabs.Content value="stats">
+                  <IncomeStatsSection enabled={tab === "stats"} />
+                </Tabs.Content>
+                <Tabs.Content value="orders">
+                  <ReceivedOrdersSection enabled={tab === "orders"} />
+                </Tabs.Content>
+                <Tabs.Content value="sponsors">
+                  <SponsorsSection enabled={tab === "sponsors"} />
+                </Tabs.Content>
+              </div>
+            </Tabs.Root>
+          </>
         )}
       </div>
     </Page>

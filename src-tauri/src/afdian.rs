@@ -184,6 +184,57 @@ pub(crate) struct AfdianSponsorPage {
     has_more: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianDialogUser {
+    user_id: String,
+    name: String,
+    avatar: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianDialogItem {
+    latest_message_id: Option<String>,
+    unread_count: i64,
+    total_count: i64,
+    status: Option<i64>,
+    user: AfdianDialogUser,
+    preview: Option<String>,
+    sent_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianDialogPage {
+    items: Vec<AfdianDialogItem>,
+    page: usize,
+    total_count: Option<i64>,
+    total_page: Option<i64>,
+    has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianMessageItem {
+    id: String,
+    direction: String,
+    sender: Option<String>,
+    message_type: Option<i64>,
+    content: Value,
+    sent_at: Option<String>,
+    read_status: Option<i64>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianMessagePage {
+    items: Vec<AfdianMessageItem>,
+    has_more: bool,
+    oldest_message_id: Option<String>,
+    latest_message_id: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct PasswordLoginPayload {
     account: String,
@@ -211,6 +262,15 @@ struct QuickLoginPayload {
 #[derive(Debug, Serialize)]
 struct RefreshCaptchaPayload {
     account: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AfdianSendMessagePayload<'a> {
+    user_id: &'a str,
+    #[serde(rename = "type")]
+    message_type: &'static str,
+    content: &'a str,
+    auth_token: &'a str,
 }
 
 #[tauri::command]
@@ -529,6 +589,142 @@ pub(crate) async fn afdian_sponsors(
     })
 }
 
+#[tauri::command]
+pub(crate) async fn afdian_message_dialogs(
+    http_client: tauri::State<'_, AppHttpClient>,
+    page: usize,
+) -> Result<AfdianDialogPage, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let page = page.max(1);
+    let page_value = page.to_string();
+    let response = authenticated_get(
+        &http_client.0,
+        &format!("{AFDIAN_BASE_URL}/api/message/dialogs"),
+        &session.auth_token,
+        &[("page", page_value.as_str()), ("unread", "0")],
+    )
+    .await?;
+    ensure_api_success(&response, "私信列表加载失败")?;
+
+    let items = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(parse_dialog_item)
+        .collect();
+    let total_count = response.pointer("/data/total_count").and_then(value_to_i64);
+    let total_page = response.pointer("/data/total_page").and_then(value_to_i64);
+    let has_more = response.pointer("/data/has_more").and_then(value_to_i64) == Some(1)
+        || total_page.is_some_and(|total| page < total.max(0) as usize);
+
+    Ok(AfdianDialogPage {
+        items,
+        page,
+        total_count,
+        total_page,
+        has_more,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn afdian_message_messages(
+    http_client: tauri::State<'_, AppHttpClient>,
+    user_id: String,
+    message_type: Option<String>,
+    message_id: Option<String>,
+) -> Result<AfdianMessagePage, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let user_id = user_id.trim();
+    if user_id.is_empty() {
+        return Err("缺少对话用户 ID".to_string());
+    }
+
+    let direction = match message_type.as_deref() {
+        Some("old") => "old",
+        _ => "new",
+    };
+    let mut query = vec![("user_id", user_id), ("type", direction)];
+    if let Some(value) = message_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        query.push(("message_id", value));
+    }
+
+    let response = authenticated_get(
+        &http_client.0,
+        &format!("{AFDIAN_BASE_URL}/api/message/messages"),
+        &session.auth_token,
+        &query,
+    )
+    .await?;
+    ensure_api_success(&response, "私信内容加载失败")?;
+
+    let items = response
+        .pointer("/data/list")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(parse_message_item)
+        .collect::<Vec<_>>();
+    let oldest_message_id = items.first().map(|item| item.id.clone());
+    let latest_message_id = items.last().map(|item| item.id.clone());
+
+    Ok(AfdianMessagePage {
+        items,
+        has_more: response.pointer("/data/has_more").and_then(value_to_i64) == Some(1),
+        oldest_message_id,
+        latest_message_id,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn afdian_message_send(
+    http_client: tauri::State<'_, AppHttpClient>,
+    user_id: String,
+    content: String,
+) -> Result<AfdianMessageItem, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let user_id = user_id.trim();
+    let content = content.trim();
+    if user_id.is_empty() {
+        return Err("缺少对话用户 ID".to_string());
+    }
+    if content.is_empty() {
+        return Err("消息内容不能为空".to_string());
+    }
+
+    let response = authenticated_post_json(
+        &http_client.0,
+        &format!("{IFDIAN_BASE_URL}/api/message/send"),
+        &session.auth_token,
+        &AfdianSendMessagePayload {
+            user_id,
+            message_type: "1",
+            content,
+            auth_token: &session.auth_token,
+        },
+    )
+    .await?;
+    ensure_api_success(&response, "消息发送失败")?;
+
+    if let Some(message) = response.pointer("/data").and_then(parse_message_item) {
+        return Ok(message);
+    }
+
+    let sent_at = Utc::now().with_timezone(&shanghai_timezone());
+    Ok(AfdianMessageItem {
+        id: format!("local-{}", sent_at.timestamp_millis()),
+        direction: "send".to_string(),
+        sender: None,
+        message_type: Some(1),
+        content: Value::String(content.to_string()),
+        sent_at: Some(sent_at.to_rfc3339()),
+        read_status: Some(1),
+    })
+}
+
 async fn fetch_income_stat_page(
     client: &reqwest::Client,
     token: &str,
@@ -672,6 +868,61 @@ fn parse_income_stat_item(record: &Value) -> AfdianIncomeStatItem {
         returning_sponsor_count: record.get("paid_old_user_count").and_then(value_to_i64),
         uv: record.get("uv").and_then(value_to_i64),
     }
+}
+
+fn parse_dialog_item(record: &Value) -> Option<AfdianDialogItem> {
+    let user = record.get("user")?;
+    let user_id = user.get("user_id").and_then(value_to_text)?;
+    let name = user
+        .get("name")
+        .and_then(value_to_text)
+        .unwrap_or_else(|| "爱发电用户".to_string());
+
+    Some(AfdianDialogItem {
+        latest_message_id: record.get("latest_msg_id").and_then(value_to_text),
+        unread_count: record
+            .get("unread_count")
+            .and_then(value_to_i64)
+            .unwrap_or_default(),
+        total_count: record
+            .get("total_count")
+            .and_then(value_to_i64)
+            .unwrap_or_default(),
+        status: record.get("status").and_then(value_to_i64),
+        user: AfdianDialogUser {
+            user_id,
+            name,
+            avatar: user.get("avatar").and_then(value_to_text),
+        },
+        preview: record.get("desc").and_then(value_to_text),
+        sent_at: record
+            .get("send_time")
+            .and_then(|value| timestamp_to_rfc3339(value, &shanghai_timezone())),
+    })
+}
+
+fn parse_message_item(record: &Value) -> Option<AfdianMessageItem> {
+    let message = record.get("message")?;
+    let id = message
+        .get("id")
+        .or_else(|| message.get("msg_id"))
+        .and_then(value_to_text)?;
+
+    Some(AfdianMessageItem {
+        id,
+        direction: record
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("receive")
+            .to_string(),
+        sender: message.get("sender").and_then(value_to_text),
+        message_type: message.get("type").and_then(value_to_i64),
+        content: message.get("content").cloned().unwrap_or(Value::Null),
+        sent_at: message
+            .get("send_time")
+            .and_then(|value| timestamp_to_rfc3339(value, &shanghai_timezone())),
+        read_status: message.get("r_status").and_then(value_to_i64),
+    })
 }
 
 async fn fetch_received_orders(
@@ -1007,6 +1258,25 @@ async fn authenticated_get(
         request = request.query(query);
     }
     let response = request
+        .send()
+        .await
+        .map_err(|error| format!("爱发电网络请求失败：{error}"))?;
+    parse_json_response(response).await
+}
+
+async fn authenticated_post_json<T: Serialize + ?Sized>(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    body: &T,
+) -> Result<Value, String> {
+    let response = client
+        .post(url)
+        .header("User-Agent", AFDIAN_USER_AGENT)
+        .header("Referer", AFDIAN_BASE_URL)
+        .header("Origin", AFDIAN_BASE_URL)
+        .header("Cookie", format!("auth_token={token}"))
+        .json(body)
         .send()
         .await
         .map_err(|error| format!("爱发电网络请求失败：{error}"))?;

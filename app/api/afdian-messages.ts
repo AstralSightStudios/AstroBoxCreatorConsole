@@ -1,0 +1,70 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export const AFDIAN_DIALOGS_QUERY_KEY = ["afdian", "dialogs"] as const;
+
+export interface AfdianDialogUser {
+  userId: string;
+  name: string;
+  avatar?: string | null;
+}
+
+export interface AfdianDialog {
+  latestMessageId?: string | null;
+  unreadCount: number;
+  totalCount: number;
+  status?: number | null;
+  user: AfdianDialogUser;
+  preview?: string | null;
+  sentAt?: string | null;
+}
+
+export interface AfdianDialogPage {
+  items: AfdianDialog[];
+  page: number;
+  totalCount?: number | null;
+  totalPage?: number | null;
+  hasMore: boolean;
+}
+
+export interface AfdianMessage {
+  id: string;
+  direction: "send" | "receive" | string;
+  sender?: string | null;
+  messageType?: number | null;
+  content: unknown;
+  sentAt?: string | null;
+  readStatus?: number | null;
+}
+
+export interface AfdianMessagePage {
+  items: AfdianMessage[];
+  hasMore: boolean;
+  oldestMessageId?: string | null;
+  latestMessageId?: string | null;
+}
+
+export function getAfdianDialogs(page: number) {
+  return invoke<AfdianDialogPage>("afdian_message_dialogs", { page });
+}
+
+export function getAfdianMessages(input: {
+  userId: string;
+  messageType?: "old" | "new";
+  messageId?: string | null;
+}) {
+  return invoke<AfdianMessagePage>("afdian_message_messages", {
+    userId: input.userId,
+    messageType: input.messageType ?? "new",
+    messageId: input.messageId ?? null,
+  });
+}
+
+export function sendAfdianMessage(input: {
+  userId: string;
+  content: string;
+}) {
+  return invoke<AfdianMessage>("afdian_message_send", {
+    userId: input.userId,
+    content: input.content,
+  });
+}
