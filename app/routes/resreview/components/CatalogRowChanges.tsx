@@ -42,10 +42,19 @@ function buildPatch(diff: CatalogRowDiff): string {
   return lines.join("\n");
 }
 
+function catalogRowUnchanged(diff: CatalogRowDiff): boolean {
+  return (
+    diff.mode === "edit" &&
+    diff.currentRow != null &&
+    diff.currentRow === diff.newRow
+  );
+}
+
 /**
  * staging 提交的 PR 只新增 tmp/ 下文件，GitHub 文件 diff 看不出目录将如何变化。
  * 这里用目标仓库当前最新的 index_v2.csv 行对比创作者提交的 resource.csv 行，
- * 让审核者直接看到标签等仅存在于目录中的字段改动。
+ * 让审核者直接看到标签等仅存在于目录中的字段改动；
+ * 与当前目录行完全一致的提交不会产生目录变化，整体不展示。
  */
 export function CatalogRowChanges({
   resources,
@@ -58,8 +67,9 @@ export function CatalogRowChanges({
     () =>
       resources
         .map((resource) => ({ resource, diff: buildCatalogRowDiff(resource) }))
-        .filter((item): item is { resource: PrResourcePreview; diff: CatalogRowDiff } =>
-          Boolean(item.diff),
+        .filter(
+          (item): item is { resource: PrResourcePreview; diff: CatalogRowDiff } =>
+            Boolean(item.diff) && !catalogRowUnchanged(item.diff!),
         ),
     [resources],
   );
@@ -75,8 +85,6 @@ export function CatalogRowChanges({
         </p>
       </div>
       {items.map(({ resource, diff }) => {
-        const unchanged =
-          diff.mode === "edit" && diff.currentRow != null && diff.currentRow === diff.newRow;
         const missingBase = diff.mode === "edit" && diff.currentRow == null;
         return (
           <div
@@ -118,11 +126,7 @@ export function CatalogRowChanges({
               )}
             </div>
             <div className="border-t border-white/10 p-3">
-              {unchanged ? (
-                <p className="text-xs text-white/45">
-                  提交的资源行与当前最新目录行一致，本次不会产生目录字段变化。
-                </p>
-              ) : missingBase ? (
+              {missingBase ? (
                 <p className="text-xs text-amber-300">
                   未能在当前 index_v2.csv 中定位将被替换的原行（original_id 匹配失败），请人工核对后再合入。
                 </p>
