@@ -76,10 +76,12 @@ export function PullRequestSummaryCard({
             </span>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="soft"
-            className="gap-1.5"
+            aria-label="在 GitHub 打开"
+            title="在 GitHub 打开"
+            className="px-2!"
             onClick={async () => {
               try {
                 await openUrl(openPull.html_url);
@@ -89,7 +91,6 @@ export function PullRequestSummaryCard({
             }}
           >
             <GithubLogo size={16} weight="duotone" />
-            GitHub
           </Button>
           <Button color="green" onClick={onApprove} disabled={approving}>
             {approving ? "通过中..." : "通过"}
