@@ -36,6 +36,26 @@ function formatPaidType(paidType?: string): string {
   return normalized;
 }
 
+/** request.json client 字段的宽松占位值为 "unknown"，视为缺失不展示。 */
+function isKnownClientValue(value?: string): boolean {
+  const text = (value || "").trim();
+  return Boolean(text) && text !== "unknown";
+}
+
+function formatClientBuildTime(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 function renderTextWithLinks(value: string): string {
   const escaped = escapeHtml(value);
   return escaped.replace(
@@ -280,6 +300,33 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
                 </div>
               </div>
             )}
+
+            {/* 提交客户端信息（request.json client，缺失时不展示） */}
+            {(() => {
+              const client = resource.request?.client;
+              if (!client) return null;
+              const version = isKnownClientValue(client.version) ? client.version.trim() : "";
+              const commit = isKnownClientValue(client.git_commit_hash) ? client.git_commit_hash.trim() : "";
+              const buildTime = isKnownClientValue(client.build_time) ? formatClientBuildTime(client.build_time) : "";
+              const builder = isKnownClientValue(client.build_user) ? client.build_user.trim() : "";
+              if (!version && !buildTime && !builder) return null;
+              return (
+                <>
+                  {version ? (
+                    <InfoRow
+                      label="提交客户端版本"
+                      value={commit ? `${version}（${commit}）` : version}
+                    />
+                  ) : null}
+                  {buildTime ? (
+                    <InfoRow label="客户端构建时间" value={buildTime} />
+                  ) : null}
+                  {builder ? (
+                    <InfoRow label="客户端构建者" value={builder} />
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </div>
 

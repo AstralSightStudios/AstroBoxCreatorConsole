@@ -1,6 +1,7 @@
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
 import type { ManifestUpdateLogEntry } from "~/logic/publish/manifest";
+import type { SubmissionClientInfo } from "~/logic/publish/submission-protocol";
 
 export const STATE_LABELS: Record<ReviewState, string> = {
   waiting_review: "等待审核",
@@ -32,6 +33,8 @@ export interface PrResourcePreview {
   request?: {
     mode: "create" | "edit";
     originalId?: string | null;
+    /** staging 提交 request.json 附带的提交客户端信息（历史提交可能缺失）。 */
+    client?: SubmissionClientInfo | null;
   };
   predictedAction?: string;
   manifest?: ManifestV2;
