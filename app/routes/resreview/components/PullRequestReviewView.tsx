@@ -12,6 +12,7 @@ import { CommentTimeline } from "./CommentTimeline";
 import { CommentComposer, type ReplyTarget, type EditingTarget, type NoticeDraft } from "./CommentComposer";
 import { RepoFileChanges } from "./RepoFileChanges";
 import { CatalogRowChanges } from "./CatalogRowChanges";
+import { LoadingIndicator } from "./LoadingIndicator";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 
 export interface PullRequestReviewViewProps {
@@ -149,9 +150,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
             <Tabs.Content value="resources" className="pt-3! outline-none!">
               {loadingDetail && resourcePreviews.length === 0 ? (
-                <div className="py-8 text-center text-sm text-white/45">
-                  正在解析资源信息...
-                </div>
+                <LoadingIndicator text="正在解析资源信息" />
               ) : (
                 <ResourceDetailTab resources={resourcePreviews} />
               )}
@@ -159,9 +158,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
             <Tabs.Content value="checks" className="pt-3! outline-none!">
               {loadingDetail && resourcePreviews.length === 0 ? (
-                <div className="py-8 text-center text-sm text-white/45">
-                  正在解析资源信息...
-                </div>
+                <LoadingIndicator text="正在解析资源信息" />
               ) : (
                 <RuleCheckPanel resources={resourcePreviews} prFiles={files} />
               )}
@@ -169,7 +166,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
             <Tabs.Content value="files" className="pt-3! outline-none!">
               {loadingDetail ? (
-                <div className="py-10 text-center text-white/45">加载中...</div>
+                <LoadingIndicator />
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
                   {files.map((file) => (
@@ -210,7 +207,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                   onNoticeDraftChange={onNoticeDraftChange}
                 />
                 {loadingDetail ? (
-                  <div className="py-6 text-center text-sm text-white/45">加载中...</div>
+                  <LoadingIndicator className="py-6" />
                 ) : (
                   <CommentTimeline
                     comments={openComments}

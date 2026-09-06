@@ -7,6 +7,7 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { getManifestReferencedFiles, decodeBase64, isImagePath } from "../utils";
 import { FileEntry, DiffBlock } from "./FileEntry";
 import { ProxiedImage } from "./ProxiedMedia";
+import { LoadingIndicator } from "./LoadingIndicator";
 
 interface RepoFileChangesProps {
   owner: string;
@@ -89,7 +90,7 @@ export function RepoFileChanges({ owner, repo, commitHash, baseCommitHash, manif
   }, []);
 
   if (loading) {
-    return <div className="py-4 text-center text-sm text-white/45">加载仓库文件列表...</div>;
+    return <LoadingIndicator text="加载仓库文件列表" className="py-4" />;
   }
 
   if (error) {
@@ -233,7 +234,7 @@ function RepoFileRow({
         <div className="border-t border-white/10">
           {isNew ? (
             contentLoading ? (
-              <div className="p-3 text-xs text-white/45">加载中...</div>
+              <LoadingIndicator className="py-3" />
             ) : contentError ? (
               <div className="p-3 text-xs text-red-400">{contentError}</div>
             ) : showImage ? (

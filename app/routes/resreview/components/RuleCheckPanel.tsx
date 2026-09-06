@@ -10,6 +10,7 @@ import {
   type PackageCheckResult,
 } from "../rule-checks";
 import type { PaidRatioResult } from "../utils/paid-ratio";
+import { LoadingIndicator } from "./LoadingIndicator";
 
 interface RuleCheckPanelProps {
   resources: PrResourcePreview[];
@@ -113,10 +114,11 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
       )}
 
       {loading && !result && (
-        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-white/55">
-          <Spinner size={16} className="animate-spin" />
-          正在执行自动检查（拉取仓库文件树、图片体积、包体内容…）...
-        </div>
+        <LoadingIndicator
+          text="正在执行自动检查"
+          hint="拉取仓库文件树、图片体积、包体内容…"
+          className="py-6"
+        />
       )}
 
       {error && (
