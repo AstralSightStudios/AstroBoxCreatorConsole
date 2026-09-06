@@ -1,16 +1,27 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Avatar, Badge, Button, Spinner, TextArea } from "@radix-ui/themes";
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { Avatar, Button, Spinner } from "@radix-ui/themes";
+import { motion } from "framer-motion";
+import BlurEffect from "react-progressive-blur";
+import {
+  ArrowClockwiseIcon,
+  ArrowLeftIcon,
+  CaretDownIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import type { PartialOptions } from "overlayscrollbars";
 import {
   OverlayScrollbarsComponent,
   type OverlayScrollbarsComponentRef,
 } from "overlayscrollbars-react";
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent,
 } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -19,7 +30,6 @@ import {
   getAfdianDialogs,
   getAfdianMessages,
   sendAfdianMessage,
-  type AfdianDialog,
   type AfdianMessage,
   type AfdianMessagePage,
 } from "~/api/afdian-messages";
@@ -29,13 +39,29 @@ import {
   getAfdianSessionStatus,
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
+import { Dialog, DropdownMenu } from "~/components/ScaleAwareThemes";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { Bubble, BubbleContent } from "~/components/s11a/bubble";
+import { AfdianDialogList } from "~/components/afdian/messages-sidebar";
 import Page from "~/layout/page";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "afdian-messages-sidebar-width";
+const SEND_SHORTCUT_STORAGE_KEY = "afdian-messages-send-shortcut";
+const QUICK_REPLIES_STORAGE_KEY = "afdian-messages-quick-replies";
 const SIDEBAR_MIN_WIDTH = 144;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 const SIDEBAR_COMPACT_WIDTH = 220;
+const NARROW_PANE_EASE: [number, number, number, number] = [
+  0.22, 0.82, 0.3, 1,
+];
+type SendShortcut = "enter" | "shift-enter";
+const DEFAULT_QUICK_REPLIES = [
+  "感谢你的支持！",
+  "你好，有什么可以帮助你的？",
+  "收到，我会尽快处理。",
+  "如果还有问题，欢迎继续留言。",
+] as const;
 const AUTO_HIDE_SCROLLBAR_OPTIONS: PartialOptions = {
   overflow: { x: "hidden", y: "scroll" },
   scrollbars: {
@@ -60,6 +86,33 @@ function getStoredSidebarWidth() {
       : SIDEBAR_DEFAULT_WIDTH;
   } catch {
     return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+function getStoredSendShortcut(): SendShortcut {
+  if (typeof window === "undefined") return "enter";
+  try {
+    return window.localStorage.getItem(SEND_SHORTCUT_STORAGE_KEY) === "shift-enter"
+      ? "shift-enter"
+      : "enter";
+  } catch {
+    return "enter";
+  }
+}
+
+function getStoredQuickReplies() {
+  if (typeof window === "undefined") return [...DEFAULT_QUICK_REPLIES];
+  try {
+    const stored = window.localStorage.getItem(QUICK_REPLIES_STORAGE_KEY);
+    if (!stored) return [...DEFAULT_QUICK_REPLIES];
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [...DEFAULT_QUICK_REPLIES];
+    return parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } catch {
+    return [...DEFAULT_QUICK_REPLIES];
   }
 }
 
@@ -96,9 +149,9 @@ function numberValue(value: unknown) {
   return null;
 }
 
-function AfdianOrderCard({ content }: { content: unknown }) {
+function parseAfdianOrder(content: unknown) {
   const record = asRecord(content);
-  if (!record) return <p>此订单消息没有可显示的内容</p>;
+  if (!record) return null;
 
   const productType = numberValue(record.product_type);
   const plan = asRecord(record.plan);
@@ -113,58 +166,117 @@ function AfdianOrderCard({ content }: { content: unknown }) {
         }))
         .filter((item) => item.name && item.name !== "默认型号")
     : [];
-  const displayName = [
-    planName,
-    ...skuDetails.map((item) => item.name),
-  ].filter(Boolean).join(" · ");
-  const amount =
-    textValue(record.show_amount) ||
-    textValue(record.total_amount) ||
-    textValue(record.per_month);
-  const month = numberValue(record.month);
-  const remark = textValue(record.remark);
-  const orderNo = textValue(record.out_trade_no);
   const isProduct = productType === 1;
 
+  return {
+    amount:
+      textValue(record.show_amount) ||
+      textValue(record.total_amount) ||
+      textValue(record.per_month),
+    isProduct,
+    month: numberValue(record.month),
+    orderNo: textValue(record.out_trade_no),
+    orderTitle:
+      textValue(record.title) ||
+      textValue(record.product_name) ||
+      planName ||
+      (isProduct ? "商品订单" : "发电订单"),
+    remark: textValue(record.remark),
+    skuDetails,
+  };
+}
+
+function normalizeOrderText(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[×x]/g, "*")
+    .replace(/\s+/g, "");
+}
+
+function matchesRedemptionNotice(content: unknown, notice: string) {
+  const order = parseAfdianOrder(content);
+  if (!order || !notice.includes("来自兑换码")) return false;
+
+  const normalizedNotice = normalizeOrderText(notice);
+  const contentMatches = [
+    order.orderTitle,
+    ...order.skuDetails.map((item) => item.name),
+  ].every(
+    (part) => !part || normalizedNotice.includes(normalizeOrderText(part)),
+  );
+  const countsMatch = order.skuDetails.every(
+    (item) =>
+      !item.count || normalizedNotice.includes(`*${item.count}`),
+  );
+
+  return contentMatches && countsMatch;
+}
+
+function AfdianOrderCard({
+  content,
+  usedRedemptionCode,
+}: {
+  content: unknown;
+  usedRedemptionCode: boolean;
+}) {
+  const order = parseAfdianOrder(content);
+  if (!order) return <p>此订单消息没有可显示的内容</p>;
+
+  const {
+    amount,
+    isProduct,
+    month,
+    orderNo,
+    orderTitle,
+    remark,
+    skuDetails,
+  } = order;
+  const redeemed = usedRedemptionCode || Boolean(remark?.includes("来自兑换码"));
+
   return (
-    <div className="min-w-64 rounded-lg border border-white/10 bg-black/15 px-3.5 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-white/55">{isProduct ? "商品订单" : "发电订单"}</p>
-        {isProduct && (
-          <Badge color="purple" variant="soft">
-            商品
-          </Badge>
+    <div className="w-full min-w-0 overflow-hidden rounded-[18px] text-white/90">
+      <div className="min-w-0 bg-green-500 px-4 py-4 text-white">
+        <p className="break-words text-sm leading-5">
+          {isProduct ? "购买了" : "发电了"} {orderTitle}
+        </p>
+        {skuDetails.length > 0 && (
+          <div className="mt-2 flex min-w-0 flex-col gap-1 text-sm leading-5">
+            {skuDetails.map((item, index) => (
+              <p key={`${item.name}-${index}`} className="break-words">
+                [{item.name}] {orderTitle}
+                {item.count && item.count > 0 ? ` × ${item.count}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
+        {remark && (
+          <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-white/80">
+            {remark}
+          </p>
+        )}
+        {(amount || redeemed) && (
+          <div className="mt-4 flex min-w-0 flex-col items-start gap-1">
+            {amount && (
+              <span
+                className={`text-3xl font-medium tracking-tight ${
+                  redeemed ? "line-through decoration-2 decoration-white/80" : ""
+                }`}
+              >
+                ¥ {amount}
+              </span>
+            )}
+            {redeemed && (
+              <span className="text-sm font-medium text-white/90">使用兑换码</span>
+            )}
+            {month && month > 0 && !isProduct && (
+              <span className="text-xs text-white/75">{month} 个月</span>
+            )}
+          </div>
         )}
       </div>
-      {amount && (
-        <div className="mt-2 flex items-baseline gap-1.5">
-          <span className="text-sm text-white/70">¥</span>
-          <span className="text-xl font-medium text-white">{amount}</span>
-          {month && month > 0 && !isProduct && (
-            <span className="text-xs text-white/45">/ {month} 个月</span>
-          )}
-        </div>
-      )}
-      {displayName && (
-        <p className="mt-2 line-clamp-2 text-sm text-white/75">{displayName}</p>
-      )}
-      {skuDetails.length > 0 && (
-        <div className="mt-2 flex flex-col gap-1 text-xs text-white/50">
-          {skuDetails.map((item, index) => (
-            <span key={`${item.name}-${index}`}>
-              {item.name}
-              {item.count && item.count > 1 ? ` × ${item.count}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-      {remark && (
-        <p className="mt-2 whitespace-pre-wrap border-t border-white/10 pt-2 text-xs leading-5 text-white/55">
-          {remark}
-        </p>
-      )}
       {orderNo && (
-        <p className="mt-2 truncate border-t border-white/10 pt-2 font-mono-sarasa text-[11px] text-white/35">
+        <p className="break-all px-4 py-3 font-mono-sarasa text-sm text-white/80">
           {orderNo}
         </p>
       )}
@@ -172,12 +284,23 @@ function AfdianOrderCard({ content }: { content: unknown }) {
   );
 }
 
-function MessageContent({ message }: { message: AfdianMessage }) {
+function MessageContent({
+  message,
+  usedRedemptionCode,
+}: {
+  message: AfdianMessage;
+  usedRedemptionCode: boolean;
+}) {
   if (message.messageType === 1 || typeof message.content === "string") {
     return <p className="whitespace-pre-wrap text-sm leading-6">{String(message.content)}</p>;
   }
   if (message.messageType === 2) {
-    return <AfdianOrderCard content={message.content} />;
+    return (
+      <AfdianOrderCard
+        content={message.content}
+        usedRedemptionCode={usedRedemptionCode}
+      />
+    );
   }
   if (message.messageType === 4) {
     return (
@@ -191,121 +314,61 @@ function MessageContent({ message }: { message: AfdianMessage }) {
   return <p className="text-sm text-white/55">此类消息请在爱发电中查看</p>;
 }
 
-function MessageBubble({ message }: { message: AfdianMessage }) {
+function MessageBubble({
+  message,
+  avatar,
+  fallback,
+  usedRedemptionCode,
+}: {
+  message: AfdianMessage;
+  avatar?: string | null;
+  fallback: string;
+  usedRedemptionCode: boolean;
+}) {
   const sent = message.direction === "send";
+  const isOrder = message.messageType === 2;
   return (
-    <div className={`flex ${sent ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[min(640px,85%)] rounded-xl px-3.5 py-2.5 ${
-          sent ? "bg-purple-500/20 text-white" : "bg-white/[0.06] text-white/85"
-        }`}
+    <div className={`flex min-w-0 items-end gap-2 ${sent ? "justify-end" : "justify-start"}`}>
+      {!sent && (
+        <Avatar
+          size="2"
+          radius="full"
+          src={avatar ?? undefined}
+          fallback={fallback}
+          className="relative z-10 mb-5 shrink-0"
+        />
+      )}
+      <Bubble
+        platform="imessage"
+        align={sent ? "end" : "start"}
+        variant={isOrder ? "secondary" : sent ? "default" : "secondary"}
+        className={
+          isOrder
+            ? sent
+              ? "w-[90%]! max-w-[34rem]!"
+              : "w-[calc(100%_-_2.5rem)]! max-w-[34rem]!"
+            : ""
+        }
       >
-        <MessageContent message={message} />
-        <p className="mt-1 text-right text-[11px] text-white/40">
+        <BubbleContent
+          className={`relative overflow-visible! rounded-[18px]! ${
+            isOrder ? "w-full! p-0!" : ""
+          }`}
+        >
+          <MessageContent
+            message={message}
+            usedRedemptionCode={usedRedemptionCode}
+          />
+        </BubbleContent>
+        <p
+          className={`px-1 text-[11px] text-white/40 ${
+            sent ? "self-end text-right" : "self-start text-left"
+          }`}
+        >
           {formatDateTime(message.sentAt)}
         </p>
-      </div>
+      </Bubble>
     </div>
-  );
-}
-
-function DialogList({
-  items,
-  selectedUserId,
-  onSelect,
-  compact,
-  onScroll,
-}: {
-  items: AfdianDialog[];
-  selectedUserId: string;
-  onSelect: (userId: string) => void;
-  compact: boolean;
-  onScroll?: (element: HTMLElement) => void;
-}) {
-  return (
-    <OverlayScrollbarsComponent
-      defer
-      className="min-h-0 flex-1"
-      options={AUTO_HIDE_SCROLLBAR_OPTIONS}
-      events={
-        onScroll
-          ? {
-              scroll: (instance) => {
-                onScroll(instance.elements().scrollOffsetElement);
-              },
-            }
-          : undefined
-      }
-    >
-      <div
-        className={`flex min-h-full flex-col ${
-          compact ? "items-center gap-2 px-1" : "gap-1"
-        }`}
-      >
-        {items.map((item) => {
-          const selected = item.user.userId === selectedUserId;
-          return (
-            <button
-              key={item.user.userId}
-              type="button"
-              className={
-                compact
-                  ? `flex w-full shrink-0 flex-col items-center gap-2 rounded-xl px-1.5 py-3 text-center transition-colors ${
-                      selected
-                        ? "bg-blue-500/90 text-white"
-                        : "text-white/55 hover:bg-white/[0.05]"
-                    }`
-                  : `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                      selected ? "bg-white/10" : "hover:bg-white/[0.05]"
-                    }`
-              }
-              onClick={() => onSelect(item.user.userId)}
-            >
-              <span className="relative">
-                <Avatar
-                  size={compact ? "4" : "3"}
-                  radius="full"
-                  src={item.user.avatar ?? undefined}
-                  fallback={item.user.name.slice(0, 1) || "爱"}
-                />
-                {item.unreadCount > 0 && (
-                  <Badge
-                    color="red"
-                    variant="solid"
-                    className={`absolute justify-center px-1 text-[10px] ${
-                      compact ? "-right-2 -top-2 min-w-4" : "-right-2 -top-2"
-                    }`}
-                  >
-                    {item.unreadCount > 99 ? "99+" : item.unreadCount}
-                  </Badge>
-                )}
-              </span>
-              {compact ? (
-                <span className="w-full truncate text-xs">
-                  {item.user.name}
-                </span>
-              ) : (
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm text-white/85">
-                      {item.user.name}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-white/40">
-                    {item.preview || "暂无消息摘要"}
-                  </span>
-                </span>
-              )}
-            </button>
-          );
-        })}
-        {items.length === 0 && (
-          <p className="px-3 py-8 text-center text-sm text-white/45">
-            暂无私信对话
-          </p>
-        )}
-      </div>
-    </OverlayScrollbarsComponent>
   );
 }
 
@@ -314,6 +377,9 @@ function MessageComposer({
   error,
   sending,
   disabled,
+  sendShortcut,
+  onSendShortcutChange,
+  onHeightChange,
   onChange,
   onSend,
 }: {
@@ -321,44 +387,286 @@ function MessageComposer({
   error: string;
   sending: boolean;
   disabled: boolean;
+  sendShortcut: SendShortcut;
+  onSendShortcutChange: (shortcut: SendShortcut) => void;
+  onHeightChange: (height: number) => void;
   onChange: (value: string) => void;
   onSend: () => void;
 }) {
+  const sendOnEnter = sendShortcut === "enter";
+  const composerRef = useRef<HTMLDivElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [inputHeight, setInputHeight] = useState(36);
+  const [quickReplies, setQuickReplies] = useState<string[]>(
+    getStoredQuickReplies,
+  );
+  const [quickReplyDrafts, setQuickReplyDrafts] = useState<string[]>([]);
+  const [quickReplyDialogOpen, setQuickReplyDialogOpen] = useState(false);
+
+  const resizeTextArea = useCallback(() => {
+    const textArea = textAreaRef.current;
+    if (!textArea) return;
+
+    textArea.style.height = "0px";
+    const nextHeight = Math.min(Math.max(textArea.scrollHeight, 36), 120);
+    textArea.style.height = `${nextHeight}px`;
+    textArea.style.overflowY = textArea.scrollHeight > 120 ? "auto" : "hidden";
+    setInputHeight((current) => current === nextHeight ? current : nextHeight);
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeTextArea();
+  }, [resizeTextArea, value]);
+
+  useEffect(() => {
+    window.addEventListener("resize", resizeTextArea);
+    return () => window.removeEventListener("resize", resizeTextArea);
+  }, [resizeTextArea]);
+
+  useLayoutEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+
+    const updateHeight = () => {
+      onHeightChange(Math.ceil(composer.getBoundingClientRect().height));
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
+
+  const insertQuickReply = (reply: string) => {
+    onChange(value.trimEnd() ? `${value.trimEnd()} ${reply}` : reply);
+    requestAnimationFrame(() => textAreaRef.current?.focus());
+  };
+
+  const openQuickReplyManager = () => {
+    setQuickReplyDrafts([...quickReplies]);
+    setQuickReplyDialogOpen(true);
+  };
+
+  const saveQuickReplies = () => {
+    const normalized = Array.from(
+      new Set(quickReplyDrafts.map((item) => item.trim()).filter(Boolean)),
+    );
+    setQuickReplies(normalized);
+    try {
+      window.localStorage.setItem(
+        QUICK_REPLIES_STORAGE_KEY,
+        JSON.stringify(normalized),
+      );
+    } catch {
+      return;
+    } finally {
+      setQuickReplyDialogOpen(false);
+    }
+  };
+
   return (
-    <div className="shrink-0 border-t border-white/10 px-3 pb-3 pt-2.5">
-      {error && <p className="mb-2 text-xs text-red-300">{error}</p>}
-      <div className="flex items-end gap-2">
-        <TextArea
-          value={value}
-          disabled={sending}
-          placeholder="输入私信内容，按 Enter 发送"
-          className="min-h-[72px] min-w-0 flex-1 resize-none border border-white/10 bg-black/20 text-sm text-white/85 outline-none placeholder:text-white/30"
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              onSend();
-            }
-          }}
+    <>
+      <div
+        ref={composerRef}
+        className="absolute inset-x-0 bottom-0 z-10 px-4 pb-4 pt-6 sm:px-6"
+      >
+        <BlurEffect
+          className="!pointer-events-none h-full w-full"
+          intensity={100}
+          position="bottom"
         />
-        <Button
-          disabled={disabled || sending}
-          onClick={onSend}
-          className="shrink-0"
-        >
-          {sending ? <Spinner size="1" /> : "发送"}
-        </Button>
+        <div
+          aria-hidden="true"
+          className="afdian-message-composer-background pointer-events-none absolute inset-0 z-10"
+        />
+        {error && (
+          <p className="relative z-20 mb-2 text-xs text-red-300">{error}</p>
+        )}
+        <div className="relative z-20 flex items-end gap-2.5">
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger disabled={sending}>
+              <Button
+                size="1"
+                variant="soft"
+                color="gray"
+                radius="full"
+                disabled={sending}
+                aria-label="打开辅助功能"
+                className="mb-0.5 !size-9 shrink-0 bg-white/[0.14]! !p-0 text-white! shadow-lg shadow-black/20"
+              >
+                <PlusIcon size={20} weight="regular" />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content side="top" align="start" sideOffset={8}>
+              <DropdownMenu.Label>常用语</DropdownMenu.Label>
+              <DropdownMenu.Separator />
+              {quickReplies.length === 0 && (
+                <DropdownMenu.Item disabled>暂无常用语</DropdownMenu.Item>
+              )}
+              {quickReplies.map((reply) => (
+                <DropdownMenu.Item
+                  key={reply}
+                  onSelect={() => insertQuickReply(reply)}
+                >
+                  {reply}
+                </DropdownMenu.Item>
+              ))}
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item onSelect={openQuickReplyManager}>
+                管理常用语
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+          <textarea
+            ref={textAreaRef}
+            rows={1}
+            value={value}
+            disabled={sending}
+            placeholder={`输入私信内容，按 ${sendOnEnter ? "Enter" : "Shift + Enter"} 发送`}
+            style={{ height: inputHeight }}
+            className="box-border min-h-9 max-h-[120px] min-w-0 flex-1 resize-none rounded-[18px] border-0 bg-white/[0.14] px-4 py-2 text-sm leading-5 text-white/90 shadow-lg shadow-black/20 outline-none placeholder:text-white/40 disabled:opacity-50"
+            onChange={(event) => onChange(event.target.value)}
+            onInput={resizeTextArea}
+            onKeyDown={(event) => {
+              const shouldSend = sendOnEnter
+                ? event.key === "Enter" && !event.shiftKey
+                : event.key === "Enter" && event.shiftKey;
+              if (shouldSend) {
+                event.preventDefault();
+                onSend();
+              }
+            }}
+          />
+          <div className="flex h-9 shrink-0 overflow-hidden rounded-[18px] shadow-lg shadow-black/20">
+            <Button
+              disabled={disabled || sending}
+              onClick={onSend}
+              variant="soft"
+              color="gray"
+              radius="full"
+              className="h-9! rounded-r-none! bg-white/[0.14]! px-4 text-white!"
+            >
+              {sending ? <Spinner size="1" /> : "发送"}
+            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger disabled={sending}>
+                <Button
+                  disabled={sending}
+                  variant="soft"
+                  color="gray"
+                  radius="full"
+                  aria-label="设置发送快捷键"
+                  className="h-9! rounded-l-none! bg-white/[0.14]! px-2.5 text-white!"
+                >
+                  <CaretDownIcon size={15} weight="bold" />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content side="top" align="end" sideOffset={8}>
+                <DropdownMenu.Label>发送快捷键</DropdownMenu.Label>
+                <DropdownMenu.Separator />
+                <DropdownMenu.RadioGroup
+                  value={sendShortcut}
+                  onValueChange={(value) =>
+                    onSendShortcutChange(value as SendShortcut)
+                  }
+                >
+                  <DropdownMenu.RadioItem value="enter">
+                    Enter 发送，Shift + Enter 换行
+                  </DropdownMenu.RadioItem>
+                  <DropdownMenu.RadioItem value="shift-enter">
+                    Shift + Enter 发送，Enter 换行
+                  </DropdownMenu.RadioItem>
+                </DropdownMenu.RadioGroup>
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </div>
+        </div>
       </div>
-      <p className="mt-1 text-[11px] text-white/35">Shift + Enter 换行</p>
-    </div>
+
+      <Dialog.Root
+        open={quickReplyDialogOpen}
+        onOpenChange={setQuickReplyDialogOpen}
+      >
+        <Dialog.Content maxWidth="560px">
+          <Dialog.Title>管理常用语</Dialog.Title>
+          <Dialog.Description size="2" className="mt-1 text-white/55">
+            常用语保存在当前设备，点击加号即可快速插入。
+          </Dialog.Description>
+          <div className="mt-4 flex max-h-72 flex-col gap-2 overflow-y-auto">
+            {quickReplyDrafts.map((reply, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={reply}
+                  maxLength={200}
+                  aria-label={`常用语 ${index + 1}`}
+                  className="h-9 min-w-0 flex-1 rounded-lg border-0 bg-white/[0.08] px-3 text-sm text-white/90 outline-none placeholder:text-white/35"
+                  placeholder="输入常用语"
+                  onChange={(event) =>
+                    setQuickReplyDrafts((items) =>
+                      items.map((item, itemIndex) =>
+                        itemIndex === index ? event.target.value : item,
+                      ),
+                    )
+                  }
+                />
+                <Button
+                  type="button"
+                  size="2"
+                  variant="soft"
+                  color="red"
+                  aria-label={`删除常用语 ${index + 1}`}
+                  onClick={() =>
+                    setQuickReplyDrafts((items) =>
+                      items.filter((_, itemIndex) => itemIndex !== index),
+                    )
+                  }
+                >
+                  <TrashIcon size={16} />
+                </Button>
+              </div>
+            ))}
+            {quickReplyDrafts.length === 0 && (
+              <p className="py-4 text-center text-sm text-white/45">
+                暂无常用语
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="soft"
+            className="mt-3"
+            onClick={() => setQuickReplyDrafts((items) => [...items, ""])}
+          >
+            <PlusIcon size={16} />
+            添加常用语
+          </Button>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="soft"
+              onClick={() => setQuickReplyDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button type="button" onClick={saveQuickReplies}>
+              保存
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+    </>
   );
 }
 
 export default function AfdianMessagesPage() {
   const nativeAvailable = isAfdianNativeAvailable();
+  const { isDesktop, isNarrow } = useUiScaleViewport();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [narrowPane, setNarrowPane] = useState<"dialogs" | "conversation">(
+    searchParams.get("userId") ? "conversation" : "dialogs",
+  );
   const [selectedUserId, setSelectedUserId] = useState(
     searchParams.get("userId") || "",
   );
@@ -390,8 +698,26 @@ export default function AfdianMessagesPage() {
     }
     if (!selectedUserId && dialogs[0]) {
       setSelectedUserId(dialogs[0].user.userId);
+      if (isDesktop) {
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.set("userId", dialogs[0].user.userId);
+        setSearchParams(nextSearchParams, { replace: true });
+      }
+      return;
     }
-  }, [dialogs, searchParams, selectedUserId]);
+    if (isDesktop && selectedUserId && !requestedUserId) {
+      const nextSearchParams = new URLSearchParams(searchParams);
+      nextSearchParams.set("userId", selectedUserId);
+      setSearchParams(nextSearchParams, { replace: true });
+    }
+  }, [dialogs, isDesktop, searchParams, selectedUserId, setSearchParams]);
+
+  useEffect(() => {
+    if (!isNarrow) return;
+    setNarrowPane(
+      searchParams.get("userId") ? "conversation" : "dialogs",
+    );
+  }, [isNarrow, searchParams]);
 
   const selectedDialog = dialogs.find(
     (item) => item.user.userId === selectedUserId,
@@ -422,6 +748,40 @@ export default function AfdianMessagesPage() {
       return leftTime - rightTime;
     });
   }, [messagesQuery.data]);
+  const { redemptionOrderIds, hiddenRedemptionNoticeIds } = useMemo(() => {
+    const orderIds = new Set<string>();
+    const noticeIds = new Set<string>();
+    const orders = messages.filter((message) => message.messageType === 2);
+
+    messages.forEach((message) => {
+      if (
+        typeof message.content !== "string" ||
+        !message.content.includes("来自兑换码")
+      ) {
+        return;
+      }
+
+      const matchedOrders = orders.filter((order) =>
+        matchesRedemptionNotice(order.content, message.content as string),
+      );
+      if (matchedOrders.length === 0) return;
+
+      noticeIds.add(message.id);
+      matchedOrders.forEach((order) => orderIds.add(order.id));
+    });
+
+    return {
+      redemptionOrderIds: orderIds,
+      hiddenRedemptionNoticeIds: noticeIds,
+    };
+  }, [messages]);
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter(
+        (message) => !hiddenRedemptionNoticeIds.has(message.id),
+      ),
+    [hiddenRedemptionNoticeIds, messages],
+  );
   const workspaceRef = useRef<HTMLDivElement>(null);
   const messagesViewportRef =
     useRef<OverlayScrollbarsComponentRef<"div">>(null);
@@ -431,7 +791,11 @@ export default function AfdianMessagesPage() {
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const compactSidebar = sidebarWidth < SIDEBAR_COMPACT_WIDTH;
+  const [composerHeight, setComposerHeight] = useState(76);
+  const [sendShortcut, setSendShortcut] = useState<SendShortcut>(
+    getStoredSendShortcut,
+  );
+  const compactSidebar = !isDesktop && !isNarrow && sidebarWidth < SIDEBAR_COMPACT_WIDTH;
 
   useEffect(() => {
     try {
@@ -443,6 +807,14 @@ export default function AfdianMessagesPage() {
       return;
     }
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SEND_SHORTCUT_STORAGE_KEY, sendShortcut);
+    } catch {
+      return;
+    }
+  }, [sendShortcut]);
 
   useEffect(() => {
     setDraft("");
@@ -549,7 +921,7 @@ export default function AfdianMessagesPage() {
 
   const handleDialogScroll = (target: HTMLElement) => {
     if (
-      !compactSidebar ||
+      (!compactSidebar && !isNarrow) ||
       !dialogsQuery.hasNextPage ||
       dialogsQuery.isFetchingNextPage
     ) {
@@ -563,6 +935,14 @@ export default function AfdianMessagesPage() {
   const selectDialog = (userId: string) => {
     setSelectedUserId(userId);
     setSearchParams({ userId }, { replace: true });
+    if (isNarrow) setNarrowPane("conversation");
+  };
+
+  const returnToDialogList = () => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete("userId");
+    setSearchParams(nextSearchParams, { replace: true });
+    setNarrowPane("dialogs");
   };
 
   if (!nativeAvailable) {
@@ -617,9 +997,9 @@ export default function AfdianMessagesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-3 sm:px-5">
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${isNarrow ? "" : "px-3 pb-3 pt-3 sm:px-5"}`}>
         {dialogsQuery.isError ? (
-          <div className="flex items-center justify-between rounded-xl bg-nav-item px-4 py-3 text-sm text-white/60">
+          <div className={`flex items-center justify-between px-4 py-3 text-sm text-white/60 ${isNarrow ? "" : "rounded-xl bg-nav-item"}`}>
             <span>私信列表暂时无法加载</span>
             <Button variant="soft" onClick={() => void dialogsQuery.refetch()}>
               <ArrowClockwiseIcon size={14} />
@@ -627,76 +1007,108 @@ export default function AfdianMessagesPage() {
             </Button>
           </div>
         ) : dialogsQuery.isLoading ? (
-          <div className="flex items-center justify-center rounded-xl bg-nav-item py-16 text-sm text-white/50">
+          <div className={`flex items-center justify-center py-16 text-sm text-white/50 ${isNarrow ? "" : "rounded-xl bg-nav-item"}`}>
             <Spinner />
           </div>
         ) : (
           <div
             ref={workspaceRef}
-            className={isResizing ? "flex min-h-0 flex-1 select-none" : "flex min-h-0 flex-1"}
+            className={isResizing ? "relative flex min-h-0 flex-1 select-none" : "relative flex min-h-0 flex-1"}
           >
-            <section
-              style={{ width: sidebarWidth }}
-              className="flex min-h-0 shrink-0 flex-col overflow-hidden rounded-xl bg-nav-item p-2"
+            {!isDesktop && (
+              <motion.section
+                initial={false}
+                animate={
+                  isNarrow
+                    ? { x: narrowPane === "dialogs" ? "0%" : "-100%" }
+                    : { x: 0 }
+                }
+                transition={{ duration: 0.26, ease: NARROW_PANE_EASE }}
+                aria-hidden={isNarrow && narrowPane !== "dialogs"}
+                style={isNarrow ? undefined : { width: sidebarWidth }}
+                className={`flex min-h-0 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 w-full bg-[var(--app-background)] ${narrowPane === "dialogs" ? "" : "pointer-events-none"}` : "shrink-0 rounded-xl bg-nav-item p-2"}`}
+              >
+                {!compactSidebar && (
+                  <div className="flex shrink-0 items-center justify-between px-2 py-2">
+                    <p className="text-sm font-medium text-white/80">全部对话</p>
+                    {dialogsQuery.hasNextPage && (
+                      <Button
+                        size="1"
+                        variant="ghost"
+                        disabled={dialogsQuery.isFetchingNextPage}
+                        onClick={() => void dialogsQuery.fetchNextPage()}
+                      >
+                        {dialogsQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更多"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <AfdianDialogList
+                  items={dialogs}
+                  selectedUserId={selectedUserId}
+                  onSelect={selectDialog}
+                  compact={compactSidebar}
+                  onScroll={handleDialogScroll}
+                />
+              </motion.section>
+            )}
+
+            {!isDesktop && !isNarrow && (
+              <div
+                role="separator"
+                aria-label="调整对话列表宽度"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN_WIDTH}
+                aria-valuemax={SIDEBAR_MAX_WIDTH}
+                aria-valuenow={sidebarWidth}
+                tabIndex={0}
+                className="group flex w-2 shrink-0 cursor-col-resize touch-none items-stretch justify-center outline-none"
+                onPointerDown={handleResizePointerDown}
+                onPointerMove={handleResizePointerMove}
+                onPointerUp={handleResizePointerUp}
+                onPointerCancel={handleResizePointerUp}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    setSidebarWidth((value) =>
+                      Math.max(SIDEBAR_MIN_WIDTH, value - 16),
+                    );
+                  }
+                  if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    setSidebarWidth((value) =>
+                      Math.min(SIDEBAR_MAX_WIDTH, value + 16),
+                    );
+                  }
+                }}
+              >
+                <span className="my-3 w-px bg-white/10 transition-colors group-hover:bg-white/25 group-focus:bg-white/35" />
+              </div>
+            )}
+
+            <motion.section
+              initial={false}
+              animate={
+                isNarrow
+                  ? { x: narrowPane === "conversation" ? "0%" : "100%" }
+                  : { x: 0 }
+              }
+              transition={{ duration: 0.26, ease: NARROW_PANE_EASE }}
+              aria-hidden={isNarrow && narrowPane !== "conversation"}
+              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 z-10 bg-[var(--app-background)] ${narrowPane === "conversation" ? "" : "pointer-events-none"}` : "rounded-xl bg-nav-item"}`}
             >
-              {!compactSidebar && (
-                <div className="flex shrink-0 items-center justify-between px-2 py-2">
-                  <p className="text-sm font-medium text-white/80">全部对话</p>
-                  {dialogsQuery.hasNextPage && (
+              {selectedDialog ? (
+                <div className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
+                  {isNarrow && (
                     <Button
                       size="1"
                       variant="ghost"
-                      disabled={dialogsQuery.isFetchingNextPage}
-                      onClick={() => void dialogsQuery.fetchNextPage()}
+                      aria-label="返回对话列表"
+                      onClick={returnToDialogList}
                     >
-                      {dialogsQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更多"}
+                      <ArrowLeftIcon size={18} />
                     </Button>
                   )}
-                </div>
-              )}
-              <DialogList
-                items={dialogs}
-                selectedUserId={selectedUserId}
-                onSelect={selectDialog}
-                compact={compactSidebar}
-                onScroll={handleDialogScroll}
-              />
-            </section>
-
-            <div
-              role="separator"
-              aria-label="调整对话列表宽度"
-              aria-orientation="vertical"
-              aria-valuemin={SIDEBAR_MIN_WIDTH}
-              aria-valuemax={SIDEBAR_MAX_WIDTH}
-              aria-valuenow={sidebarWidth}
-              tabIndex={0}
-              className="group flex w-2 shrink-0 cursor-col-resize touch-none items-stretch justify-center outline-none"
-              onPointerDown={handleResizePointerDown}
-              onPointerMove={handleResizePointerMove}
-              onPointerUp={handleResizePointerUp}
-              onPointerCancel={handleResizePointerUp}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") {
-                  event.preventDefault();
-                  setSidebarWidth((value) =>
-                    Math.max(SIDEBAR_MIN_WIDTH, value - 16),
-                  );
-                }
-                if (event.key === "ArrowRight") {
-                  event.preventDefault();
-                  setSidebarWidth((value) =>
-                    Math.min(SIDEBAR_MAX_WIDTH, value + 16),
-                  );
-                }
-              }}
-            >
-              <span className="my-3 w-px bg-white/10 transition-colors group-hover:bg-white/25 group-focus:bg-white/35" />
-            </div>
-
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-nav-item">
-              {selectedDialog ? (
-                <div className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
                   <Avatar
                     size="3"
                     radius="full"
@@ -714,7 +1126,7 @@ export default function AfdianMessagesPage() {
                 </div>
               ) : null}
 
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="relative flex min-h-0 flex-1 flex-col">
                 {messagesQuery.isLoading ? (
                   <div className="flex flex-1 items-center justify-center text-sm text-white/50">
                     <Spinner />
@@ -731,10 +1143,15 @@ export default function AfdianMessagesPage() {
                   <OverlayScrollbarsComponent
                     defer
                     ref={messagesViewportRef}
-                    className="min-h-0 flex-1"
+                    className="afdian-message-scroll min-h-0 flex-1"
+                    style={
+                      {
+                        "--afdian-composer-height": `${composerHeight}px`,
+                      } as CSSProperties
+                    }
                     options={AUTO_HIDE_SCROLLBAR_OPTIONS}
                   >
-                    <div className="flex min-h-full flex-col px-4">
+                    <div className="flex min-h-full flex-col px-4 pb-28">
                       {messagesQuery.hasNextPage && (
                         <Button
                           variant="ghost"
@@ -745,11 +1162,17 @@ export default function AfdianMessagesPage() {
                           {messagesQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更早消息"}
                         </Button>
                       )}
-                      <div className="flex min-h-full flex-1 flex-col gap-2 py-3">
-                        {messages.map((message) => (
-                          <MessageBubble key={message.id} message={message} />
+                      <div className="flex min-h-full flex-1 flex-col gap-3 px-1 py-4 sm:px-3">
+                        {visibleMessages.map((message) => (
+                          <MessageBubble
+                            key={message.id}
+                            message={message}
+                            avatar={selectedDialog.user.avatar}
+                            fallback={selectedDialog.user.name.slice(0, 1) || "爱"}
+                            usedRedemptionCode={redemptionOrderIds.has(message.id)}
+                          />
                         ))}
-                        {messages.length === 0 && (
+                        {visibleMessages.length === 0 && (
                           <div className="flex flex-1 items-center justify-center text-sm text-white/45">
                             暂无消息内容
                           </div>
@@ -765,6 +1188,9 @@ export default function AfdianMessagesPage() {
                     error={sendError}
                     sending={isSending}
                     disabled={!draft.trim()}
+                    sendShortcut={sendShortcut}
+                    onSendShortcutChange={setSendShortcut}
+                    onHeightChange={setComposerHeight}
                     onChange={(value) => {
                       setDraft(value);
                       if (sendError) setSendError("");
@@ -773,7 +1199,7 @@ export default function AfdianMessagesPage() {
                   />
                 )}
               </div>
-            </section>
+            </motion.section>
           </div>
         )}
       </div>

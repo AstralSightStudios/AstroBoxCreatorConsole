@@ -1,6 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { Drawer } from "vaul";
 import {
   ArrowUpRightIcon,
@@ -42,6 +43,7 @@ import { useInboxPolling } from "~/logic/inbox/use-inbox";
 import TitlebarEffect from "~/components/TitlebarEffect";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { useNavAccountCollapse } from "~/config/nav";
+import AfdianMessagesSidebar from "~/components/afdian/messages-sidebar";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertDialog, Button, Dialog, Popover, Spinner } from "~/components/ScaleAwareThemes";
@@ -95,6 +97,14 @@ export default function Nav() {
     canScrollUp: false,
     canScrollDown: true,
   });
+  const isAfdianMessagesRoute = matchesNavPath(
+    "/afdian-messages",
+    location.pathname,
+  );
+  const [showAfdianMessagesSidebar, setShowAfdianMessagesSidebar] = useState(
+    isAfdianMessagesRoute,
+  );
+  const wasAfdianMessagesDesktopRef = useRef(false);
   useInboxPolling();
   const {
     isCollapsed,
@@ -139,9 +149,24 @@ export default function Nav() {
     }
   }, [isCollapsed, isDesktop]);
 
+  useEffect(() => {
+    const isAfdianMessagesDesktop = isDesktop && isAfdianMessagesRoute;
+    if (isAfdianMessagesDesktop && !wasAfdianMessagesDesktopRef.current) {
+      setShowAfdianMessagesSidebar(true);
+    } else if (!isAfdianMessagesDesktop) {
+      setShowAfdianMessagesSidebar(false);
+    }
+    wasAfdianMessagesDesktopRef.current = isAfdianMessagesDesktop;
+  }, [isAfdianMessagesRoute, isDesktop]);
+
   const handleNavigate = (path: string) => {
     const drawerOpen = !isDesktop && !isCollapsed;
     const isNewRoute = location.pathname !== path;
+
+    if (isDesktop && path === "/afdian-messages" && isAfdianMessagesRoute) {
+      setShowAfdianMessagesSidebar(true);
+      return;
+    }
 
     if (isNewRoute) {
       // While the mobile drawer is open we pushed a synthetic history entry.
@@ -187,6 +212,10 @@ export default function Nav() {
         {...sharedProps}
         isCollapsed={isCollapsed}
         onToggleNav={toggleNav}
+        showAfdianMessagesSidebar={
+          isAfdianMessagesRoute && showAfdianMessagesSidebar
+        }
+        onShowNav={() => setShowAfdianMessagesSidebar(false)}
       />
     );
   }
@@ -301,30 +330,87 @@ function NavContent({
 interface DesktopNavProps extends NavContentProps {
   isCollapsed: boolean;
   onToggleNav: () => void;
+  showAfdianMessagesSidebar: boolean;
+  onShowNav: () => void;
 }
 
-function DesktopNav({ isCollapsed, ...contentProps }: DesktopNavProps) {
-  const { isDesktop } = useNavVisibility();
+function DesktopAfdianMessagesNav({
+  account,
+  accountState,
+  onShowNav,
+}: {
+  account: DisplayAccount;
+  accountState: AccountState;
+  onShowNav: () => void;
+}) {
+  return (
+    <nav className="app-desktop-nav relative z-10 flex h-full w-64 flex-col gap-2 overflow-hidden bg-transparent p-3 pb-[max(0.75rem,var(--ui-safe-area-bottom))] pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]">
+      <TitlebarEffect className="titlebar-effect-sidebar" />
+      <NavHeader
+        account={account}
+        accountState={accountState}
+        onToggleNav={onShowNav}
+        desktopFunctionButtonInteractive
+      />
+      <AfdianMessagesSidebar />
+    </nav>
+  );
+}
+
+function DesktopNav({
+  isCollapsed,
+  showAfdianMessagesSidebar,
+  onShowNav,
+  ...contentProps
+}: DesktopNavProps) {
   return (
     <aside
-      className={`shrink-0 transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
+      className={`relative shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
       aria-hidden={isCollapsed}
     >
       {!isCollapsed && (
-        <nav
-          className="app-desktop-nav relative z-10 grid h-full w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]"
-          style={{
-            gridTemplateRows: getNavGridTemplateRows(
-              contentProps.navScrollState.scrollTop,
-              NAV_HEADER_EXPANDED_HEIGHT,
-              NAV_HEADER_RESTING_HEIGHT,
-              contentProps.collapseAccountOnScroll,
-            ),
-          }}
-        >
-          <TitlebarEffect className="titlebar-effect-sidebar" />
-          <NavContent {...contentProps} />
-        </nav>
+        <AnimatePresence initial={false} mode="sync">
+          {showAfdianMessagesSidebar ? (
+            <motion.div
+              key="afdian-messages"
+              className="absolute inset-0 h-full w-64"
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
+            >
+              <DesktopAfdianMessagesNav
+                account={contentProps.account}
+                accountState={contentProps.accountState}
+                onShowNav={onShowNav}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="main-nav"
+              className="absolute inset-0 h-full w-64"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 12 }}
+              transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
+            >
+              <nav
+                className="app-desktop-nav relative z-10 grid h-full w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]"
+                style={{
+                  gridTemplateRows: getNavGridTemplateRows(
+                    contentProps.navScrollState.scrollTop,
+                    NAV_HEADER_EXPANDED_HEIGHT,
+                    NAV_HEADER_RESTING_HEIGHT,
+                    contentProps.collapseAccountOnScroll,
+                  ),
+                }}
+              >
+                <TitlebarEffect className="titlebar-effect-sidebar" />
+                <NavContent {...contentProps} />
+              </nav>
+            </motion.div>
+          )}
+        </AnimatePresence>
       )}
     </aside>
   );
@@ -379,6 +465,7 @@ interface NavHeaderProps {
   accountState: AccountState;
   onToggleNav: () => void;
   hideFunctionButton?: boolean;
+  desktopFunctionButtonInteractive?: boolean;
 }
 
 function NavHeader({
@@ -386,6 +473,7 @@ function NavHeader({
   accountState,
   onToggleNav,
   hideFunctionButton,
+  desktopFunctionButtonInteractive,
 }: NavHeaderProps) {
   const queryClient = useQueryClient();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -475,7 +563,14 @@ function NavHeader({
         <div
           className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
-          {!hideFunctionButton && <FunctionButton onClick={onToggleNav} />}
+          {!hideFunctionButton && (
+            <FunctionButton
+              desktopInteractive={desktopFunctionButtonInteractive}
+              aria-label={desktopFunctionButtonInteractive ? "打开功能导航" : undefined}
+              title={desktopFunctionButtonInteractive ? "打开功能导航" : undefined}
+              onClick={onToggleNav}
+            />
+          )}
           <div className="nav-account-actions flex items-center gap-2">
             <InboxBell onClick={() => setInboxOpen(true)} />
             <Popover.Trigger>

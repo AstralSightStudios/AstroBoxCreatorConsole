@@ -2,11 +2,14 @@ import { DotsNineIcon } from "@phosphor-icons/react";
 import { useNavVisibility } from "../../layout/nav-visibility-context";
 import { CreatorConsoleLogoIcon } from "../svgs";
 
-interface FunctionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+interface FunctionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  desktopInteractive?: boolean;
+}
 
 export default function FunctionButton({
   className = "",
   "aria-label": ariaLabel,
+  desktopInteractive = false,
   title,
   ...props
 }: FunctionButtonProps) {
@@ -19,7 +22,7 @@ export default function FunctionButton({
     .filter(Boolean)
     .join(" ");
 
-  if (isDesktop) {
+  if (isDesktop && !desktopInteractive) {
     return (
       <button
         type="button"

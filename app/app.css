@@ -190,7 +190,7 @@ body,
 }
 
 /* ---- 页面滚动条 ---- */
-.app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+.app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: 0.5rem;
     right: 0;
     bottom: 0.5rem;
@@ -198,6 +198,16 @@ body,
 
 .app-page-scroll-content {
     min-height: calc(100% + var(--ui-safe-area-bottom));
+}
+
+.afdian-message-composer-background {
+    background: linear-gradient(to bottom, transparent, var(--app-background));
+}
+
+.afdian-message-scroll[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: 0.5rem;
+    right: 0.125rem;
+    bottom: calc(var(--afdian-composer-height, 76px) + 0.5rem);
 }
 
 /* ---- Wallpaper editor ---- */
@@ -438,7 +448,7 @@ html[data-ui-narrow="false"] .app-page-scroll-content {
     padding-top: calc(52px + 0.5rem);
 }
 
-html[data-ui-narrow="false"] .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+html[data-ui-narrow="false"] .app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: calc(52px + 1rem);
 }
 
@@ -510,8 +520,16 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-
     padding-top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
 }
 
-html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area[data-overlayscrollbars] .os-scrollbar-vertical {
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-content.app-page-scroll-content-header-hidden {
+    padding-top: var(--macos-titlebar-height);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: calc(var(--macos-titlebar-height) + 44px + 1rem);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area.app-page-scroll-area-header-hidden[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: calc(var(--macos-titlebar-height) + 0.5rem);
 }
 
 html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {

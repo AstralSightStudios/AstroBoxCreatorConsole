@@ -48,9 +48,13 @@ const PAGE_NAME_MAP: Record<string, string> = {
 
 interface HeaderProps {
   scrollProgress?: number;
+  disableTitlebarEffect?: boolean;
 }
 
-export default function Header({ scrollProgress = 0 }: HeaderProps) {
+export default function Header({
+  scrollProgress = 0,
+  disableTitlebarEffect = false,
+}: HeaderProps) {
   const isMacOS =
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("macos");
@@ -160,7 +164,9 @@ export default function Header({ scrollProgress = 0 }: HeaderProps) {
       data-tauri-drag-region={isMacOS ? true : undefined}
       onMouseDown={handleHeaderMouseDown}
     >
-      <TitlebarEffect gradientOpacity={scrollProgress} />
+      {!disableTitlebarEffect && (
+        <TitlebarEffect gradientOpacity={scrollProgress} />
+      )}
       {isMobile ? (
         <FunctionButton
           className={`app-header-function-button ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}

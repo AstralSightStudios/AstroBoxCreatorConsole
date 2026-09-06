@@ -24,6 +24,7 @@ import {
   useUpdateHeaderScroll,
 } from "~/layout/header-actions";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 
 type Axis = "x" | "y";
 
@@ -120,6 +121,7 @@ export default function PageTransition() {
 function PageTransitionContent() {
   const location = useLocation();
   const outlet = useOutlet();
+  const { isNarrow } = useUiScaleViewport();
   const updateHeaderScroll = useUpdateHeaderScroll();
   const [headerScrollProgress, setHeaderScrollProgress] = useState(0);
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
@@ -129,6 +131,11 @@ function PageTransitionContent() {
   const routeContext = useContext(UNSAFE_RouteContext);
 
   const normalizedPath = normalizePath(location.pathname);
+  const disableHeaderScrollEffect = normalizedPath === "/afdian-messages";
+  const hideHeader =
+    disableHeaderScrollEffect &&
+    isNarrow &&
+    Boolean(new URLSearchParams(location.search).get("userId"));
   const transitionSnapshotRef = useRef<{
     path: string;
     meta: TransitionMeta;
@@ -196,7 +203,12 @@ function PageTransitionContent() {
       className="relative h-full overflow-hidden select-none"
     >
       <div className="app-page-content flex h-full flex-col gap-2 pt-[max(0.5rem,var(--ui-safe-area-top))] pl-[max(0.5rem,var(--ui-safe-area-left))] pr-[max(0.5rem,var(--ui-safe-area-right))]">
-        <Header scrollProgress={headerScrollProgress} />
+        {!hideHeader && (
+          <Header
+            scrollProgress={headerScrollProgress}
+            disableTitlebarEffect={disableHeaderScrollEffect}
+          />
+        )}
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <AnimatePresence initial={false} mode="sync" custom={transitionMeta}>
             <motion.div
@@ -231,11 +243,13 @@ function PageTransitionContent() {
               initial="initial"
               animate="animate"
               exit="exit"
-              onScrollCapture={handlePageScroll}
+              onScrollCapture={
+                disableHeaderScrollEffect ? undefined : handlePageScroll
+              }
             >
               <OverlayScrollbarsComponent
                 defer
-                className="app-page-scroll-area h-full w-full overscroll-contain"
+                className={`app-page-scroll-area h-full w-full overscroll-contain ${hideHeader ? "app-page-scroll-area-header-hidden" : ""}`}
                 options={{
                   overflow: { x: "hidden", y: "scroll" },
                   scrollbars: {
@@ -245,7 +259,7 @@ function PageTransitionContent() {
                   },
                 }}
               >
-                <div className="app-page-scroll-content h-full pb-[var(--ui-safe-area-bottom)]">
+                <div className={`app-page-scroll-content h-full pb-[var(--ui-safe-area-bottom)] ${hideHeader ? "app-page-scroll-content-header-hidden" : ""}`}>
                   {frozenOutlet}
                 </div>
               </OverlayScrollbarsComponent>
