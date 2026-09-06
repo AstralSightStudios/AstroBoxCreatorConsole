@@ -4,9 +4,14 @@ import {
   Callout,
   Dialog,
   Spinner,
+  Switch,
   Tabs,
   TextField,
 } from "~/components/ScaleAwareThemes";
+import {
+  isPermissionGranted,
+  requestPermission,
+} from "@tauri-apps/plugin-notification";
 import {
   ArrowClockwiseIcon,
   EyeIcon,
@@ -18,7 +23,7 @@ import {
   UserCircleIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   AFDIAN_INCOME_QUERY_KEY,
@@ -33,6 +38,11 @@ import {
   sendAfdianQuickLoginCode,
 } from "~/api/afdian-account";
 import { SectionCard } from "~/routes/resource/publish/components/shared";
+import {
+  isAfdianMessageNotificationSupported,
+  setAfdianMessageNotificationsEnabled,
+  useAfdianMessageNotificationsEnabled,
+} from "~/config/afdianNotifications";
 
 const AFDIAN_DISCLAIMER_ACCEPTED_KEY = "afdian-disclaimer-accepted";
 
@@ -284,9 +294,13 @@ function AfdianLoginDialog({
 export default function AfdianAccountSection() {
   const queryClient = useQueryClient();
   const nativeAvailable = isAfdianNativeAvailable();
+  const notificationSupported = isAfdianMessageNotificationSupported();
+  const [notificationsEnabled, setNotificationsEnabled] =
+    useAfdianMessageNotificationsEnabled();
   const [loginOpen, setLoginOpen] = useState(false);
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [updatingNotification, setUpdatingNotification] = useState(false);
   const sessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
     queryFn: getAfdianSessionStatus,
@@ -294,6 +308,51 @@ export default function AfdianAccountSection() {
     staleTime: 30_000,
     retry: false,
   });
+  const connected = sessionQuery.data?.connected === true;
+
+  useEffect(() => {
+    if (!notificationSupported || !notificationsEnabled) return;
+
+    let active = true;
+    void isPermissionGranted()
+      .then((granted) => {
+        if (active && !granted) setNotificationsEnabled(false);
+      })
+      .catch(() => {
+        if (active) setNotificationsEnabled(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [notificationSupported, notificationsEnabled, setNotificationsEnabled]);
+
+  const handleNotificationChange = async (next: boolean) => {
+    if (!next) {
+      setNotificationsEnabled(false);
+      toast.success("已关闭爱发电私信通知");
+      return;
+    }
+    if (!connected || updatingNotification) return;
+
+    setUpdatingNotification(true);
+    try {
+      let granted = await isPermissionGranted();
+      if (!granted) granted = (await requestPermission()) === "granted";
+      if (!granted) {
+        setNotificationsEnabled(false);
+        toast.error("未获得系统通知权限");
+        return;
+      }
+      setNotificationsEnabled(true);
+      toast.success("已开启爱发电私信通知");
+    } catch {
+      setNotificationsEnabled(false);
+      toast.error("无法开启系统通知");
+    } finally {
+      setUpdatingNotification(false);
+    }
+  };
 
   const syncQueries = async () => {
     await queryClient.invalidateQueries({ queryKey: AFDIAN_SESSION_QUERY_KEY });
@@ -309,6 +368,7 @@ export default function AfdianAccountSection() {
         displayName: null,
       });
       queryClient.removeQueries({ queryKey: AFDIAN_INCOME_QUERY_KEY });
+      setAfdianMessageNotificationsEnabled(false);
       toast.success("已退出爱发电账户");
     } catch (error) {
       toast.error(getAfdianErrorMessage(error, "退出爱发电账户失败"));
@@ -407,6 +467,25 @@ export default function AfdianAccountSection() {
               </p>
             </div>
             <Button onClick={handleOpenLogin}>登录爱发电</Button>
+          </div>
+        )}
+
+        {notificationSupported && (
+          <div className="flex items-center gap-3 border-t border-white/[0.06] px-2 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white">新私信系统通知</p>
+              <p className="text-xs text-white/45">
+                {connected
+                  ? "应用运行时收到新私信后发送系统通知"
+                  : "登录爱发电后可开启"}
+              </p>
+            </div>
+            <Switch
+              aria-label="新私信系统通知"
+              checked={connected && notificationsEnabled}
+              disabled={!connected || updatingNotification}
+              onCheckedChange={(next) => void handleNotificationChange(next)}
+            />
           </div>
         )}
       </SectionCard>

@@ -3,6 +3,7 @@ use aes::Aes256;
 use base64::{engine::general_purpose, Engine as _};
 use ecb::Encryptor;
 mod afdian;
+mod afdian_notifications;
 mod buildinfo;
 mod logger;
 mod logs_archive;
@@ -233,6 +234,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppHttpClient(reqwest::Client::new()))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // The log plugin is only used for its fern plumbing; the actual logger
@@ -247,6 +249,7 @@ pub fn run() {
             }
             afdian::initialize_session_store(app.handle()).map_err(std::io::Error::other)?;
             logger::init_logger(app.handle())?;
+            afdian_notifications::initialize(app);
 
             #[cfg(target_os = "macos")]
             macos::custom_window::adopt_tahoe_round_corners_style(app.handle());
@@ -270,6 +273,8 @@ pub fn run() {
             afdian::afdian_message_dialogs,
             afdian::afdian_message_messages,
             afdian::afdian_message_send,
+            afdian_notifications::afdian_message_notifications_set_enabled,
+            afdian_notifications::afdian_message_notifications_set_context,
             encrypt_aes_256_ecb,
             app_build_info,
             write_text_file,

@@ -187,27 +187,27 @@ pub(crate) struct AfdianSponsorPage {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianDialogUser {
-    user_id: String,
-    name: String,
-    avatar: Option<String>,
+    pub(crate) user_id: String,
+    pub(crate) name: String,
+    pub(crate) avatar: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianDialogItem {
-    latest_message_id: Option<String>,
-    unread_count: i64,
-    total_count: i64,
-    status: Option<i64>,
-    user: AfdianDialogUser,
-    preview: Option<String>,
-    sent_at: Option<String>,
+    pub(crate) latest_message_id: Option<String>,
+    pub(crate) unread_count: i64,
+    pub(crate) total_count: i64,
+    pub(crate) status: Option<i64>,
+    pub(crate) user: AfdianDialogUser,
+    pub(crate) preview: Option<String>,
+    pub(crate) sent_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianDialogPage {
-    items: Vec<AfdianDialogItem>,
+    pub(crate) items: Vec<AfdianDialogItem>,
     page: usize,
     total_count: Option<i64>,
     total_page: Option<i64>,
@@ -594,11 +594,18 @@ pub(crate) async fn afdian_message_dialogs(
     http_client: tauri::State<'_, AppHttpClient>,
     page: usize,
 ) -> Result<AfdianDialogPage, String> {
+    fetch_message_dialogs(&http_client.0, page).await
+}
+
+pub(crate) async fn fetch_message_dialogs(
+    http_client: &reqwest::Client,
+    page: usize,
+) -> Result<AfdianDialogPage, String> {
     let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
     let page = page.max(1);
     let page_value = page.to_string();
     let response = authenticated_get(
-        &http_client.0,
+        http_client,
         &format!("{AFDIAN_BASE_URL}/api/message/dialogs"),
         &session.auth_token,
         &[("page", page_value.as_str()), ("unread", "0")],
