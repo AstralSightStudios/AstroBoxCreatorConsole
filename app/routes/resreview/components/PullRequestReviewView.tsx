@@ -9,7 +9,7 @@ import { PullRequestSummaryCard } from "./PullRequestSummaryCard";
 import { ResourceDetailTab } from "./ResourceDetailTab";
 import { RuleCheckPanel } from "./RuleCheckPanel";
 import { CommentTimeline } from "./CommentTimeline";
-import { CommentComposer, type ReplyTarget, type EditingTarget } from "./CommentComposer";
+import { CommentComposer, type ReplyTarget, type EditingTarget, type NoticeDraft } from "./CommentComposer";
 import { RepoFileChanges } from "./RepoFileChanges";
 import { CatalogRowChanges } from "./CatalogRowChanges";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
@@ -25,6 +25,8 @@ export interface PullRequestReviewViewProps {
   generalComment: string;
   replyTarget?: ReplyTarget | null;
   editingTarget?: EditingTarget | null;
+  noticeDraft?: NoticeDraft | null;
+  onNoticeDraftChange?: (draft: NoticeDraft) => void;
   onGeneralCommentChange: (value: string) => void;
   onSubmitComment: (body: string) => void;
   onReply: (comment: GithubIssueComment) => void;
@@ -57,6 +59,8 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     generalComment,
     replyTarget,
     editingTarget,
+    noticeDraft,
+    onNoticeDraftChange,
     onGeneralCommentChange,
     onSubmitComment,
     onReply,
@@ -202,6 +206,8 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                   onCancelReply={onCancelReply}
                   editingTarget={editingTarget}
                   onCancelEdit={onCancelEdit}
+                  noticeDraft={noticeDraft}
+                  onNoticeDraftChange={onNoticeDraftChange}
                 />
                 {loadingDetail ? (
                   <div className="py-6 text-center text-sm text-white/45">加载中...</div>

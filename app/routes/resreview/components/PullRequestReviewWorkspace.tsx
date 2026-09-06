@@ -1,7 +1,7 @@
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
-import type { ReplyTarget, EditingTarget } from "./CommentComposer";
+import type { ReplyTarget, EditingTarget, NoticeDraft } from "./CommentComposer";
 import { PullRequestReviewView } from "./PullRequestReviewView";
 import { PullRequestSwitcher } from "./PullRequestSwitcher";
 
@@ -21,6 +21,8 @@ interface PullRequestReviewWorkspaceProps {
   generalComment: string;
   replyTarget?: ReplyTarget | null;
   editingTarget?: EditingTarget | null;
+  noticeDraft?: NoticeDraft | null;
+  onNoticeDraftChange?: (draft: NoticeDraft) => void;
   isSwitcherCollapsed: boolean;
   submittingComment: boolean;
   approving: boolean;
@@ -72,6 +74,8 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             generalComment={props.generalComment}
             replyTarget={props.replyTarget}
             editingTarget={props.editingTarget}
+            noticeDraft={props.noticeDraft}
+            onNoticeDraftChange={props.onNoticeDraftChange}
             submittingComment={props.submittingComment}
             approving={props.approving}
             merging={props.merging}

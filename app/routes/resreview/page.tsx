@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState, getAstroboxToken } from "~/logic/account/store";
-import { sendCcNotice } from "~/logic/inbox/send";
+import { sendCcNotice, findSentCcNotice, revokeCcNotice } from "~/logic/inbox/send";
 import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { resolveAuthorProStatuses } from "./owner-pro";
 import { useRepoEnv } from "~/config/repoEnv";
@@ -139,6 +139,7 @@ export default function ResourceReviewPage() {
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
+  const [noticeDraft, setNoticeDraft] = useState<import("./components/CommentComposer").NoticeDraft | null>(null);
   const [rotate, setRotate] = useState(0);
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] =
@@ -357,6 +358,7 @@ export default function ResourceReviewPage() {
     setGeneralComment("");
     setReplyTarget(null);
     setEditingTarget(null);
+    setNoticeDraft(null);
     if (openNumber) {
       void loadDetail(openNumber);
     } else {
@@ -400,7 +402,32 @@ export default function ResourceReviewPage() {
   const editComment = (comment: import("~/api/github/pr-review").GithubIssueComment) => {
     const parsed = parseReviewCommentBody(comment.body || "");
     setGeneralComment(parsed.content);
-    setEditingTarget({ comment });
+    const sentRecord =
+      parsed.tagType === "NEEDFIX" && parsed.tagId && openNumber
+        ? findSentCcNotice({
+            subtype: "review-changes-requested",
+            prNumber: openNumber,
+            tagId: parsed.tagId,
+          })
+        : null;
+    setEditingTarget({
+      comment,
+      ...(sentRecord
+        ? {
+            ccNotice: {
+              bulkId: sentRecord.bulkId,
+              title: sentRecord.payload.title,
+              body: sentRecord.payload.body,
+              tagId: parsed.tagId,
+            },
+          }
+        : {}),
+    });
+    setNoticeDraft(
+      sentRecord
+        ? { enabled: true, title: sentRecord.payload.title, body: sentRecord.payload.body }
+        : null,
+    );
     setReplyTarget(null);
   };
 
@@ -430,6 +457,28 @@ export default function ResourceReviewPage() {
       setReplyTarget(null);
       setEditingTarget(null);
       await loadDetail(number);
+      let resentNotice = false;
+      if (editingTarget?.ccNotice && noticeDraft?.enabled) {
+        // 编辑的是 NEEDFIX 评论且此前已发送过审核通知：撤回旧通知后按草稿重发。
+        const updated = parseReviewCommentBody(body);
+        if (updated.tagType === "NEEDFIX" && updated.tagId) {
+          await revokeCcNotice({
+            subtype: "review-changes-requested",
+            prNumber: number,
+            tagId: editingTarget.ccNotice.tagId,
+          });
+          void notifyCc({
+            subtype: "review-changes-requested",
+            prNumber: number,
+            tagId: updated.tagId,
+            content: updated.content,
+            titleOverride: noticeDraft.title,
+            bodyOverride: noticeDraft.body,
+          });
+          resentNotice = true;
+        }
+        setNoticeDraft(null);
+      }
       if (isNewNeedFix) {
         const parsed = parseReviewCommentBody(body);
         void notifyCc({
@@ -441,7 +490,9 @@ export default function ResourceReviewPage() {
       }
       toast.success(
         editingTarget
-          ? "评论已更新"
+          ? resentNotice
+            ? "评论已更新，审核通知已撤回重发"
+            : "评论已更新"
           : isNewNeedFix
             ? "评论已发送，PR 已标记为需要修改"
             : "评论已发送",
@@ -562,6 +613,8 @@ export default function ResourceReviewPage() {
     content?: string;
     senderNote?: string;
     createMode?: boolean;
+    titleOverride?: string;
+    bodyOverride?: string;
   }) => {
     const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
       resourcePreviews,
@@ -580,17 +633,19 @@ export default function ResourceReviewPage() {
       deepLink: `/resreview?pr=${params.prNumber}`,
       userIds,
       title:
-        params.subtype === "review-approved"
+        params.titleOverride?.trim() ||
+        (params.subtype === "review-approved"
           ? params.createMode === false
             ? `《${resourceName}》资源更新已通过审核`
             : CC_NOTICE_TITLES["review-approved"](resourceName)
-          : CC_NOTICE_TITLES[params.subtype](resourceName),
+          : CC_NOTICE_TITLES[params.subtype](resourceName)),
       body:
-        params.subtype === "review-approved"
+        params.bodyOverride?.trim() ||
+        (params.subtype === "review-approved"
           ? `您的《${resourceName}》资源提交已通过审核并加入官方源索引，随后可于 AstroBox 刷新查看。`
           : params.content?.trim() ||
             params.senderNote?.trim() ||
-            CC_NOTICE_BODIES[params.subtype],
+            CC_NOTICE_BODIES[params.subtype]),
     });
   };
 
@@ -666,11 +721,13 @@ export default function ResourceReviewPage() {
                 onRefreshList={handleRefreshList}
                 onGeneralCommentChange={setGeneralComment}
                 onSubmitComment={submitComment}
-                onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
-                onCancelReply={() => setReplyTarget(null)}
-                onCancelEdit={() => setEditingTarget(null)}
-                onDeleteComment={deleteComment}
-                onEditComment={editComment}
+                 onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
+                 onCancelReply={() => setReplyTarget(null)}
+                 onCancelEdit={() => { setEditingTarget(null); setNoticeDraft(null); }}
+                 onDeleteComment={deleteComment}
+                 onEditComment={editComment}
+                 noticeDraft={noticeDraft}
+                 onNoticeDraftChange={setNoticeDraft}
                 onApprove={approve}
                 onMerge={merge}
                 onClose={closePr}

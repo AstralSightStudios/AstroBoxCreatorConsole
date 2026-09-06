@@ -24,6 +24,14 @@ export interface ReplyTarget {
 
 export interface EditingTarget {
   comment: GithubIssueComment;
+  /** 编辑 NEEDFIX 评论时附带的已发送审核通知记录，用于同步编辑并撤回重发。 */
+  ccNotice?: { bulkId: string; title: string; body: string; tagId?: string };
+}
+
+export interface NoticeDraft {
+  enabled: boolean;
+  title: string;
+  body: string;
 }
 
 export interface CommentComposerProps {
@@ -37,6 +45,8 @@ export interface CommentComposerProps {
   editingTarget?: EditingTarget | null;
   onCancelReply?: () => void;
   onCancelEdit?: () => void;
+  noticeDraft?: NoticeDraft | null;
+  onNoticeDraftChange?: (draft: NoticeDraft) => void;
 }
 
 function scrollToComment(commentId: number) {
@@ -71,6 +81,8 @@ export function CommentComposer({
   editingTarget = null,
   onCancelReply,
   onCancelEdit,
+  noticeDraft = null,
+  onNoticeDraftChange,
 }: CommentComposerProps) {
   const { logicalHeight } = useUiScaleViewport();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -317,6 +329,40 @@ export function CommentComposer({
             )}
           </div>
         )}
+
+        {isEditing && noticeDraft && onNoticeDraftChange ? (
+          <div className="border-b border-white/10 bg-white/[0.02] px-3 py-2">
+            <label className="inline-flex items-center gap-2 text-xs text-white/50">
+              <Switch
+                checked={noticeDraft.enabled}
+                onCheckedChange={(checked) =>
+                  onNoticeDraftChange({ ...noticeDraft, enabled: checked })
+                }
+              />
+              同步更新审核通知（撤回后重发）
+            </label>
+            {noticeDraft.enabled ? (
+              <div className="mt-2 flex flex-col gap-2">
+                <input
+                  value={noticeDraft.title}
+                  onChange={(e) =>
+                    onNoticeDraftChange({ ...noticeDraft, title: e.target.value })
+                  }
+                  placeholder="通知标题"
+                  className="w-full rounded-[10px] border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                />
+                <textarea
+                  value={noticeDraft.body}
+                  onChange={(e) =>
+                    onNoticeDraftChange({ ...noticeDraft, body: e.target.value })
+                  }
+                  placeholder="通知正文"
+                  className="min-h-[72px] w-full resize-y rounded-[10px] border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-white/10 bg-white/[0.02] px-3 py-2">
           <label className="inline-flex items-center gap-2 text-xs text-white/50">

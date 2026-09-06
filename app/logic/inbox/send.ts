@@ -19,6 +19,13 @@ export interface CcNoticePayload {
 
 const SENT_KEYS_STORAGE = "CC_NOTICE_SENT_KEYS_V1";
 const PENDING_QUEUE_STORAGE = "CC_NOTICE_PENDING_QUEUE_V1";
+const BULK_RECORDS_STORAGE = "CC_NOTICE_BULK_RECORDS_V1";
+
+/** 已成功发送的通知记录：按幂等键保存 bulkId 与原始 payload，供撤回/重发使用。 */
+export interface SentCcNoticeRecord {
+  bulkId: string;
+  payload: CcNoticePayload;
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -37,8 +44,16 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
+function buildNoticeKey(
+  subtype: CcNoticeSubtype,
+  prNumber: number,
+  tagId?: string,
+): string {
+  return `${prNumber}:${subtype}:${tagId ?? ""}`;
+}
+
 function idempotencyKey(payload: CcNoticePayload): string {
-  return `${payload.prNumber}:${payload.subtype}:${payload.tagId ?? ""}`;
+  return buildNoticeKey(payload.subtype, payload.prNumber, payload.tagId);
 }
 
 function loadSentKeys(): Set<string> {
@@ -47,6 +62,56 @@ function loadSentKeys(): Set<string> {
 
 function persistSentKeys(keys: Set<string>) {
   writeJson(SENT_KEYS_STORAGE, Array.from(keys));
+}
+
+function loadBulkRecords(): Record<string, SentCcNoticeRecord> {
+  return readJson<Record<string, SentCcNoticeRecord>>(BULK_RECORDS_STORAGE, {});
+}
+
+function persistBulkRecords(records: Record<string, SentCcNoticeRecord>) {
+  writeJson(BULK_RECORDS_STORAGE, records);
+}
+
+function recordSentBulk(key: string, bulkId: string, payload: CcNoticePayload) {
+  if (!bulkId) return;
+  const records = loadBulkRecords();
+  records[key] = { bulkId, payload };
+  persistBulkRecords(records);
+}
+
+function dropSentRecord(key: string) {
+  const records = loadBulkRecords();
+  if (records[key]) {
+    delete records[key];
+    persistBulkRecords(records);
+  }
+}
+
+/** 查询某条审核通知是否已成功发送（编辑 NEEDFIX 评论时用于同步更新通知）。 */
+export function findSentCcNotice(params: {
+  subtype: CcNoticeSubtype;
+  prNumber: number;
+  tagId?: string;
+}): SentCcNoticeRecord | null {
+  const key = buildNoticeKey(params.subtype, params.prNumber, params.tagId);
+  return loadBulkRecords()[key] ?? null;
+}
+
+/** 撤回此前发送的通知批次，并清除幂等记录，使后续可重新发送。 */
+export async function revokeCcNotice(params: {
+  subtype: CcNoticeSubtype;
+  prNumber: number;
+  tagId?: string;
+}): Promise<void> {
+  const key = buildNoticeKey(params.subtype, params.prNumber, params.tagId);
+  const record = loadBulkRecords()[key];
+  dropSentRecord(key);
+  const sentKeys = loadSentKeys();
+  sentKeys.delete(key);
+  persistSentKeys(sentKeys);
+  if (record?.bulkId) {
+    await AdminApi.inbox.bulkDelete(record.bulkId);
+  }
 }
 
 // 服务端 /admin/inbox 要求 title/body 均非空（minLength: 1）。
@@ -68,7 +133,7 @@ function defaultNoticeBody(payload: CcNoticePayload): string {
 }
 
 async function post(payload: CcNoticePayload) {
-  await AdminApi.inbox.send({
+  return AdminApi.inbox.send({
     target: { type: "userIds", userIds: payload.userIds },
     title: payload.title?.trim() || "资源审核通知",
     body: payload.body?.trim() || defaultNoticeBody(payload),
@@ -107,9 +172,10 @@ export async function sendCcNotice(payload: CcNoticePayload): Promise<boolean> {
   if (sentKeys.has(key)) return false;
 
   try {
-    await post(payload);
+    const res = await post(payload);
     sentKeys.add(key);
     persistSentKeys(sentKeys);
+    recordSentBulk(key, res?.bulkId ?? "", payload);
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -137,10 +203,11 @@ export async function flushCcNoticeQueue(): Promise<void> {
 
   for (const payload of queue) {
     try {
-      await post(payload);
+      const res = await post(payload);
       const sentKeys = loadSentKeys();
       sentKeys.add(idempotencyKey(payload));
       persistSentKeys(sentKeys);
+      recordSentBulk(idempotencyKey(payload), res?.bulkId ?? "", payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       enqueuePending(payload);
