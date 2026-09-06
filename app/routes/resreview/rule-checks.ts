@@ -964,8 +964,10 @@ export async function runResourceRuleChecks(options: {
   });
 
   // --- check: 购买与加密配置就绪 ---
+  // 仅在 manifest.ext.enableAstroBoxCreatorFeatures 开启时才校验：
+  // 未开启购买功能的资源在服务端可能残留历史映射，但与本次提交无关，不应提示。
   const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
-  if (creatorFeaturesEnabled || astroboxToken) {
+  if (creatorFeaturesEnabled) {
     const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
     const fullDownloadDevices = Array.from(
       new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
@@ -989,57 +991,40 @@ export async function runResourceRuleChecks(options: {
       }
     }
 
-    const missingEncryption =
-      creatorFeaturesEnabled && encryptedDeviceSet
-        ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
-        : [];
-    const missingMapping =
-      creatorFeaturesEnabled && mappedDeviceSet
-        ? fullDownloadDevices.filter((d) => !mappedDeviceSet!.has(d))
-        : [];
-    const unmappedButEnabledMapping =
-      !creatorFeaturesEnabled && mappedDeviceSet
-        ? fullDownloadDevices.filter((d) => mappedDeviceSet!.has(d))
-        : [];
+    const missingEncryption = encryptedDeviceSet
+      ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
+      : [];
+    const missingMapping = mappedDeviceSet
+      ? fullDownloadDevices.filter((d) => !mappedDeviceSet!.has(d))
+      : [];
 
-    if (
-      creatorFeaturesEnabled ||
-      unmappedButEnabledMapping.length > 0 ||
-      cryptoCheckError
-    ) {
-      checks.push({
-        title: creatorFeaturesEnabled
-          ? "购买与加密配置就绪（enableAstroBoxCreatorFeatures）"
-          : "已存在付费映射但购买功能未开启",
-        status: (() => {
-          if (!creatorFeaturesEnabled) return "warn";
-          if (!astroboxToken) return "manual";
-          if (!cryptoResourceId) return "warn";
-          if (cryptoCheckError) return "manual";
-          if (missingEncryption.length > 0 || missingMapping.length > 0)
-            return "fail";
-          return "pass";
-        })(),
-        detail: (() => {
-          if (!creatorFeaturesEnabled)
-            return `以下设备已完成付费平台映射：${unmappedButEnabledMapping.join(", ")}`;
-          if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
-          if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
-          if (cryptoResourceId === "")
-            return "manifest 缺少资源 ID，无法查询服务端配置";
-          const parts: string[] = [];
-          if (missingEncryption.length > 0)
-            parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
-          if (missingMapping.length > 0)
-            parts.push(`缺少付费平台映射的设备：${missingMapping.join(", ")}`);
-          if (parts.length === 0)
-            parts.push(
-              `全部 ${fullDownloadDevices.length} 个正式下载设备均已配置加密密钥与付费映射`,
-            );
-          return parts.join("；");
-        })(),
-      });
-    }
+    checks.push({
+      title: "购买与加密配置就绪（enableAstroBoxCreatorFeatures）",
+      status: (() => {
+        if (!astroboxToken) return "manual";
+        if (!cryptoResourceId) return "warn";
+        if (cryptoCheckError) return "manual";
+        if (missingEncryption.length > 0 || missingMapping.length > 0)
+          return "fail";
+        return "pass";
+      })(),
+      detail: (() => {
+        if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
+        if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
+        if (!cryptoResourceId)
+          return "manifest 缺少资源 ID，无法查询服务端配置";
+        const parts: string[] = [];
+        if (missingEncryption.length > 0)
+          parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
+        if (missingMapping.length > 0)
+          parts.push(`缺少付费平台映射的设备：${missingMapping.join(", ")}`);
+        if (parts.length === 0)
+          parts.push(
+            `全部 ${fullDownloadDevices.length} 个正式下载设备均已配置加密密钥与付费映射`,
+          );
+        return parts.join("；");
+      })(),
+    });
   }
 
   // --- check: manifest downloads 设备标识有效性 ---
