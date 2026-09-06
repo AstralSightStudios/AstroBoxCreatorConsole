@@ -161,13 +161,15 @@ export function CommentComposer({
   const handleSubmit = () => {
     if (!value.trim()) return;
     let body = value.trim();
-    if (tagEnabled) {
-      body = `[ABCC_NEEDFIX_${tagIdRef.current}] ${body}`;
-    }
     if (replyTarget) {
       const tc = replyTarget.comment;
       const excerpt = tc.body?.slice(0, 120) ?? "";
       body = buildReplyBody(tc.user?.login ?? "unknown", tc.id, excerpt, body);
+    }
+    // 标签必须始终位于 body 开头：submitComment 与 deriveReviewStatus 都以
+    // `^\s*\[ABCC_NEEDFIX` 识别是否走 REQUEST_CHANGES review 与状态推导。
+    if (tagEnabled) {
+      body = `[ABCC_NEEDFIX_${tagIdRef.current}] ${body}`;
     }
     onSubmit(body);
   };

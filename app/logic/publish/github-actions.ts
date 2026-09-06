@@ -192,6 +192,10 @@ export async function githubFetch<T>(
             response = await fetch(proxyGithubUrl(url), {
                 ...init,
                 signal: controller.signal,
+                // GitHub REST API 的 GET 响应带 `Cache-Control: private, max-age=60`，
+                // WebView 会直接命中本地缓存返回 60 秒前的旧数据，导致刚提交的
+                // review/评论重新拉取时看不到（如 NEEDFIX 后状态不刷新）。一律绕过。
+                cache: (init.method ?? "GET").toUpperCase() === "GET" ? "no-store" : undefined,
                 headers: {
                     Accept: "application/vnd.github+json",
                     "X-GitHub-Api-Version": "2022-11-28",
