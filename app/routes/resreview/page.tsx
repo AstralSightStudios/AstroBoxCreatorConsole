@@ -510,7 +510,7 @@ export default function ResourceReviewPage() {
     setApproving(true);
     try {
       await approvePullRequest(number);
-      toast.success("已提交 GitHub approve");
+      toast.success("已提交 GitHub approve", { duration: 4000 });
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -542,7 +542,7 @@ export default function ResourceReviewPage() {
         prNumber: number,
         createMode: isCreateMode,
       });
-      toast.success("PR 已合入，仓库 Action 将自动应用资源请求。");
+      toast.success("PR 已合入，仓库 Action 将自动应用资源请求。", { duration: 4000 });
       await loadPulls();
       if (openNumber === number) {
         navigate("/resreview", { replace: true });

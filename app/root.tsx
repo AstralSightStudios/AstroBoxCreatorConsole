@@ -75,6 +75,7 @@ export default function RootLayout() {
                     position="bottom-right"
                     richColors
                     theme="dark"
+                    duration={4000}
                     offset={{
                         top: "max(16px, var(--ui-safe-area-top))",
                         right: "max(16px, var(--ui-safe-area-right))",
