@@ -149,6 +149,22 @@ body,
     height: 0;
 }
 
+/*
+ * 窄屏侧栏是 vaul Drawer（遮罩 z-40 / 内容 z-50），而 Radix Themes 的
+ * Dialog/AlertDialog 遮罩（.rt-BaseDialogOverlay，fixed 且无 z-index）与内容
+ * （z-index: 1）会被压在 Drawer 之下，导致 Drawer 内打开的确认对话框不可见、
+ * 不可交互。这里把对话框遮罩提升到 Drawer 之上。
+ * 对话框内部再打开的 Select/DropdownMenu 等 popper 浮层（同样无 z-index）
+ * 需要盖过对话框遮罩，再提升一级；账号菜单 Popover 自带 z-999 仍保持最高。
+ */
+.ui-scale-portal-host .rt-BaseDialogOverlay {
+    z-index: 60;
+}
+
+.ui-scale-portal-host [data-radix-popper-content-wrapper] {
+    z-index: 70;
+}
+
 .ui-safe-area-probe {
     position: fixed;
     inset: 0;

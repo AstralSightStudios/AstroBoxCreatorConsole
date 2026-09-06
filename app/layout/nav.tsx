@@ -269,6 +269,7 @@ function NavContent({
           account={account}
           accountState={accountState}
           onToggleNav={onToggleNav}
+          onNavigate={onNavigate}
           hideFunctionButton={hideFunctionButton}
         />
         <AccountInfo account={account} />
@@ -464,6 +465,7 @@ interface NavHeaderProps {
   account: DisplayAccount;
   accountState: AccountState;
   onToggleNav: () => void;
+  onNavigate: (path: string) => void;
   hideFunctionButton?: boolean;
   desktopFunctionButtonInteractive?: boolean;
 }
@@ -472,6 +474,7 @@ function NavHeader({
   account,
   accountState,
   onToggleNav,
+  onNavigate,
   hideFunctionButton,
   desktopFunctionButtonInteractive,
 }: NavHeaderProps) {
@@ -483,7 +486,6 @@ function NavHeader({
   const [afdianLoggingOut, setAfdianLoggingOut] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const githubLoginState = useGithubLoginState();
-  const navigate = useNavigate();
   const afdianSessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
     queryFn: getAfdianSessionStatus,
@@ -494,12 +496,14 @@ function NavHeader({
 
   const handleAstroLogin = () => {
     setIsMenuOpen(false);
-    navigate("/login");
+    // 走 handleNavigate：Drawer 打开时以 replace 替换 synthetic history entry
+    // 并立即收起侧栏，避免之后点遮罩关闭侧栏时 history.back() 弹回原页面。
+    onNavigate("/login");
   };
 
   const handleAfdianLogin = () => {
     setIsMenuOpen(false);
-    navigate("/settings");
+    onNavigate("/settings");
   };
 
   const handleGithubLogin = async () => {
@@ -509,6 +513,7 @@ function NavHeader({
 
   const handleAstroLogout = () => {
     if (!accountState.astrobox) return;
+    setIsMenuOpen(false);
     setShowAstroLogoutConfirm(true);
   };
 
@@ -519,6 +524,7 @@ function NavHeader({
 
   const handleGithubLogout = () => {
     if (!accountState.github) return;
+    setIsMenuOpen(false);
     setShowGithubLogoutConfirm(true);
   };
 
@@ -530,6 +536,7 @@ function NavHeader({
 
   const handleAfdianLogout = () => {
     if (!afdianSessionQuery.data?.connected) return;
+    setIsMenuOpen(false);
     setShowAfdianLogoutConfirm(true);
   };
 
