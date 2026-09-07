@@ -1,19 +1,30 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Avatar, Button, Spinner } from "@radix-ui/themes";
+import {
+  Avatar,
+  Badge,
+  Button,
+  DataList,
+  Flex,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import BlurEffect from "react-progressive-blur";
 import {
   ArrowClockwiseIcon,
+  ArrowDownLeftIcon,
   ArrowLeftIcon,
+  ArrowUpRightIcon,
   CaretDownIcon,
   PlusIcon,
   TrashIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
-import type { PartialOptions } from "overlayscrollbars";
+import type { EventListeners, PartialOptions } from "overlayscrollbars";
 import {
   OverlayScrollbarsComponent,
   type OverlayScrollbarsComponentRef,
 } from "overlayscrollbars-react";
+import BlurEffect from "react-progressive-blur";
 import {
   useCallback,
   useEffect,
@@ -28,6 +39,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import {
   AFDIAN_DIALOGS_QUERY_KEY,
   getAfdianDialogs,
+  getAfdianMessageUserDetails,
   getAfdianMessages,
   sendAfdianMessage,
   type AfdianMessage,
@@ -43,6 +55,10 @@ import { Dialog, DropdownMenu } from "~/components/ScaleAwareThemes";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { Bubble, BubbleContent } from "~/components/s11a/bubble";
 import { AfdianDialogList } from "~/components/afdian/messages-sidebar";
+import {
+  useSetHeaderIdentity,
+  type HeaderIdentityDetail,
+} from "~/layout/header-actions";
 import Page from "~/layout/page";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "afdian-messages-sidebar-width";
@@ -52,6 +68,8 @@ const SIDEBAR_MIN_WIDTH = 144;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 const SIDEBAR_COMPACT_WIDTH = 220;
+const COMPLAINT_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const COMPLAINT_UNFREEZE_DELAY_MS = 10 * 24 * 60 * 60 * 1000;
 const NARROW_PANE_EASE: [number, number, number, number] = [
   0.22, 0.82, 0.3, 1,
 ];
@@ -130,6 +148,29 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
+function formatAmount(value?: string | null) {
+  if (!value) return "--";
+  if (value === "**") return "未公开";
+  const amount = Number(value.replaceAll(",", ""));
+  if (!Number.isFinite(amount)) return value;
+  return `¥${new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)}`;
+}
+
+function formatBirthday(value?: string | null) {
+  if (!value) return null;
+  const normalized = value.replaceAll("-", "");
+  if (!/^\d{8}$/.test(normalized)) return value;
+  return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6)}`;
+}
+
+function formatHiddenValue(value?: string | null) {
+  if (!value) return null;
+  return value === "**" ? "未公开" : value;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -184,6 +225,99 @@ function parseAfdianOrder(content: unknown) {
     remark: textValue(record.remark),
     skuDetails,
   };
+}
+
+function parseAfdianGroup(content: unknown) {
+  const record = asRecord(content);
+  const group = asRecord(record?.group);
+  if (!group) return null;
+
+  const title = textValue(group.title);
+  const cover = textValue(group.cover);
+  if (!title && !cover) return null;
+
+  return {
+    cover,
+    title: title || "爱发电电圈",
+  };
+}
+
+function parseAfdianComplaint(content: unknown) {
+  const text = textValue(content);
+  if (!text?.startsWith("用户在微信发起投诉")) return null;
+
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 6) return null;
+
+  lines.shift();
+  const profileUrl = lines.at(-1)?.startsWith("http") ? lines.pop() : null;
+  const orderNo = lines.pop() || null;
+  const amount = lines.pop() || null;
+  const submittedAt = lines.pop() || null;
+  const complaintNo = lines.shift() || null;
+  const reason = lines.join("\n") || "用户申请退款";
+  const userId = profileUrl?.split("/").filter(Boolean).at(-1) || null;
+
+  return {
+    amount,
+    complaintNo,
+    orderNo,
+    reason,
+    submittedAt,
+    userId,
+  };
+}
+
+function parseAfdianDateTime(value?: string | null) {
+  if (!value) return null;
+  const matched = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/,
+  );
+  if (!matched) return null;
+
+  const [, year, month, day, hour, minute, second] = matched;
+  const timestamp = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  ).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatRemainingDuration(duration: number) {
+  const totalMinutes = Math.max(1, Math.ceil(duration / 60_000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
+  return `${minutes} 分钟`;
+}
+
+function getComplaintStatus(submittedAt: string | null, now: number) {
+  const submittedTimestamp = parseAfdianDateTime(submittedAt);
+  if (submittedTimestamp === null) {
+    return "订单已暂时冻结，请在 24 小时内回复并联系用户撤诉。";
+  }
+
+  const defaultWithdrawAt = submittedTimestamp + COMPLAINT_RESPONSE_WINDOW_MS;
+  if (now < defaultWithdrawAt) {
+    return `订单已暂时冻结，请在 ${formatRemainingDuration(defaultWithdrawAt - now)} 内回复并联系用户撤诉。`;
+  }
+
+  const unfreezeAt = defaultWithdrawAt + COMPLAINT_UNFREEZE_DELAY_MS;
+  if (now < unfreezeAt) {
+    return `用户超过 24 小时未继续投诉，已默认撤诉。订单预计在 ${formatRemainingDuration(unfreezeAt - now)} 后自动解冻。`;
+  }
+
+  return "用户超过 24 小时未继续投诉，已默认撤诉。订单已到达自动解冻时间。";
 }
 
 function normalizeOrderText(value: string) {
@@ -250,9 +384,9 @@ function AfdianOrderCard({
             ))}
           </div>
         )}
-        {remark && (
-          <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-white/80">
-            {remark}
+        {orderNo && (
+          <p className="mt-3 break-all font-mono-sarasa text-xs leading-5 text-white/75">
+            订单号 {orderNo}
           </p>
         )}
         {(amount || redeemed) && (
@@ -275,12 +409,116 @@ function AfdianOrderCard({
           </div>
         )}
       </div>
-      {orderNo && (
-        <p className="break-all px-4 py-3 font-mono-sarasa text-sm text-white/80">
-          {orderNo}
-        </p>
+      {remark && (
+        <div className="px-4 py-3">
+          <p className="mb-1 text-xs text-white/45">用户填写</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-5 text-white/80">
+            {remark}
+          </p>
+        </div>
       )}
     </div>
+  );
+}
+
+function AfdianComplaintCard({ content }: { content: unknown }) {
+  const complaint = parseAfdianComplaint(content);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (!complaint) return <p>此投诉消息没有可显示的内容</p>;
+
+  const status = getComplaintStatus(complaint.submittedAt, now);
+
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-[18px] text-white/90">
+      <div className="min-w-0 bg-red-500 px-4 py-4 text-white">
+        <Flex align="center" gap="2">
+          <WarningCircleIcon size={20} weight="fill" />
+          <Text size="3" weight="bold" highContrast>
+            微信支付投诉
+          </Text>
+        </Flex>
+        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-5">
+          {complaint.reason}
+        </p>
+        {complaint.amount && (
+          <p className="mt-4 text-3xl font-medium tracking-tight">
+            ¥ {complaint.amount}
+          </p>
+        )}
+        <p className="mt-3 text-xs leading-5 text-white/80">
+          {status}
+        </p>
+      </div>
+      <div className="px-4 py-3">
+        <DataList.Root size="1">
+          {complaint.submittedAt && (
+            <DataList.Item align="start">
+              <DataList.Label minWidth="88px">投诉时间</DataList.Label>
+              <DataList.Value>{complaint.submittedAt}</DataList.Value>
+            </DataList.Item>
+          )}
+          {complaint.orderNo && (
+            <DataList.Item align="start">
+              <DataList.Label minWidth="88px">订单号</DataList.Label>
+              <DataList.Value className="min-w-0 break-all font-mono-sarasa">
+                {complaint.orderNo}
+              </DataList.Value>
+            </DataList.Item>
+          )}
+          {complaint.complaintNo && (
+            <DataList.Item align="start">
+              <DataList.Label minWidth="88px">投诉单号</DataList.Label>
+              <DataList.Value className="min-w-0 break-all font-mono-sarasa">
+                {complaint.complaintNo}
+              </DataList.Value>
+            </DataList.Item>
+          )}
+          {complaint.userId && (
+            <DataList.Item align="start">
+              <DataList.Label minWidth="88px">用户 ID</DataList.Label>
+              <DataList.Value className="min-w-0 break-all font-mono-sarasa">
+                {complaint.userId}
+              </DataList.Value>
+            </DataList.Item>
+          )}
+        </DataList.Root>
+      </div>
+    </div>
+  );
+}
+
+function AfdianGroupCard({ content }: { content: unknown }) {
+  const group = parseAfdianGroup(content);
+  if (!group) return <p>此电圈消息没有可显示的内容</p>;
+
+  return (
+    <Flex direction="column" gap="3" p="3" className="w-full min-w-0">
+      <Text as="p" size="2" highContrast>
+        您已加入
+      </Text>
+      <Flex align="center" gap="3" className="min-w-0">
+        <Avatar
+          size="6"
+          radius="medium"
+          src={group.cover ?? undefined}
+          fallback={group.title.slice(0, 1) || "圈"}
+          className="shrink-0"
+        />
+        <Text
+          as="p"
+          size="5"
+          weight="bold"
+          highContrast
+          className="min-w-0 break-words leading-snug"
+        >
+          {group.title}
+        </Text>
+      </Flex>
+    </Flex>
   );
 }
 
@@ -291,6 +529,9 @@ function MessageContent({
   message: AfdianMessage;
   usedRedemptionCode: boolean;
 }) {
+  if (parseAfdianComplaint(message.content)) {
+    return <AfdianComplaintCard content={message.content} />;
+  }
   if (message.messageType === 1 || typeof message.content === "string") {
     return <p className="whitespace-pre-wrap text-sm leading-6">{String(message.content)}</p>;
   }
@@ -301,6 +542,9 @@ function MessageContent({
         usedRedemptionCode={usedRedemptionCode}
       />
     );
+  }
+  if (message.messageType === 6) {
+    return <AfdianGroupCard content={message.content} />;
   }
   if (message.messageType === 4) {
     return (
@@ -327,6 +571,10 @@ function MessageBubble({
 }) {
   const sent = message.direction === "send";
   const isOrder = message.messageType === 2;
+  const isGroup = message.messageType === 6;
+  const isComplaint = Boolean(parseAfdianComplaint(message.content));
+  const isWideCard = isOrder || isComplaint;
+  const isRichCard = isWideCard || isGroup;
   return (
     <div className={`flex min-w-0 items-end gap-2 ${sent ? "justify-end" : "justify-start"}`}>
       {!sent && (
@@ -341,18 +589,22 @@ function MessageBubble({
       <Bubble
         platform="imessage"
         align={sent ? "end" : "start"}
-        variant={isOrder ? "secondary" : sent ? "default" : "secondary"}
+        variant={isWideCard ? "secondary" : sent ? "default" : "secondary"}
         className={
-          isOrder
+          isWideCard
             ? sent
               ? "w-[90%]! max-w-[34rem]!"
               : "w-[calc(100%_-_2.5rem)]! max-w-[34rem]!"
+            : isGroup
+              ? sent
+                ? "w-[22rem]! max-w-[90%]!"
+                : "w-[22rem]! max-w-[calc(100%_-_2.5rem)]!"
             : ""
         }
       >
         <BubbleContent
           className={`relative overflow-visible! rounded-[18px]! ${
-            isOrder ? "w-full! p-0!" : ""
+            isRichCard ? "w-full! p-0!" : ""
           }`}
         >
           <MessageContent
@@ -473,10 +725,6 @@ function MessageComposer({
           className="!pointer-events-none h-full w-full"
           intensity={100}
           position="bottom"
-        />
-        <div
-          aria-hidden="true"
-          className="afdian-message-composer-background pointer-events-none absolute inset-0 z-10"
         />
         {error && (
           <p className="relative z-20 mb-2 text-xs text-red-300">{error}</p>
@@ -661,6 +909,7 @@ function MessageComposer({
 export default function AfdianMessagesPage() {
   const nativeAvailable = isAfdianNativeAvailable();
   const { isDesktop, isNarrow } = useUiScaleViewport();
+  const setHeaderIdentity = useSetHeaderIdentity();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -670,6 +919,7 @@ export default function AfdianMessagesPage() {
   const [selectedUserId, setSelectedUserId] = useState(
     searchParams.get("userId") || "",
   );
+  const [detailsUserId, setDetailsUserId] = useState("");
   const sessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
     queryFn: getAfdianSessionStatus,
@@ -722,6 +972,146 @@ export default function AfdianMessagesPage() {
   const selectedDialog = dialogs.find(
     (item) => item.user.userId === selectedUserId,
   );
+  const selectedDialogAvatar = selectedDialog?.user.avatar;
+  const selectedDialogName = selectedDialog?.user.name;
+  const userDetailsQuery = useQuery({
+    queryKey: ["afdian", "message-user-details", selectedUserId],
+    queryFn: () => getAfdianMessageUserDetails(selectedUserId),
+    enabled:
+      nativeAvailable &&
+      connected &&
+      Boolean(selectedUserId) &&
+      !isNarrow &&
+      detailsUserId === selectedUserId,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const headerIdentityDetails = useMemo<HeaderIdentityDetail[]>(() => {
+    if (!selectedDialog) return [];
+    const profile = userDetailsQuery.data;
+    const details: HeaderIdentityDetail[] = [
+      { label: "用户 ID", value: selectedDialog.user.userId },
+    ];
+    const addDetail = (
+      label: string,
+      value: string | number | null | undefined,
+    ) => {
+      if (value === null || value === undefined || value === "") return;
+      details.push({ label, value: String(value) });
+    };
+    const addBadgeDetail = (
+      label: string,
+      values: string[],
+      icon?: HeaderIdentityDetail["icon"],
+    ) => {
+      if (values.length === 0) return;
+      details.push({
+        icon,
+        label,
+        value: (
+          <Flex gap="1" wrap="wrap">
+            {values.map((value) => (
+              <Badge
+                key={value}
+                color="gray"
+                size="1"
+                variant="soft"
+                title={value}
+                className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap"
+              >
+                {value}
+              </Badge>
+            ))}
+          </Flex>
+        ),
+      });
+    };
+
+    if (profile) {
+      details.push({
+        icon: <ArrowDownLeftIcon size={16} weight="bold" />,
+        label: "对方发电",
+        value: `${formatAmount(profile.sponsoredAmount)} · ${profile.sponsoredOrderCount} 笔`,
+      });
+      details.push({
+        icon: <ArrowUpRightIcon size={16} weight="bold" />,
+        label: "我的发电",
+        value: `${formatAmount(profile.receivedAmount)} · ${profile.receivedOrderCount} 笔`,
+      });
+      addBadgeDetail(
+        "对方计划",
+        profile.sponsoredPlanNames,
+        <ArrowDownLeftIcon size={16} weight="bold" />,
+      );
+      addBadgeDetail(
+        "我的计划",
+        profile.receivedPlanNames,
+        <ArrowUpRightIcon size={16} weight="bold" />,
+      );
+      addDetail("最近收到", profile.lastSponsoredAt ? formatDateTime(profile.lastSponsoredAt) : null);
+      addDetail("最近发出", profile.lastReceivedAt ? formatDateTime(profile.lastReceivedAt) : null);
+      addDetail("生日", formatBirthday(profile.birthday));
+      addDetail(
+        "类型",
+        profile.creatorType === 1
+          ? "个人"
+          : profile.creatorType === 2
+            ? "组织"
+            : null,
+      );
+      addDetail("分类", profile.categoryName);
+      addDetail("月赞助", formatHiddenValue(profile.monthlyFans));
+      addDetail("月收入", formatAmount(profile.monthlyIncome));
+      addDetail("介绍", profile.creatorDetail);
+    }
+
+    addDetail("私信", selectedDialog.totalCount);
+    addDetail("未读", selectedDialog.unreadCount);
+    addDetail("联系时间", formatDateTime(selectedDialog.sentAt));
+    return details;
+  }, [selectedDialog, userDetailsQuery.data]);
+  const userDetailsError = userDetailsQuery.isError
+    ? getAfdianErrorMessage(userDetailsQuery.error, "部分用户资料暂时无法加载")
+    : null;
+  const requestSelectedUserDetails = useCallback(() => {
+    setDetailsUserId(selectedUserId);
+  }, [selectedUserId]);
+
+  useLayoutEffect(() => {
+    if (isNarrow || !selectedDialogName) {
+      setHeaderIdentity(null);
+      return;
+    }
+
+    setHeaderIdentity({
+      avatar: selectedDialogAvatar,
+      cover: userDetailsQuery.data?.cover,
+      description: userDetailsQuery.data?.creatorDoing,
+      details: headerIdentityDetails,
+      detailsError: userDetailsError,
+      detailsLoading: userDetailsQuery.isLoading,
+      fallback: selectedDialogName.slice(0, 1) || "爱",
+      isVerified: userDetailsQuery.data?.isVerified,
+      name: selectedDialogName,
+      onDetailsOpen: requestSelectedUserDetails,
+      profileSlug: userDetailsQuery.data?.urlSlug,
+    });
+
+    return () => setHeaderIdentity(null);
+  }, [
+    isNarrow,
+    headerIdentityDetails,
+    selectedDialogAvatar,
+    selectedDialogName,
+    requestSelectedUserDetails,
+    setHeaderIdentity,
+    userDetailsError,
+    userDetailsQuery.data?.cover,
+    userDetailsQuery.data?.creatorDoing,
+    userDetailsQuery.data?.isVerified,
+    userDetailsQuery.data?.urlSlug,
+    userDetailsQuery.isLoading,
+  ]);
   const messagesQuery = useInfiniteQuery({
     queryKey: ["afdian", "messages", selectedUserId],
     queryFn: ({ pageParam }) =>
@@ -786,6 +1176,17 @@ export default function AfdianMessagesPage() {
   const messagesViewportRef =
     useRef<OverlayScrollbarsComponentRef<"div">>(null);
   const shouldScrollToBottomRef = useRef(true);
+  const messageScrollEvents = useMemo<EventListeners>(
+    () => ({
+      initialized: (instance) => {
+        if (!shouldScrollToBottomRef.current) return;
+        const viewport = instance.elements().scrollOffsetElement;
+        viewport.scrollTop = viewport.scrollHeight;
+        shouldScrollToBottomRef.current = false;
+      },
+    }),
+    [],
+  );
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [isResizing, setIsResizing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -832,13 +1233,21 @@ export default function AfdianMessagesPage() {
     ) {
       return;
     }
-    shouldScrollToBottomRef.current = false;
-    const frame = requestAnimationFrame(() => {
+    let frame = 0;
+    let attempts = 0;
+    const scrollToBottom = () => {
       const viewport = messagesViewportRef.current
         ?.osInstance()
         ?.elements().scrollOffsetElement;
-      if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    });
+      if (!viewport) {
+        attempts += 1;
+        if (attempts < 30) frame = requestAnimationFrame(scrollToBottom);
+        return;
+      }
+      viewport.scrollTop = viewport.scrollHeight;
+      shouldScrollToBottomRef.current = false;
+    };
+    frame = requestAnimationFrame(scrollToBottom);
     return () => cancelAnimationFrame(frame);
   }, [
     messages.length,
@@ -997,9 +1406,9 @@ export default function AfdianMessagesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${isNarrow ? "" : "px-3 pb-3 pt-3 sm:px-5"}`}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {dialogsQuery.isError ? (
-          <div className={`flex items-center justify-between px-4 py-3 text-sm text-white/60 ${isNarrow ? "" : "rounded-xl bg-nav-item"}`}>
+          <div className="flex items-center justify-between px-4 py-3 text-sm text-white/60">
             <span>私信列表暂时无法加载</span>
             <Button variant="soft" onClick={() => void dialogsQuery.refetch()}>
               <ArrowClockwiseIcon size={14} />
@@ -1007,7 +1416,7 @@ export default function AfdianMessagesPage() {
             </Button>
           </div>
         ) : dialogsQuery.isLoading ? (
-          <div className={`flex items-center justify-center py-16 text-sm text-white/50 ${isNarrow ? "" : "rounded-xl bg-nav-item"}`}>
+          <div className="flex items-center justify-center py-16 text-sm text-white/50">
             <Spinner />
           </div>
         ) : (
@@ -1026,7 +1435,7 @@ export default function AfdianMessagesPage() {
                 transition={{ duration: 0.26, ease: NARROW_PANE_EASE }}
                 aria-hidden={isNarrow && narrowPane !== "dialogs"}
                 style={isNarrow ? undefined : { width: sidebarWidth }}
-                className={`flex min-h-0 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 w-full bg-[var(--app-background)] ${narrowPane === "dialogs" ? "" : "pointer-events-none"}` : "shrink-0 rounded-xl bg-nav-item p-2"}`}
+                className={`flex min-h-0 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 w-full bg-[var(--app-background)] ${narrowPane === "dialogs" ? "" : "pointer-events-none"}` : "shrink-0"}`}
               >
                 {!compactSidebar && (
                   <div className="flex shrink-0 items-center justify-between px-2 py-2">
@@ -1095,9 +1504,9 @@ export default function AfdianMessagesPage() {
               }
               transition={{ duration: 0.26, ease: NARROW_PANE_EASE }}
               aria-hidden={isNarrow && narrowPane !== "conversation"}
-              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 z-10 bg-[var(--app-background)] ${narrowPane === "conversation" ? "" : "pointer-events-none"}` : "rounded-xl bg-nav-item"}`}
+              className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 z-10 bg-[var(--app-background)] ${narrowPane === "conversation" ? "" : "pointer-events-none"}` : ""}`}
             >
-              {selectedDialog ? (
+              {selectedDialog && isNarrow ? (
                 <div className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
                   {isNarrow && (
                     <Button
@@ -1150,8 +1559,9 @@ export default function AfdianMessagesPage() {
                       } as CSSProperties
                     }
                     options={AUTO_HIDE_SCROLLBAR_OPTIONS}
+                    events={messageScrollEvents}
                   >
-                    <div className="flex min-h-full flex-col px-4 pb-28">
+                    <div className="flex min-h-full flex-col px-4 pb-[calc(var(--afdian-composer-height)+1rem)]">
                       {messagesQuery.hasNextPage && (
                         <Button
                           variant="ghost"
@@ -1162,7 +1572,7 @@ export default function AfdianMessagesPage() {
                           {messagesQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更早消息"}
                         </Button>
                       )}
-                      <div className="flex min-h-full flex-1 flex-col gap-3 px-1 py-4 sm:px-3">
+                      <div className="mt-auto flex flex-col gap-3 px-1 py-4 sm:px-3">
                         {visibleMessages.map((message) => (
                           <MessageBubble
                             key={message.id}

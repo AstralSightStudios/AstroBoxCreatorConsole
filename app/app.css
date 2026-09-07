@@ -216,10 +216,6 @@ body,
     min-height: calc(100% + var(--ui-safe-area-bottom));
 }
 
-.afdian-message-composer-background {
-    background: linear-gradient(to bottom, transparent, var(--app-background));
-}
-
 .afdian-message-scroll[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: 0.5rem;
     right: 0.125rem;
