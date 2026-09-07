@@ -3,6 +3,7 @@ import { Avatar, Badge, Button, Spinner } from "@radix-ui/themes";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { useSearchParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   AFDIAN_DIALOGS_QUERY_KEY,
   getAfdianDialogs,
@@ -23,6 +24,24 @@ const DIALOG_LIST_SCROLLBAR_OPTIONS: PartialOptions = {
     autoHideDelay: 700,
   },
 };
+const PINNED_DIALOGS_STORAGE_KEY = "afdian-messages-pinned-dialogs";
+const DEFAULT_PINNED_DIALOG_ID = "27f7cea2370d11e8ae8852540025c377";
+
+function readPinnedDialogIds() {
+  if (typeof window === "undefined") return [DEFAULT_PINNED_DIALOG_ID];
+
+  try {
+    const stored = window.localStorage.getItem(PINNED_DIALOGS_STORAGE_KEY);
+    if (!stored) return [DEFAULT_PINNED_DIALOG_ID];
+
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [DEFAULT_PINNED_DIALOG_ID];
+  } catch {
+    return [DEFAULT_PINNED_DIALOG_ID];
+  }
+}
 
 export function AfdianDialogList({
   items,
@@ -37,6 +56,34 @@ export function AfdianDialogList({
   compact: boolean;
   onScroll?: (element: HTMLElement) => void;
 }) {
+  const [pinnedUserIds, setPinnedUserIds] = useState(readPinnedDialogIds);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PINNED_DIALOGS_STORAGE_KEY,
+        JSON.stringify(pinnedUserIds),
+      );
+    } catch {
+      // 本地存储不可用时保留当前会话内的置顶状态
+    }
+  }, [pinnedUserIds]);
+
+  const orderedItems = useMemo(() => {
+    const pinnedIndex = new Map(
+      pinnedUserIds.map((userId, index) => [userId, index]),
+    );
+
+    return [...items].sort((left, right) => {
+      const leftIndex = pinnedIndex.get(left.user.userId);
+      const rightIndex = pinnedIndex.get(right.user.userId);
+      if (leftIndex === undefined && rightIndex === undefined) return 0;
+      if (leftIndex === undefined) return 1;
+      if (rightIndex === undefined) return -1;
+      return leftIndex - rightIndex;
+    });
+  }, [items, pinnedUserIds]);
+
   return (
     <OverlayScrollbarsComponent
       defer
@@ -57,7 +104,7 @@ export function AfdianDialogList({
           compact ? "items-center gap-2 px-1" : "gap-1"
         }`}
       >
-        {items.map((item) => {
+        {orderedItems.map((item) => {
           const selected = item.user.userId === selectedUserId;
           return (
             <button
@@ -205,7 +252,7 @@ export default function AfdianMessagesSidebar() {
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
       <div className="flex shrink-0 items-center justify-between px-2 py-2">
-        <p className="text-sm font-medium text-white/80">全部对话</p>
+        <p className="text-sm font-medium text-white/80">爱发电私信</p>
         {dialogsQuery.hasNextPage && (
           <Button
             size="1"
