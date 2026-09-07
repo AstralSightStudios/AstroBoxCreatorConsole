@@ -6,6 +6,7 @@ import {
   CheckIcon,
   DownloadSimpleIcon,
   FolderOpenIcon,
+  ShareNetworkIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -69,10 +70,58 @@ const LOG_LEVEL_OPTIONS: LogLevel[] = [
   "error",
 ];
 
+interface LogArchivePayload {
+  fileName: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
+function detectPlatformFromUserAgent(): string | null {
+  const ua = `${navigator.userAgent} ${navigator.platform}`;
+  if (/Android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod|iOS/i.test(ua)) return "ios";
+  return null;
+}
+
+function decodeBase64ToUint8Array(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function isShareCanceled(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+  return typeof error === "string" && error.toLowerCase().includes("abort");
+}
+
 /** 日志与诊断：级别调节、打开日志目录、导出日志包。 */
 function LogsSection() {
   const [level, setLevelState] = useState<LogLevel>(getLogLevel());
   const [exporting, setExporting] = useState(false);
+  const [platform, setPlatform] = useState<string | null>(() =>
+    isTauriRuntime() ? detectPlatformFromUserAgent() : "web",
+  );
+  const isNativeMobile = platform === "android" || platform === "ios";
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let alive = true;
+    invoke<string>("runtime_platform")
+      .then((value) => {
+        if (alive) setPlatform(value);
+      })
+      .catch(() => {
+        /* 平台探测失败时沿用 UA 初值 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const handleSelectLevel = (next: LogLevel) => {
     if (next === level) return;
@@ -116,6 +165,47 @@ function LogsSection() {
       );
     } catch (error) {
       reportFailure("settings/logs", "导出日志包失败", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const shareViaWebShareApi = async (archive: LogArchivePayload) => {
+    if (typeof navigator.share !== "function") {
+      throw new Error("当前环境不支持系统分享");
+    }
+    const shareFile = new File(
+      [decodeBase64ToUint8Array(archive.dataBase64)],
+      archive.fileName,
+      { type: archive.mimeType },
+    );
+    const shareData: ShareData = {
+      files: [shareFile],
+      title: archive.fileName,
+    };
+    if (
+      typeof navigator.canShare === "function" &&
+      !navigator.canShare(shareData)
+    ) {
+      throw new Error("当前环境不支持分享文件");
+    }
+    await navigator.share(shareData);
+  };
+
+  const handleShareArchive = async () => {
+    setExporting(true);
+    try {
+      const archive = await invoke<LogArchivePayload>("prepare_logs_archive");
+      if (platform === "android") {
+        await invoke("share_logs_archive", { payload: archive });
+        reportSuccess("settings/logs", "已通过系统分享导出日志包");
+      } else {
+        await shareViaWebShareApi(archive);
+        reportSuccess("settings/logs", "已通过系统分享导出日志包");
+      }
+    } catch (error) {
+      if (isShareCanceled(error)) return;
+      reportFailure("settings/logs", "分享日志包失败", error);
     } finally {
       setExporting(false);
     }
@@ -202,27 +292,51 @@ function LogsSection() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="soft"
-            size="2"
-            onClick={() => void handleOpenLogDir()}
-          >
-            <FolderOpenIcon size={15} />
-            打开日志文件夹
-          </Button>
-          <Button
-            variant="soft"
-            size="2"
-            disabled={exporting}
-            onClick={() => void handleExportArchive()}
-          >
-            <DownloadSimpleIcon size={15} />
-            {exporting ? "正在打包..." : "拉取日志包 (.tar.gz)"}
-          </Button>
+          {isNativeMobile ? (
+            <Button
+              variant="soft"
+              size="2"
+              disabled={exporting}
+              onClick={() => void handleShareArchive()}
+            >
+              <ShareNetworkIcon size={15} />
+              {exporting ? "正在打包..." : "分享日志包 (.tar.gz)"}
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="soft"
+                size="2"
+                onClick={() => void handleOpenLogDir()}
+              >
+                <FolderOpenIcon size={15} />
+                打开日志文件夹
+              </Button>
+              <Button
+                variant="soft"
+                size="2"
+                disabled={exporting}
+                onClick={() => void handleExportArchive()}
+              >
+                <DownloadSimpleIcon size={15} />
+                {exporting ? "正在打包..." : "拉取日志包 (.tar.gz)"}
+              </Button>
+            </>
+          )}
         </div>
         <p className="text-[11.5px] leading-snug text-white/40">
-          日志包内含最近运行日志、资源发布/编辑会话记录以及构建与设备诊断信息，
-          可在反馈问题时附上。全局日志保留 7 天，资源会话日志保留 30 天。
+          {isNativeMobile ? (
+            <>
+              手机系统不允许直接打开应用日志目录，请通过系统分享导出日志包
+              （可选择「存储到文件」等保存位置）后再附上。日志包含最近运行日志与资源发布/编辑会话记录。
+              全局日志保留 7 天，资源会话日志保留 30 天。
+            </>
+          ) : (
+            <>
+              日志包内含最近运行日志、资源发布/编辑会话记录以及构建与设备诊断信息，
+              可在反馈问题时附上。全局日志保留 7 天，资源会话日志保留 30 天。
+            </>
+          )}
         </p>
       </div>
     </SectionCard>

@@ -7,6 +7,7 @@ mod afdian_notifications;
 mod buildinfo;
 mod logger;
 mod logs_archive;
+mod logs_share;
 mod resource_log;
 
 #[cfg(target_os = "macos")]
@@ -112,6 +113,11 @@ struct AppBuildInfo {
     git_commit_hash: &'static str,
     build_time: &'static str,
     build_user: &'static str,
+}
+
+#[tauri::command]
+fn runtime_platform() -> String {
+    std::env::consts::OS.to_string()
 }
 
 /// 暴露构建期注入的元信息（build.rs 生成 buildinfo.rs），供前端在
@@ -285,7 +291,10 @@ pub fn run() {
             resource_log::resource_log_start,
             resource_log::resource_log_write,
             resource_log::resource_log_discard,
-            logs_archive::export_logs_archive
+            logs_archive::export_logs_archive,
+            logs_share::prepare_logs_archive,
+            logs_share::share_logs_archive,
+            runtime_platform
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
