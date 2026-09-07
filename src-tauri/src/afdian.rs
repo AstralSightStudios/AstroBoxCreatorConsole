@@ -192,6 +192,41 @@ pub(crate) struct AfdianDialogUser {
     pub(crate) avatar: Option<String>,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianMessageUserDetails {
+    user_id: String,
+    cover: Option<String>,
+    url_slug: Option<String>,
+    status: Option<i64>,
+    gender: Option<i64>,
+    birthday: Option<String>,
+    is_verified: Option<bool>,
+    verified_type: Option<i64>,
+    creator_type: Option<i64>,
+    creator_doing: Option<String>,
+    creator_detail: Option<String>,
+    category_name: Option<String>,
+    monthly_fans: Option<String>,
+    monthly_income: Option<String>,
+    sponsored_amount: Option<String>,
+    sponsored_order_count: Option<i64>,
+    sponsored_plan_names: Vec<String>,
+    last_sponsored_at: Option<String>,
+    received_amount: Option<String>,
+    received_order_count: Option<i64>,
+    received_plan_names: Vec<String>,
+    last_received_at: Option<String>,
+}
+
+#[derive(Default)]
+struct AfdianMessageUserOrderSummary {
+    amount: Option<String>,
+    order_count: Option<i64>,
+    plan_names: Vec<String>,
+    last_order_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianDialogItem {
@@ -635,6 +670,147 @@ pub(crate) async fn fetch_message_dialogs(
 }
 
 #[tauri::command]
+pub(crate) async fn afdian_message_user_details(
+    http_client: tauri::State<'_, AppHttpClient>,
+    user_id: String,
+) -> Result<AfdianMessageUserDetails, String> {
+    let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
+    let user_id = user_id.trim();
+    if user_id.is_empty() {
+        return Err("缺少对话用户 ID".to_string());
+    }
+
+    let profile_url = format!("{IFDIAN_BASE_URL}/api/user/get-profile");
+    let received_url = format!("{AFDIAN_BASE_URL}/api/my/sponsored-bill-filter");
+    let sponsored_url = format!("{AFDIAN_BASE_URL}/api/my/sponsored-bill-out-filter");
+    let product_order_url = format!("{AFDIAN_BASE_URL}/api/my/product-order");
+    let profile_query = [("user_id", user_id)];
+    let profile_request = authenticated_get(
+        &http_client.0,
+        &profile_url,
+        &session.auth_token,
+        &profile_query,
+    );
+    let received_request = fetch_message_user_orders(
+        &http_client.0,
+        &session.auth_token,
+        &received_url,
+        user_id,
+        "user_id",
+        true,
+    );
+    let sponsored_request = fetch_message_user_orders(
+        &http_client.0,
+        &session.auth_token,
+        &sponsored_url,
+        user_id,
+        "remote_id",
+        false,
+    );
+    let product_order_request = fetch_message_user_orders(
+        &http_client.0,
+        &session.auth_token,
+        &product_order_url,
+        user_id,
+        "remote_id",
+        false,
+    );
+    let (profile_result, received_result, sponsored_result, product_order_result) = tokio::join!(
+        profile_request,
+        received_request,
+        sponsored_request,
+        product_order_request
+    );
+
+    let profile = profile_result
+        .and_then(|response| {
+            ensure_api_success(&response, "用户公开资料加载失败")?;
+            Ok(response)
+        })
+        .ok();
+    let received_orders = received_result.ok();
+    let sponsored_orders = sponsored_result.ok();
+    let product_orders = product_order_result.ok();
+    if profile.is_none()
+        && received_orders.is_none()
+        && sponsored_orders.is_none()
+        && product_orders.is_none()
+    {
+        return Err("用户资料暂时无法加载".to_string());
+    }
+
+    let user = profile
+        .as_ref()
+        .and_then(|response| response.pointer("/data/user"));
+    let creator = user.and_then(|value| value.get("creator"));
+    let received_summary = received_orders
+        .map(summarize_message_user_orders)
+        .unwrap_or_default();
+    let sponsored_summary = if sponsored_orders.is_some() || product_orders.is_some() {
+        summarize_message_user_orders(
+            sponsored_orders
+                .into_iter()
+                .flatten()
+                .chain(product_orders.into_iter().flatten()),
+        )
+    } else {
+        AfdianMessageUserOrderSummary::default()
+    };
+
+    Ok(AfdianMessageUserDetails {
+        user_id: user_id.to_string(),
+        cover: user
+            .and_then(|value| value.get("cover"))
+            .and_then(value_to_text),
+        url_slug: user
+            .and_then(|value| value.get("url_slug"))
+            .and_then(value_to_text),
+        status: user
+            .and_then(|value| value.get("status"))
+            .and_then(value_to_i64),
+        gender: user
+            .and_then(|value| value.get("gender"))
+            .and_then(value_to_i64),
+        birthday: user
+            .and_then(|value| value.get("birthday"))
+            .and_then(value_to_text),
+        is_verified: user
+            .and_then(|value| value.get("is_verified"))
+            .and_then(value_to_i64)
+            .map(|value| value == 1),
+        verified_type: user
+            .and_then(|value| value.get("verified_type"))
+            .and_then(value_to_i64),
+        creator_type: creator
+            .and_then(|value| value.get("type"))
+            .and_then(value_to_i64),
+        creator_doing: creator
+            .and_then(|value| value.get("doing"))
+            .and_then(value_to_text),
+        creator_detail: creator
+            .and_then(|value| value.get("detail"))
+            .and_then(value_to_text),
+        category_name: creator
+            .and_then(|value| value.pointer("/category/name"))
+            .and_then(value_to_text),
+        monthly_fans: creator
+            .and_then(|value| value.get("monthly_fans"))
+            .and_then(value_to_text),
+        monthly_income: creator
+            .and_then(|value| value.get("monthly_income"))
+            .and_then(value_to_text),
+        sponsored_amount: received_summary.amount,
+        sponsored_order_count: received_summary.order_count,
+        sponsored_plan_names: received_summary.plan_names,
+        last_sponsored_at: received_summary.last_order_at,
+        received_amount: sponsored_summary.amount,
+        received_order_count: sponsored_summary.order_count,
+        received_plan_names: sponsored_summary.plan_names,
+        last_received_at: sponsored_summary.last_order_at,
+    })
+}
+
+#[tauri::command]
 pub(crate) async fn afdian_message_messages(
     http_client: tauri::State<'_, AppHttpClient>,
     user_id: String,
@@ -1041,6 +1217,120 @@ async fn fetch_received_order_page(
     .await?;
     ensure_api_success(&response, "收到发电加载失败")?;
     Ok(response)
+}
+
+async fn fetch_message_user_orders(
+    client: &reqwest::Client,
+    token: &str,
+    url: &str,
+    user_id: &str,
+    target_user_field: &str,
+    query_user_id: bool,
+) -> Result<Vec<Value>, String> {
+    let mut matched_orders = Vec::new();
+    let mut last_order_id: Option<String> = None;
+    let mut last_cart_order_id: Option<String> = None;
+
+    for page in 1..=50 {
+        let page_value = page.to_string();
+        let mut query = vec![
+            ("page", page_value.as_str()),
+            ("sort_field", "update_time"),
+            ("sort_value", "desc"),
+            ("is_redeem", "0"),
+            ("status", ""),
+        ];
+        if query_user_id {
+            query.push(("user_id", user_id));
+        }
+        if let Some(value) = last_order_id.as_deref().filter(|value| !value.is_empty()) {
+            query.push(("last_order_id", value));
+        }
+        if let Some(value) = last_cart_order_id
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            query.push(("last_cart_order_id", value));
+        }
+
+        let response = authenticated_get(client, url, token, &query).await?;
+        ensure_api_success(&response, "用户发电资料加载失败")?;
+        let orders = response
+            .pointer("/data/list")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        matched_orders.extend(orders.into_iter().filter(|order| {
+            order
+                .get(target_user_field)
+                .and_then(value_to_text)
+                .as_deref()
+                == Some(user_id)
+                && is_income_order(order)
+        }));
+
+        if response.pointer("/data/has_more").and_then(value_to_i64) != Some(1) {
+            break;
+        }
+        last_order_id = response
+            .pointer("/data/last_order_id")
+            .and_then(value_to_text);
+        last_cart_order_id = response
+            .pointer("/data/last_cart_order_id")
+            .and_then(value_to_text);
+    }
+
+    Ok(matched_orders)
+}
+
+fn summarize_message_user_orders(
+    orders: impl IntoIterator<Item = Value>,
+) -> AfdianMessageUserOrderSummary {
+    let mut amount = Decimal::ZERO;
+    let mut order_count = 0_i64;
+    let mut seen_orders = HashSet::new();
+    let mut seen_plans = HashSet::new();
+    let mut plan_names = Vec::new();
+    let mut last_order_timestamp = None;
+
+    for order in orders {
+        if let Some(identity) = order_identity(&order) {
+            if !seen_orders.insert(identity) {
+                continue;
+            }
+        }
+        amount += order
+            .get("total_amount")
+            .or_else(|| order.get("show_amount"))
+            .and_then(value_to_amount)
+            .and_then(|value| parse_decimal(&value))
+            .unwrap_or(Decimal::ZERO);
+        order_count += 1;
+        if let Some(timestamp) = order
+            .get("update_time")
+            .or_else(|| order.get("create_time"))
+            .and_then(value_to_timestamp)
+        {
+            last_order_timestamp =
+                Some(last_order_timestamp.map_or(timestamp, |current: i64| current.max(timestamp)));
+        }
+        if let Some(plan_name) = order.pointer("/plan/name").and_then(value_to_text) {
+            if seen_plans.insert(plan_name.clone()) {
+                plan_names.push(plan_name);
+            }
+        }
+    }
+
+    AfdianMessageUserOrderSummary {
+        amount: Some(format_decimal(amount)),
+        order_count: Some(order_count),
+        plan_names,
+        last_order_at: last_order_timestamp.and_then(|timestamp| {
+            DateTime::<Utc>::from_timestamp(timestamp, 0)
+                .map(|date| date.with_timezone(&shanghai_timezone()).to_rfc3339())
+        }),
+    }
 }
 
 async fn fetch_today_income_orders(

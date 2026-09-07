@@ -43,6 +43,31 @@ export interface AfdianMessagePage {
   latestMessageId?: string | null;
 }
 
+export interface AfdianMessageUserDetails {
+  userId: string;
+  cover?: string | null;
+  urlSlug?: string | null;
+  status?: number | null;
+  gender?: number | null;
+  birthday?: string | null;
+  isVerified?: boolean | null;
+  verifiedType?: number | null;
+  creatorType?: number | null;
+  creatorDoing?: string | null;
+  creatorDetail?: string | null;
+  categoryName?: string | null;
+  monthlyFans?: string | null;
+  monthlyIncome?: string | null;
+  sponsoredAmount?: string | null;
+  sponsoredOrderCount?: number | null;
+  sponsoredPlanNames: string[];
+  lastSponsoredAt?: string | null;
+  receivedAmount?: string | null;
+  receivedOrderCount?: number | null;
+  receivedPlanNames: string[];
+  lastReceivedAt?: string | null;
+}
+
 export function getAfdianDialogs(page: number) {
   return invoke<AfdianDialogPage>("afdian_message_dialogs", { page });
 }
@@ -56,6 +81,12 @@ export function getAfdianMessages(input: {
     userId: input.userId,
     messageType: input.messageType ?? "new",
     messageId: input.messageId ?? null,
+  });
+}
+
+export function getAfdianMessageUserDetails(userId: string) {
+  return invoke<AfdianMessageUserDetails>("afdian_message_user_details", {
+    userId,
   });
 }
 

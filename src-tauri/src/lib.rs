@@ -271,6 +271,7 @@ pub fn run() {
             afdian::afdian_received_orders,
             afdian::afdian_sponsors,
             afdian::afdian_message_dialogs,
+            afdian::afdian_message_user_details,
             afdian::afdian_message_messages,
             afdian::afdian_message_send,
             afdian_notifications::afdian_message_notifications_set_enabled,
