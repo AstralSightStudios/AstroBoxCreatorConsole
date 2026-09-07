@@ -234,7 +234,7 @@ export default function Header({
               size="2"
               align="start"
               width="400px"
-              className="overflow-y-auto! p-0!"
+              className="overflow-x-hidden! overflow-y-auto! p-0!"
               style={{
                 maxHeight:
                   "min(var(--radix-popover-content-available-height), calc(100dvh - var(--space-6)))",
@@ -311,7 +311,7 @@ export default function Header({
                 )}
                 <div>
                   {headerIdentity.details && headerIdentity.details.length > 0 ? (
-                    <DataList.Root size="2">
+                    <DataList.Root size="2" className="min-w-0 max-w-full">
                       {headerIdentity.details.map((detail) => (
                         <DataList.Item key={detail.label} align="start">
                           <DataList.Label minWidth="96px">
@@ -320,7 +320,7 @@ export default function Header({
                               <span>{detail.label}</span>
                             </Flex>
                           </DataList.Label>
-                          <DataList.Value className="min-w-0 break-words whitespace-normal">
+                          <DataList.Value className="min-w-0 max-w-full overflow-hidden! break-words whitespace-normal">
                             {detail.value}
                           </DataList.Value>
                         </DataList.Item>

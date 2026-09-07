@@ -1009,7 +1009,11 @@ export default function AfdianMessagesPage() {
         icon,
         label,
         value: (
-          <Flex gap="1" wrap="wrap">
+          <Flex
+            gap="1"
+            wrap="wrap"
+            className="w-full min-w-0 max-w-full overflow-hidden"
+          >
             {values.map((value) => (
               <Badge
                 key={value}
@@ -1017,7 +1021,7 @@ export default function AfdianMessagesPage() {
                 size="1"
                 variant="soft"
                 title={value}
-                className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap"
+                className="block min-w-0 max-w-full! overflow-hidden! text-ellipsis! whitespace-nowrap!"
               >
                 {value}
               </Badge>
