@@ -7,11 +7,23 @@ import {
   type MouseEvent,
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { SealCheckIcon } from "@phosphor-icons/react";
+import {
+  Avatar,
+  Box,
+  DataList,
+  Flex,
+  Popover,
+  Separator,
+  Spinner,
+  Text,
+} from "~/components/ScaleAwareThemes";
 import FunctionButton from "~/components/nav/function-button";
 import {
   useHeaderActions,
   useHeaderActionsFit,
   useHeaderBreadcrumb,
+  useHeaderIdentity,
   useHeaderLargeTitle,
   useHeaderLargeTitleProgress,
   useSetHeaderActionsFit,
@@ -63,11 +75,14 @@ export default function Header({
   const headerActions = useHeaderActions();
   const headerActionsFit = useHeaderActionsFit();
   const breadcrumbOverride = useHeaderBreadcrumb();
+  const headerIdentity = useHeaderIdentity();
   const largeTitle = useHeaderLargeTitle();
   const largeTitleProgress = useHeaderLargeTitleProgress();
   const setHeaderActionsFit = useSetHeaderActionsFit();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
+  const hideDesktopAfdianTitle =
+    isDesktop && pathname === "/afdian-messages" && !headerIdentity;
   const isHeaderAvailable = !isMobile || isCollapsed;
   const breadcrumbOpacity = isHeaderAvailable
     ? largeTitle
@@ -192,11 +207,145 @@ export default function Header({
         }}
         className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 ${isBreadcrumbInteractive ? "" : "pointer-events-none"}`}
       >
-        {(
-          breadcrumbOverride
-            ? [...breadcrumbKeys, `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`]
-            : breadcrumbKeys
-        ).map((key, index) => {
+        {headerIdentity ? (
+          <Popover.Root
+            onOpenChange={(open) => {
+              if (open) headerIdentity.onDetailsOpen?.();
+            }}
+          >
+            <Popover.Trigger>
+              <button
+                type="button"
+                aria-label={`查看 ${headerIdentity.name} 的资料`}
+                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-0.5 text-left transition-colors hover:bg-neutral-800"
+              >
+                <Avatar
+                  size="1"
+                  radius="full"
+                  src={headerIdentity.avatar ?? undefined}
+                  fallback={headerIdentity.fallback}
+                />
+                <span className="min-w-0 truncate font-[520] text-size-large">
+                  {headerIdentity.name}
+                </span>
+              </button>
+            </Popover.Trigger>
+            <Popover.Content
+              size="2"
+              align="start"
+              width="400px"
+              className="overflow-y-auto! p-0!"
+              style={{
+                maxHeight:
+                  "min(var(--radix-popover-content-available-height), calc(100dvh - var(--space-6)))",
+              }}
+            >
+              {headerIdentity.isVerified && (
+                <Box className="shrink-0">
+                  {headerIdentity.cover && (
+                    <div className="aspect-[4/1] w-full overflow-hidden">
+                      <img
+                        src={headerIdentity.cover}
+                        alt=""
+                        className="h-full w-full object-cover object-center"
+                      />
+                    </div>
+                  )}
+                  <Flex
+                    direction="column"
+                    gap="2"
+                    className={
+                      headerIdentity.cover
+                        ? "relative -mt-7 px-4 pb-4"
+                        : "px-4 py-4"
+                    }
+                  >
+                    <Avatar
+                      size="6"
+                      radius="full"
+                      src={headerIdentity.avatar ?? undefined}
+                      fallback={headerIdentity.fallback}
+                      className="ring-4 ring-[var(--color-panel-solid)]"
+                    />
+                    <Flex align="center" gap="2" className="min-w-0">
+                      <Text
+                        size="5"
+                        weight="bold"
+                        highContrast
+                        className="min-w-0 break-words"
+                      >
+                        {headerIdentity.name}
+                      </Text>
+                      <SealCheckIcon
+                        size={20}
+                        weight="fill"
+                        className="shrink-0 text-[var(--accent-9)]"
+                        aria-label="已认证创作者"
+                      />
+                    </Flex>
+                    {headerIdentity.description && (
+                      <Text
+                        as="p"
+                        size="2"
+                        color="gray"
+                        className="whitespace-pre-wrap break-words"
+                      >
+                        {headerIdentity.description}
+                      </Text>
+                    )}
+                    {headerIdentity.profileSlug && (
+                      <Text as="p" size="2" color="blue">
+                        @{headerIdentity.profileSlug}
+                      </Text>
+                    )}
+                  </Flex>
+                  <Separator size="4" />
+                </Box>
+              )}
+              <Box p="4">
+                {headerIdentity.detailsLoading && (
+                  <Flex align="center" gap="2" pb="3" className="shrink-0">
+                    <Spinner size="1" />
+                    <Text size="2" color="gray">正在加载用户资料</Text>
+                  </Flex>
+                )}
+                <div>
+                  {headerIdentity.details && headerIdentity.details.length > 0 ? (
+                    <DataList.Root size="2">
+                      {headerIdentity.details.map((detail) => (
+                        <DataList.Item key={detail.label} align="start">
+                          <DataList.Label minWidth="96px">
+                            <Flex align="center" gap="2">
+                              {detail.icon}
+                              <span>{detail.label}</span>
+                            </Flex>
+                          </DataList.Label>
+                          <DataList.Value className="min-w-0 break-words whitespace-normal">
+                            {detail.value}
+                          </DataList.Value>
+                        </DataList.Item>
+                      ))}
+                    </DataList.Root>
+                  ) : !headerIdentity.detailsLoading ? (
+                    <Text size="2" color="gray">
+                      {headerIdentity.detailsError || "暂无用户资料"}
+                    </Text>
+                  ) : null}
+                  {headerIdentity.detailsError && headerIdentity.details?.length ? (
+                    <Text as="p" size="1" color="gray" mt="3">
+                      {headerIdentity.detailsError}
+                    </Text>
+                  ) : null}
+                </div>
+              </Box>
+            </Popover.Content>
+          </Popover.Root>
+        ) : !hideDesktopAfdianTitle ? (
+          (
+            breadcrumbOverride
+              ? [...breadcrumbKeys, `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`]
+              : breadcrumbKeys
+          ).map((key, index) => {
           const isLast =
             breadcrumbOverride
               ? index === breadcrumbKeys.length
@@ -227,7 +376,8 @@ export default function Header({
               </Link>
             </div>
           );
-        })}
+          })
+        ) : null}
       </div>
       {headerActions ? (
         <>

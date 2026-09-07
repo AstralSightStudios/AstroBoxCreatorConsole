@@ -21,6 +21,29 @@ const HeaderBreadcrumbContext = createContext<string | null>(null);
 const SetHeaderBreadcrumbContext = createContext<(value: string | null) => void>(
   () => {},
 );
+export interface HeaderIdentity {
+  avatar?: string | null;
+  cover?: string | null;
+  description?: string | null;
+  details?: HeaderIdentityDetail[];
+  detailsError?: string | null;
+  detailsLoading?: boolean;
+  fallback: string;
+  isVerified?: boolean | null;
+  name: string;
+  onDetailsOpen?: () => void;
+  profileSlug?: string | null;
+}
+
+export interface HeaderIdentityDetail {
+  icon?: ReactNode;
+  label: string;
+  value: ReactNode;
+}
+const HeaderIdentityContext = createContext<HeaderIdentity | null>(null);
+const SetHeaderIdentityContext = createContext<
+  (value: HeaderIdentity | null) => void
+>(() => {});
 const HeaderLargeTitleContext = createContext<string | null>(null);
 const HeaderLargeTitleProgressContext = createContext(0);
 const RegisterHeaderLargeTitleContext = createContext<
@@ -54,6 +77,14 @@ export function useSetHeaderBreadcrumb() {
   return useContext(SetHeaderBreadcrumbContext);
 }
 
+export function useHeaderIdentity() {
+  return useContext(HeaderIdentityContext);
+}
+
+export function useSetHeaderIdentity() {
+  return useContext(SetHeaderIdentityContext);
+}
+
 export function useHeaderLargeTitle() {
   return useContext(HeaderLargeTitleContext);
 }
@@ -74,6 +105,7 @@ export function HeaderActionsProvider({ children }: { children: ReactNode }) {
   const [actions, setActions] = useState<ReactNode>(null);
   const [fit, setFit] = useState(false);
   const [breadcrumb, setBreadcrumb] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<HeaderIdentity | null>(null);
   const [largeTitle, setLargeTitle] = useState<string | null>(null);
   const [largeTitleProgress, setLargeTitleProgress] = useState(0);
   const largeTitleRef = useRef<string | null>(null);
@@ -102,23 +134,27 @@ export function HeaderActionsProvider({ children }: { children: ReactNode }) {
     <SetHeaderActionsContext.Provider value={setActions}>
       <SetHeaderActionsFitContext.Provider value={setFit}>
         <SetHeaderBreadcrumbContext.Provider value={setBreadcrumb}>
-          <RegisterHeaderLargeTitleContext.Provider value={registerLargeTitle}>
-            <UpdateHeaderScrollContext.Provider value={updateHeaderScroll}>
-              <HeaderActionsContext.Provider value={actions}>
-                <HeaderActionsFitContext.Provider value={fit}>
-                  <HeaderBreadcrumbContext.Provider value={breadcrumb}>
-                    <HeaderLargeTitleContext.Provider value={largeTitle}>
-                      <HeaderLargeTitleProgressContext.Provider
-                        value={largeTitleProgress}
-                      >
-                        {children}
-                      </HeaderLargeTitleProgressContext.Provider>
-                    </HeaderLargeTitleContext.Provider>
-                  </HeaderBreadcrumbContext.Provider>
-                </HeaderActionsFitContext.Provider>
-              </HeaderActionsContext.Provider>
-            </UpdateHeaderScrollContext.Provider>
-          </RegisterHeaderLargeTitleContext.Provider>
+          <SetHeaderIdentityContext.Provider value={setIdentity}>
+            <RegisterHeaderLargeTitleContext.Provider value={registerLargeTitle}>
+              <UpdateHeaderScrollContext.Provider value={updateHeaderScroll}>
+                <HeaderActionsContext.Provider value={actions}>
+                  <HeaderActionsFitContext.Provider value={fit}>
+                    <HeaderBreadcrumbContext.Provider value={breadcrumb}>
+                      <HeaderIdentityContext.Provider value={identity}>
+                        <HeaderLargeTitleContext.Provider value={largeTitle}>
+                          <HeaderLargeTitleProgressContext.Provider
+                            value={largeTitleProgress}
+                          >
+                            {children}
+                          </HeaderLargeTitleProgressContext.Provider>
+                        </HeaderLargeTitleContext.Provider>
+                      </HeaderIdentityContext.Provider>
+                    </HeaderBreadcrumbContext.Provider>
+                  </HeaderActionsFitContext.Provider>
+                </HeaderActionsContext.Provider>
+              </UpdateHeaderScrollContext.Provider>
+            </RegisterHeaderLargeTitleContext.Provider>
+          </SetHeaderIdentityContext.Provider>
         </SetHeaderBreadcrumbContext.Provider>
       </SetHeaderActionsFitContext.Provider>
     </SetHeaderActionsContext.Provider>
