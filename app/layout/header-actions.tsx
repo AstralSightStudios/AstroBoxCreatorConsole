@@ -36,6 +36,7 @@ export interface HeaderIdentity {
 }
 
 export interface HeaderIdentityDetail {
+  expandable?: boolean;
   icon?: ReactNode;
   label: string;
   value: ReactNode;

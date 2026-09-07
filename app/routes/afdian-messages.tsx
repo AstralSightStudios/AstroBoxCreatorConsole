@@ -995,9 +995,10 @@ export default function AfdianMessagesPage() {
     const addDetail = (
       label: string,
       value: string | number | null | undefined,
+      options?: Pick<HeaderIdentityDetail, "expandable" | "icon">,
     ) => {
       if (value === null || value === undefined || value === "") return;
-      details.push({ label, value: String(value) });
+      details.push({ ...options, label, value: String(value) });
     };
     const addBadgeDetail = (
       label: string,
@@ -1066,7 +1067,7 @@ export default function AfdianMessagesPage() {
       addDetail("分类", profile.categoryName);
       addDetail("月赞助", formatHiddenValue(profile.monthlyFans));
       addDetail("月收入", formatAmount(profile.monthlyIncome));
-      addDetail("介绍", profile.creatorDetail);
+      addDetail("介绍", profile.creatorDetail, { expandable: true });
     }
 
     addDetail("私信", selectedDialog.totalCount);

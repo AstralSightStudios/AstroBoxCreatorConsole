@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type MouseEvent,
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -11,6 +12,7 @@ import { SealCheckIcon } from "@phosphor-icons/react";
 import {
   Avatar,
   Box,
+  Button,
   DataList,
   Flex,
   Popover,
@@ -61,6 +63,34 @@ const PAGE_NAME_MAP: Record<string, string> = {
 interface HeaderProps {
   scrollProgress?: number;
   disableTitlebarEffect?: boolean;
+}
+
+function ExpandableText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = text.length > 160;
+
+  return (
+    <div className="min-w-0 w-full">
+      <Text
+        as="p"
+        size="2"
+        className={`whitespace-pre-wrap break-words ${canExpand && !expanded ? "line-clamp-5" : ""}`}
+      >
+        {text}
+      </Text>
+      {canExpand && (
+        <Button
+          type="button"
+          size="1"
+          variant="ghost"
+          className="mt-1"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : "展开"}
+        </Button>
+      )}
+    </div>
+  );
 }
 
 export default function Header({
@@ -321,7 +351,11 @@ export default function Header({
                             </Flex>
                           </DataList.Label>
                           <DataList.Value className="min-w-0 max-w-full overflow-hidden! break-words whitespace-normal">
-                            {detail.value}
+                            {detail.expandable && typeof detail.value === "string" ? (
+                              <ExpandableText text={detail.value} />
+                            ) : (
+                              detail.value
+                            )}
                           </DataList.Value>
                         </DataList.Item>
                       ))}
