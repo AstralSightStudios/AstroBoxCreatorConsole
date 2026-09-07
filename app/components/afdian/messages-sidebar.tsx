@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Avatar, Badge, Button, Spinner } from "@radix-ui/themes";
+import { PushPinSimpleIcon } from "@phosphor-icons/react";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { useSearchParams } from "react-router";
@@ -9,6 +10,7 @@ import {
   getAfdianDialogs,
   type AfdianDialog,
 } from "~/api/afdian-messages";
+import { ContextMenu } from "~/components/ScaleAwareThemes";
 import {
   AFDIAN_SESSION_QUERY_KEY,
   getAfdianErrorMessage,
@@ -84,6 +86,14 @@ export function AfdianDialogList({
     });
   }, [items, pinnedUserIds]);
 
+  const togglePinned = (userId: string) => {
+    setPinnedUserIds((current) =>
+      current.includes(userId)
+        ? current.filter((value) => value !== userId)
+        : [userId, ...current],
+    );
+  };
+
   return (
     <OverlayScrollbarsComponent
       defer
@@ -106,59 +116,84 @@ export function AfdianDialogList({
       >
         {orderedItems.map((item) => {
           const selected = item.user.userId === selectedUserId;
+          const pinned = pinnedUserIds.includes(item.user.userId);
           return (
-            <button
-              key={item.user.userId}
-              type="button"
-              className={
-                compact
-                  ? `flex w-full shrink-0 flex-col items-center gap-2 rounded-xl px-1.5 py-3 text-center transition-colors ${
-                      selected
-                        ? "bg-blue-500/90 text-white"
-                        : "text-white/55 hover:bg-white/[0.05]"
-                    }`
-                  : `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                      selected ? "bg-white/10" : "hover:bg-white/[0.05]"
-                    }`
-              }
-              onClick={() => onSelect(item.user.userId)}
-            >
-              <span className="relative">
-                <Avatar
-                  size={compact ? "4" : "3"}
-                  radius="full"
-                  src={item.user.avatar ?? undefined}
-                  fallback={item.user.name.slice(0, 1) || "爱"}
-                />
-                {item.unreadCount > 0 && (
-                  <Badge
-                    color="red"
-                    variant="solid"
-                    className={`absolute justify-center px-1 text-[10px] ${
-                      compact ? "-right-2 -top-2 min-w-4" : "-right-2 -top-2"
-                    }`}
-                  >
-                    {item.unreadCount > 99 ? "99+" : item.unreadCount}
-                  </Badge>
-                )}
-              </span>
-              {compact ? (
-                <span className="w-full truncate text-xs">
-                  {item.user.name}
-                </span>
-              ) : (
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm text-white/85">
-                      {item.user.name}
+            <ContextMenu.Root key={item.user.userId}>
+              <ContextMenu.Trigger className="contents">
+                <button
+                  type="button"
+                  className={
+                    compact
+                      ? `flex w-full shrink-0 flex-col items-center gap-2 rounded-xl px-1.5 py-3 text-center transition-colors ${
+                          selected
+                            ? "bg-blue-500/90 text-white"
+                            : "text-white/55 hover:bg-white/[0.05]"
+                        }`
+                      : `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                          selected ? "bg-white/10" : "hover:bg-white/[0.05]"
+                        }`
+                  }
+                  onClick={() => onSelect(item.user.userId)}
+                >
+                  <span className="relative">
+                    <Avatar
+                      size={compact ? "4" : "3"}
+                      radius="full"
+                      src={item.user.avatar ?? undefined}
+                      fallback={item.user.name.slice(0, 1) || "爱"}
+                    />
+                    {item.unreadCount > 0 && (
+                      <Badge
+                        color="red"
+                        variant="solid"
+                        className={`absolute justify-center px-1 text-[10px] ${
+                          compact ? "-right-2 -top-2 min-w-4" : "-right-2 -top-2"
+                        }`}
+                      >
+                        {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                      </Badge>
+                    )}
+                  </span>
+                  {compact ? (
+                    <span className="flex w-full items-center justify-center gap-1 truncate text-xs">
+                      {pinned && (
+                        <PushPinSimpleIcon
+                          size={12}
+                          weight="fill"
+                          className="shrink-0 text-amber-300"
+                        />
+                      )}
+                      <span className="truncate">{item.user.name}</span>
                     </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-white/40">
-                    {item.preview || "暂无消息摘要"}
-                  </span>
-                </span>
-              )}
-            </button>
+                  ) : (
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        {pinned && (
+                          <PushPinSimpleIcon
+                            size={14}
+                            weight="fill"
+                            className="shrink-0 text-amber-300"
+                            aria-label="已置顶"
+                          />
+                        )}
+                        <span className="truncate text-sm text-white/85">
+                          {item.user.name}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-white/40">
+                        {item.preview || "暂无消息摘要"}
+                      </span>
+                    </span>
+                  )}
+                </button>
+              </ContextMenu.Trigger>
+              <ContextMenu.Content size="1">
+                <ContextMenu.Item onSelect={() => togglePinned(item.user.userId)}>
+                  <PushPinSimpleIcon size={16} />
+                  {pinned ? "取消置顶" : "置顶"}
+                </ContextMenu.Item>
+              </ContextMenu.Content>
+            </ContextMenu.Root>
           );
         })}
         {items.length === 0 && (
