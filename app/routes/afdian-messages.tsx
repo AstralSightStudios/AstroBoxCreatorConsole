@@ -371,11 +371,36 @@ function AfdianOrderCard({
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-[18px] text-white/90">
       <div className="min-w-0 bg-green-500 px-4 py-4 text-white">
-        <p className="break-words text-sm leading-5">
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          {amount ? (
+            <span
+              className={`text-3xl font-medium tracking-tight ${
+                redeemed ? "line-through decoration-2 decoration-white/80" : ""
+              }`}
+            >
+              ¥ {amount}
+            </span>
+          ) : (
+            <span className="text-sm font-medium">
+              {isProduct ? "商品订单" : "发电订单"}
+            </span>
+          )}
+          {redeemed && (
+            <span className="shrink-0 text-sm font-medium text-white/90">
+              使用兑换码
+            </span>
+          )}
+        </div>
+        {month && month > 0 && !isProduct && (
+          <p className="mt-1 text-xs text-white/75">{month} 个月</p>
+        )}
+      </div>
+      <div className="min-w-0 bg-[#2C2C2E] px-4 py-3.5">
+        <p className="break-words text-base font-medium leading-6 text-white">
           {isProduct ? "购买了" : "发电了"} {orderTitle}
         </p>
         {skuDetails.length > 0 && (
-          <div className="mt-2 flex min-w-0 flex-col gap-1 text-sm leading-5">
+          <div className="mt-3 flex min-w-0 flex-col gap-1 border-t border-white/10 pt-3 text-sm leading-5 text-white/80">
             {skuDetails.map((item, index) => (
               <p key={`${item.name}-${index}`} className="break-words">
                 [{item.name}] {orderTitle}
@@ -384,39 +409,20 @@ function AfdianOrderCard({
             ))}
           </div>
         )}
+        {remark && (
+          <div className="mt-3 border-t border-white/10 pt-3">
+            <p className="mb-1 text-xs text-white/45">用户填写</p>
+            <p className="whitespace-pre-wrap break-words text-sm leading-5 text-white/80">
+              {remark}
+            </p>
+          </div>
+        )}
         {orderNo && (
-          <p className="mt-3 break-all font-mono-sarasa text-xs leading-5 text-white/75">
+          <p className="mt-3 break-all border-t border-white/10 pt-3 font-mono-sarasa text-xs leading-5 text-white/45">
             订单号 {orderNo}
           </p>
         )}
-        {(amount || redeemed) && (
-          <div className="mt-4 flex min-w-0 flex-col items-start gap-1">
-            {amount && (
-              <span
-                className={`text-3xl font-medium tracking-tight ${
-                  redeemed ? "line-through decoration-2 decoration-white/80" : ""
-                }`}
-              >
-                ¥ {amount}
-              </span>
-            )}
-            {redeemed && (
-              <span className="text-sm font-medium text-white/90">使用兑换码</span>
-            )}
-            {month && month > 0 && !isProduct && (
-              <span className="text-xs text-white/75">{month} 个月</span>
-            )}
-          </div>
-        )}
       </div>
-      {remark && (
-        <div className="px-4 py-3">
-          <p className="mb-1 text-xs text-white/45">用户填写</p>
-          <p className="whitespace-pre-wrap break-words text-sm leading-5 text-white/80">
-            {remark}
-          </p>
-        </div>
-      )}
     </div>
   );
 }
