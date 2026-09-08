@@ -348,6 +348,23 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         fork.name,
         `heads/${fork.default_branch}`,
     );
+    // syncForkDefaultBranch 在同步失败时会静默降级（见 fork.ts），fork 可能仍停留在
+    // 落后于上游的旧提交上。若在这种 fork HEAD 上切分支，会生成一个基于「上游已清理
+    // 过 tmp 路径」历史的 PR，合并时必然触发 modify/delete 冲突（如 #822 事故）。
+    // 因此在切分支前强校验 fork 已追平上游；未追平则中止并提示重试，绝不静默产出冲突 PR。
+    const upstreamHead = await getRefSha(
+        token,
+        upstreamOwner,
+        upstreamRepo,
+        `heads/${defaultBranch}`,
+    );
+    if (forkHeadSha !== upstreamHead) {
+        throw new Error(
+            `Fork ${fork.owner}/${fork.name} 未能同步到上游最新提交` +
+            `（上游 ${upstreamHead.slice(0, 7)}，fork ${forkHeadSha.slice(0, 7)}）。` +
+            `基于陈旧分支创建提交会产生合并冲突，已中止本次提交，请重试。`,
+        );
+    }
     const branchName = `astrobox-submit-${Date.now()}`;
     await createBranch(token, fork.owner, fork.name, forkHeadSha, branchName);
     log.info("publish/branch", `提交分支已创建 ${branchName}`, {
