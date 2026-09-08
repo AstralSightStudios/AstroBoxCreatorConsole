@@ -25,7 +25,8 @@ import {
   AlertDialog,
   Dialog,
 } from "~/components/ScaleAwareThemes";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { pickFiles } from "~/logic/publish/file-picker";
 import { createUploadItem } from "./uploadUtils";
 import { type DeviceOption, type DownloadInput } from "./types";
 import { type UploadItem, SectionCard } from "./shared";
@@ -125,9 +126,6 @@ export function DownloadsSection({
   onBatchSetDevices,
   onFillAll,
 }: DownloadsSectionProps) {
-  const downloadFileInputs = useRef<Record<string, HTMLInputElement | null>>(
-    {},
-  );
   const [batchSelectOpen, setBatchSelectOpen] = useState(false);
   const [fillAllOpen, setFillAllOpen] = useState(false);
   const [fileWarnings, setFileWarnings] = useState<
@@ -251,9 +249,55 @@ export function DownloadsSection({
     setUpdateLogEditor(null);
   };
 
-  const pickDownloadFile = (uid: string) => {
-    const node = downloadFileInputs.current[uid];
-    node?.click();
+  const pickDownloadFile = async (uid: string) => {
+    const files = await pickFiles({ title: "选择包体文件" });
+    const file = files[0];
+    if (!file) return;
+    log.info("download/file", "选择包体文件", {
+      data: { name: file.name, size: file.size },
+    });
+    try {
+      const meta = await validateFile?.(file);
+      const uploadItem = createUploadItem(file);
+      onUpdateRow(uid, (row) => ({
+        ...row,
+        file: uploadItem,
+        existingFileName: undefined,
+        ...(meta?.versionName ? { version: meta.versionName } : {}),
+        ...(meta?.versionCode !== undefined
+          ? { versionCode: meta.versionCode }
+          : {}),
+      }));
+      log.info("download/file", "包体校验完成", {
+        data: {
+          name: file.name,
+          size: file.size,
+          versionName: meta?.versionName ?? null,
+          versionCode: meta?.versionCode ?? null,
+          warning: meta?.warning ?? null,
+        },
+      });
+      if (meta?.warning) {
+        toast.warning(
+          `导入包体包名/表盘ID（${meta.warning.packageName}）与资源ID（${meta.warning.resourceId}）不一致，将无法自动检查更新。`,
+        );
+        setFileWarnings((prev) => ({
+          ...prev,
+          [uid]: meta.warning!,
+        }));
+      } else {
+        setFileWarnings((prev) => {
+          const next = { ...prev };
+          delete next[uid];
+          return next;
+        });
+      }
+    } catch (error) {
+      log.error("download/file", `包体导入失败: ${file.name}`, {
+        data: { name: file.name, error },
+      });
+      toast.error((error as Error).message);
+    }
   };
 
   return (
@@ -542,70 +586,11 @@ export function DownloadsSection({
                   </div>
 
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <input
-                      type="file"
-                      className="hidden"
-                      ref={(node) => {
-                        downloadFileInputs.current[item.uid] = node;
-                      }}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (!file) return;
-                        log.info("download/file", "选择包体文件", {
-                          data: { name: file.name, size: file.size },
-                        });
-                        try {
-                          const meta = await validateFile?.(file);
-                          const uploadItem = createUploadItem(file);
-                          onUpdateRow(item.uid, (row) => ({
-                            ...row,
-                            file: uploadItem,
-                            existingFileName: undefined,
-                            ...(meta?.versionName
-                              ? { version: meta.versionName }
-                              : {}),
-                            ...(meta?.versionCode !== undefined
-                              ? { versionCode: meta.versionCode }
-                              : {}),
-                          }));
-                          log.info("download/file", "包体校验完成", {
-                            data: {
-                              name: file.name,
-                              size: file.size,
-                              versionName: meta?.versionName ?? null,
-                              versionCode: meta?.versionCode ?? null,
-                              warning: meta?.warning ?? null,
-                            },
-                          });
-                          if (meta?.warning) {
-                            toast.warning(
-                              `导入包体包名/表盘ID（${meta.warning.packageName}）与资源ID（${meta.warning.resourceId}）不一致，将无法自动检查更新。`,
-                            );
-                            setFileWarnings((prev) => ({
-                              ...prev,
-                              [item.uid]: meta.warning!,
-                            }));
-                          } else {
-                            setFileWarnings((prev) => {
-                              const next = { ...prev };
-                              delete next[item.uid];
-                              return next;
-                            });
-                          }
-                        } catch (error) {
-                          log.error("download/file", `包体导入失败: ${file.name}`, {
-                            data: { name: file.name, error },
-                          });
-                          toast.error((error as Error).message);
-                        }
-                      }}
-                    />
                     {item.file ? (
                       <>
                         <Button
                           radius="large"
-                          onClick={() => pickDownloadFile(item.uid)}
+                          onClick={() => void pickDownloadFile(item.uid)}
                           variant="ghost"
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
@@ -618,7 +603,7 @@ export function DownloadsSection({
                       <>
                         <Button
                           radius="large"
-                          onClick={() => pickDownloadFile(item.uid)}
+                          onClick={() => void pickDownloadFile(item.uid)}
                           variant="outline"
                         >
                           <UploadSimpleIcon size={16} weight="bold" />
@@ -630,7 +615,7 @@ export function DownloadsSection({
                     ) : (
                       <Button
                         radius="large"
-                        onClick={() => pickDownloadFile(item.uid)}
+                        onClick={() => void pickDownloadFile(item.uid)}
                       >
                         <UploadSimpleIcon size={16} weight="bold" />
                         请上传文件

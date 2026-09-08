@@ -1050,9 +1050,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [itemId, itemName, previews, icon, cover, downloads, trialDownloads, links],
   );
 
-  const handlePreviewUpload = async (files: FileList | null) => {
-    if (!files?.length) return;
-    const fileList = Array.from(files);
+  const handlePreviewUpload = async (files: File[]) => {
+    if (!files.length) return;
+    const fileList = files;
     log.info("media/preview", `导入 ${fileList.length} 张预览图`, {
       data: {
         files: fileList.map((f) => ({
@@ -1132,8 +1132,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
-  const handleIconUpload = async (files: FileList | null) => {
-    const file = files?.[0];
+  const handleIconUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
     log.info("media/icon", "导入图标", {
       data: { name: file.name, size: file.size, type: file.type },
@@ -1203,8 +1203,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
-  const handleCoverUpload = async (files: FileList | null) => {
-    const file = files?.[0];
+  const handleCoverUpload = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
     log.info("media/cover", "导入封面", {
       data: { name: file.name, size: file.size, type: file.type },

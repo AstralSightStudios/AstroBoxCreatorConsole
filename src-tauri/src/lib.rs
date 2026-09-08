@@ -246,6 +246,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         // The log plugin is only used for its fern plumbing; the actual logger
         // is attached manually in `logger::init_logger` so that logging works
         // in release builds too.

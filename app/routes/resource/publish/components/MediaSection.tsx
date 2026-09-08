@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { pickFiles } from "~/logic/publish/file-picker";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
 
@@ -20,11 +21,11 @@ interface MediaSectionProps {
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
-  onPreviewUpload: (files: FileList | null) => void;
+  onPreviewUpload: (files: File[]) => void;
   onRemovePreview: (id: string) => void;
   onReorderPreview: (fromId: string, toId: string) => void;
-  onIconUpload: (files: FileList | null) => void;
-  onCoverUpload: (files: FileList | null) => void;
+  onIconUpload: (files: File[]) => void;
+  onCoverUpload: (files: File[]) => void;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
   onMediaDimensions: (
@@ -135,7 +136,6 @@ export function MediaSection({
   onRemoveCover,
   onMediaDimensions,
 }: MediaSectionProps) {
-  const previewInputRef = useRef<HTMLInputElement>(null);
   const previewScrollerRef = useRef<HTMLDivElement>(null);
   const draggedPreviewIdRef = useRef<string | null>(null);
   const pointerDragRef = useRef<{
@@ -149,13 +149,30 @@ export function MediaSection({
   } | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
-  const iconInputRef = useRef<HTMLInputElement>(null);
-  const coverInputRef = useRef<HTMLInputElement>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const pickPreview = async () => {
+    const files = await pickFiles({
+      multiple: true,
+      accept: "image/*",
+      title: "选择预览图",
+    });
+    if (files.length > 0) onPreviewUpload(files);
+  };
+
+  const pickIcon = async () => {
+    const files = await pickFiles({ accept: "image/*", title: "选择图标" });
+    if (files.length > 0) onIconUpload(files);
+  };
+
+  const pickCover = async () => {
+    const files = await pickFiles({ accept: "image/*", title: "选择封面" });
+    if (files.length > 0) onCoverUpload(files);
+  };
 
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
@@ -363,38 +380,6 @@ export function MediaSection({
       title="媒体素材"
       description="上传或导入预览图组、应用图标与封面。相同文件会自动复用，无需重复上传。"
     >
-      <input
-        ref={previewInputRef}
-        type="file"
-        className="hidden"
-        accept="image/*"
-        multiple
-        onChange={(e) => {
-          onPreviewUpload(e.target.files);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={iconInputRef}
-        type="file"
-        className="hidden"
-        accept="image/*"
-        onChange={(e) => {
-          onIconUpload(e.target.files);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={coverInputRef}
-        type="file"
-        className="hidden"
-        accept="image/*"
-        onChange={(e) => {
-          onCoverUpload(e.target.files);
-          e.target.value = "";
-        }}
-      />
-
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
@@ -405,7 +390,7 @@ export function MediaSection({
             emptyClassName="aspect-square max-md:aspect-[3/1]"
             mediaClassName="aspect-square max-md:aspect-[3/1]"
             imageClassName="max-h-full max-w-full object-contain"
-            onPick={() => iconInputRef.current?.click()}
+            onPick={() => void pickIcon()}
             onRemove={onRemoveIcon}
           />
           <MediaTile
@@ -414,7 +399,7 @@ export function MediaSection({
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
-            onPick={() => coverInputRef.current?.click()}
+            onPick={() => void pickCover()}
             onRemove={onRemoveCover}
           />
         </div>
@@ -451,7 +436,7 @@ export function MediaSection({
                 type="button"
                 variant="soft"
                 disabled={previewUploading}
-                onClick={() => previewInputRef.current?.click()}
+                onClick={() => void pickPreview()}
               >
                 <UploadSimpleIcon size={15} weight="bold" />
                 {previewUploading ? "处理中..." : "添加预览图"}
@@ -463,7 +448,7 @@ export function MediaSection({
             <button
               type="button"
               className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-              onClick={() => previewInputRef.current?.click()}
+              onClick={() => void pickPreview()}
             >
               <ImagesSquareIcon size={28} weight="duotone" />
               尚未上传预览图，点击选择文件
@@ -625,7 +610,7 @@ export function MediaSection({
               <button
                 type="button"
                 className="flex min-h-[180px] w-[200px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-                onClick={() => previewInputRef.current?.click()}
+                onClick={() => void pickPreview()}
               >
                 <UploadSimpleIcon size={24} weight="duotone" />
                 {previewUploading ? "处理中..." : "添加预览图"}
