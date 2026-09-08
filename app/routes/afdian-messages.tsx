@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Avatar,
   Badge,
@@ -10,11 +11,13 @@ import {
 } from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import {
+  ArrowSquareOutIcon,
   ArrowClockwiseIcon,
   ArrowDownLeftIcon,
   ArrowLeftIcon,
   ArrowUpRightIcon,
   CaretDownIcon,
+  PackageIcon,
   PlusIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -70,6 +73,8 @@ const SIDEBAR_DEFAULT_WIDTH = 280;
 const SIDEBAR_COMPACT_WIDTH = 220;
 const COMPLAINT_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const COMPLAINT_UNFREEZE_DELAY_MS = 10 * 24 * 60 * 60 * 1000;
+const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+const TRAILING_URL_PUNCTUATION = /[,.!?;:，。！？；：、）》】）]+$/u;
 const NARROW_PANE_EASE: [number, number, number, number] = [
   0.22, 0.82, 0.3, 1,
 ];
@@ -328,6 +333,193 @@ function normalizeOrderText(value: string) {
     .replace(/\s+/g, "");
 }
 
+function getMessageUrls(value: string) {
+  return [...value.matchAll(HTTP_URL_PATTERN)]
+    .map((match) => match[0].replace(TRAILING_URL_PUNCTUATION, ""))
+    .filter(Boolean);
+}
+
+function isAfdianHost(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "afdian.com" ||
+    normalized.endsWith(".afdian.com") ||
+    normalized === "ifdian.net" ||
+    normalized.endsWith(".ifdian.net")
+  );
+}
+
+function getAfdianUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return isAfdianHost(url.hostname) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function getMessageField(content: string, label: string) {
+  const prefix = `${label}：`;
+  const fallbackPrefix = `${label}:`;
+  const line = content
+    .split("\n")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix) || item.startsWith(fallbackPrefix));
+  if (!line) return null;
+  const value = line.startsWith(prefix)
+    ? line.slice(prefix.length)
+    : line.slice(fallbackPrefix.length);
+  return value.trim() || null;
+}
+
+function parseAfdianShippingMessage(content: string) {
+  if (!content.includes("你购买的商品已发货")) return null;
+
+  const productName = getMessageField(content, "商品名称");
+  const orderNo = getMessageField(content, "爱发电订单号");
+  const trackingNo = getMessageField(content, "快递运单号");
+  const carrier = getMessageField(content, "快递公司");
+  const detailsUrl = getMessageUrls(content).find((value) => {
+    const url = getAfdianUrl(value);
+    return url?.pathname.startsWith("/dashboard/order");
+  });
+  if (!productName && !orderNo && !trackingNo && !carrier) return null;
+
+  return {
+    carrier,
+    detailsUrl: detailsUrl || null,
+    orderNo,
+    productName,
+    trackingNo,
+  };
+}
+
+function openExternalLink(url: string) {
+  if (!isAfdianNativeAvailable()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  openUrl(url).catch(() => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+}
+
+function MessageLink({ url, sent }: { url: string; sent: boolean }) {
+  const afdianLink = Boolean(getAfdianUrl(url));
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className={
+        afdianLink
+          ? `mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 font-medium underline underline-offset-2 transition-colors ${
+              sent
+                ? "bg-white/15 text-white decoration-white/50 hover:bg-white/20 hover:decoration-white"
+                : "bg-violet-400/15 text-violet-200 decoration-violet-200/40 hover:bg-violet-400/25 hover:decoration-violet-100"
+            }`
+          : "break-all underline decoration-white/40 underline-offset-2 transition-colors hover:decoration-white"
+      }
+      onClick={(event) => {
+        event.preventDefault();
+        openExternalLink(url);
+      }}
+    >
+      {afdianLink ? (
+        <>
+          <span className="min-w-0 break-all">{url}</span>
+          <ArrowSquareOutIcon size={13} className="shrink-0" />
+        </>
+      ) : (
+        url
+      )}
+    </a>
+  );
+}
+
+function LinkedMessageText({
+  content,
+  sent,
+}: {
+  content: string;
+  sent: boolean;
+}) {
+  const matches = [...content.matchAll(HTTP_URL_PATTERN)];
+  if (matches.length === 0) {
+    return <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>;
+  }
+
+  const parts = [];
+  let cursor = 0;
+  matches.forEach((match, index) => {
+    const start = match.index ?? cursor;
+    const rawUrl = match[0];
+    const url = rawUrl.replace(TRAILING_URL_PUNCTUATION, "");
+    parts.push(content.slice(cursor, start));
+    parts.push(
+      <MessageLink key={`${url}-${index}`} url={url} sent={sent} />,
+    );
+    parts.push(rawUrl.slice(url.length));
+    cursor = start + rawUrl.length;
+  });
+  parts.push(content.slice(cursor));
+
+  return <p className="whitespace-pre-wrap text-sm leading-6">{parts}</p>;
+}
+
+function AfdianShippingCard({
+  shipping,
+}: {
+  shipping: NonNullable<ReturnType<typeof parseAfdianShippingMessage>>;
+}) {
+  const details = [
+    ["爱发电订单号", shipping.orderNo],
+    ["快递运单号", shipping.trackingNo],
+    ["快递公司", shipping.carrier],
+  ].filter((item): item is [string, string] => Boolean(item[1]));
+
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-[18px] text-white/90">
+      <div className="flex items-center gap-2 bg-violet-500 px-4 py-3 text-white">
+        <PackageIcon size={20} weight="fill" />
+        <p className="text-base font-medium">你购买的商品已发货</p>
+      </div>
+      <div className="min-w-0 bg-[#2C2C2E] px-4 py-3.5">
+        <p className="break-words text-base font-medium leading-6 text-white">
+          {shipping.productName || "商品发货信息"}
+        </p>
+        {details.length > 0 && (
+          <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-white/10 pt-3 text-sm leading-5">
+            {details.map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-white/45">{label}</dt>
+                <dd
+                  className={`min-w-0 break-all text-white/80 ${
+                    label === "快递公司" ? "" : "font-mono-sarasa"
+                  }`}
+                >
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {shipping.detailsUrl && (
+          <button
+            type="button"
+            className="mt-3 flex w-full items-center justify-center gap-1.5 border-t border-white/10 pt-3 text-sm font-medium text-violet-300 transition-colors hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            onClick={() => openExternalLink(shipping.detailsUrl!)}
+          >
+            查看订单详情
+            <ArrowSquareOutIcon size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function matchesRedemptionNotice(content: unknown, notice: string) {
   const order = parseAfdianOrder(content);
   if (!order || !notice.includes("来自兑换码")) return false;
@@ -530,16 +722,23 @@ function AfdianGroupCard({ content }: { content: unknown }) {
 
 function MessageContent({
   message,
+  sent,
   usedRedemptionCode,
 }: {
   message: AfdianMessage;
+  sent: boolean;
   usedRedemptionCode: boolean;
 }) {
   if (parseAfdianComplaint(message.content)) {
     return <AfdianComplaintCard content={message.content} />;
   }
   if (message.messageType === 1 || typeof message.content === "string") {
-    return <p className="whitespace-pre-wrap text-sm leading-6">{String(message.content)}</p>;
+    const content = String(message.content);
+    const shipping = parseAfdianShippingMessage(content);
+    if (shipping) {
+      return <AfdianShippingCard shipping={shipping} />;
+    }
+    return <LinkedMessageText content={content} sent={sent} />;
   }
   if (message.messageType === 2) {
     return (
@@ -579,8 +778,11 @@ function MessageBubble({
   const isOrder = message.messageType === 2;
   const isGroup = message.messageType === 6;
   const isComplaint = Boolean(parseAfdianComplaint(message.content));
-  const isWideCard = isOrder || isComplaint;
-  const isRichCard = isWideCard || isGroup;
+  const textContent = typeof message.content === "string" ? message.content : "";
+  const isShipping = Boolean(parseAfdianShippingMessage(textContent));
+  const isWideCard = isOrder || isComplaint || isShipping;
+  const isCompactCard = isGroup;
+  const isRichCard = isWideCard || isCompactCard;
   return (
     <div className={`flex min-w-0 items-end gap-2 ${sent ? "justify-end" : "justify-start"}`}>
       {!sent && (
@@ -601,7 +803,7 @@ function MessageBubble({
             ? sent
               ? "w-[90%]! max-w-[34rem]!"
               : "w-[calc(100%_-_2.5rem)]! max-w-[34rem]!"
-            : isGroup
+            : isCompactCard
               ? sent
                 ? "w-[22rem]! max-w-[90%]!"
                 : "w-[22rem]! max-w-[calc(100%_-_2.5rem)]!"
@@ -615,6 +817,7 @@ function MessageBubble({
         >
           <MessageContent
             message={message}
+            sent={sent}
             usedRedemptionCode={usedRedemptionCode}
           />
         </BubbleContent>
