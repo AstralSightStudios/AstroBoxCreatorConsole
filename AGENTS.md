@@ -42,6 +42,17 @@ Rust后端相对轻量，主要职责：
 - 图标统一使用`@phosphor-icons/react`。
 - 新增配置项应放入`app/config/`下独立文件，并考虑是否需要在`settings.tsx`中暴露开关。
 
+### 移动端文件导入规范（重要）
+Android / iOS 上 Tauri WebView 的 `FileReader` / `File.arrayBuffer()` **无法读取由 `<input type="file">` 返回的文件**（其内部指向 `content://` URI，会抛 `NotFoundError: A requested file or directory could not be found...`）。桌面端无此问题。因此：
+
+- **新增任何文件选择功能**必须调用 `app/logic/publish/file-picker.ts` 导出的 `pickFiles()`。它在 Tauri 运行时内部走 `@tauri-apps/plugin-dialog` 的 `open()` + `@tauri-apps/plugin-fs` 的 `readFile()` 先把文件读入内存再构造 `File`，非 Tauri 环境（纯浏览器）自动回退 `<input type="file">`。组件拿到的仍是浏览器 `File` 对象，后续 `file.arrayBuffer()`、`URL.createObjectURL()`、`browser-image-compression` 等逻辑无需改动。
+- **禁止**直接书写 `<input type="file">` + `file.arrayBuffer()` / `FileReader` 组合来实现本地文件导入。
+- 若需要读取 Tauri 原生路径（`content://` / 绝对路径）本身（而非构造 `File`），参考同级项目 `AstroBox-NG` 的 `read_file_cross_platform`：Rust 侧用 `tauri_plugin_fs::FsExt` 的 `read()` 读取，前端不要自行 fetch 该路径。
+- **仍使用旧写法的已知区域**（桌面可用，但尚未在移动端验证/迁移，改动前需先迁移到 `pickFiles()`）：
+  - `app/components/wallpaper-editor/`（WallpaperEditor / Sidebar / Inspector 中的 `<input type="file">`）
+  - `app/components/blogs/BlogsManagerDialog.tsx`（博客图片上传）
+- 依赖要求：前端 `@tauri-apps/plugin-fs`、Rust 侧 `tauri-plugin-fs`（已在 `package.json` / `src-tauri/Cargo.toml` 注册），能力权限 `fs:default` 已加入 `src-tauri/capabilities/default.json`。
+
 ## 编译测试
 由于项目使用了Tauri框架，该框架极度依赖各种GUI库，直接编译整个项目在Agent环境中可能失败或极慢。请根据修改范围选择合适的验证方式。
 
