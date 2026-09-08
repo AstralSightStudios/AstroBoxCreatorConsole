@@ -43,6 +43,7 @@ import {
   setAfdianMessageNotificationsEnabled,
   useAfdianMessageNotificationsEnabled,
 } from "~/config/afdianNotifications";
+import { setAfdianAiAutoReplyEnabled } from "~/config/afdianAiAutoReply";
 
 const AFDIAN_DISCLAIMER_ACCEPTED_KEY = "afdian-disclaimer-accepted";
 
@@ -369,6 +370,7 @@ export default function AfdianAccountSection() {
       });
       queryClient.removeQueries({ queryKey: AFDIAN_INCOME_QUERY_KEY });
       setAfdianMessageNotificationsEnabled(false);
+      setAfdianAiAutoReplyEnabled(false);
       toast.success("已退出爱发电账户");
     } catch (error) {
       toast.error(getAfdianErrorMessage(error, "退出爱发电账户失败"));

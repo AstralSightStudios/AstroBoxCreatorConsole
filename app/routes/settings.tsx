@@ -49,6 +49,7 @@ import {
 } from "~/config/nav";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
+import AfdianAiAutoReplySection from "~/components/settings/AfdianAiAutoReplySection";
 import {
   checkForUpdate,
   isTauriRuntime,
@@ -730,6 +731,8 @@ export default function Settings() {
         </SectionCard>
 
         <AfdianAccountSection />
+
+        <AfdianAiAutoReplySection />
 
         {/* 日志与诊断 */}
         <LogsSection />

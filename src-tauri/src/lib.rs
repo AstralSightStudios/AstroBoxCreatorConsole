@@ -4,6 +4,7 @@ use base64::{engine::general_purpose, Engine as _};
 use ecb::Encryptor;
 mod afdian;
 mod afdian_notifications;
+mod ai;
 mod buildinfo;
 mod logger;
 mod logs_archive;
@@ -237,8 +238,10 @@ fn set_ui_scale_active(app: tauri::AppHandle, active: bool) -> Result<(), String
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let ai_http_client = ai::AiHttpClient::new().expect("无法初始化 AI 网络客户端");
     tauri::Builder::default()
         .manage(AppHttpClient(reqwest::Client::new()))
+        .manage(ai_http_client)
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -282,6 +285,12 @@ pub fn run() {
             afdian::afdian_message_send,
             afdian_notifications::afdian_message_notifications_set_enabled,
             afdian_notifications::afdian_message_notifications_set_context,
+            afdian_notifications::afdian_message_auto_reply_set_enabled,
+            ai::ai_api_key_status,
+            ai::ai_api_key_save,
+            ai::ai_api_key_delete,
+            ai::ai_http_request,
+            ai::ai_docs_search,
             encrypt_aes_256_ecb,
             app_build_info,
             write_text_file,

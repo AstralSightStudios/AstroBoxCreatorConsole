@@ -23,6 +23,12 @@ type BubbleContextValue = {
   tailColor: string;
 };
 
+type IMessageTypingIndicatorProps = {
+  typing?: boolean;
+  label?: string;
+  className?: string;
+};
+
 const BubbleContext = createContext<BubbleContextValue | null>(null);
 
 const bubbleVariantClasses: Record<BubbleVariant, string> = {
@@ -170,4 +176,32 @@ function BubbleContent({
   );
 }
 
-export { Bubble, BubbleContent };
+function IMessageTypingIndicator({
+  typing = false,
+  label = "AI 正在生成回复",
+  className = "",
+}: IMessageTypingIndicatorProps) {
+  if (!typing) return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`flex self-end ${className}`}
+    >
+      <span className="sr-only">{label}</span>
+      <Bubble platform="imessage" align="end" variant="default">
+        <BubbleContent
+          aria-hidden="true"
+          className="flex w-max! max-w-none! items-center gap-[5px] overflow-visible! px-[13px]! py-[13px]!"
+        >
+          <span className="s11a-imsg-dot relative z-10 block size-2 min-w-2 shrink-0 rounded-full bg-white/80" />
+          <span className="s11a-imsg-dot relative z-10 block size-2 min-w-2 shrink-0 rounded-full bg-white/80" />
+          <span className="s11a-imsg-dot relative z-10 block size-2 min-w-2 shrink-0 rounded-full bg-white/80" />
+        </BubbleContent>
+      </Bubble>
+    </div>
+  );
+}
+
+export { Bubble, BubbleContent, IMessageTypingIndicator };

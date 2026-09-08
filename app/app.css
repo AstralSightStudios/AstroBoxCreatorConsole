@@ -856,8 +856,37 @@ html.numeric-scrub-active * {
     }
 }
 
+@keyframes s11a-imsg-typing {
+    0%,
+    55%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.42;
+    }
+    25% {
+        transform: translateY(-3px);
+        opacity: 1;
+    }
+}
+
+.s11a-imsg-dot {
+    animation: s11a-imsg-typing 1.3s ease-in-out infinite;
+}
+
+.s11a-imsg-dot:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.s11a-imsg-dot:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .scrubbable-number-overlay {
+        animation: none;
+    }
+
+    .s11a-imsg-dot {
         animation: none;
     }
 }

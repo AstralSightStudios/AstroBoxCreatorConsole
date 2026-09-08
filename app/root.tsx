@@ -9,6 +9,7 @@ import Nav from "./layout/nav";
 import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
 import BroadcastDialogHost from "./components/announcement/BroadcastDialogHost";
 import AfdianMessageNotificationHost from "./components/afdian/AfdianMessageNotificationHost";
+import AfdianAiAutoReplyHost from "./components/afdian/AfdianAiAutoReplyHost";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { Toaster } from "sonner";
@@ -59,6 +60,7 @@ export default function RootLayout() {
                 <AutoUpdateChecker />
                 <BroadcastDialogHost />
                 <AfdianMessageNotificationHost />
+                <AfdianAiAutoReplyHost />
                 {isWallpaperEditor ? (
                     <main className="h-full min-h-0 w-full overflow-hidden">
                         <Outlet />

@@ -56,8 +56,17 @@ import {
 } from "~/api/afdian-account";
 import { Dialog, DropdownMenu } from "~/components/ScaleAwareThemes";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
-import { Bubble, BubbleContent } from "~/components/s11a/bubble";
+import {
+  Bubble,
+  BubbleContent,
+  IMessageTypingIndicator,
+} from "~/components/s11a/bubble";
 import { AfdianDialogList } from "~/components/afdian/messages-sidebar";
+import {
+  clearAfdianVisibleConversation,
+  setAfdianVisibleConversation,
+  useAfdianAiReplyActivity,
+} from "~/logic/afdian/ai-reply-activity";
 import {
   useSetHeaderIdentity,
   type HeaderIdentityDetail,
@@ -1128,6 +1137,7 @@ export default function AfdianMessagesPage() {
   const [selectedUserId, setSelectedUserId] = useState(
     searchParams.get("userId") || "",
   );
+  const { generatingUserIds } = useAfdianAiReplyActivity();
   const [detailsUserId, setDetailsUserId] = useState("");
   const sessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
@@ -1183,6 +1193,18 @@ export default function AfdianMessagesPage() {
   );
   const selectedDialogAvatar = selectedDialog?.user.avatar;
   const selectedDialogName = selectedDialog?.user.name;
+  const conversationVisible =
+    Boolean(selectedDialog) && (!isNarrow || narrowPane === "conversation");
+  const isAiReplyGenerating =
+    conversationVisible && generatingUserIds.includes(selectedUserId);
+
+  useLayoutEffect(() => {
+    const visibleUserId = conversationVisible ? selectedUserId : null;
+    setAfdianVisibleConversation(visibleUserId);
+    return () => {
+      if (visibleUserId) clearAfdianVisibleConversation(visibleUserId);
+    };
+  }, [conversationVisible, selectedUserId]);
   const userDetailsQuery = useQuery({
     queryKey: ["afdian", "message-user-details", selectedUserId],
     queryFn: () => getAfdianMessageUserDetails(selectedUserId),
@@ -1469,6 +1491,26 @@ export default function AfdianMessagesPage() {
     messagesQuery.isLoading,
     selectedUserId,
   ]);
+
+  useEffect(() => {
+    if (!isAiReplyGenerating) return;
+
+    let frame = 0;
+    let attempts = 0;
+    const scrollToTypingIndicator = () => {
+      const viewport = messagesViewportRef.current
+        ?.osInstance()
+        ?.elements().scrollOffsetElement;
+      if (!viewport) {
+        attempts += 1;
+        if (attempts < 30) frame = requestAnimationFrame(scrollToTypingIndicator);
+        return;
+      }
+      viewport.scrollTop = viewport.scrollHeight;
+    };
+    frame = requestAnimationFrame(scrollToTypingIndicator);
+    return () => cancelAnimationFrame(frame);
+  }, [isAiReplyGenerating, selectedUserId]);
 
   const handleSend = async () => {
     const content = draft.trim();
@@ -1796,7 +1838,11 @@ export default function AfdianMessagesPage() {
                             usedRedemptionCode={redemptionOrderIds.has(message.id)}
                           />
                         ))}
-                        {visibleMessages.length === 0 && (
+                        <IMessageTypingIndicator
+                          typing={isAiReplyGenerating}
+                          label={`AI 正在为 ${selectedDialog.user.name} 生成回复`}
+                        />
+                        {visibleMessages.length === 0 && !isAiReplyGenerating && (
                           <div className="flex flex-1 items-center justify-center text-sm text-white/45">
                             暂无消息内容
                           </div>

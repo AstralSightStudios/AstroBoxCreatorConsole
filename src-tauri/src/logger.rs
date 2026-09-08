@@ -52,6 +52,7 @@ pub fn redact_sensitive(message: String) -> String {
             [
                 r"gh[posur]_[A-Za-z0-9]{16,}",
                 r"github_pat_[A-Za-z0-9_]{20,}",
+                r"\bsk-[A-Za-z0-9_-]{12,}",
                 r"(?i:bearer)\s+[A-Za-z0-9._~+/=-]{8,}",
                 r"\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,}){0,2}",
             ]

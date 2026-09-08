@@ -10,17 +10,23 @@ use tokio::sync::Notify;
 
 use crate::{afdian, AppHttpClient};
 
-const POLL_INTERVAL: Duration = Duration::from_secs(60);
-const RETRY_INTERVAL: Duration = Duration::from_secs(90);
+const NOTIFICATION_POLL_INTERVAL: Duration = Duration::from_secs(60);
+const AUTO_REPLY_POLL_INTERVAL: Duration = Duration::from_secs(20);
+const NOTIFICATION_RETRY_INTERVAL: Duration = Duration::from_secs(90);
+const AUTO_REPLY_RETRY_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_INDIVIDUAL_NOTIFICATIONS: usize = 3;
 pub(crate) const DIALOGS_REFRESHED_EVENT: &str = "afdian-message-dialogs-refreshed";
+pub(crate) const AUTO_REPLY_CANDIDATES_EVENT: &str = "afdian-message-auto-reply-candidates";
 
 #[derive(Default)]
 struct NotificationRuntimeState {
     enabled: bool,
     initialized: bool,
     latest_by_user: HashMap<String, String>,
+    auto_reply_enabled: bool,
+    auto_reply_initialized: bool,
+    auto_reply_latest_by_user: HashMap<String, String>,
     active_user_id: Option<String>,
     app_focused: bool,
 }
@@ -39,11 +45,41 @@ impl AfdianNotificationManager {
         }
     }
 
-    fn is_enabled(&self) -> bool {
+    fn is_worker_enabled(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.enabled || state.auto_reply_enabled)
+            .unwrap_or(false)
+    }
+
+    fn notifications_enabled(&self) -> bool {
         self.state
             .lock()
             .map(|state| state.enabled)
             .unwrap_or(false)
+    }
+
+    fn auto_reply_enabled(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.auto_reply_enabled)
+            .unwrap_or(false)
+    }
+
+    fn poll_interval(&self) -> Duration {
+        if self.auto_reply_enabled() {
+            AUTO_REPLY_POLL_INTERVAL
+        } else {
+            NOTIFICATION_POLL_INTERVAL
+        }
+    }
+
+    fn retry_interval(&self) -> Duration {
+        if self.auto_reply_enabled() {
+            AUTO_REPLY_RETRY_INTERVAL
+        } else {
+            NOTIFICATION_RETRY_INTERVAL
+        }
     }
 }
 
@@ -53,12 +89,21 @@ struct NotificationCandidate {
     body: String,
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoReplyCandidate {
+    user_id: String,
+    message_id: String,
+}
+
 #[derive(Debug)]
 struct ReconcileResult {
-    candidates: Vec<NotificationCandidate>,
+    notification_candidates: Vec<NotificationCandidate>,
+    auto_reply_candidates: Vec<AutoReplyCandidate>,
     dialog_count: usize,
     unread_dialog_count: usize,
-    established_baseline: bool,
+    established_notification_baseline: bool,
+    established_auto_reply_baseline: bool,
 }
 
 pub(crate) fn initialize<R: Runtime>(app: &mut tauri::App<R>) {
@@ -101,6 +146,36 @@ pub(crate) fn afdian_message_notifications_set_enabled(
 }
 
 #[tauri::command]
+pub(crate) fn afdian_message_auto_reply_set_enabled(
+    manager: State<'_, AfdianNotificationManager>,
+    enabled: bool,
+) -> Result<(), String> {
+    let changed = {
+        let mut state = manager
+            .state
+            .lock()
+            .map_err(|_| "爱发电自动回复状态不可用".to_string())?;
+        if state.auto_reply_enabled == enabled {
+            false
+        } else {
+            state.auto_reply_enabled = enabled;
+            state.auto_reply_initialized = false;
+            state.auto_reply_latest_by_user.clear();
+            true
+        }
+    };
+
+    log::info!(
+        target: "afdian/ai-auto-reply",
+        "后台私信自动回复开关同步完成 enabled={enabled} changed={changed}"
+    );
+    if changed {
+        manager.wake.notify_one();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn afdian_message_notifications_set_context(
     manager: State<'_, AfdianNotificationManager>,
     active_user_id: Option<String>,
@@ -123,13 +198,11 @@ async fn run_worker<R: Runtime>(
 ) {
     log::info!(
         target: "afdian/notifications",
-        "爱发电私信后台轮询任务已启动 interval_seconds={} retry_seconds={}",
-        POLL_INTERVAL.as_secs(),
-        RETRY_INTERVAL.as_secs()
+        "爱发电私信后台轮询任务已启动"
     );
 
     loop {
-        if !manager.is_enabled() {
+        if !manager.is_worker_enabled() {
             manager.wake.notified().await;
             continue;
         }
@@ -148,11 +221,13 @@ async fn run_worker<R: Runtime>(
                 let elapsed = started_at.elapsed().as_millis();
                 log::info!(
                     target: "afdian/notifications",
-                    "后台私信同步完成 dialogs={} unread_dialogs={} candidates={} baseline={} elapsed_ms={elapsed}",
+                    "后台私信同步完成 dialogs={} unread_dialogs={} notification_candidates={} auto_reply_candidates={} notification_baseline={} auto_reply_baseline={} elapsed_ms={elapsed}",
                     result.dialog_count,
                     result.unread_dialog_count,
-                    result.candidates.len(),
-                    result.established_baseline
+                    result.notification_candidates.len(),
+                    result.auto_reply_candidates.len(),
+                    result.established_notification_baseline,
+                    result.established_auto_reply_baseline
                 );
 
                 if let Err(error) = app.emit(DIALOGS_REFRESHED_EVENT, ()) {
@@ -162,27 +237,40 @@ async fn run_worker<R: Runtime>(
                     );
                 }
 
-                if manager.is_enabled() {
-                    send_notifications(&app, &manager, result.candidates);
+                if manager.notifications_enabled() {
+                    send_notifications(&app, &manager, result.notification_candidates);
                 }
-                POLL_INTERVAL
+                if manager.auto_reply_enabled() && !result.auto_reply_candidates.is_empty() {
+                    let candidate_count = result.auto_reply_candidates.len();
+                    if let Err(error) =
+                        app.emit(AUTO_REPLY_CANDIDATES_EVENT, result.auto_reply_candidates)
+                    {
+                        log::warn!(
+                            target: "afdian/ai-auto-reply",
+                            "发送自动回复候选事件失败 count={candidate_count} error={error}"
+                        );
+                    }
+                }
+                manager.poll_interval()
             }
             Ok(Err(error)) => {
+                let retry_interval = manager.retry_interval();
                 log::warn!(
                     target: "afdian/notifications",
                     "后台私信同步失败 error={error} retry_seconds={}",
-                    RETRY_INTERVAL.as_secs()
+                    retry_interval.as_secs()
                 );
-                RETRY_INTERVAL
+                retry_interval
             }
             Err(_) => {
+                let retry_interval = manager.retry_interval();
                 log::warn!(
                     target: "afdian/notifications",
                     "后台私信同步超时 timeout_seconds={} retry_seconds={}",
                     REQUEST_TIMEOUT.as_secs(),
-                    RETRY_INTERVAL.as_secs()
+                    retry_interval.as_secs()
                 );
-                RETRY_INTERVAL
+                retry_interval
             }
         };
 
@@ -200,25 +288,45 @@ fn reconcile_dialogs(
     let Ok(mut state) = manager.state.lock() else {
         log::warn!(target: "afdian/notifications", "无法读取后台私信通知状态");
         return ReconcileResult {
-            candidates: Vec::new(),
+            notification_candidates: Vec::new(),
+            auto_reply_candidates: Vec::new(),
             dialog_count: dialogs.len(),
             unread_dialog_count: 0,
-            established_baseline: false,
+            established_notification_baseline: false,
+            established_auto_reply_baseline: false,
         };
     };
-    if !state.enabled {
+    if !state.enabled && !state.auto_reply_enabled {
         return ReconcileResult {
-            candidates: Vec::new(),
+            notification_candidates: Vec::new(),
+            auto_reply_candidates: Vec::new(),
             dialog_count: dialogs.len(),
             unread_dialog_count: 0,
-            established_baseline: false,
+            established_notification_baseline: false,
+            established_auto_reply_baseline: false,
         };
     }
 
-    let established_baseline = !state.initialized;
-    let previous = std::mem::take(&mut state.latest_by_user);
-    let mut latest_by_user = HashMap::new();
-    let mut candidates = Vec::new();
+    let notifications_enabled = state.enabled;
+    let auto_reply_enabled = state.auto_reply_enabled;
+    let notification_initialized = state.initialized;
+    let auto_reply_initialized = state.auto_reply_initialized;
+    let established_notification_baseline = notifications_enabled && !notification_initialized;
+    let established_auto_reply_baseline = auto_reply_enabled && !auto_reply_initialized;
+    let previous_notifications = if notifications_enabled {
+        std::mem::take(&mut state.latest_by_user)
+    } else {
+        HashMap::new()
+    };
+    let previous_auto_replies = if auto_reply_enabled {
+        std::mem::take(&mut state.auto_reply_latest_by_user)
+    } else {
+        HashMap::new()
+    };
+    let mut notification_latest_by_user = HashMap::new();
+    let mut auto_reply_latest_by_user = HashMap::new();
+    let mut notification_candidates = Vec::new();
+    let mut auto_reply_candidates = Vec::new();
     let mut unread_dialog_count = 0;
 
     for dialog in dialogs {
@@ -234,37 +342,60 @@ fn reconcile_dialogs(
         if dialog.unread_count > 0 {
             unread_dialog_count += 1;
         }
-        latest_by_user.insert(dialog.user.user_id.clone(), message_id.to_string());
 
-        let message_changed = previous
-            .get(&dialog.user.user_id)
-            .map_or(true, |previous_id| previous_id != message_id);
-        if state.initialized && message_changed && dialog.unread_count > 0 {
-            let user_name = if dialog.user.name.trim().is_empty() {
-                "爱发电用户"
-            } else {
-                dialog.user.name.trim()
-            };
-            let preview = normalize_preview(dialog.preview.as_deref());
-            let body = if preview.is_empty() {
-                format!("{user_name}发来一条新消息")
-            } else {
-                format!("{user_name}：{preview}")
-            };
-            candidates.push(NotificationCandidate {
-                user_id: dialog.user.user_id.clone(),
-                body,
-            });
+        if notifications_enabled {
+            notification_latest_by_user.insert(dialog.user.user_id.clone(), message_id.to_string());
+            let message_changed = previous_notifications
+                .get(&dialog.user.user_id)
+                .map_or(true, |previous_id| previous_id != message_id);
+            if notification_initialized && message_changed && dialog.unread_count > 0 {
+                let user_name = if dialog.user.name.trim().is_empty() {
+                    "爱发电用户"
+                } else {
+                    dialog.user.name.trim()
+                };
+                let preview = normalize_preview(dialog.preview.as_deref());
+                let body = if preview.is_empty() {
+                    format!("{user_name}发来一条新消息")
+                } else {
+                    format!("{user_name}：{preview}")
+                };
+                notification_candidates.push(NotificationCandidate {
+                    user_id: dialog.user.user_id.clone(),
+                    body,
+                });
+            }
+        }
+
+        if auto_reply_enabled {
+            auto_reply_latest_by_user.insert(dialog.user.user_id.clone(), message_id.to_string());
+            let message_changed = previous_auto_replies
+                .get(&dialog.user.user_id)
+                .map_or(true, |previous_id| previous_id != message_id);
+            if auto_reply_initialized && message_changed {
+                auto_reply_candidates.push(AutoReplyCandidate {
+                    user_id: dialog.user.user_id.clone(),
+                    message_id: message_id.to_string(),
+                });
+            }
         }
     }
 
-    state.latest_by_user = latest_by_user;
-    state.initialized = true;
+    if notifications_enabled {
+        state.latest_by_user = notification_latest_by_user;
+        state.initialized = true;
+    }
+    if auto_reply_enabled {
+        state.auto_reply_latest_by_user = auto_reply_latest_by_user;
+        state.auto_reply_initialized = true;
+    }
     ReconcileResult {
-        candidates,
+        notification_candidates,
+        auto_reply_candidates,
         dialog_count: dialogs.len(),
         unread_dialog_count,
-        established_baseline,
+        established_notification_baseline,
+        established_auto_reply_baseline,
     }
 }
 
@@ -383,8 +514,8 @@ mod tests {
         let manager = enabled_manager();
         let result = reconcile_dialogs(&[dialog("1", 1)], &manager);
 
-        assert!(result.established_baseline);
-        assert!(result.candidates.is_empty());
+        assert!(result.established_notification_baseline);
+        assert!(result.notification_candidates.is_empty());
     }
 
     #[test]
@@ -393,8 +524,8 @@ mod tests {
         reconcile_dialogs(&[dialog("1", 0)], &manager);
         let result = reconcile_dialogs(&[dialog("2", 1)], &manager);
 
-        assert_eq!(result.candidates.len(), 1);
-        assert_eq!(result.candidates[0].body, "测试用户：你好");
+        assert_eq!(result.notification_candidates.len(), 1);
+        assert_eq!(result.notification_candidates[0].body, "测试用户：你好");
     }
 
     #[test]
@@ -403,6 +534,27 @@ mod tests {
         reconcile_dialogs(&[dialog("1", 1)], &manager);
         let result = reconcile_dialogs(&[dialog("1", 1)], &manager);
 
-        assert!(result.candidates.is_empty());
+        assert!(result.notification_candidates.is_empty());
+    }
+
+    #[test]
+    fn first_auto_reply_sync_only_establishes_baseline() {
+        let manager = AfdianNotificationManager::new();
+        manager.state.lock().unwrap().auto_reply_enabled = true;
+        let result = reconcile_dialogs(&[dialog("1", 0)], &manager);
+
+        assert!(result.established_auto_reply_baseline);
+        assert!(result.auto_reply_candidates.is_empty());
+    }
+
+    #[test]
+    fn changed_message_creates_auto_reply_candidate_without_unread_count() {
+        let manager = AfdianNotificationManager::new();
+        manager.state.lock().unwrap().auto_reply_enabled = true;
+        reconcile_dialogs(&[dialog("1", 0)], &manager);
+        let result = reconcile_dialogs(&[dialog("2", 0)], &manager);
+
+        assert_eq!(result.auto_reply_candidates.len(), 1);
+        assert_eq!(result.auto_reply_candidates[0].message_id, "2");
     }
 }

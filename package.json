@@ -14,6 +14,7 @@
     "linux:release": "bash ./scripts/build-linux.sh"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.44",
     "@antv/l7": "^2.23.2",
     "@antv/l7-maps": "^2.23.2",
     "@claralight-design/wallpaper-engine": "^0.3.1",
@@ -26,6 +27,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-notification": "^2.4.0",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "ai": "7.0.93",
     "axios": "^1.13.2",
     "browser-image-compression": "^2.0.2",
     "casdoor-js-sdk": "^0.16.0",

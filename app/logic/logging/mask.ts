@@ -65,6 +65,7 @@ export function redactText(text: string): string {
     )
     .replace(/gh[posur]_[A-Za-z0-9]{16,}/g, (match) => maskValue(match))
     .replace(/github_pat_[A-Za-z0-9_]{20,}/g, (match) => maskValue(match))
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}/g, (match) => maskValue(match))
     .replace(/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, (match) => {
       const [scheme, ...rest] = match.split(/\s+/);
       return `${scheme} ${maskCredential(rest.join(""))}`;
