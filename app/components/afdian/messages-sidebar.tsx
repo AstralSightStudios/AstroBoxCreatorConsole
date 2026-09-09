@@ -1,10 +1,16 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Avatar, Badge, Button, Spinner } from "@radix-ui/themes";
-import { PushPinSimpleIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, PushPinSimpleIcon } from "@phosphor-icons/react";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { useSearchParams } from "react-router";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   AFDIAN_DIALOGS_QUERY_KEY,
   getAfdianDialogs,
@@ -50,13 +56,17 @@ export function AfdianDialogList({
   selectedUserId,
   onSelect,
   compact,
+  footer,
   onScroll,
+  underHeader = false,
 }: {
   items: AfdianDialog[];
   selectedUserId: string;
   onSelect: (userId: string) => void;
   compact: boolean;
+  footer?: ReactNode;
   onScroll?: (element: HTMLElement) => void;
+  underHeader?: boolean;
 }) {
   const [pinnedUserIds, setPinnedUserIds] = useState(readPinnedDialogIds);
 
@@ -97,7 +107,7 @@ export function AfdianDialogList({
   return (
     <OverlayScrollbarsComponent
       defer
-      className="min-h-0 flex-1"
+      className={`min-h-0 flex-1 ${underHeader ? "afdian-dialog-list-under-header" : ""}`}
       options={DIALOG_LIST_SCROLLBAR_OPTIONS}
       events={
         onScroll
@@ -112,7 +122,7 @@ export function AfdianDialogList({
       <div
         className={`flex min-h-full flex-col ${
           compact ? "items-center gap-2 px-1" : "gap-1"
-        }`}
+        } ${underHeader ? "pt-[var(--afdian-dialog-list-top-inset)]" : ""}`}
       >
         {orderedItems.map((item) => {
           const selected = item.user.userId === selectedUserId;
@@ -201,6 +211,7 @@ export function AfdianDialogList({
             暂无私信对话
           </p>
         )}
+        {footer}
       </div>
     </OverlayScrollbarsComponent>
   );
@@ -239,19 +250,19 @@ export default function AfdianMessagesSidebar() {
 
   if (!nativeAvailable) {
     content = (
-      <p className="px-3 py-8 text-center text-sm text-white/45">
+      <p className="px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center text-sm text-white/45">
         爱发电私信仅支持客户端
       </p>
     );
   } else if (sessionQuery.isLoading || dialogsQuery.isLoading) {
     content = (
-      <div className="flex flex-1 items-center justify-center text-white/50">
+      <div className="flex flex-1 items-center justify-center pt-[var(--afdian-dialog-list-top-inset)] text-white/50">
         <Spinner />
       </div>
     );
   } else if (sessionQuery.isError) {
     content = (
-      <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-sm text-white/50">
+      <div className="flex flex-col items-center gap-3 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center text-sm text-white/50">
         <p>{getAfdianErrorMessage(sessionQuery.error, "无法读取爱发电登录状态")}</p>
         <Button size="1" variant="soft" onClick={() => void sessionQuery.refetch()}>
           重试
@@ -260,13 +271,13 @@ export default function AfdianMessagesSidebar() {
     );
   } else if (!sessionQuery.data?.connected) {
     content = (
-      <p className="px-3 py-8 text-center text-sm text-white/45">
+      <p className="px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center text-sm text-white/45">
         尚未登录爱发电
       </p>
     );
   } else if (dialogsQuery.isError) {
     content = (
-      <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-sm text-white/50">
+      <div className="flex flex-col items-center gap-3 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center text-sm text-white/50">
         <p>私信列表暂时无法加载</p>
         <Button size="1" variant="soft" onClick={() => void dialogsQuery.refetch()}>
           重试
@@ -280,25 +291,44 @@ export default function AfdianMessagesSidebar() {
         selectedUserId={selectedUserId}
         onSelect={selectDialog}
         compact={false}
+        underHeader
+        footer={
+          dialogsQuery.hasNextPage ? (
+            <div className="flex justify-center px-3 py-3">
+              <Button
+                size="1"
+                variant="soft"
+                color="gray"
+                radius="full"
+                disabled={dialogsQuery.isFetchingNextPage}
+                onClick={() => void dialogsQuery.fetchNextPage()}
+              >
+                {dialogsQuery.isFetchingNextPage ? (
+                  <Spinner size="1" />
+                ) : (
+                  <CaretDownIcon size={14} weight="bold" />
+                )}
+                {dialogsQuery.isFetchingNextPage
+                  ? "正在加载"
+                  : "加载更多对话"}
+              </Button>
+            </div>
+          ) : null
+        }
       />
     );
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-      <div className="flex shrink-0 items-center justify-between px-2 py-2">
-        <p className="text-sm font-medium text-white/80">爱发电私信</p>
-        {dialogsQuery.hasNextPage && (
-          <Button
-            size="1"
-            variant="ghost"
-            disabled={dialogsQuery.isFetchingNextPage}
-            onClick={() => void dialogsQuery.fetchNextPage()}
-          >
-            {dialogsQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更多"}
-          </Button>
-        )}
-      </div>
+    <section
+      className="flex min-h-0 flex-1 flex-col"
+      style={
+        {
+          "--afdian-dialog-list-top-inset":
+            "calc(2.75rem + var(--space-2))",
+        } as CSSProperties
+      }
+    >
       {content}
     </section>
   );

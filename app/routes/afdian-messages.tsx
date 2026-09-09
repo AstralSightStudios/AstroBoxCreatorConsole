@@ -6,7 +6,9 @@ import {
   Button,
   DataList,
   Flex,
+  SegmentedControl,
   Spinner,
+  Switch,
   Text,
 } from "@radix-ui/themes";
 import { motion } from "framer-motion";
@@ -14,11 +16,13 @@ import {
   ArrowSquareOutIcon,
   ArrowClockwiseIcon,
   ArrowDownLeftIcon,
-  ArrowLeftIcon,
+  ArrowUpIcon,
   ArrowUpRightIcon,
   CaretDownIcon,
+  GearSixIcon,
   PackageIcon,
   PlusIcon,
+  RobotIcon,
   TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -54,7 +58,11 @@ import {
   getAfdianSessionStatus,
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
-import { Dialog, DropdownMenu } from "~/components/ScaleAwareThemes";
+import {
+  AI_API_KEY_STATUS_QUERY_KEY,
+  getAiApiKeyStatus,
+} from "~/api/ai";
+import { Dialog, Popover } from "~/components/ScaleAwareThemes";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import {
   Bubble,
@@ -67,6 +75,11 @@ import {
   setAfdianVisibleConversation,
   useAfdianAiReplyActivity,
 } from "~/logic/afdian/ai-reply-activity";
+import {
+  isAfdianAiAutoReplySupported,
+  setAfdianAiAutoReplyEnabled,
+  useAfdianAiAutoReplyConfig,
+} from "~/config/afdianAiAutoReply";
 import {
   useSetHeaderIdentity,
   type HeaderIdentityDetail,
@@ -864,6 +877,7 @@ function MessageComposer({
   onSend: () => void;
 }) {
   const sendOnEnter = sendShortcut === "enter";
+  const navigate = useNavigate();
   const composerRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [inputHeight, setInputHeight] = useState(36);
@@ -872,6 +886,26 @@ function MessageComposer({
   );
   const [quickReplyDrafts, setQuickReplyDrafts] = useState<string[]>([]);
   const [quickReplyDialogOpen, setQuickReplyDialogOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const aiAutoReplySupported = isAfdianAiAutoReplySupported();
+  const aiAutoReplyConfig = useAfdianAiAutoReplyConfig();
+  const aiApiKeyStatusQuery = useQuery({
+    queryKey: AI_API_KEY_STATUS_QUERY_KEY,
+    queryFn: getAiApiKeyStatus,
+    enabled: aiAutoReplySupported,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const hasKeywordAutoReply = aiAutoReplyConfig.keywordRules.some(
+    (rule) =>
+      rule.enabled && rule.keywords.length > 0 && rule.reply.trim().length > 0,
+  );
+  const hasAiAutoReply =
+    aiApiKeyStatusQuery.data?.configured === true &&
+    aiApiKeyStatusQuery.data.baseUrl ===
+      aiAutoReplyConfig.baseUrl.trim().replace(/\/+$/, "") &&
+    aiAutoReplyConfig.model.trim().length > 0;
+  const aiAutoReplyConfigured = hasKeywordAutoReply || hasAiAutoReply;
 
   const resizeTextArea = useCallback(() => {
     const textArea = textAreaRef.current;
@@ -908,12 +942,19 @@ function MessageComposer({
 
   const insertQuickReply = (reply: string) => {
     onChange(value.trimEnd() ? `${value.trimEnd()} ${reply}` : reply);
+    setToolsOpen(false);
     requestAnimationFrame(() => textAreaRef.current?.focus());
   };
 
   const openQuickReplyManager = () => {
+    setToolsOpen(false);
     setQuickReplyDrafts([...quickReplies]);
     setQuickReplyDialogOpen(true);
+  };
+
+  const openAiAutoReplySettings = () => {
+    setToolsOpen(false);
+    navigate("/settings");
   };
 
   const saveQuickReplies = () => {
@@ -944,12 +985,13 @@ function MessageComposer({
           intensity={100}
           position="bottom"
         />
+        <div className="afdian-composer-gradient-mask" aria-hidden="true" />
         {error && (
           <p className="relative z-20 mb-2 text-xs text-red-300">{error}</p>
         )}
         <div className="relative z-20 flex items-end gap-2.5">
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger disabled={sending}>
+          <Popover.Root open={toolsOpen} onOpenChange={setToolsOpen}>
+            <Popover.Trigger disabled={sending}>
               <Button
                 size="1"
                 variant="soft"
@@ -961,33 +1003,135 @@ function MessageComposer({
               >
                 <PlusIcon size={20} weight="regular" />
               </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content side="top" align="start" sideOffset={8}>
-              <DropdownMenu.Label>常用语</DropdownMenu.Label>
-              <DropdownMenu.Separator />
-              {quickReplies.length === 0 && (
-                <DropdownMenu.Item disabled>暂无常用语</DropdownMenu.Item>
-              )}
-              {quickReplies.map((reply) => (
-                <DropdownMenu.Item
-                  key={reply}
-                  onSelect={() => insertQuickReply(reply)}
+            </Popover.Trigger>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={10}
+              width="320px"
+              size="1"
+              className="max-h-96 overflow-y-auto p-0!"
+            >
+              <div className="px-3 py-2.5">
+                <Text size="2" weight="medium">
+                  私信工具
+                </Text>
+              </div>
+
+              <div className="flex items-center gap-3 border-t border-white/10 px-3 py-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/70">
+                  <RobotIcon size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-white/90">
+                    AI 自动回复
+                  </p>
+                  <p className="truncate text-xs text-white/45">
+                    {!aiAutoReplySupported
+                      ? "仅支持桌面客户端"
+                      : aiApiKeyStatusQuery.isLoading && !hasKeywordAutoReply
+                        ? "正在检查配置"
+                        : aiAutoReplyConfigured
+                          ? aiAutoReplyConfig.enabled
+                            ? "已开启"
+                            : "已配置"
+                          : "需要先完成配置"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="1"
+                  variant="ghost"
+                  color="gray"
+                  aria-label="配置 AI 自动回复"
+                  onClick={openAiAutoReplySettings}
                 >
-                  {reply}
-                </DropdownMenu.Item>
-              ))}
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onSelect={openQuickReplyManager}>
-                管理常用语
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+                  <GearSixIcon size={15} />
+                </Button>
+                <Switch
+                  size="1"
+                  aria-label="AI 自动回复"
+                  checked={aiAutoReplyConfig.enabled}
+                  disabled={
+                    !aiAutoReplySupported ||
+                    (!aiAutoReplyConfig.enabled && !aiAutoReplyConfigured)
+                  }
+                  onCheckedChange={setAfdianAiAutoReplyEnabled}
+                />
+              </div>
+
+              <div className="border-t border-white/10 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-white/65">常用语</p>
+                  <Button
+                    type="button"
+                    size="1"
+                    variant="ghost"
+                    color="gray"
+                    onClick={openQuickReplyManager}
+                  >
+                    管理
+                  </Button>
+                </div>
+                <div className="mt-1.5 flex flex-col gap-1">
+                  {quickReplies.length === 0 ? (
+                    <p className="py-2 text-center text-xs text-white/40">
+                      暂无常用语
+                    </p>
+                  ) : (
+                    quickReplies.map((reply) => (
+                      <Button
+                        key={reply}
+                        type="button"
+                        size="1"
+                        variant="ghost"
+                        color="gray"
+                        radius="large"
+                        className="h-auto! w-full! justify-start! whitespace-normal! px-2! py-1.5! text-left! font-normal!"
+                        onClick={() => insertQuickReply(reply)}
+                      >
+                        {reply}
+                      </Button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 px-3 py-3">
+                <p className="text-xs font-medium text-white/65">发送快捷键</p>
+                <SegmentedControl.Root
+                  size="1"
+                  radius="full"
+                  value={sendShortcut}
+                  className="mt-2 w-full"
+                  onValueChange={(shortcut) =>
+                    onSendShortcutChange(shortcut as SendShortcut)
+                  }
+                >
+                  <SegmentedControl.Item value="enter" className="flex-1">
+                    Enter
+                  </SegmentedControl.Item>
+                  <SegmentedControl.Item
+                    value="shift-enter"
+                    className="flex-1"
+                  >
+                    Shift + Enter
+                  </SegmentedControl.Item>
+                </SegmentedControl.Root>
+                <p className="mt-1.5 text-xs text-white/40">
+                  {sendOnEnter
+                    ? "Enter 发送，Shift + Enter 换行"
+                    : "Shift + Enter 发送，Enter 换行"}
+                </p>
+              </div>
+            </Popover.Content>
+          </Popover.Root>
           <textarea
             ref={textAreaRef}
             rows={1}
             value={value}
             disabled={sending}
-            placeholder={`输入私信内容，按 ${sendOnEnter ? "Enter" : "Shift + Enter"} 发送`}
+            placeholder="输入私信内容"
             style={{ height: inputHeight }}
             className="box-border min-h-9 max-h-[120px] min-w-0 flex-1 resize-none rounded-[18px] border-0 bg-white/[0.14] px-4 py-2 text-sm leading-5 text-white/90 shadow-lg shadow-black/20 outline-none placeholder:text-white/40 disabled:opacity-50"
             onChange={(event) => onChange(event.target.value)}
@@ -1002,49 +1146,20 @@ function MessageComposer({
               }
             }}
           />
-          <div className="flex h-9 shrink-0 overflow-hidden rounded-[18px] shadow-lg shadow-black/20">
-            <Button
-              disabled={disabled || sending}
-              onClick={onSend}
-              variant="soft"
-              color="gray"
-              radius="full"
-              className="h-9! rounded-r-none! bg-white/[0.14]! px-4 text-white!"
-            >
-              {sending ? <Spinner size="1" /> : "发送"}
-            </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger disabled={sending}>
-                <Button
-                  disabled={sending}
-                  variant="soft"
-                  color="gray"
-                  radius="full"
-                  aria-label="设置发送快捷键"
-                  className="h-9! rounded-l-none! bg-white/[0.14]! px-2.5 text-white!"
-                >
-                  <CaretDownIcon size={15} weight="bold" />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content side="top" align="end" sideOffset={8}>
-                <DropdownMenu.Label>发送快捷键</DropdownMenu.Label>
-                <DropdownMenu.Separator />
-                <DropdownMenu.RadioGroup
-                  value={sendShortcut}
-                  onValueChange={(value) =>
-                    onSendShortcutChange(value as SendShortcut)
-                  }
-                >
-                  <DropdownMenu.RadioItem value="enter">
-                    Enter 发送，Shift + Enter 换行
-                  </DropdownMenu.RadioItem>
-                  <DropdownMenu.RadioItem value="shift-enter">
-                    Shift + Enter 发送，Enter 换行
-                  </DropdownMenu.RadioItem>
-                </DropdownMenu.RadioGroup>
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </div>
+          <Button
+            disabled={disabled || sending}
+            onClick={onSend}
+            radius="full"
+            aria-label={sending ? "正在发送" : "发送私信"}
+            title="发送私信"
+            className="mb-0.5 size-9! shrink-0 p-0! shadow-lg shadow-black/20"
+          >
+            {sending ? (
+              <Spinner size="1" />
+            ) : (
+              <ArrowUpIcon size={20} weight="bold" />
+            )}
+          </Button>
         </div>
       </div>
 
@@ -1137,6 +1252,12 @@ export default function AfdianMessagesPage() {
   const [selectedUserId, setSelectedUserId] = useState(
     searchParams.get("userId") || "",
   );
+  const returnToDialogList = useCallback(() => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete("userId");
+    setSearchParams(nextSearchParams, { replace: true });
+    setNarrowPane("dialogs");
+  }, [searchParams, setSearchParams]);
   const { generatingUserIds } = useAfdianAiReplyActivity();
   const [detailsUserId, setDetailsUserId] = useState("");
   const sessionQuery = useQuery({
@@ -1212,7 +1333,6 @@ export default function AfdianMessagesPage() {
       nativeAvailable &&
       connected &&
       Boolean(selectedUserId) &&
-      !isNarrow &&
       detailsUserId === selectedUserId,
     staleTime: 5 * 60_000,
     retry: 1,
@@ -1314,7 +1434,7 @@ export default function AfdianMessagesPage() {
   }, [selectedUserId]);
 
   useLayoutEffect(() => {
-    if (isNarrow || !selectedDialogName) {
+    if (!conversationVisible || !selectedDialogName) {
       setHeaderIdentity(null);
       return;
     }
@@ -1329,17 +1449,20 @@ export default function AfdianMessagesPage() {
       fallback: selectedDialogName.slice(0, 1) || "爱",
       isVerified: userDetailsQuery.data?.isVerified,
       name: selectedDialogName,
+      onBack: isNarrow ? returnToDialogList : undefined,
       onDetailsOpen: requestSelectedUserDetails,
       profileSlug: userDetailsQuery.data?.urlSlug,
     });
 
     return () => setHeaderIdentity(null);
   }, [
+    conversationVisible,
     isNarrow,
     headerIdentityDetails,
     selectedDialogAvatar,
     selectedDialogName,
     requestSelectedUserDetails,
+    returnToDialogList,
     setHeaderIdentity,
     userDetailsError,
     userDetailsQuery.data?.cover,
@@ -1603,17 +1726,10 @@ export default function AfdianMessagesPage() {
     if (isNarrow) setNarrowPane("conversation");
   };
 
-  const returnToDialogList = () => {
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.delete("userId");
-    setSearchParams(nextSearchParams, { replace: true });
-    setNarrowPane("dialogs");
-  };
-
   if (!nativeAvailable) {
     return (
       <Page>
-        <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
+        <div className="flex flex-col gap-4 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-3))] sm:px-5">
           <div className="rounded-xl bg-nav-item px-5 py-12 text-center text-sm text-white/55">
             爱发电私信仅支持客户端。
           </div>
@@ -1625,7 +1741,7 @@ export default function AfdianMessagesPage() {
   if (sessionQuery.isLoading) {
     return (
       <Page>
-        <div className="flex items-center justify-center px-3 py-20 text-sm text-white/50 sm:px-5">
+        <div className="flex items-center justify-center px-3 pb-20 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-9))] text-sm text-white/50 sm:px-5">
           <Spinner />
         </div>
       </Page>
@@ -1635,7 +1751,7 @@ export default function AfdianMessagesPage() {
   if (sessionQuery.isError) {
     return (
       <Page>
-        <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
+        <div className="flex flex-col gap-4 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-3))] sm:px-5">
           <div className="rounded-xl bg-nav-item px-5 py-12 text-center text-sm text-white/55">
             {getAfdianErrorMessage(sessionQuery.error, "无法读取爱发电登录状态")}
           </div>
@@ -1647,7 +1763,7 @@ export default function AfdianMessagesPage() {
   if (!connected) {
     return (
       <Page>
-        <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
+        <div className="flex flex-col gap-4 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-3))] sm:px-5">
           <div className="flex flex-col items-center gap-3 rounded-xl bg-nav-item px-5 py-12 text-center">
             <p className="text-white/80">尚未登录爱发电</p>
             <p className="text-sm text-white/50">登录后即可查看私信对话。</p>
@@ -1664,7 +1780,7 @@ export default function AfdianMessagesPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {dialogsQuery.isError ? (
-          <div className="flex items-center justify-between px-4 py-3 text-sm text-white/60">
+          <div className="flex items-center justify-between px-4 pb-3 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-3))] text-sm text-white/60">
             <span>私信列表暂时无法加载</span>
             <Button variant="soft" onClick={() => void dialogsQuery.refetch()}>
               <ArrowClockwiseIcon size={14} />
@@ -1672,7 +1788,7 @@ export default function AfdianMessagesPage() {
             </Button>
           </div>
         ) : dialogsQuery.isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-white/50">
+          <div className="flex items-center justify-center pb-16 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-9))] text-sm text-white/50">
             <Spinner />
           </div>
         ) : (
@@ -1693,27 +1809,36 @@ export default function AfdianMessagesPage() {
                 style={isNarrow ? undefined : { width: sidebarWidth }}
                 className={`flex min-h-0 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 w-full bg-[var(--app-background)] ${narrowPane === "dialogs" ? "" : "pointer-events-none"}` : "shrink-0"}`}
               >
-                {!compactSidebar && (
-                  <div className="flex shrink-0 items-center justify-between px-2 py-2">
-                    <p className="text-sm font-medium text-white/80">全部对话</p>
-                    {dialogsQuery.hasNextPage && (
-                      <Button
-                        size="1"
-                        variant="ghost"
-                        disabled={dialogsQuery.isFetchingNextPage}
-                        onClick={() => void dialogsQuery.fetchNextPage()}
-                      >
-                        {dialogsQuery.isFetchingNextPage ? <Spinner size="1" /> : "加载更多"}
-                      </Button>
-                    )}
-                  </div>
-                )}
                 <AfdianDialogList
                   items={dialogs}
                   selectedUserId={selectedUserId}
                   onSelect={selectDialog}
                   compact={compactSidebar}
                   onScroll={handleDialogScroll}
+                  underHeader
+                  footer={
+                    dialogsQuery.hasNextPage ? (
+                      <div className="flex justify-center px-3 py-3">
+                        <Button
+                          size="1"
+                          variant="soft"
+                          color="gray"
+                          radius="full"
+                          disabled={dialogsQuery.isFetchingNextPage}
+                          onClick={() => void dialogsQuery.fetchNextPage()}
+                        >
+                          {dialogsQuery.isFetchingNextPage ? (
+                            <Spinner size="1" />
+                          ) : (
+                            <CaretDownIcon size={14} weight="bold" />
+                          )}
+                          {dialogsQuery.isFetchingNextPage
+                            ? "正在加载"
+                            : "加载更多对话"}
+                        </Button>
+                      </div>
+                    ) : null
+                  }
                 />
               </motion.section>
             )}
@@ -1762,35 +1887,6 @@ export default function AfdianMessagesPage() {
               aria-hidden={isNarrow && narrowPane !== "conversation"}
               className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isNarrow ? `absolute inset-0 z-10 bg-[var(--app-background)] ${narrowPane === "conversation" ? "" : "pointer-events-none"}` : ""}`}
             >
-              {selectedDialog && isNarrow ? (
-                <div className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-3">
-                  {isNarrow && (
-                    <Button
-                      size="1"
-                      variant="ghost"
-                      aria-label="返回对话列表"
-                      onClick={returnToDialogList}
-                    >
-                      <ArrowLeftIcon size={18} />
-                    </Button>
-                  )}
-                  <Avatar
-                    size="3"
-                    radius="full"
-                    src={selectedDialog.user.avatar ?? undefined}
-                    fallback={selectedDialog.user.name.slice(0, 1) || "爱"}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-white/90">
-                      {selectedDialog.user.name}
-                    </p>
-                    <p className="text-xs text-white/40">
-                      最近消息 {formatDateTime(selectedDialog.sentAt)}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
               <div className="relative flex min-h-0 flex-1 flex-col">
                 {messagesQuery.isLoading ? (
                   <div className="flex flex-1 items-center justify-center text-sm text-white/50">
@@ -1817,7 +1913,7 @@ export default function AfdianMessagesPage() {
                     options={AUTO_HIDE_SCROLLBAR_OPTIONS}
                     events={messageScrollEvents}
                   >
-                    <div className="flex min-h-full flex-col px-4 pb-[calc(var(--afdian-composer-height)+1rem)]">
+                    <div className={`flex min-h-full flex-col px-4 pb-[calc(var(--afdian-composer-height)+1rem)] ${conversationVisible ? "pt-[var(--afdian-page-header-content-inset)]" : ""}`}>
                       {messagesQuery.hasNextPage && (
                         <Button
                           variant="ghost"

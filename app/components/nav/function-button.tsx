@@ -7,6 +7,7 @@ interface FunctionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEleme
 }
 
 export default function FunctionButton({
+  children,
   className = "",
   "aria-label": ariaLabel,
   desktopInteractive = false,
@@ -43,7 +44,9 @@ export default function FunctionButton({
       aria-label={ariaLabel ?? "切换功能导航"}
       title={title ?? "切换功能导航"}
     >
-      <DotsNineIcon className="fill-icon-primary" size={20} weight="bold" />
+      {children ?? (
+        <DotsNineIcon className="fill-icon-primary" size={20} weight="bold" />
+      )}
     </button>
   );
 }

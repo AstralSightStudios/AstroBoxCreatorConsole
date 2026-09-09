@@ -31,6 +31,7 @@ export interface HeaderIdentity {
   fallback: string;
   isVerified?: boolean | null;
   name: string;
+  onBack?: () => void;
   onDetailsOpen?: () => void;
   profileSlug?: string | null;
 }

@@ -5,10 +5,15 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactElement,
   type MouseEvent,
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { SealCheckIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  SealCheckIcon,
+} from "@phosphor-icons/react";
 import {
   Avatar,
   Box,
@@ -29,8 +34,10 @@ import {
   useHeaderLargeTitle,
   useHeaderLargeTitleProgress,
   useSetHeaderActionsFit,
+  type HeaderIdentity,
 } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { CreatorConsoleLogoIcon } from "./svgs";
 import TitlebarEffect from "./TitlebarEffect";
 
@@ -63,6 +70,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
 interface HeaderProps {
   scrollProgress?: number;
   disableTitlebarEffect?: boolean;
+  uniformBackgroundEffect?: boolean;
 }
 
 function ExpandableText({ text }: { text: string }) {
@@ -93,15 +101,149 @@ function ExpandableText({ text }: { text: string }) {
   );
 }
 
+function HeaderIdentityPopover({
+  align = "start",
+  children,
+  identity,
+}: {
+  align?: "start" | "center" | "end";
+  children: ReactElement;
+  identity: HeaderIdentity;
+}) {
+  return (
+    <Popover.Root
+      onOpenChange={(open) => {
+        if (open) identity.onDetailsOpen?.();
+      }}
+    >
+      <Popover.Trigger>{children}</Popover.Trigger>
+      <Popover.Content
+        size="2"
+        align={align}
+        className="overflow-x-hidden! overflow-y-auto! p-0!"
+        style={{
+          width:
+            "min(400px, var(--radix-popover-content-available-width))",
+          maxHeight:
+            "min(var(--radix-popover-content-available-height), calc(100dvh - var(--space-6)))",
+        }}
+      >
+        {identity.isVerified && (
+          <Box className="shrink-0">
+            {identity.cover && (
+              <div className="aspect-[4/1] w-full overflow-hidden">
+                <img
+                  src={identity.cover}
+                  alt=""
+                  className="h-full w-full object-cover object-center"
+                />
+              </div>
+            )}
+            <Flex
+              direction="column"
+              gap="2"
+              className={
+                identity.cover ? "relative -mt-7 px-4 pb-4" : "px-4 py-4"
+              }
+            >
+              <Avatar
+                size="6"
+                radius="full"
+                src={identity.avatar ?? undefined}
+                fallback={identity.fallback}
+                className="ring-4 ring-[var(--color-panel-solid)]"
+              />
+              <Flex align="center" gap="2" className="min-w-0">
+                <Text
+                  size="5"
+                  weight="bold"
+                  highContrast
+                  className="min-w-0 break-words"
+                >
+                  {identity.name}
+                </Text>
+                <SealCheckIcon
+                  size={20}
+                  weight="fill"
+                  className="shrink-0 text-[var(--accent-9)]"
+                  aria-label="已认证创作者"
+                />
+              </Flex>
+              {identity.description && (
+                <Text
+                  as="p"
+                  size="2"
+                  color="gray"
+                  className="whitespace-pre-wrap break-words"
+                >
+                  {identity.description}
+                </Text>
+              )}
+              {identity.profileSlug && (
+                <Text as="p" size="2" color="blue">
+                  @{identity.profileSlug}
+                </Text>
+              )}
+            </Flex>
+            <Separator size="4" />
+          </Box>
+        )}
+        <Box p="4">
+          {identity.detailsLoading && (
+            <Flex align="center" gap="2" pb="3" className="shrink-0">
+              <Spinner size="1" />
+              <Text size="2" color="gray">正在加载用户资料</Text>
+            </Flex>
+          )}
+          <div>
+            {identity.details && identity.details.length > 0 ? (
+              <DataList.Root size="2" className="min-w-0 max-w-full">
+                {identity.details.map((detail) => (
+                  <DataList.Item key={detail.label} align="start">
+                    <DataList.Label minWidth="96px">
+                      <Flex align="center" gap="2">
+                        {detail.icon}
+                        <span>{detail.label}</span>
+                      </Flex>
+                    </DataList.Label>
+                    <DataList.Value className="min-w-0 max-w-full overflow-hidden! break-words whitespace-normal">
+                      {detail.expandable && typeof detail.value === "string" ? (
+                        <ExpandableText text={detail.value} />
+                      ) : (
+                        detail.value
+                      )}
+                    </DataList.Value>
+                  </DataList.Item>
+                ))}
+              </DataList.Root>
+            ) : !identity.detailsLoading ? (
+              <Text size="2" color="gray">
+                {identity.detailsError || "暂无用户资料"}
+              </Text>
+            ) : null}
+            {identity.detailsError && identity.details?.length ? (
+              <Text as="p" size="1" color="gray" mt="3">
+                {identity.detailsError}
+              </Text>
+            ) : null}
+          </div>
+        </Box>
+      </Popover.Content>
+    </Popover.Root>
+  );
+}
+
 export default function Header({
   scrollProgress = 0,
   disableTitlebarEffect = false,
+  uniformBackgroundEffect = false,
 }: HeaderProps) {
   const isMacOS =
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("macos");
   const location = useLocation();
   const { isCollapsed, isDesktop, toggleNav } = useNavVisibility();
+  const { isNarrow } = useUiScaleViewport();
   const headerActions = useHeaderActions();
   const headerActionsFit = useHeaderActionsFit();
   const breadcrumbOverride = useHeaderBreadcrumb();
@@ -111,6 +253,10 @@ export default function Header({
   const setHeaderActionsFit = useSetHeaderActionsFit();
   const pathname = location.pathname;
   const isMobile = !isDesktop;
+  const isNarrowConversationHeader =
+    isNarrow &&
+    pathname === "/afdian-messages" &&
+    Boolean(headerIdentity?.onBack);
   const hideDesktopAfdianTitle =
     isDesktop && pathname === "/afdian-messages" && !headerIdentity;
   const isHeaderAvailable = !isMobile || isCollapsed;
@@ -205,14 +351,55 @@ export default function Header({
   return (
     <header
       ref={headerRef}
-      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-visible ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
+      className={`app-header ${isMacOS ? "tauri-drag-region" : ""} ${uniformBackgroundEffect ? "app-header-uniform-background" : ""} ${isNarrowConversationHeader ? "app-header-conversation" : ""} relative flex min-w-0 flex-row flex-nowrap gap-2 overflow-visible ${isMobile ? "p-1.5" : "py-2 px-1"} items-center transition-all`}
       data-tauri-drag-region={isMacOS ? true : undefined}
       onMouseDown={handleHeaderMouseDown}
     >
-      {!disableTitlebarEffect && (
+      {uniformBackgroundEffect && (
+        <div className="app-header-uniform-background-layer" aria-hidden="true" />
+      )}
+      {!disableTitlebarEffect && !uniformBackgroundEffect && (
         <TitlebarEffect gradientOpacity={scrollProgress} />
       )}
-      {isMobile ? (
+      {isNarrowConversationHeader && headerIdentity ? (
+        <>
+          <FunctionButton
+            aria-label="返回对话列表"
+            title="返回对话列表"
+            className="app-header-conversation-back tauri-no-drag ml-1 shrink-0"
+            onClick={headerIdentity.onBack}
+          >
+            <CaretLeftIcon
+              className="fill-icon-primary"
+              size={20}
+              weight="bold"
+            />
+          </FunctionButton>
+          <HeaderIdentityPopover identity={headerIdentity} align="center">
+            <button
+              type="button"
+              aria-label={`查看 ${headerIdentity.name} 的资料`}
+              className="app-header-conversation-identity tauri-no-drag absolute left-1/2 flex min-w-0 -translate-x-1/2 cursor-pointer flex-col items-center"
+            >
+              <Avatar
+                size="3"
+                radius="full"
+                src={headerIdentity.avatar ?? undefined}
+                fallback={headerIdentity.fallback}
+              />
+              <span className="flex max-w-full items-center gap-0.5 text-sm font-medium text-white/90">
+                <span className="min-w-0 truncate">{headerIdentity.name}</span>
+                <CaretRightIcon
+                  size={14}
+                  weight="bold"
+                  className="shrink-0 text-white/45"
+                />
+              </span>
+            </button>
+          </HeaderIdentityPopover>
+        </>
+      ) : null}
+      {!isNarrowConversationHeader && isMobile ? (
         <FunctionButton
           className={`app-header-function-button ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
           onClick={toggleNav}
@@ -220,7 +407,7 @@ export default function Header({
           title="展开导航"
         />
       ) : null}
-      {isMobile ? (
+      {!isNarrowConversationHeader && isMobile ? (
         <div
           className={`creator-console-mobile-logo shrink-0 transition-all ${isCollapsed ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
@@ -228,22 +415,18 @@ export default function Header({
         </div>
       ) : null}
 
-      <div
-        ref={breadcrumbRef}
-        aria-hidden={!isBreadcrumbInteractive}
-        style={{
-          opacity: breadcrumbOpacity,
-          transform: `translateY(${(1 - breadcrumbOpacity) * 4}px)`,
-        }}
-        className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 ${isBreadcrumbInteractive ? "" : "pointer-events-none"}`}
-      >
-        {headerIdentity ? (
-          <Popover.Root
-            onOpenChange={(open) => {
-              if (open) headerIdentity.onDetailsOpen?.();
-            }}
-          >
-            <Popover.Trigger>
+      {!isNarrowConversationHeader && (
+        <div
+          ref={breadcrumbRef}
+          aria-hidden={!isBreadcrumbInteractive}
+          style={{
+            opacity: breadcrumbOpacity,
+            transform: `translateY(${(1 - breadcrumbOpacity) * 4}px)`,
+          }}
+          className={`app-header-breadcrumb flex min-w-0 flex-row items-center gap-1 overflow-hidden whitespace-nowrap pl-1 ${isBreadcrumbInteractive ? "" : "pointer-events-none"}`}
+        >
+          {headerIdentity ? (
+            <HeaderIdentityPopover identity={headerIdentity}>
               <button
                 type="button"
                 aria-label={`查看 ${headerIdentity.name} 的资料`}
@@ -255,165 +438,61 @@ export default function Header({
                   src={headerIdentity.avatar ?? undefined}
                   fallback={headerIdentity.fallback}
                 />
-                <span className="min-w-0 truncate font-[520] text-size-large">
-                  {headerIdentity.name}
+                <span className="flex min-w-0 items-center gap-0.5 font-[520] text-size-large">
+                  <span className="min-w-0 truncate">
+                    {headerIdentity.name}
+                  </span>
+                  <CaretRightIcon
+                    size={14}
+                    weight="bold"
+                    className="shrink-0 text-white/45"
+                  />
                 </span>
               </button>
-            </Popover.Trigger>
-            <Popover.Content
-              size="2"
-              align="start"
-              width="400px"
-              className="overflow-x-hidden! overflow-y-auto! p-0!"
-              style={{
-                maxHeight:
-                  "min(var(--radix-popover-content-available-height), calc(100dvh - var(--space-6)))",
-              }}
-            >
-              {headerIdentity.isVerified && (
-                <Box className="shrink-0">
-                  {headerIdentity.cover && (
-                    <div className="aspect-[4/1] w-full overflow-hidden">
-                      <img
-                        src={headerIdentity.cover}
-                        alt=""
-                        className="h-full w-full object-cover object-center"
-                      />
-                    </div>
-                  )}
-                  <Flex
-                    direction="column"
-                    gap="2"
-                    className={
-                      headerIdentity.cover
-                        ? "relative -mt-7 px-4 pb-4"
-                        : "px-4 py-4"
-                    }
-                  >
-                    <Avatar
-                      size="6"
-                      radius="full"
-                      src={headerIdentity.avatar ?? undefined}
-                      fallback={headerIdentity.fallback}
-                      className="ring-4 ring-[var(--color-panel-solid)]"
-                    />
-                    <Flex align="center" gap="2" className="min-w-0">
-                      <Text
-                        size="5"
-                        weight="bold"
-                        highContrast
-                        className="min-w-0 break-words"
-                      >
-                        {headerIdentity.name}
-                      </Text>
-                      <SealCheckIcon
-                        size={20}
-                        weight="fill"
-                        className="shrink-0 text-[var(--accent-9)]"
-                        aria-label="已认证创作者"
-                      />
-                    </Flex>
-                    {headerIdentity.description && (
-                      <Text
-                        as="p"
-                        size="2"
-                        color="gray"
-                        className="whitespace-pre-wrap break-words"
-                      >
-                        {headerIdentity.description}
-                      </Text>
-                    )}
-                    {headerIdentity.profileSlug && (
-                      <Text as="p" size="2" color="blue">
-                        @{headerIdentity.profileSlug}
-                      </Text>
-                    )}
-                  </Flex>
-                  <Separator size="4" />
-                </Box>
-              )}
-              <Box p="4">
-                {headerIdentity.detailsLoading && (
-                  <Flex align="center" gap="2" pb="3" className="shrink-0">
-                    <Spinner size="1" />
-                    <Text size="2" color="gray">正在加载用户资料</Text>
-                  </Flex>
-                )}
-                <div>
-                  {headerIdentity.details && headerIdentity.details.length > 0 ? (
-                    <DataList.Root size="2" className="min-w-0 max-w-full">
-                      {headerIdentity.details.map((detail) => (
-                        <DataList.Item key={detail.label} align="start">
-                          <DataList.Label minWidth="96px">
-                            <Flex align="center" gap="2">
-                              {detail.icon}
-                              <span>{detail.label}</span>
-                            </Flex>
-                          </DataList.Label>
-                          <DataList.Value className="min-w-0 max-w-full overflow-hidden! break-words whitespace-normal">
-                            {detail.expandable && typeof detail.value === "string" ? (
-                              <ExpandableText text={detail.value} />
-                            ) : (
-                              detail.value
-                            )}
-                          </DataList.Value>
-                        </DataList.Item>
-                      ))}
-                    </DataList.Root>
-                  ) : !headerIdentity.detailsLoading ? (
-                    <Text size="2" color="gray">
-                      {headerIdentity.detailsError || "暂无用户资料"}
-                    </Text>
-                  ) : null}
-                  {headerIdentity.detailsError && headerIdentity.details?.length ? (
-                    <Text as="p" size="1" color="gray" mt="3">
-                      {headerIdentity.detailsError}
-                    </Text>
-                  ) : null}
-                </div>
-              </Box>
-            </Popover.Content>
-          </Popover.Root>
-        ) : !hideDesktopAfdianTitle ? (
-          (
-            breadcrumbOverride
-              ? [...breadcrumbKeys, `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`]
-              : breadcrumbKeys
-          ).map((key, index) => {
-          const isLast =
-            breadcrumbOverride
-              ? index === breadcrumbKeys.length
-              : index === breadcrumbKeys.length - 1;
-          const label =
-            largeTitle && isLast
-              ? largeTitle
-              : breadcrumbOverride && isLast
-              ? breadcrumbOverride
-              : PAGE_NAME_MAP[key] ?? key;
-          const to =
-            key === ""
-              ? "/"
-              : `/${breadcrumbOverride && isLast ? breadcrumbKeys[breadcrumbKeys.length - 1] : key}`;
+            </HeaderIdentityPopover>
+          ) : !hideDesktopAfdianTitle ? (
+            (
+              breadcrumbOverride
+                ? [
+                    ...breadcrumbKeys,
+                    `${breadcrumbKeys[breadcrumbKeys.length - 1]}/sub`,
+                  ]
+                : breadcrumbKeys
+            ).map((key, index) => {
+              const isLast = breadcrumbOverride
+                ? index === breadcrumbKeys.length
+                : index === breadcrumbKeys.length - 1;
+              const label =
+                largeTitle && isLast
+                  ? largeTitle
+                  : breadcrumbOverride && isLast
+                    ? breadcrumbOverride
+                    : PAGE_NAME_MAP[key] ?? key;
+              const to =
+                key === ""
+                  ? "/"
+                  : `/${breadcrumbOverride && isLast ? breadcrumbKeys[breadcrumbKeys.length - 1] : key}`;
 
-          return (
-            <div
-              key={key}
-              className="flex min-w-0 flex-row items-center gap-1"
-            >
-              {(isMobile || index > 0) && <Slash />}
-              <Link
-                to={to}
-                tabIndex={isBreadcrumbInteractive ? undefined : -1}
-                className={`min-w-0 truncate font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded-lg px-1.5 py-0.5 cursor-pointer transition-all hover:bg-neutral-800 active:scale-95 active:opacity-90`}
-              >
-                {label}
-              </Link>
-            </div>
-          );
-          })
-        ) : null}
-      </div>
-      {headerActions ? (
+              return (
+                <div
+                  key={key}
+                  className="flex min-w-0 flex-row items-center gap-1"
+                >
+                  {(isMobile || index > 0) && <Slash />}
+                  <Link
+                    to={to}
+                    tabIndex={isBreadcrumbInteractive ? undefined : -1}
+                    className={`min-w-0 truncate font-[520] text-size-large ${isLast ? "" : "text-header-text-is-not-last"} rounded-lg px-1.5 py-0.5 cursor-pointer transition-all hover:bg-neutral-800 active:scale-95 active:opacity-90`}
+                  >
+                    {label}
+                  </Link>
+                </div>
+              );
+            })
+          ) : null}
+        </div>
+      )}
+      {!isNarrowConversationHeader && headerActions ? (
         <>
           <div
             ref={actionsMeasureRef}

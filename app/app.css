@@ -222,6 +222,20 @@ body,
     bottom: calc(var(--afdian-composer-height, 76px) + 0.5rem);
 }
 
+.afdian-composer-gradient-mask {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    pointer-events: none;
+    background-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        color-mix(in srgb, var(--app-background) 42%, transparent) 38%,
+        color-mix(in srgb, var(--app-background) 82%, transparent) 72%,
+        var(--app-background) 100%
+    );
+}
+
 /* ---- Wallpaper editor ---- */
 .wallpaper-canvas-scroll {
     scrollbar-width: thin;
@@ -438,6 +452,10 @@ html.macos[data-ui-desktop="true"] .app-desktop-nav {
     padding-top: max(52px, var(--ui-safe-area-top));
 }
 
+html.macos[data-ui-desktop="true"] .app-desktop-nav-persistent-header {
+    top: max(52px, var(--ui-safe-area-top));
+}
+
 .macos .creator-console-logo-button {
     display: none;
 }
@@ -488,6 +506,7 @@ html[data-ui-narrow="false"] .titlebar-effect-blur-region {
 
 html[data-ui-narrow="false"] .titlebar-effect-sidebar {
     position: absolute;
+    z-index: 20;
 }
 
 html.macos[data-ui-desktop="false"][data-ui-narrow="false"][data-ui-scale-active="false"] .app-header {
@@ -532,16 +551,8 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-
     padding-top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
 }
 
-html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-content.app-page-scroll-content-header-hidden {
-    padding-top: var(--macos-titlebar-height);
-}
-
 html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: calc(var(--macos-titlebar-height) + 44px + 1rem);
-}
-
-html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area.app-page-scroll-area-header-hidden[data-overlayscrollbars] > .os-scrollbar-vertical {
-    top: calc(var(--macos-titlebar-height) + 0.5rem);
 }
 
 html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
@@ -582,6 +593,141 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-
 
 html.macos:is([data-ui-desktop="false"], [data-ui-scale-active="true"]) .titlebar-effect-gradient {
     height: var(--macos-titlebar-gradient-height);
+}
+
+/* ---- 私信列表顶部延展 ---- */
+.app-page-content-afdian-list {
+    --afdian-list-header-top: var(--ui-safe-area-top);
+    --afdian-list-header-height: 52px;
+    --afdian-dialog-list-top-inset: calc(
+        var(--afdian-list-header-top) + var(--afdian-list-header-height) + var(--space-2)
+    );
+}
+
+html .app-page-content.app-page-content-afdian-list {
+    padding-top: 0;
+}
+
+html[data-ui-narrow="true"] .app-page-content-afdian-list {
+    --afdian-list-header-height: 48px;
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-content-afdian-list {
+    --afdian-list-header-top: var(--macos-titlebar-height);
+    --afdian-list-header-height: 44px;
+}
+
+.app-page-content-afdian-list .app-header {
+    position: absolute;
+    top: var(--afdian-list-header-top);
+    right: max(0.5rem, var(--ui-safe-area-right));
+    left: max(0.5rem, var(--ui-safe-area-left));
+    z-index: 20;
+    height: var(--afdian-list-header-height);
+    min-height: var(--afdian-list-header-height);
+}
+
+html .app-page-scroll-content.app-page-scroll-content-afdian-list,
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-content.app-page-scroll-content-afdian-list {
+    padding-top: 0;
+}
+
+.afdian-dialog-list-under-header[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: var(--afdian-dialog-list-top-inset);
+    bottom: 0.5rem;
+}
+
+/* ---- 私信对话顶部栏 ---- */
+.app-page-content-afdian-conversation {
+    --afdian-page-header-top: var(--ui-safe-area-top);
+    --afdian-page-header-height: 52px;
+    --afdian-page-header-inset: calc(
+        var(--afdian-page-header-top) + var(--afdian-page-header-height)
+    );
+    --afdian-page-header-content-inset: calc(
+        var(--afdian-page-header-inset) + var(--space-2)
+    );
+    --afdian-dialog-list-top-inset: var(--afdian-page-header-content-inset);
+}
+
+html .app-page-content.app-page-content-afdian-conversation,
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-content.app-page-content-afdian-conversation {
+    padding-top: 0;
+}
+
+html[data-ui-narrow="true"] .app-page-content-afdian-conversation {
+    --afdian-page-header-height: calc(var(--space-9) + var(--space-4));
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-content-afdian-conversation {
+    --afdian-page-header-top: var(--macos-titlebar-height);
+    --afdian-page-header-height: 44px;
+}
+
+html.macos[data-ui-narrow="true"] .app-page-content-afdian-conversation {
+    --afdian-page-header-height: calc(var(--space-9) + var(--space-4));
+}
+
+.app-page-content-afdian-conversation .app-header {
+    position: absolute;
+    top: var(--afdian-page-header-top);
+    right: max(0.5rem, var(--ui-safe-area-right));
+    left: max(0.5rem, var(--ui-safe-area-left));
+    z-index: 20;
+    height: var(--afdian-page-header-height);
+    min-height: var(--afdian-page-header-height);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-content-afdian-conversation .app-header {
+    top: var(--afdian-page-header-top);
+    height: var(--afdian-page-header-height);
+    min-height: var(--afdian-page-header-height);
+}
+
+.app-header-uniform-background-layer {
+    position: absolute;
+    top: calc(0px - var(--afdian-page-header-top));
+    right: calc(0px - max(0.5rem, var(--ui-safe-area-right)));
+    left: calc(0px - max(0.5rem, var(--ui-safe-area-left)));
+    z-index: -1;
+    height: var(--afdian-page-header-inset);
+    border-bottom: 1px solid var(--nav-border-strong);
+    background-color: color-mix(in srgb, var(--app-background) 72%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    pointer-events: none;
+}
+
+.app-header-conversation-back {
+    align-self: flex-start;
+    margin-top: var(--space-2);
+}
+
+.app-header-conversation-identity {
+    top: var(--space-1);
+    gap: var(--space-1);
+    width: calc(100% - var(--space-9) - var(--space-9));
+}
+
+html .app-page-scroll-content.app-page-scroll-content-afdian-messages,
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-content.app-page-scroll-content-afdian-messages {
+    padding-top: 0;
+}
+
+html .app-page-scroll-area.app-page-scroll-area-afdian-messages[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: var(--afdian-page-header-content-inset);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-scroll-area.app-page-scroll-area-afdian-messages[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: var(--afdian-page-header-content-inset);
+}
+
+.app-page-content-afdian-messages .afdian-message-scroll[data-overlayscrollbars] > .os-scrollbar-vertical {
+    top: var(--afdian-page-header-content-inset);
+}
+
+.app-page-content-afdian-messages .afdian-message-scroll > [data-overlayscrollbars-viewport] {
+    scroll-padding-top: var(--afdian-page-header-content-inset);
 }
 
 @media (max-width: 1100px) {

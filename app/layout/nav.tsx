@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Drawer } from "vaul";
 import {
+  ArrowLeftIcon,
   ArrowUpRightIcon,
   CheckCircleIcon,
   CoinIcon,
@@ -240,6 +241,7 @@ interface NavContentProps {
   onNavScroll: (event: React.UIEvent<HTMLDivElement>) => void;
   collapseAccountOnScroll: boolean;
   hideFunctionButton?: boolean;
+  hideHeader?: boolean;
 }
 
 function NavContent({
@@ -251,6 +253,7 @@ function NavContent({
   onNavScroll,
   navScrollState,
   hideFunctionButton,
+  hideHeader,
 }: NavContentProps) {
   const navMaskImage = `linear-gradient(to bottom, ${
     navScrollState.canScrollUp
@@ -265,13 +268,17 @@ function NavContent({
   return (
     <>
       <div className="flex h-full min-h-0 min-w-0 flex-col">
-        <NavHeader
-          account={account}
-          accountState={accountState}
-          onToggleNav={onToggleNav}
-          onNavigate={onNavigate}
-          hideFunctionButton={hideFunctionButton}
-        />
+        {hideHeader ? (
+          <div className="h-11 shrink-0" aria-hidden="true" />
+        ) : (
+          <NavHeader
+            account={account}
+            accountState={accountState}
+            onToggleNav={onToggleNav}
+            onNavigate={onNavigate}
+            hideFunctionButton={hideFunctionButton}
+          />
+        )}
         <AccountInfo account={account} />
       </div>
       <div className="relative flex min-h-0 min-w-0 flex-col">
@@ -335,24 +342,10 @@ interface DesktopNavProps extends NavContentProps {
   onShowNav: () => void;
 }
 
-function DesktopAfdianMessagesNav({
-  account,
-  accountState,
-  onShowNav,
-}: {
-  account: DisplayAccount;
-  accountState: AccountState;
-  onShowNav: () => void;
-}) {
+function DesktopAfdianMessagesNav() {
   return (
     <nav className="app-desktop-nav relative z-10 flex h-full w-64 flex-col gap-2 overflow-hidden bg-transparent p-3 pb-[max(0.75rem,var(--ui-safe-area-bottom))] pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]">
       <TitlebarEffect className="titlebar-effect-sidebar" />
-      <NavHeader
-        account={account}
-        accountState={accountState}
-        onToggleNav={onShowNav}
-        desktopFunctionButtonInteractive
-      />
       <AfdianMessagesSidebar />
     </nav>
   );
@@ -366,52 +359,66 @@ function DesktopNav({
 }: DesktopNavProps) {
   return (
     <aside
-      className={`relative shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
+      className={`relative isolate shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
       aria-hidden={isCollapsed}
     >
       {!isCollapsed && (
-        <AnimatePresence initial={false} mode="sync">
-          {showAfdianMessagesSidebar ? (
-            <motion.div
-              key="afdian-messages"
-              className="absolute inset-0 h-full w-64"
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
-              transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
-            >
-              <DesktopAfdianMessagesNav
-                account={contentProps.account}
-                accountState={contentProps.accountState}
-                onShowNav={onShowNav}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="main-nav"
-              className="absolute inset-0 h-full w-64"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 12 }}
-              transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
-            >
-              <nav
-                className="app-desktop-nav relative z-10 grid h-full w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]"
-                style={{
-                  gridTemplateRows: getNavGridTemplateRows(
-                    contentProps.navScrollState.scrollTop,
-                    NAV_HEADER_EXPANDED_HEIGHT,
-                    NAV_HEADER_RESTING_HEIGHT,
-                    contentProps.collapseAccountOnScroll,
-                  ),
-                }}
+        <>
+          <div className="app-desktop-nav-persistent-header absolute left-[max(0.75rem,var(--ui-safe-area-left))] right-3 top-[max(0.75rem,var(--ui-safe-area-top))] z-30">
+            <NavHeader
+              account={contentProps.account}
+              accountState={contentProps.accountState}
+              onToggleNav={
+                showAfdianMessagesSidebar
+                  ? onShowNav
+                  : contentProps.onToggleNav
+              }
+              onNavigate={contentProps.onNavigate}
+              desktopFunctionButtonInteractive={showAfdianMessagesSidebar}
+              title={
+                showAfdianMessagesSidebar ? "爱发电私信" : undefined
+              }
+            />
+          </div>
+          <AnimatePresence initial={false} mode="sync">
+            {showAfdianMessagesSidebar ? (
+              <motion.div
+                key="afdian-messages"
+                className="absolute inset-0 z-10 h-full w-64"
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -12 }}
+                transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
               >
-                <TitlebarEffect className="titlebar-effect-sidebar" />
-                <NavContent {...contentProps} />
-              </nav>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <DesktopAfdianMessagesNav />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="main-nav"
+                className="absolute inset-0 z-10 h-full w-64"
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.2, ease: [0.22, 0.82, 0.3, 1] }}
+              >
+                <nav
+                  className="app-desktop-nav relative z-10 grid h-full w-64 grid-cols-1 gap-2 overflow-hidden bg-transparent p-3 pb-0 pt-[max(0.75rem,var(--ui-safe-area-top))] pl-[max(0.75rem,var(--ui-safe-area-left))]"
+                  style={{
+                    gridTemplateRows: getNavGridTemplateRows(
+                      contentProps.navScrollState.scrollTop,
+                      NAV_HEADER_EXPANDED_HEIGHT,
+                      NAV_HEADER_RESTING_HEIGHT,
+                      contentProps.collapseAccountOnScroll,
+                    ),
+                  }}
+                >
+                  <TitlebarEffect className="titlebar-effect-sidebar" />
+                  <NavContent {...contentProps} hideHeader />
+                </nav>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
       )}
     </aside>
   );
@@ -469,6 +476,7 @@ interface NavHeaderProps {
   onNavigate?: (path: string) => void;
   hideFunctionButton?: boolean;
   desktopFunctionButtonInteractive?: boolean;
+  title?: string;
 }
 
 function NavHeader({
@@ -478,6 +486,7 @@ function NavHeader({
   onNavigate,
   hideFunctionButton,
   desktopFunctionButtonInteractive,
+  title,
 }: NavHeaderProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -580,14 +589,30 @@ function NavHeader({
         <div
           className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
         >
-          {!hideFunctionButton && (
-            <FunctionButton
-              desktopInteractive={desktopFunctionButtonInteractive}
-              aria-label={desktopFunctionButtonInteractive ? "打开功能导航" : undefined}
-              title={desktopFunctionButtonInteractive ? "打开功能导航" : undefined}
-              onClick={onToggleNav}
-            />
-          )}
+          <div className="flex min-w-0 items-center gap-2">
+            {!hideFunctionButton && (
+              <FunctionButton
+                desktopInteractive={desktopFunctionButtonInteractive}
+                aria-label={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
+                title={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
+                onClick={onToggleNav}
+              >
+                {desktopFunctionButtonInteractive ? (
+                  <ArrowLeftIcon
+                    className="fill-icon-primary"
+                    size={20}
+                    weight="bold"
+                    aria-hidden="true"
+                  />
+                ) : undefined}
+              </FunctionButton>
+            )}
+            {title && (
+              <h2 className="truncate font-[520] text-size-large text-white/80">
+                {title}
+              </h2>
+            )}
+          </div>
           <div className="nav-account-actions flex items-center gap-2">
             <InboxBell onClick={() => setInboxOpen(true)} />
             <Popover.Trigger>
