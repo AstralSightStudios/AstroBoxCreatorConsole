@@ -81,19 +81,20 @@ export function AfdianDialogList({
     }
   }, [pinnedUserIds]);
 
-  const orderedItems = useMemo(() => {
-    const pinnedIndex = new Map(
-      pinnedUserIds.map((userId, index) => [userId, index]),
+  const { pinnedItems, regularItems } = useMemo(() => {
+    const itemsByUserId = new Map(
+      items.map((item) => [item.user.userId, item]),
     );
 
-    return [...items].sort((left, right) => {
-      const leftIndex = pinnedIndex.get(left.user.userId);
-      const rightIndex = pinnedIndex.get(right.user.userId);
-      if (leftIndex === undefined && rightIndex === undefined) return 0;
-      if (leftIndex === undefined) return 1;
-      if (rightIndex === undefined) return -1;
-      return leftIndex - rightIndex;
-    });
+    return {
+      pinnedItems: pinnedUserIds.flatMap((userId) => {
+        const item = itemsByUserId.get(userId);
+        return item ? [item] : [];
+      }),
+      regularItems: items.filter(
+        (item) => !pinnedUserIds.includes(item.user.userId),
+      ),
+    };
   }, [items, pinnedUserIds]);
 
   const togglePinned = (userId: string) => {
@@ -124,9 +125,80 @@ export function AfdianDialogList({
           compact ? "items-center gap-2 px-1" : "gap-1"
         } ${underHeader ? "pt-[var(--afdian-dialog-list-top-inset)]" : ""}`}
       >
-        {orderedItems.map((item) => {
+        {pinnedItems.length > 0 && (
+          <div
+            className={`mx-auto grid ${
+              compact
+                ? "w-full max-w-16 grid-cols-1 gap-2 pb-2"
+                : pinnedItems.length === 1
+                  ? "w-1/3 grid-cols-1 gap-2 pb-2"
+                  : pinnedItems.length === 2
+                    ? "w-2/3 grid-cols-2 gap-2 pb-2"
+                    : "w-full grid-cols-3 gap-2 pb-2"
+            }`}
+          >
+            {pinnedItems.map((item) => {
+              const selected = item.user.userId === selectedUserId;
+              return (
+                <div
+                  key={item.user.userId}
+                  className="min-w-0"
+                >
+                  <ContextMenu.Root>
+                    <ContextMenu.Trigger className="contents">
+                      <button
+                        type="button"
+                        className={`flex w-full min-w-0 flex-col items-center gap-1.5 rounded-xl py-2 text-center transition-colors ${
+                          selected
+                            ? "bg-white/10 text-white"
+                            : "text-white/55 hover:bg-white/[0.05]"
+                        }`}
+                        onClick={() => onSelect(item.user.userId)}
+                      >
+                        <span className="relative">
+                          <Avatar
+                            size={compact ? "4" : "3"}
+                            radius="full"
+                            src={item.user.avatar ?? undefined}
+                            fallback={item.user.name.slice(0, 1) || "爱"}
+                          />
+                          {item.unreadCount > 0 && (
+                            <Badge
+                              color="red"
+                              variant="solid"
+                              className="absolute -right-2 -top-2 min-w-4 justify-center px-1 text-[10px]"
+                            >
+                              {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="w-full truncate px-1 text-xs">
+                          {item.user.name}
+                        </span>
+                      </button>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Content size="1">
+                      <ContextMenu.Item
+                        onSelect={() => togglePinned(item.user.userId)}
+                      >
+                        <PushPinSimpleIcon size={16} />
+                        取消置顶
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Root>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {compact && pinnedItems.length > 0 && regularItems.length > 0 && (
+          <div
+            aria-hidden="true"
+            className="mb-2 h-px w-16 shrink-0 bg-white/10"
+          />
+        )}
+        {regularItems.map((item) => {
           const selected = item.user.userId === selectedUserId;
-          const pinned = pinnedUserIds.includes(item.user.userId);
           return (
             <ContextMenu.Root key={item.user.userId}>
               <ContextMenu.Trigger className="contents">
@@ -134,9 +206,9 @@ export function AfdianDialogList({
                   type="button"
                   className={
                     compact
-                      ? `flex w-full shrink-0 flex-col items-center gap-2 rounded-xl px-1.5 py-3 text-center transition-colors ${
+                      ? `flex w-16 shrink-0 flex-col items-center gap-2 rounded-xl px-1.5 py-3 text-center transition-colors ${
                           selected
-                            ? "bg-blue-500/90 text-white"
+                            ? "bg-white/10 text-white"
                             : "text-white/55 hover:bg-white/[0.05]"
                         }`
                       : `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
@@ -165,27 +237,12 @@ export function AfdianDialogList({
                     )}
                   </span>
                   {compact ? (
-                    <span className="flex w-full items-center justify-center gap-1 truncate text-xs">
-                      {pinned && (
-                        <PushPinSimpleIcon
-                          size={12}
-                          weight="fill"
-                          className="shrink-0 text-amber-300"
-                        />
-                      )}
-                      <span className="truncate">{item.user.name}</span>
+                    <span className="w-full truncate text-xs">
+                      {item.user.name}
                     </span>
                   ) : (
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
-                        {pinned && (
-                          <PushPinSimpleIcon
-                            size={14}
-                            weight="fill"
-                            className="shrink-0 text-amber-300"
-                            aria-label="已置顶"
-                          />
-                        )}
                         <span className="truncate text-sm text-white/85">
                           {item.user.name}
                         </span>
@@ -200,7 +257,7 @@ export function AfdianDialogList({
               <ContextMenu.Content size="1">
                 <ContextMenu.Item onSelect={() => togglePinned(item.user.userId)}>
                   <PushPinSimpleIcon size={16} />
-                  {pinned ? "取消置顶" : "置顶"}
+                  置顶
                 </ContextMenu.Item>
               </ContextMenu.Content>
             </ContextMenu.Root>

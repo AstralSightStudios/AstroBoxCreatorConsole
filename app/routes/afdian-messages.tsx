@@ -89,8 +89,8 @@ import Page from "~/layout/page";
 const SIDEBAR_WIDTH_STORAGE_KEY = "afdian-messages-sidebar-width";
 const SEND_SHORTCUT_STORAGE_KEY = "afdian-messages-send-shortcut";
 const QUICK_REPLIES_STORAGE_KEY = "afdian-messages-quick-replies";
-const SIDEBAR_MIN_WIDTH = 144;
-const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_MIN_WIDTH = 96;
+const SIDEBAR_MAX_WIDTH = 336;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 const SIDEBAR_COMPACT_WIDTH = 220;
 const COMPLAINT_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -117,7 +117,11 @@ const AUTO_HIDE_SCROLLBAR_OPTIONS: PartialOptions = {
 };
 
 function clampSidebarWidth(value: number) {
-  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
+  const clamped = Math.min(
+    SIDEBAR_MAX_WIDTH,
+    Math.max(SIDEBAR_MIN_WIDTH, value),
+  );
+  return clamped < SIDEBAR_COMPACT_WIDTH ? SIDEBAR_MIN_WIDTH : clamped;
 }
 
 function getStoredSidebarWidth() {
@@ -1558,6 +1562,10 @@ export default function AfdianMessagesPage() {
   const compactSidebar = !isDesktop && !isNarrow && sidebarWidth < SIDEBAR_COMPACT_WIDTH;
 
   useEffect(() => {
+    setSidebarWidth((value) => clampSidebarWidth(value));
+  }, []);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_WIDTH_STORAGE_KEY,
@@ -1860,14 +1868,14 @@ export default function AfdianMessagesPage() {
                 onKeyDown={(event) => {
                   if (event.key === "ArrowLeft") {
                     event.preventDefault();
-                    setSidebarWidth((value) =>
-                      Math.max(SIDEBAR_MIN_WIDTH, value - 16),
-                    );
+                    setSidebarWidth((value) => clampSidebarWidth(value - 16));
                   }
                   if (event.key === "ArrowRight") {
                     event.preventDefault();
                     setSidebarWidth((value) =>
-                      Math.min(SIDEBAR_MAX_WIDTH, value + 16),
+                      value < SIDEBAR_COMPACT_WIDTH
+                        ? SIDEBAR_COMPACT_WIDTH
+                        : clampSidebarWidth(value + 16),
                     );
                   }
                 }}
