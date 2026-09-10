@@ -64,7 +64,9 @@ const PAGE_NAME_MAP: Record<string, string> = {
   resreview: "PR审核",
   "resreview/detail": "详情",
   interactions: "互动管理",
+  cloudcontrol: "云控与资源推流",
   explorepage: "探索页管理",
+  "admin/hotupdate": "热更新管理",
 };
 
 interface HeaderProps {

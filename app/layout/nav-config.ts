@@ -2,7 +2,6 @@ import type { Icon } from "@phosphor-icons/react";
 import {
   ArchiveIcon,
   BinocularsIcon,
-  BoxArrowUpIcon,
   ChartBarIcon,
   ChartPieSliceIcon,
   ChatsCircleIcon,
@@ -17,16 +16,20 @@ import {
   ListMagnifyingGlassIcon,
   ReceiptIcon,
   RocketLaunchIcon,
+  UploadIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
-import type { NavItemProps } from "~/components/nav/navitem";
 
-export type NavLinkConfig = {
+export interface NavLinkConfig {
   id: string;
   path: string;
   icon: Icon;
+  label: string;
+  isPlus?: boolean;
+  alwaysVisible?: boolean;
+  fixedPosition?: boolean;
   requireRoles?: string[];
-} & Omit<NavItemProps, "selected" | "onClick">;
+}
 
 export interface NavSectionConfig {
   id: string;
@@ -57,6 +60,12 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         label: "互动管理",
         path: "/interactions",
       },
+    ],
+  },
+  {
+    id: "afdian",
+    title: "爱发电",
+    items: [
       {
         id: "afdian-income",
         icon: CurrencyCircleDollarIcon,
@@ -104,6 +113,7 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         icon: GearFineIcon,
         label: "设置",
         path: "/settings",
+        alwaysVisible: true,
       },
     ],
   },
@@ -185,6 +195,38 @@ export const NAV_ITEMS_IN_ORDER = NAV_SECTIONS.flatMap(
   (section) => section.items,
 );
 
+export const NAV_PRIMARY_ACTION: NavLinkConfig = {
+  id: "publish-new-resource",
+  path: "/new-resource",
+  icon: UploadIcon,
+  label: "发布新资源",
+  fixedPosition: true,
+};
+
+export function hasRequiredNavRole(
+  item: NavLinkConfig,
+  roles: readonly string[],
+) {
+  if (!item.requireRoles?.length) return true;
+  return item.requireRoles.some((role) => roles.includes(role));
+}
+
+export function sortNavItems<T extends { id: string }>(
+  items: readonly T[],
+  itemOrder: readonly string[],
+): T[] {
+  if (itemOrder.length === 0) return [...items];
+
+  const orderIndexes = new Map(
+    itemOrder.map((itemId, index) => [itemId, index]),
+  );
+  return [...items].sort((first, second) => {
+    const firstIndex = orderIndexes.get(first.id) ?? Number.MAX_SAFE_INTEGER;
+    const secondIndex = orderIndexes.get(second.id) ?? Number.MAX_SAFE_INTEGER;
+    return firstIndex - secondIndex;
+  });
+}
+
 export function normalizePath(path?: string) {
   if (!path) {
     return "/";
@@ -213,10 +255,14 @@ export function matchesNavPath(navPath: string, pathname: string) {
   );
 }
 
-export function findNavIndex(pathname: string) {
+export function findNavIndex(
+  pathname: string,
+  itemOrder: readonly string[] = [],
+) {
   const normalized = normalizePath(pathname);
-  for (let index = 0; index < NAV_ITEMS_IN_ORDER.length; index += 1) {
-    const navItem = NAV_ITEMS_IN_ORDER[index];
+  const orderedItems = sortNavItems(NAV_ITEMS_IN_ORDER, itemOrder);
+  for (let index = 0; index < orderedItems.length; index += 1) {
+    const navItem = orderedItems[index];
     if (matchesNavPath(navItem.path, normalized)) {
       return index;
     }

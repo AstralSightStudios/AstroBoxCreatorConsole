@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Button, Callout, Spinner, Switch } from "@radix-ui/themes";
 import {
   ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
   ArrowUpRightIcon,
   CheckIcon,
+  DotsSixVerticalIcon,
   DownloadSimpleIcon,
   FolderOpenIcon,
   ShareNetworkIcon,
@@ -44,8 +51,13 @@ import {
   useUiScale,
 } from "~/config/uiScale";
 import {
+  resetNavItemPreferences,
   saveNavAccountCollapse,
+  saveNavItemOrder,
+  saveNavItemVisibility,
   useNavAccountCollapse,
+  useNavItemPreferences,
+  type NavItemPreferences,
 } from "~/config/nav";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
@@ -57,11 +69,29 @@ import {
   type UpdateInfo,
 } from "~/logic/update/update-checker";
 import Page from "~/layout/page";
+import {
+  hasRequiredNavRole,
+  NAV_PRIMARY_ACTION,
+  NAV_SECTIONS,
+  sortNavItems,
+  type NavLinkConfig,
+  type NavSectionConfig,
+} from "~/layout/nav-config";
+import { useAccountState } from "~/logic/account/store";
 import { SectionCard } from "./resource/publish/components/shared";
 
 const EULA_URL = "https://astrobox.online/eula.html";
 const PRIVACY_URL = "https://astrobox.online/privacy.html";
 const WEBSITE_URL = "https://astrobox.online";
+
+const NAV_PREFERENCE_SECTIONS: NavSectionConfig[] = [
+  ...NAV_SECTIONS,
+  {
+    id: "primary-action",
+    title: "快捷操作",
+    items: [NAV_PRIMARY_ACTION],
+  },
+];
 
 const LOG_LEVEL_OPTIONS: LogLevel[] = [
   "trace",
@@ -350,7 +380,7 @@ function openExternal(url: string) {
   );
 }
 
-/** One selectable option in a settings group (repo env / login method). */
+/** 设置分组中的单选项 */
 function OptionCard({
   selected,
   pending,
@@ -410,7 +440,7 @@ function OptionCard({
   );
 }
 
-/** A tappable row inside a grouped card that opens an external link. */
+/** 打开外部链接的设置行 */
 function LinkRow({
   title,
   subtitle,
@@ -442,7 +472,7 @@ function LinkRow({
   );
 }
 
-/** A tappable row inside a grouped card that toggles a boolean setting. */
+/** 切换布尔设置的设置行 */
 function ToggleRow({
   title,
   subtitle,
@@ -485,7 +515,273 @@ function ToggleRow({
   );
 }
 
+interface NavDragState {
+  sectionId: string;
+  itemId: string;
+  items: NavLinkConfig[];
+}
+
+function NavItemSettingsRow({
+  item,
+  visible,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+  onKeyboardMove,
+  last,
+}: {
+  item: NavLinkConfig;
+  visible: boolean;
+  draggable: boolean;
+  dragging: boolean;
+  onDragStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onDragMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onDragEnd: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onDragCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onKeyboardMove: (direction: -1 | 1) => void;
+  last: boolean;
+}) {
+  const IconComponent = item.icon;
+  const isAlwaysVisible = Boolean(item.alwaysVisible);
+
+  return (
+    <div
+      data-nav-settings-item={item.id}
+      className={`flex items-center gap-2 px-2 py-2.5 transition-colors ${dragging ? "bg-white/[0.08]" : ""} ${last ? "" : "border-b border-white/[0.06]"}`}
+    >
+      <button
+        type="button"
+        disabled={!draggable}
+        aria-label={`拖动排序${item.label}`}
+        aria-pressed={dragging}
+        className="flex size-8 shrink-0 touch-none items-center justify-center rounded-md text-white/35 outline-none transition-colors enabled:cursor-grab enabled:hover:bg-white/[0.06] enabled:hover:text-white/70 enabled:active:cursor-grabbing disabled:opacity-25"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragCancel}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            onKeyboardMove(-1);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            onKeyboardMove(1);
+          }
+        }}
+      >
+        <DotsSixVerticalIcon size={18} weight="bold" aria-hidden="true" />
+      </button>
+      <IconComponent
+        size={18}
+        weight="regular"
+        className="shrink-0 text-white/60"
+        aria-hidden="true"
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[13.5px] font-medium text-white">
+          {item.label}
+        </span>
+        {isAlwaysVisible ? (
+          <span className="text-[11px] text-white/40">始终显示</span>
+        ) : item.fixedPosition ? (
+          <span className="text-[11px] text-white/40">固定在导航底部</span>
+        ) : null}
+      </div>
+      <Switch
+        checked={isAlwaysVisible || visible}
+        disabled={isAlwaysVisible}
+        aria-label={`显示${item.label}`}
+        onCheckedChange={(checked) =>
+          saveNavItemVisibility(item.id, checked)
+        }
+      />
+    </div>
+  );
+}
+
+function NavigationItemsSettings({
+  preferences,
+  roles,
+}: {
+  preferences: NavItemPreferences;
+  roles: readonly string[];
+}) {
+  const [dragState, setDragState] = useState<NavDragState | null>(null);
+  const dragStateRef = useRef<NavDragState | null>(null);
+  const availableSections = NAV_PREFERENCE_SECTIONS.map((section) => ({
+    section,
+    items: sortNavItems(section.items, preferences.itemOrder).filter((item) =>
+      hasRequiredNavRole(item, roles),
+    ),
+  })).filter(({ items }) => items.length > 0);
+
+  const updateDragState = (nextState: NavDragState | null) => {
+    dragStateRef.current = nextState;
+    setDragState(nextState);
+  };
+
+  const saveSectionOrder = (
+    section: NavSectionConfig,
+    orderedAvailableItems: readonly NavLinkConfig[],
+  ) => {
+    const availableIds = new Set(
+      orderedAvailableItems.map((item) => item.id),
+    );
+    let availableIndex = 0;
+    const orderedSectionItems = sortNavItems(
+      section.items,
+      preferences.itemOrder,
+    ).map((item) =>
+      availableIds.has(item.id)
+        ? orderedAvailableItems[availableIndex++]
+        : item,
+    );
+
+    const itemOrder = NAV_SECTIONS.flatMap((currentSection) => {
+      const items =
+        currentSection.id === section.id
+          ? orderedSectionItems
+          : sortNavItems(currentSection.items, preferences.itemOrder);
+      return items.map((item) => item.id);
+    });
+    saveNavItemOrder(itemOrder);
+  };
+
+  const handleDragStart = (
+    section: NavSectionConfig,
+    items: readonly NavLinkConfig[],
+    itemId: string,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateDragState({ sectionId: section.id, itemId, items: [...items] });
+  };
+
+  const handleDragMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = dragStateRef.current;
+    if (!current) return;
+
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-nav-settings-item]");
+    const targetItemId = target?.dataset.navSettingsItem;
+    if (!targetItemId || targetItemId === current.itemId) return;
+
+    const currentIndex = current.items.findIndex(
+      (item) => item.id === current.itemId,
+    );
+    const targetIndex = current.items.findIndex(
+      (item) => item.id === targetItemId,
+    );
+    if (currentIndex < 0 || targetIndex < 0) return;
+
+    const items = [...current.items];
+    const [draggedItem] = items.splice(currentIndex, 1);
+    items.splice(targetIndex, 0, draggedItem);
+    updateDragState({ ...current, items });
+  };
+
+  const handleDragEnd = (
+    section: NavSectionConfig,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    const current = dragStateRef.current;
+    if (current?.sectionId === section.id) {
+      saveSectionOrder(section, current.items);
+    }
+    updateDragState(null);
+  };
+
+  const handleDragCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    updateDragState(null);
+  };
+
+  const handleKeyboardMove = (
+    section: NavSectionConfig,
+    items: readonly NavLinkConfig[],
+    itemId: string,
+    direction: -1 | 1,
+  ) => {
+    const currentIndex = items.findIndex((item) => item.id === itemId);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= items.length) {
+      return;
+    }
+
+    const nextItems = [...items];
+    [nextItems[currentIndex], nextItems[targetIndex]] = [
+      nextItems[targetIndex],
+      nextItems[currentIndex],
+    ];
+    saveSectionOrder(section, nextItems);
+  };
+
+  return (
+    <div className="flex flex-col gap-3 px-2 pb-1">
+      {availableSections.map(({ section, items }) => {
+        const displayedItems =
+          dragState?.sectionId === section.id ? dragState.items : items;
+        const draggable =
+          displayedItems.length > 1 && !displayedItems[0]?.fixedPosition;
+
+        return (
+          <div
+            key={section.id}
+            data-nav-settings-section={section.id}
+            className="flex flex-col gap-1.5"
+          >
+            <p className="px-1 text-[12px] font-medium text-white/50">
+              {section.title ?? "常用"}
+            </p>
+            <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.02]">
+              {displayedItems.map((item, index) => (
+                <NavItemSettingsRow
+                  key={item.id}
+                  item={item}
+                  visible={
+                    item.alwaysVisible ||
+                    !preferences.hiddenItemIds.includes(item.id)
+                  }
+                  draggable={draggable}
+                  dragging={dragState?.itemId === item.id}
+                  onDragStart={(event) =>
+                    handleDragStart(section, displayedItems, item.id, event)
+                  }
+                  onDragMove={handleDragMove}
+                  onDragEnd={(event) => handleDragEnd(section, event)}
+                  onDragCancel={handleDragCancel}
+                  onKeyboardMove={(direction) =>
+                    handleKeyboardMove(
+                      section,
+                      displayedItems,
+                      item.id,
+                      direction,
+                    )
+                  }
+                  last={index === displayedItems.length - 1}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Settings() {
+  const accountState = useAccountState();
   const currentEnv = useRepoEnvId();
   const currentReviewMode = useReviewMode();
   const [pending, setPending] = useState<RepoEnvId | null>(null);
@@ -495,6 +791,11 @@ export default function Settings() {
     UI_SCALE_OPTIONS.find((option) => option.factor === currentUiScale) ??
     UI_SCALE_OPTIONS.find((option) => option.factor === 1)!;
   const collapseAccountOnScroll = useNavAccountCollapse();
+  const navItemPreferences = useNavItemPreferences();
+  const navRoles = accountState.astrobox?.roles ?? [];
+  const hasCustomNavItems =
+    navItemPreferences.hiddenItemIds.length > 0 ||
+    navItemPreferences.itemOrder.length > 0;
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -509,7 +810,7 @@ export default function Settings() {
         if (alive) setAppVersion(v);
       })
       .catch(() => {
-        /* not running inside Tauri — version is unavailable */
+        /* 非 Tauri 环境无法读取应用版本 */
       });
     return () => {
       alive = false;
@@ -626,14 +927,33 @@ export default function Settings() {
         {/* 导航 */}
         <SectionCard
           title="导航"
-          description="调整导航栏的显示方式"
+          description="选择导航栏中显示的项目，拖动左侧手柄调整组内顺序"
+          headerExtra={
+            <Button
+              type="button"
+              size="1"
+              variant="ghost"
+              color="gray"
+              disabled={!hasCustomNavItems}
+              onClick={() => {
+                resetNavItemPreferences();
+                toast.success("已恢复默认导航设置");
+              }}
+            >
+              <ArrowCounterClockwiseIcon size={14} />
+              恢复默认
+            </Button>
+          }
         >
           <ToggleRow
             title="账号区域随滚动收缩"
             subtitle="滚动导航内容时收起顶部账号信息，方便浏览更多功能"
             checked={collapseAccountOnScroll}
             onChange={saveNavAccountCollapse}
-            last
+          />
+          <NavigationItemsSettings
+            preferences={navItemPreferences}
+            roles={navRoles}
           />
         </SectionCard>
 

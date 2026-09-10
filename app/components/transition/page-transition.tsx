@@ -19,6 +19,7 @@ import {
   useOutlet,
 } from "react-router";
 import Header from "~/components/header";
+import { useNavItemPreferences } from "~/config/nav";
 import {
   HeaderActionsProvider,
   useHeaderIdentity,
@@ -60,6 +61,7 @@ function isPrefixOf(base: string[], target: string[]) {
 function determineTransition(
   prevPath: string,
   nextPath: string,
+  itemOrder: readonly string[] = [],
 ): TransitionMeta {
   if (!prevPath) {
     return DEFAULT_TRANSITION;
@@ -83,8 +85,8 @@ function determineTransition(
     };
   }
 
-  const prevNavIndex = findNavIndex(prevPath);
-  const nextNavIndex = findNavIndex(nextPath);
+  const prevNavIndex = findNavIndex(prevPath, itemOrder);
+  const nextNavIndex = findNavIndex(nextPath, itemOrder);
   if (
     prevNavIndex !== null &&
     nextNavIndex !== null &&
@@ -121,6 +123,7 @@ export default function PageTransition() {
 function PageTransitionContent() {
   const location = useLocation();
   const outlet = useOutlet();
+  const navItemPreferences = useNavItemPreferences();
   const headerIdentity = useHeaderIdentity();
   const updateHeaderScroll = useUpdateHeaderScroll();
   const [headerScrollProgress, setHeaderScrollProgress] = useState(0);
@@ -148,7 +151,11 @@ function PageTransitionContent() {
 
   if (normalizedPath !== transitionSnapshotRef.current.path) {
     const previousPath = transitionSnapshotRef.current.path;
-    const meta = determineTransition(previousPath, normalizedPath);
+    const meta = determineTransition(
+      previousPath,
+      normalizedPath,
+      navItemPreferences.itemOrder,
+    );
     transitionSnapshotRef.current = {
       path: normalizedPath,
       meta,

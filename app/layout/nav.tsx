@@ -10,7 +10,6 @@ import {
   CoinIcon,
   GithubLogoIcon,
   SignOutIcon,
-  UploadIcon,
   UserCircleDashedIcon,
 } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
@@ -32,7 +31,10 @@ import {
   type DisplayAccount,
 } from "~/logic/account/store";
 import {
+  hasRequiredNavRole,
+  NAV_PRIMARY_ACTION,
   NAV_SECTIONS,
+  sortNavItems,
   type NavSectionConfig,
   matchesNavPath,
 } from "./nav-config";
@@ -43,11 +45,21 @@ import InboxDrawer from "~/components/inbox/InboxDrawer";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
 import TitlebarEffect from "~/components/TitlebarEffect";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
-import { useNavAccountCollapse } from "~/config/nav";
+import {
+  isNavItemVisible,
+  useNavAccountCollapse,
+  useNavItemPreferences,
+  type NavItemPreferences,
+} from "~/config/nav";
 import AfdianMessagesSidebar from "~/components/afdian/messages-sidebar";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertDialog, Button, Dialog, Popover, Spinner } from "~/components/ScaleAwareThemes";
+import {
+  Button,
+  Dialog,
+  Popover,
+  Spinner,
+} from "~/components/ScaleAwareThemes";
 import { toast } from "sonner";
 import BlurEffect from "react-progressive-blur";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
@@ -91,6 +103,7 @@ export default function Nav() {
   const accountState = useAccountState();
   const account = getDisplayAccount(accountState);
   const collapseAccountOnScroll = useNavAccountCollapse();
+  const navItemPreferences = useNavItemPreferences();
   const location = useLocation();
   const navigate = useNavigate();
   const [navScrollState, setNavScrollState] = useState<NavScrollState>({
@@ -170,9 +183,7 @@ export default function Nav() {
     }
 
     if (isNewRoute) {
-      // While the mobile drawer is open we pushed a synthetic history entry.
-      // Replace it with the destination so the back button doesn't first have
-      // to re-close an already-closed drawer.
+      // 移动端抽屉展开时已写入临时历史记录，导航时直接替换为目标页面。
       navigate(path, drawerOpen ? { replace: true } : undefined);
     }
 
@@ -205,6 +216,7 @@ export default function Nav() {
     navScrollState,
     onNavScroll: handleNavScroll,
     collapseAccountOnScroll,
+    navItemPreferences,
   };
 
   if (isDesktop) {
@@ -240,6 +252,7 @@ interface NavContentProps {
   navScrollState: NavScrollState;
   onNavScroll: (event: React.UIEvent<HTMLDivElement>) => void;
   collapseAccountOnScroll: boolean;
+  navItemPreferences: NavItemPreferences;
   hideFunctionButton?: boolean;
   hideHeader?: boolean;
 }
@@ -252,6 +265,7 @@ function NavContent({
   onNavigate,
   onNavScroll,
   navScrollState,
+  navItemPreferences,
   hideFunctionButton,
   hideHeader,
 }: NavContentProps) {
@@ -297,6 +311,7 @@ function NavContent({
                   key={section.id}
                   {...section}
                   accountState={accountState}
+                  navItemPreferences={navItemPreferences}
                   pathname={pathname}
                   onNavigate={onNavigate}
                 />
@@ -321,15 +336,16 @@ function NavContent({
           )}
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 z-50 min-w-0 pb-[max(0.75rem,var(--ui-safe-area-bottom))] pt-3">
-          <NavItem
-            key="publish"
-            icon={UploadIcon}
-            label="发布新资源"
-            selected={isNavItemSelected(pathname, "/new-resource")}
-            onClick={() => onNavigate("/new-resource")}
-          />
-        </div>
+        {isNavItemVisible(NAV_PRIMARY_ACTION.id, navItemPreferences) && (
+          <div className="absolute inset-x-0 bottom-0 z-50 min-w-0 pb-[max(0.75rem,var(--ui-safe-area-bottom))] pt-3">
+            <NavItem
+              icon={NAV_PRIMARY_ACTION.icon}
+              label={NAV_PRIMARY_ACTION.label}
+              selected={matchesNavPath(NAV_PRIMARY_ACTION.path, pathname)}
+              onClick={() => onNavigate(NAV_PRIMARY_ACTION.path)}
+            />
+          </div>
+        )}
       </div>
     </>
   );
@@ -505,24 +521,13 @@ function NavHeader({
     retry: false,
   });
 
-  const handleAstroLogin = () => {
-    setIsMenuOpen(false);
-    // 走 handleNavigate：Drawer 打开时以 replace 替换 synthetic history entry
-    // 并立即收起侧栏，避免之后点遮罩关闭侧栏时 history.back() 弹回原页面。
-    if (onNavigate) {
-      onNavigate("/login");
-      return;
-    }
-    navigate("/login");
-  };
-
-  const handleAfdianLogin = () => {
+  const handleMenuNavigate = (path: string) => {
     setIsMenuOpen(false);
     if (onNavigate) {
-      onNavigate("/settings");
+      onNavigate(path);
       return;
     }
-    navigate("/settings");
+    navigate(path);
   };
 
   const handleGithubLogin = async () => {
@@ -581,7 +586,9 @@ function NavHeader({
     account.hasAstrobox ||
     account.hasGithub ||
     Boolean(afdianSessionQuery.data?.connected);
-  const isGithubBusy = githubLoginState.status === "requesting" || githubLoginState.status === "waiting";
+  const isGithubBusy =
+    githubLoginState.status === "requesting" ||
+    githubLoginState.status === "waiting";
 
   return (
     <>
@@ -630,9 +637,9 @@ function NavHeader({
           accountState={accountState}
           githubLoginState={githubLoginState}
           isGithubBusy={isGithubBusy}
-          onAstroLogin={handleAstroLogin}
+          onAstroLogin={() => handleMenuNavigate("/login")}
           onGithubLogin={handleGithubLogin}
-          onAfdianLogin={handleAfdianLogin}
+          onAfdianLogin={() => handleMenuNavigate("/settings")}
           onAstroLogout={handleAstroLogout}
           onGithubLogout={handleGithubLogout}
           afdianSession={afdianSessionQuery.data}
@@ -643,66 +650,76 @@ function NavHeader({
 
       <InboxDrawer open={inboxOpen} onClose={() => setInboxOpen(false)} />
 
-      <Dialog.Root open={showGithubLogoutConfirm} onOpenChange={setShowGithubLogoutConfirm}>
-        <Dialog.Content className="max-w-[520px]">
-          <Dialog.Title>退出 GitHub 账号</Dialog.Title>
-          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
-            确认退出 GitHub 账号？退出后需要重新登录。
-          </Dialog.Description>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button variant="soft" onClick={() => setShowGithubLogoutConfirm(false)}>
-              取消
-            </Button>
-            <Button variant="solid" onClick={confirmGithubLogout}>
-              退出
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      <LogoutConfirmDialog
+        open={showGithubLogoutConfirm}
+        onOpenChange={setShowGithubLogoutConfirm}
+        title="退出 GitHub 账号"
+        description="确认退出 GitHub 账号？退出后需要重新登录。"
+        onConfirm={confirmGithubLogout}
+      />
 
-      <Dialog.Root open={showAstroLogoutConfirm} onOpenChange={setShowAstroLogoutConfirm}>
-        <Dialog.Content className="max-w-[520px]">
-          <Dialog.Title>退出 AstroBox 账号</Dialog.Title>
-          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
-            确认退出 AstroBox 账号？退出后需要重新登录。
-          </Dialog.Description>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button variant="soft" onClick={() => setShowAstroLogoutConfirm(false)}>
-              取消
-            </Button>
-            <Button variant="solid" onClick={confirmAstroLogout}>
-              退出
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      <LogoutConfirmDialog
+        open={showAstroLogoutConfirm}
+        onOpenChange={setShowAstroLogoutConfirm}
+        title="退出 AstroBox 账号"
+        description="确认退出 AstroBox 账号？退出后需要重新登录。"
+        onConfirm={confirmAstroLogout}
+      />
 
-      <Dialog.Root open={showAfdianLogoutConfirm} onOpenChange={setShowAfdianLogoutConfirm}>
-        <Dialog.Content className="max-w-[520px]">
-          <Dialog.Title>退出爱发电账号</Dialog.Title>
-          <Dialog.Description size="2" className="mt-3 whitespace-pre-line text-[14px]">
-            确认退出爱发电账号？退出后需要重新登录。
-          </Dialog.Description>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button
-              variant="soft"
-              onClick={() => setShowAfdianLogoutConfirm(false)}
-              disabled={afdianLoggingOut}
-            >
-              取消
-            </Button>
-            <Button
-              variant="solid"
-              onClick={() => void confirmAfdianLogout()}
-              disabled={afdianLoggingOut}
-            >
-              {afdianLoggingOut ? <Spinner size="1" /> : null}
-              退出
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      <LogoutConfirmDialog
+        open={showAfdianLogoutConfirm}
+        onOpenChange={setShowAfdianLogoutConfirm}
+        title="退出爱发电账号"
+        description="确认退出爱发电账号？退出后需要重新登录。"
+        onConfirm={() => void confirmAfdianLogout()}
+        loading={afdianLoggingOut}
+      />
     </>
+  );
+}
+
+interface LogoutConfirmDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  onConfirm: () => void;
+  loading?: boolean;
+}
+
+function LogoutConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  onConfirm,
+  loading = false,
+}: LogoutConfirmDialogProps) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Content className="max-w-[520px]">
+        <Dialog.Title>{title}</Dialog.Title>
+        <Dialog.Description
+          size="2"
+          className="mt-3 whitespace-pre-line text-[14px]"
+        >
+          {description}
+        </Dialog.Description>
+        <div className="mt-4 flex justify-end gap-3">
+          <Button
+            variant="soft"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+          >
+            取消
+          </Button>
+          <Button variant="solid" onClick={onConfirm} disabled={loading}>
+            {loading ? <Spinner size="1" /> : null}
+            退出
+          </Button>
+        </div>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }
 
@@ -742,6 +759,7 @@ function AccountAvatar({ account, isActive }: AccountAvatarProps) {
   return (
     <img
       src={src}
+      alt=""
       className={`w-8 h-8 rounded-full object-cover border border-white/10 ${isActive ? "ring-2 ring-white/20" : ""}`}
       onError={handleError}
     />
@@ -778,7 +796,8 @@ function AccountMenu({
   const hasAstrobox = Boolean(accountState.astrobox);
   const hasGithub = Boolean(accountState.github);
   const hasAfdian = Boolean(afdianSession?.connected);
-  const showDeviceCard = githubLoginState.session && githubLoginState.status !== "idle";
+  const showDeviceCard =
+    githubLoginState.session && githubLoginState.status !== "idle";
 
   return (
     <Popover.Content
@@ -786,8 +805,7 @@ function AccountMenu({
       side="bottom"
       sideOffset={8}
       collisionPadding={12}
-      // Radix handles collision/flip and exposes the available space as CSS
-      // vars, so the menu can never overflow the viewport regardless of width.
+      // Radix 负责边界检测与翻转，并通过 CSS 变量限制菜单大小。
       style={{
         padding: 0,
         background: "transparent",
@@ -909,20 +927,19 @@ function MenuButton({
 }: MenuButtonProps) {
   return (
     <button
-      className="flex items-center gap-2 corner-rounded px-2.5 py-2 rounded-[14px] corner-rounded border border-white/10 bg-nav-item text-left transition hover:border-white/20 hover:bg-nav-item-hover text-white"
+      type="button"
+      className="corner-rounded flex items-center gap-2 rounded-[14px] border border-white/10 bg-nav-item px-2.5 py-2 text-left text-white transition hover:border-white/20 hover:bg-nav-item-hover"
       onClick={onClick}
       disabled={loading}
     >
       <span className="flex h-8 w-8 items-center justify-center">{icon}</span>
       <span className="flex flex-col text-sm">
-        <span className="font-semibold text-sm">{label}</span>
-        <span className="text-[11px] text-white/60">
-          {description && (
-            <span className="text-[11px] text-white/60 leading-tight">
-              {loading ? "Requesting..." : description}
-            </span>
-          )}
-        </span>
+        <span className="text-sm font-semibold">{label}</span>
+        {description && (
+          <span className="text-[11px] leading-tight text-white/60">
+            {loading ? "请求中…" : description}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -951,10 +968,11 @@ function ConnectedAccountRow({
   const showAvatar = Boolean(avatar && !avatarError);
 
   return (
-    <div className="flex items-center gap-2 corner-rounded px-2.5 py-2 rounded-[14px] corner-rounded border border-white/10 bg-nav-item p-1.5">
+    <div className="corner-rounded flex items-center gap-2 rounded-[14px] border border-white/10 bg-nav-item p-1.5 px-2.5 py-2">
       {showAvatar ? (
         <img
           src={avatar}
+          alt=""
           onError={() => setAvatarError(true)}
           className="h-8 w-8 rounded-full object-cover border border-white/10"
         />
@@ -972,6 +990,7 @@ function ConnectedAccountRow({
         </span>
       </div>
       <button
+        type="button"
         className="flex items-center gap-1 rounded-xs px-1 py-1 text-size-small text-white/80 hover:text-red-700 dark:hover:text-red-300 transition-colors"
         onClick={onLogout}
         disabled={loggingOut}
@@ -1017,6 +1036,7 @@ function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
         在浏览器中打开页面并输入上方代码以登录
       </p>
       <button
+        type="button"
         className="text-size-medium font-mono-sarasa rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         onClick={handleOpen}
       >
@@ -1055,6 +1075,7 @@ function AccountInfo({ account }: AccountInfoProps) {
 
 interface NavSectionProps extends NavSectionConfig {
   accountState: AccountState;
+  navItemPreferences: NavItemPreferences;
   pathname: string;
   onNavigate: (path: string) => void;
 }
@@ -1063,15 +1084,20 @@ function NavSection({
   title,
   items,
   accountState,
+  navItemPreferences,
   pathname,
   onNavigate,
 }: NavSectionProps) {
   const hasAnalysisAccess = canAccessAnalysisByPlan(accountState.astrobox?.plan);
   const roles = accountState.astrobox?.roles ?? [];
-  const visibleItems = items.filter((item) => {
-    if (!item.requireRoles?.length) return true;
-    return item.requireRoles.some((role) => roles.includes(role));
-  });
+  const visibleItems = sortNavItems(
+    items,
+    navItemPreferences.itemOrder,
+  ).filter(
+    (item) =>
+      hasRequiredNavRole(item, roles) &&
+      (item.alwaysVisible || isNavItemVisible(item.id, navItemPreferences)),
+  );
 
   if (visibleItems.length === 0) return null;
 
@@ -1084,22 +1110,26 @@ function NavSection({
           </p>
         </div>
       )}
-      {visibleItems.map(({ id, path, requireRoles: _requireRoles, ...item }) => {
-        const disabled = path === "/analysis" && !hasAnalysisAccess;
-        return (
-        <NavItem
-          key={id}
-          {...item}
-          disabled={disabled}
-          selected={isNavItemSelected(pathname, path)}
-          onClick={disabled ? undefined : () => onNavigate(path)}
-        />
-      );
-      })}
+      {visibleItems.map(
+        ({
+          id,
+          path,
+          alwaysVisible: _alwaysVisible,
+          requireRoles: _requireRoles,
+          ...item
+        }) => {
+          const disabled = path === "/analysis" && !hasAnalysisAccess;
+          return (
+            <NavItem
+              key={id}
+              {...item}
+              disabled={disabled}
+              selected={matchesNavPath(path, pathname)}
+              onClick={disabled ? undefined : () => onNavigate(path)}
+            />
+          );
+        },
+      )}
     </section>
   );
-}
-
-function isNavItemSelected(currentPath: string, targetPath: string) {
-  return matchesNavPath(targetPath, currentPath);
 }
