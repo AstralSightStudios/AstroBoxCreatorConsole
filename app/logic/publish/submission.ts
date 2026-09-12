@@ -1,6 +1,7 @@
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import { log } from "~/logic/logging";
 import { maskValue } from "~/logic/logging/mask";
+import { getRepoTopicsForResourceType } from "./resource-type";
 import {
   createBlob,
   createCommit,
@@ -12,6 +13,8 @@ import {
   updateRef,
   uploadFileToRepo,
   validateRepoName,
+  setRepoTopics,
+  setRepoHomepage,
   type GitBlobRef,
   type RepoInfo,
   ensureBase64,
@@ -244,7 +247,7 @@ async function batchUpload(
       repo,
       path: firstAsset.path,
       content: firstAsset.base64Content,
-      message: `初始化仓库：添加 ${firstAsset.path}`,
+      message: `init: initialize repository with ${firstAsset.path}`,
     });
 
     if (remainingAssets.length === 0) {
@@ -388,9 +391,40 @@ export async function uploadManifestAndAssets({
   });
   await ensureMainResourceBranch(normalizedRepo, token);
 
+  // Parse manifest early to get resource type for topics
   const parsedManifest = JSON.parse(manifest.manifestJson) as {
     item?: { id?: string; restype?: string };
   };
+
+  // Set repository topics based on resource type
+  const resourceTopics = getRepoTopicsForResourceType(parsedManifest.item?.restype);
+  try {
+    await setRepoTopics(normalizedRepo, resourceTopics, token);
+    log.info("publish/topics", `仓库 topics 已设置: ${resourceTopics.join(", ")}`, {
+      data: { repo: `${normalizedRepo.owner}/${normalizedRepo.name}`, topics: resourceTopics, restype: parsedManifest.item?.restype },
+    });
+  } catch (error) {
+    log.warn("publish/topics", `设置仓库 topics 失败（不阻塞流程）: ${String(error)}`, {
+      data: { repo: `${normalizedRepo.owner}/${normalizedRepo.name}` },
+    });
+  }
+
+  // Set repository homepage (Website URL in GitHub About section)
+  const resourceId = parsedManifest.item?.id?.trim();
+  if (resourceId) {
+    const homepage = `https://abox.run/open?source=resv2&id=${encodeURIComponent(resourceId)}&provider=OfficialV2`;
+    try {
+      await setRepoHomepage(normalizedRepo, homepage, token);
+      log.info("publish/homepage", `仓库 homepage 已设置: ${homepage}`, {
+        data: { repo: `${normalizedRepo.owner}/${normalizedRepo.name}`, homepage },
+      });
+    } catch (error) {
+      log.warn("publish/homepage", `设置仓库 homepage 失败（不阻塞流程）: ${String(error)}`, {
+        data: { repo: `${normalizedRepo.owner}/${normalizedRepo.name}` },
+      });
+    }
+  }
+
   const downloadAssets = manifest.downloadAssets.map((asset) => ({ ...asset }));
   const trialDownloadAssets = manifest.trialDownloadAssets.map((asset) => ({ ...asset }));
   if (parsedManifest.item?.restype === "watchface") {
@@ -444,7 +478,7 @@ export async function uploadManifestAndAssets({
   const commitSha = await batchUpload(
     normalizedRepo,
     allAssets,
-    `Publish ${itemName || itemId || "resource"}`,
+    `publish: ${itemName || itemId || "resource"}`,
     token,
     onProgress,
   );
@@ -506,6 +540,34 @@ export async function upsertManifestAndAssets({
   });
   await ensureMainResourceBranch(targetRepo, token);
 
+  // Ensure repository topics are set based on resource type (idempotent - safe to call on update)
+  const resourceTopics = getRepoTopicsForResourceType(parsedManifest.item?.restype);
+  try {
+    await setRepoTopics(targetRepo, resourceTopics, token);
+    log.info("publish/topics", `仓库 topics 已确保: ${resourceTopics.join(", ")}`, {
+      data: { repo: `${targetRepo.owner}/${targetRepo.name}`, topics: resourceTopics, restype: parsedManifest.item?.restype },
+    });
+  } catch (error) {
+    log.warn("publish/topics", `设置仓库 topics 失败（不阻塞流程）: ${String(error)}`, {
+      data: { repo: `${targetRepo.owner}/${targetRepo.name}` },
+    });
+  }
+
+  // Ensure repository homepage is set (idempotent - safe to call on update)
+  if (itemId) {
+    const homepage = `https://abox.run/open?source=resv2&id=${encodeURIComponent(itemId)}&provider=OfficialV2`;
+    try {
+      await setRepoHomepage(targetRepo, homepage, token);
+      log.info("publish/homepage", `仓库 homepage 已确保: ${homepage}`, {
+        data: { repo: `${targetRepo.owner}/${targetRepo.name}`, homepage },
+      });
+    } catch (error) {
+      log.warn("publish/homepage", `设置仓库 homepage 失败（不阻塞流程）: ${String(error)}`, {
+        data: { repo: `${targetRepo.owner}/${targetRepo.name}` },
+      });
+    }
+  }
+
   const downloadAssets = manifest.downloadAssets.map((asset) => ({ ...asset }));
   const trialDownloadAssets = manifest.trialDownloadAssets.map((asset) => ({ ...asset }));
   if (parsedManifest.item?.restype === "watchface") {
@@ -559,7 +621,7 @@ export async function upsertManifestAndAssets({
   const commitSha = await batchUpload(
     targetRepo,
     allAssets,
-    `Update ${itemName || itemId || "resource"}`,
+    `update: ${itemName || itemId || "resource"}`,
     token,
     onProgress,
   );

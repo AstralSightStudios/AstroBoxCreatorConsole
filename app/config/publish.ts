@@ -16,6 +16,7 @@ interface PublishConfig {
     upstreamRepoOwner: string;
     upstreamRepoName: string;
     defaultPrTitle: string;
+    defaultRepoTopics: string[];
 }
 
 const STATIC_CONFIG = {
@@ -29,6 +30,7 @@ const STATIC_CONFIG = {
     submissionCsvFileName: "resource.csv",
     submissionRequestFileName: "request.json",
     defaultPrTitle: "[ABCC] Add new resource",
+    defaultRepoTopics: ["astrobox-resource"],
 } as const;
 
 export const PUBLISH_CONFIG: PublishConfig = new Proxy(
@@ -47,6 +49,7 @@ export const PUBLISH_CONFIG: PublishConfig = new Proxy(
                 case "submissionCsvFileName":
                 case "submissionRequestFileName":
                 case "defaultPrTitle":
+                case "defaultRepoTopics":
                     return STATIC_CONFIG[prop];
                 case "defaultBranch":
                     return env.defaultBranch;
@@ -60,7 +63,7 @@ export const PUBLISH_CONFIG: PublishConfig = new Proxy(
                     return undefined;
             }
         },
-        ownKeys() {
+ownKeys() {
             return [
                 "manifestFileName",
                 "mediaDirectory",
@@ -68,15 +71,16 @@ export const PUBLISH_CONFIG: PublishConfig = new Proxy(
                 "trialDownloadsDirectory",
                 "defaultBranch",
                 "repoNamePrefix",
-                "targetPrRepoOwner",
-                "targetPrRepoName",
                 "catalogFilePath",
                 "submissionRootPath",
                 "submissionCsvFileName",
                 "submissionRequestFileName",
+                "targetPrRepoOwner",
+                "targetPrRepoName",
                 "upstreamRepoOwner",
                 "upstreamRepoName",
                 "defaultPrTitle",
+                "defaultRepoTopics",
             ];
         },
         getOwnPropertyDescriptor() {

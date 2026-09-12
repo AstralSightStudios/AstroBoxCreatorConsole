@@ -880,3 +880,41 @@ export async function createPullRequest(payload: PullRequestPayload) {
         },
     );
 }
+
+export async function setRepoTopics(
+    repo: RepoInfo,
+    topics: string[],
+    token: string,
+): Promise<void> {
+    await githubFetch<any>(
+        `https://api.github.com/repos/${repo.owner}/${repo.name}/topics`,
+        {
+            method: "PUT",
+            body: JSON.stringify({ names: topics }),
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/vnd.github+json",
+            },
+        },
+    );
+}
+
+export async function setRepoHomepage(
+    repo: RepoInfo,
+    homepage: string,
+    token: string,
+): Promise<void> {
+    await githubFetch<any>(
+        `https://api.github.com/repos/${repo.owner}/${repo.name}`,
+        {
+            method: "PATCH",
+            body: JSON.stringify({ homepage }),
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/vnd.github+json",
+            },
+        },
+    );
+}

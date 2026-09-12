@@ -15,3 +15,17 @@ export function formatResourceType(restype?: string): string {
   if (restype === "resource") return "资源";
   return restype || "未知";
 }
+
+export function getRepoTopicsForResourceType(restype?: string): string[] {
+  const baseTopics = ["astrobox-resource"];
+  switch (restype) {
+    case "quick_app":
+      return [...baseTopics, "quickapp"];
+    case "watchface":
+      return [...baseTopics, "watchface"];
+    case "canopus":
+      return [...baseTopics, "canopus"];
+    default:
+      return baseTopics;
+  }
+}

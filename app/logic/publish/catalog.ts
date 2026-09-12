@@ -401,7 +401,7 @@ export async function updateCatalogCsv(payload: CatalogUpdateRequest) {
         branchName,
         encoded,
         fileData.sha,
-        `Add ${entry.id} to catalog`,
+        `catalog: add ${entry.id}`,
     );
 
     return {
@@ -469,6 +469,6 @@ export async function updateCatalogEntryOnBranch(params: {
         branch,
         encoded,
         fileData.sha,
-        `Update ${entry.id} in catalog`,
+        `catalog: update ${entry.id}`,
     );
 }

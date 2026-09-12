@@ -391,7 +391,7 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         owner: fork.owner,
         repo: fork.name,
         branch: branchName,
-        message: `Submit resource ${entry.id}`,
+        message: `submit: ${entry.id}`,
         files: [
             {
                 path: submissionCsvPath(submissionPath),
@@ -456,7 +456,7 @@ export async function updateSubmissionEntryOnBranch(params: {
         owner,
         repo,
         branch,
-        message: `Update resource submission ${entry.id}`,
+        message: `update: submission ${entry.id}`,
         files: [
             {
                 path: submissionCsvPath(submissionPath),
