@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import { listRepoFileSizesAtCommit, type GithubPullFile } from "~/api/github/pr-review";
-import { loadDeviceTokenResolver, type DeviceTokenResolver } from "~/logic/devices/catalog";
+import {
+  loadDeviceOptions,
+  loadDeviceTokenResolver,
+  type DeviceTokenResolver,
+} from "~/logic/devices/catalog";
 import { PHOSPHOR_ICON_NAMES } from "./phosphor-icons";
 import {
   resolveAuthorProStatuses,
@@ -789,6 +793,17 @@ export async function runResourceRuleChecks(options: {
     resolver = () => undefined;
   }
 
+  // 2b. 规范化设备 ID -> vendor 映射，用于按厂商细化 versionCode 规则。
+  let vendorByCanonicalId = new Map<string, string>();
+  try {
+    const options = await loadDeviceOptions();
+    vendorByCanonicalId = new Map(
+      options.map((opt) => [opt.id, (opt.vendor ?? "").toLowerCase()]),
+    );
+  } catch {
+    vendorByCanonicalId = new Map();
+  }
+
   // --- check: CSV 新增资源行 ---
   checks.push({
     title: "index_v2.csv 已新增资源行",
@@ -1099,10 +1114,18 @@ export async function runResourceRuleChecks(options: {
         }`;
       } else {
         const issues: string[] = [];
+        const skippedVendors = new Set<string>();
         for (const deviceId of nextDeviceIds) {
           const next = nextDownloads[deviceId] ?? {};
           const hasPackage = Boolean((next.file_name ?? "").trim());
           if (!hasPackage) continue;
+          // ABNG 目前仅对小米做资源更新检测；非小米设备暂不校验 versionCode。
+          const canonical = resolver(deviceId) ?? deviceId;
+          const vendor = vendorByCanonicalId.get(canonical);
+          if (vendor && vendor !== "xiaomi") {
+            skippedVendors.add(vendor);
+            continue;
+          }
           const nextCode = next.versionCode;
           const base = baseDownloads[deviceId];
           if (nextCode === undefined || nextCode === null) {
@@ -1137,15 +1160,19 @@ export async function runResourceRuleChecks(options: {
             );
           }
         }
+        const vendorNote =
+          skippedVendors.size > 0
+            ? `（已跳过非小米设备：${Array.from(skippedVendors).join("、")}）`
+            : "";
         if (issues.length > 0) {
           checkStatus = "warn";
-          checkDetail = issues.join("；");
+          checkDetail = issues.join("；") + vendorNote;
         } else if (!baseEntry) {
           checkStatus = "pass";
-          checkDetail = "所有正式包体均已填写 versionCode";
+          checkDetail = `所有正式包体均已填写 versionCode${vendorNote}`;
         } else {
           checkStatus = "pass";
-          checkDetail = "更新包体的 versionCode 均已递增或未涉及包体变更";
+          checkDetail = `更新包体的 versionCode 均已递增或未涉及包体变更${vendorNote}`;
         }
       }
     }
