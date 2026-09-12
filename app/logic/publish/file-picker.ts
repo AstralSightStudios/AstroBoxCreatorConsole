@@ -42,6 +42,50 @@ async function pathToFile(path: string): Promise<File> {
   return new File([buffer], name, { type: mimeFromName(name) });
 }
 
+/** MIME 通配符/具体类型到原生对话框扩展名的映射。 */
+const MIME_EXTENSIONS: Record<string, string[]> = {
+  "image/*": ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "avif"],
+  "image/png": ["png"],
+  "image/jpeg": ["jpg", "jpeg"],
+  "image/webp": ["webp"],
+  "image/gif": ["gif"],
+  "image/bmp": ["bmp"],
+  "image/svg+xml": ["svg"],
+  "image/avif": ["avif"],
+  "video/*": ["mp4", "webm", "mov"],
+  "audio/*": ["mp3", "wav", "ogg", "m4a", "flac"],
+  "application/zip": ["zip"],
+  "application/pdf": ["pdf"],
+  "application/json": ["json"],
+};
+
+/**
+ * 将 accept 字符串（逗号分隔的扩展名/MIME）转换为原生对话框所需的扩展名列表。
+ * 原生对话框只接受具体扩展名（如 "png"），传入 "image/*" 会生成非法过滤器，
+ * 导致 Windows 下无法选中任何文件。
+ */
+export function acceptToExtensions(accept?: string): string[] {
+  if (!accept) return [];
+  const result: string[] = [];
+  for (const token of accept.split(",")) {
+    const value = token.trim().toLowerCase();
+    if (!value) continue;
+    const mapped = MIME_EXTENSIONS[value];
+    if (mapped) {
+      result.push(...mapped);
+      continue;
+    }
+    if (value.includes("/")) {
+      const subtype = value.split("/")[1];
+      if (!subtype || subtype === "*") continue;
+      result.push(subtype === "svg+xml" ? "svg" : subtype);
+      continue;
+    }
+    result.push(value.replace(/^\./, ""));
+  }
+  return Array.from(new Set(result));
+}
+
 export interface PickFilesOptions {
   multiple?: boolean;
   /** 逗号分隔的扩展名/MIME，如 "png,jpg" 或 "image/*"。 */
@@ -56,10 +100,7 @@ export interface PickFilesOptions {
  */
 export async function pickFiles(options: PickFilesOptions = {}): Promise<File[]> {
   if (isTauriRuntime()) {
-    const extensions = (options.accept || "")
-      .split(",")
-      .map((token) => token.trim().replace(/^\./, ""))
-      .filter(Boolean);
+    const extensions = acceptToExtensions(options.accept);
     const result = await open({
       multiple: options.multiple ?? false,
       title: options.title,
