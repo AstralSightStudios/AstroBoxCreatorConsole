@@ -25,7 +25,7 @@ import type {
 } from "./manifest";
 import { encryptFileWithAes256Ecb } from "./encryption";
 import { submitResourceCryptoInfo } from "~/api/astrobox/resource";
-import { replaceWatchfaceIdInFile } from "./watchface-id";
+import { replaceWatchfaceIdInPackage } from "./watchface-id";
 
 interface UploadManifestRequest {
   manifest: ManifestBuildResult;
@@ -71,7 +71,7 @@ async function applyWatchfaceId(
     let updated = files.get(asset.file);
     if (!updated) {
       onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
-      updated = await replaceWatchfaceIdInFile(asset.file, id);
+      updated = await replaceWatchfaceIdInPackage(asset.file, id);
       files.set(asset.file, updated);
     }
     asset.file = updated;
