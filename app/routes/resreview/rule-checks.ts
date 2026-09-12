@@ -18,7 +18,11 @@ import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
-import { WATCHFACE_MAGIC, ZIP_MAGIC } from "~/logic/publish/package-version";
+import {
+  WATCHFACE_MAGIC,
+  ZIP_MAGIC,
+  xiaomiVersionCodeFromVersion,
+} from "~/logic/publish/package-version";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
   listSellerResourceConfigs,
@@ -1180,6 +1184,53 @@ export async function runResourceRuleChecks(options: {
       title: "更新包体 versionCode 已递增",
       status: checkStatus,
       detail: checkDetail,
+    });
+  }
+
+  // --- check: 小米表盘 version 与 versionCode 一致（versionCode 由 major.minor.patch 派生） ---
+  if (entry.restype === "watchface") {
+    const mismatches: string[] = [];
+    const isKnownNonXiaomi = (deviceId: string) => {
+      const vendor = vendorByCanonicalId.get(resolver(deviceId) ?? deviceId);
+      return Boolean(vendor) && vendor !== "xiaomi";
+    };
+    const inspect = (
+      downloadsObj:
+        | Record<string, { version?: string; versionCode?: number }>
+        | undefined,
+      label: string,
+    ) => {
+      for (const [deviceId, info] of Object.entries(downloadsObj ?? {})) {
+        if (isKnownNonXiaomi(deviceId)) continue;
+        const code = info.versionCode;
+        if (code === undefined || code === null) continue;
+        const expected = xiaomiVersionCodeFromVersion(info.version ?? "");
+        if (expected !== undefined && expected !== code) {
+          mismatches.push(
+            `${label}${deviceId}：${info.version} 的 versionCode 应为 ${expected}，实为 ${code}`,
+          );
+        }
+      }
+    };
+    inspect(
+      manifest?.downloads as
+        | Record<string, { version?: string; versionCode?: number }>
+        | undefined,
+      "",
+    );
+    inspect(
+      manifest?.ext?.trialDownloads as
+        | Record<string, { version?: string; versionCode?: number }>
+        | undefined,
+      "试用 ",
+    );
+    checks.push({
+      title: "表盘 version 与 versionCode 一致",
+      status: mismatches.length === 0 ? "pass" : "warn",
+      detail:
+        mismatches.length === 0
+          ? "表盘 versionCode 与 major.minor.patch 一致"
+          : mismatches.join("；"),
     });
   }
 

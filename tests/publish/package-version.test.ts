@@ -4,6 +4,7 @@ import {
   WATCHFACE_MAGIC,
   readPackageVersion,
   writePackageVersion,
+  xiaomiVersionCodeFromVersion,
 } from "../../app/logic/publish/package-version";
 
 /** 真实小米表盘（SekaiUI 9pro v1.1.2）的前 64 字节：magic + offset4 版本 02 01 01 + offset40 ID。 */
@@ -249,5 +250,20 @@ describe("readPackageVersion - 不支持的格式", () => {
 describe("WATCHFACE_MAGIC", () => {
   test("与小米表盘头一致", () => {
     expect(WATCHFACE_MAGIC).toEqual([0x5a, 0xa5, 0x34, 0x12]);
+  });
+});
+
+describe("xiaomiVersionCodeFromVersion", () => {
+  test("a.b.c 派生 versionCode", () => {
+    expect(xiaomiVersionCodeFromVersion("1.2.4")).toBe(66052);
+    expect(xiaomiVersionCodeFromVersion("1.1.2")).toBe(65794);
+    expect(xiaomiVersionCodeFromVersion("0.0.0")).toBe(0);
+    expect(xiaomiVersionCodeFromVersion("255.255.255")).toBe(16777215);
+  });
+
+  test("非 a.b.c 形式返回 undefined", () => {
+    expect(xiaomiVersionCodeFromVersion("1.0.0.2")).toBeUndefined();
+    expect(xiaomiVersionCodeFromVersion("2.5")).toBeUndefined();
+    expect(xiaomiVersionCodeFromVersion("")).toBeUndefined();
   });
 });

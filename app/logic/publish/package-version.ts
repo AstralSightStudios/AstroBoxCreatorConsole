@@ -420,6 +420,16 @@ export async function computePackageHash(file: Blob): Promise<string> {
   return `fnv1a-${hash.toString(16).padStart(8, "0")}-${bytes.length}`;
 }
 
+/**
+ * 小米表盘 `major.minor.patch` 版本对应的 versionCode。
+ * 非 `a.b.c` 形式返回 undefined（例如 Vivo 表盘的 `1.0.0.2`）。
+ */
+export function xiaomiVersionCodeFromVersion(version: string): number | undefined {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(version.trim());
+  if (!match) return undefined;
+  return (Number(match[1]) << 16) | (Number(match[2]) << 8) | Number(match[3]);
+}
+
 /** 版本展示：`1.2.3（versionCode 66052）`。 */
 export function formatPackageVersion(info: PackageVersionInfo): string {
   const version = info.version?.trim();
