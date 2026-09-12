@@ -506,270 +506,209 @@ export function DownloadsSection({
             downloads.map((item, index) => (
               <div
                 key={item.uid || `download-${index}`}
-                className={`rounded-lg border bg-black/20 p-2.5 ${
+                className={`flex flex-col gap-2.5 rounded-lg border bg-black/20 p-2.5 ${
                   isNonIncrementRow(item)
                     ? "border-red-400/60"
                     : "border-white/10"
                 }`}
               >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <span className="shrink-0 text-xs font-medium text-white/55">
-                    设备 {index + 1}
-                  </span>
-                  <div
-                    className="min-w-[120px] flex-1"
-                    style={{
-                      minWidth: `${Math.min(
-                        260,
-                        110 +
-                          (
-                            sortedDeviceOptions.find(
-                              (opt) => opt.id === item.platformId,
-                            )?.name || item.platformId || ""
-                          ).length *
-                            7,
-                      )}px`,
-                    }}
+                <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 md:max-w-md">
+                    <span className="shrink-0 text-xs font-medium text-white/55">
+                      设备 {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <Select.Root
+                        value={item.platformId || undefined}
+                        onValueChange={(value) => {
+                          const device = sortedDeviceOptions.find(
+                            (opt) => opt.id === value,
+                          );
+                          log.info("download/row", "选择设备", {
+                            data: {
+                              deviceId: value,
+                              deviceName: device?.name ?? null,
+                            },
+                          });
+                          onUpdateRow(item.uid, (row) => ({
+                            ...row,
+                            platformId: value,
+                          }));
+                        }}
+                      >
+                        <Select.Trigger
+                          radius="large"
+                          placeholder="请选择设备"
+                          className="w-full whitespace-normal"
+                        />
+                        <Select.Content position="popper">
+                          {sortedDeviceOptions.map((opt) => {
+                            const usedElsewhere = downloads.some(
+                              (row, idx) =>
+                                idx !== index && row.platformId === opt.id,
+                            );
+                            return (
+                              <Select.Item
+                                key={opt.id}
+                                value={opt.id}
+                                disabled={usedElsewhere}
+                              >
+                                {opt.name}
+                                {usedElsewhere ? "（已使用）" : ""}
+                              </Select.Item>
+                            );
+                          })}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="删除该设备行"
+                    title="删除"
+                    className="shrink-0 rounded-lg p-1 text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+                    onClick={() => onRemoveRow(item.uid)}
                   >
-                    <Select.Root
-                      value={item.platformId || undefined}
-                      onValueChange={(value) => {
-                        const device = sortedDeviceOptions.find(
-                          (opt) => opt.id === value,
-                        );
-                        log.info("download/row", "选择设备", {
-                          data: {
-                            deviceId: value,
-                            deviceName: device?.name ?? null,
-                          },
-                        });
-                        onUpdateRow(item.uid, (row) => ({
-                          ...row,
-                          platformId: value,
-                        }));
-                      }}
-                    >
-                      <Select.Trigger
-                        radius="large"
-                        placeholder="请选择设备"
-                        className="w-full whitespace-normal"
-                      />
-                      <Select.Content position="popper">
-                        {sortedDeviceOptions.map((opt) => {
-                          const usedElsewhere = downloads.some(
-                            (row, idx) =>
-                              idx !== index && row.platformId === opt.id,
-                          );
-                          return (
-                            <Select.Item
-                              key={opt.id}
-                              value={opt.id}
-                              disabled={usedElsewhere}
-                            >
-                              {opt.name}
-                              {usedElsewhere ? "（已使用）" : ""}
-                            </Select.Item>
-                          );
-                        })}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setUpdateLogEditor({
-                          uid: item.uid,
-                          entries: (item.updatelogs ?? []).map((log) => ({
-                            ...log,
-                          })),
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
-                    >
-                      <NotebookIcon size={14} weight="bold" />
-                      配置更新日志
-                      {item.updatelogs && item.updatelogs.length > 0
-                        ? `（${item.updatelogs.length} 条）`
-                        : ""}
-                    </button>
-                    <button
-                      className="rounded-lg p-1 text-white/60 transition hover:bg-red-500/10 hover:text-red-300"
-                      onClick={() => onRemoveRow(item.uid)}
-                    >
-                      <MinusIcon size={16} weight="bold" />
-                    </button>
-                  </div>
+                    <MinusIcon size={16} weight="bold" />
+                  </button>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
-                  {item.versionLocked ? (
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 text-sm text-white/85">
-                        {item.version ? `版本 ${item.version}` : "版本未知"}
-                        {item.versionCode !== undefined && (
-                          <span className="text-xs text-white/45">
-                            versionCode {item.versionCode}
+                <div className="flex flex-col gap-2.5 md:flex-row md:flex-wrap md:items-center md:gap-x-4 md:gap-y-2">
+                  {(item.file || item.existingFileName) && (
+                    <div className="min-w-0 md:grow md:shrink md:basis-[300px]">
+                      {item.versionLocked ? (
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 text-sm text-white/85">
+                            {item.version ? `版本 ${item.version}` : "版本未知"}
+                            {item.versionCode !== undefined && (
+                              <span className="text-xs text-white/45">
+                                versionCode {item.versionCode}
+                              </span>
+                            )}
+                            <span title="由包体自动读取，请勿手动修改">
+                              <LockSimpleIcon
+                                size={13}
+                                weight="bold"
+                                className="text-white/45"
+                              />
+                            </span>
                           </span>
-                        )}
-                        <span title="由包体自动读取，请勿手动修改">
-                          <LockSimpleIcon
-                            size={13}
-                            weight="bold"
-                            className="text-white/45"
-                          />
-                        </span>
-                      </span>
-                      {item.file &&
-                        !item.file.skipUpload &&
-                        item.packageWritable && (
-                          <Button
-                            size="1"
-                            variant="soft"
-                            color="gray"
-                            disabled={isIdentityMismatch(item)}
-                            title={
-                              isIdentityMismatch(item)
-                                ? "包体包名与资源 ID 不一致，禁止修改版本"
-                                : "修改包体版本"
-                            }
-                            onClick={() =>
-                              setVersionEditor({
-                                uid: item.uid,
-                                file: item.file!.file,
-                                previousVersion: item.previousVersion,
-                                previousVersionCode: item.previousVersionCode,
-                                mismatch: isIdentityMismatch(item),
-                              })
-                            }
+                          {item.file &&
+                            !item.file.skipUpload &&
+                            item.packageWritable && (
+                              <Button
+                                size="1"
+                                variant="soft"
+                                color="gray"
+                                disabled={isIdentityMismatch(item)}
+                                title={
+                                  isIdentityMismatch(item)
+                                    ? "包体包名与资源 ID 不一致，禁止修改版本"
+                                    : "修改包体版本"
+                                }
+                                onClick={() =>
+                                  setVersionEditor({
+                                    uid: item.uid,
+                                    file: item.file!.file,
+                                    previousVersion: item.previousVersion,
+                                    previousVersionCode: item.previousVersionCode,
+                                    mismatch: isIdentityMismatch(item),
+                                  })
+                                }
+                              >
+                                <PencilSimpleLineIcon size={13} weight="bold" />
+                                修改版本
+                              </Button>
+                            )}
+                          {(item.previousVersion !== undefined ||
+                            item.previousVersionCode !== undefined) && (
+                            <span className="text-xs text-white/40">
+                              上次发布 {item.previousVersion ?? "-"}
+                              {item.previousVersionCode !== undefined
+                                ? ` · ${item.previousVersionCode}`
+                                : ""}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1 md:w-36 md:flex-none">
+                            <TextField.Root
+                              placeholder="版本号"
+                              value={item.version}
+                              radius="large"
+                              disabled={!item.file}
+                              className="min-w-0 w-full"
+                              onChange={(e) => {
+                                const device = sortedDeviceOptions.find(
+                                  (opt) => opt.id === item.platformId,
+                                );
+                                logFieldChange(
+                                  `download-version-${item.uid}`,
+                                  `版本号(${device?.name ?? (item.platformId || "未选设备")})`,
+                                  e.target.value,
+                                );
+                                onUpdateRow(item.uid, (row) => ({
+                                  ...row,
+                                  version: e.target.value,
+                                }));
+                              }}
+                            />
+                          </div>
+                          <div
+                            className="min-w-0 flex-1 md:w-28 md:flex-none"
+                            title="数字版本号（versionCode），客户端用它检测是否有更新"
                           >
-                            <PencilSimpleLineIcon size={13} weight="bold" />
-                            修改版本
-                          </Button>
-                        )}
-                      {(item.previousVersion !== undefined ||
-                        item.previousVersionCode !== undefined) && (
-                        <span className="text-xs text-white/40">
-                          上次发布 {item.previousVersion ?? "-"}
-                          {item.previousVersionCode !== undefined
-                            ? ` · ${item.previousVersionCode}`
-                            : ""}
-                        </span>
+                            <TextField.Root
+                              placeholder="versionCode"
+                              value={
+                                item.versionCode !== undefined
+                                  ? String(item.versionCode)
+                                  : ""
+                              }
+                              radius="large"
+                              disabled={!item.file}
+                              className="min-w-0 w-full"
+                              inputMode="numeric"
+                              onChange={(e) => {
+                                const device = sortedDeviceOptions.find(
+                                  (opt) => opt.id === item.platformId,
+                                );
+                                const raw = e.target.value.trim();
+                                const parsed = raw === "" ? NaN : Number(raw);
+                                logFieldChange(
+                                  `download-version-code-${item.uid}`,
+                                  `versionCode(${device?.name ?? (item.platformId || "未选设备")})`,
+                                  raw,
+                                );
+                                onUpdateRow(item.uid, (row) => ({
+                                  ...row,
+                                  versionCode:
+                                    raw !== "" && Number.isFinite(parsed) && parsed >= 0
+                                      ? Math.trunc(parsed)
+                                      : undefined,
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ) : (
-                    <>
-                      <div className="w-28 shrink-0 md:w-36">
-                        <TextField.Root
-                          placeholder="版本号"
-                          value={item.version}
-                          radius="large"
-                          className="min-w-0 w-full"
-                          onChange={(e) => {
-                            const device = sortedDeviceOptions.find(
-                              (opt) => opt.id === item.platformId,
-                            );
-                            logFieldChange(
-                              `download-version-${item.uid}`,
-                              `版本号(${device?.name ?? (item.platformId || "未选设备")})`,
-                              e.target.value,
-                            );
-                            onUpdateRow(item.uid, (row) => ({
-                              ...row,
-                              version: e.target.value,
-                            }));
-                          }}
-                        />
-                      </div>
-
-                      <div
-                        className="w-24 shrink-0 md:w-28"
-                        title="数字版本号（versionCode），客户端用它检测是否有更新"
-                      >
-                        <TextField.Root
-                          placeholder="versionCode"
-                          value={
-                            item.versionCode !== undefined
-                              ? String(item.versionCode)
-                              : ""
-                          }
-                          radius="large"
-                          className="min-w-0 w-full"
-                          inputMode="numeric"
-                          onChange={(e) => {
-                            const device = sortedDeviceOptions.find(
-                              (opt) => opt.id === item.platformId,
-                            );
-                            const raw = e.target.value.trim();
-                            const parsed = raw === "" ? NaN : Number(raw);
-                            logFieldChange(
-                              `download-version-code-${item.uid}`,
-                              `versionCode(${device?.name ?? (item.platformId || "未选设备")})`,
-                              raw,
-                            );
-                            onUpdateRow(item.uid, (row) => ({
-                              ...row,
-                              versionCode:
-                                raw !== "" && Number.isFinite(parsed) && parsed >= 0
-                                  ? Math.trunc(parsed)
-                                  : undefined,
-                            }));
-                          }}
-                        />
-                      </div>
-                    </>
                   )}
 
-                  {isIdentityMismatch(item) && (
-                    <span className="w-full text-xs text-red-300">
-                      包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
-                    </span>
-                  )}
-
-                  {isNonIncrementRow(item) && (
-                    <span className="w-full text-xs text-red-300">
-                      versionCode 未递增（{item.versionCode} ≤ 上次{" "}
-                      {item.previousVersionCode}），请点「修改版本」。
-                    </span>
-                  )}
-
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    {item.file ? (
-                      <>
-                        <Button
-                          radius="large"
-                          onClick={() => void pickDownloadFile(item.uid)}
-                          variant="ghost"
-                        >
-                          <UploadSimpleIcon size={16} weight="bold" />
-                        </Button>
+                  {(item.file || item.existingFileName) && (
+                    <div className="flex min-w-0 items-center gap-2 md:grow md:shrink md:basis-[200px]">
+                      {item.file ? (
                         <span className="min-w-0 truncate text-white/80">
                           {item.file.name}
                         </span>
-                      </>
-                    ) : item.existingFileName ? (
-                      <>
-                        <Button
-                          radius="large"
-                          onClick={() => void pickDownloadFile(item.uid)}
-                          variant="outline"
-                        >
-                          <UploadSimpleIcon size={16} weight="bold" />
-                        </Button>
+                      ) : (
                         <span className="min-w-0 truncate text-emerald-100">
                           当前: {item.existingFileName}
                         </span>
-                      </>
-                    ) : (
-                      <Button
-                        radius="large"
-                        onClick={() => void pickDownloadFile(item.uid)}
-                      >
-                        <UploadSimpleIcon size={16} weight="bold" />
-                        请上传文件
-                      </Button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                   {isVip && allowEncryption && (
                     <div className="flex shrink-0 items-center gap-2">
@@ -807,6 +746,50 @@ export function DownloadsSection({
                       )}
                     </div>
                   )}
+                </div>
+
+                {isIdentityMismatch(item) && (
+                  <p className="text-xs text-red-300">
+                    包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
+                  </p>
+                )}
+                {isNonIncrementRow(item) && (
+                  <p className="text-xs text-red-300">
+                    versionCode 未递增（{item.versionCode} ≤ 上次{" "}
+                    {item.previousVersionCode}），请点「修改版本」。
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    radius="large"
+                    variant="soft"
+                    color="gray"
+                    onClick={() =>
+                      setUpdateLogEditor({
+                        uid: item.uid,
+                        entries: (item.updatelogs ?? []).map((log) => ({
+                          ...log,
+                        })),
+                      })
+                    }
+                  >
+                    <NotebookIcon size={16} weight="bold" />
+                    配置更新日志
+                    {item.updatelogs && item.updatelogs.length > 0
+                      ? `（${item.updatelogs.length} 条）`
+                      : ""}
+                  </Button>
+                  <Button
+                    radius="large"
+                    variant={
+                      item.file || item.existingFileName ? "outline" : "solid"
+                    }
+                    onClick={() => void pickDownloadFile(item.uid)}
+                  >
+                    <UploadSimpleIcon size={16} weight="bold" />
+                    {item.file || item.existingFileName ? "更换包体" : "导入包体"}
+                  </Button>
                 </div>
               </div>
             ))
