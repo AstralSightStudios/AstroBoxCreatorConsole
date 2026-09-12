@@ -100,6 +100,7 @@ import {
   generateUniqueWatchfaceId,
   validateWatchfaceIdFormat,
   fetchExistingCatalogIds,
+  WATCHFACE_ID_PREFIX,
 } from "~/logic/publish/watchface-id";
 import {
   CANOPUS_ID_PREFIX,
@@ -746,24 +747,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const handleResourceTypeChange = useCallback(
     (next: ResourceType) => {
-      if (next === resourceType) return;
+      if (isEditing || next === resourceType) return;
       idsByTypeRef.current[resourceType] = itemIdRef.current;
       const cached = idsByTypeRef.current[next];
       setItemId(cached !== undefined ? cached : next === "canopus" ? CANOPUS_ID_PREFIX : "");
       setResourceType(next);
     },
-    [resourceType],
+    [resourceType, isEditing],
   );
 
   const handleItemIdChange = useCallback(
     (value: string) => {
+      if (isEditing) return;
       if (resourceType === "canopus") {
         setItemId(normalizeCanopusIdInput(value));
         return;
       }
       setItemId(value);
     },
-    [resourceType],
+    [resourceType, isEditing],
   );
 
   useEffect(() => {
@@ -1292,17 +1294,31 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (resourceType !== "watchface" || idGenerating) return;
     setIdGenerating(true);
     try {
-      const token = loadAccountState().github?.token;
-      if (!token) throw new Error("GitHub 未登录，无法检查 ID 是否重复");
-      const ids = await fetchExistingCatalogIds(token);
-      setExistingCatalogIds(ids);
-      setItemId(generateUniqueWatchfaceId(ids));
+      // 优先复用进入页面时预取的目录 ID，避免每次点击都重新走网络。
+      let ids = existingCatalogIds;
+      if (!ids || ids.size === 0) {
+        const token = loadAccountState().github?.token;
+        if (!token) throw new Error("GitHub 未登录，无法检查 ID 是否重复");
+        ids = await fetchExistingCatalogIds(token);
+        setExistingCatalogIds(ids);
+      }
+      const finalId = generateUniqueWatchfaceId(ids);
+      // 随机生成时给一段数字滚动的过渡动画（后段逐渐变慢，最后定格）。
+      const digitCount = finalId.length - WATCHFACE_ID_PREFIX.length;
+      for (let frame = 0; frame < 10; frame += 1) {
+        const random = Array.from({ length: digitCount }, () =>
+          Math.floor(Math.random() * 10),
+        ).join("");
+        setItemId(`${WATCHFACE_ID_PREFIX}${random}`);
+        await new Promise((resolve) => setTimeout(resolve, 20 + frame * 6));
+      }
+      setItemId(finalId);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
       setIdGenerating(false);
     }
-  }, [resourceType, idGenerating]);
+  }, [resourceType, idGenerating, existingCatalogIds]);
 
   const addTag = () => {
     const nextTag = tagInput.trim();
@@ -2899,6 +2915,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
+                idReadOnly={isEditing}
                 onItemIdChange={(value) => {
                   handleItemIdChange(value);
                   logFieldChange("itemId", "资源 ID", value);

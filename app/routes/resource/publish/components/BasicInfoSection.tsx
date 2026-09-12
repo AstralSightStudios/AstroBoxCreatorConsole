@@ -22,6 +22,7 @@ interface BasicInfoSectionProps {
   resourceType: ResourceType;
   idError?: string;
   idGenerating?: boolean;
+  idReadOnly?: boolean;
   onItemIdChange: (value: string) => void;
   onItemNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
@@ -44,6 +45,7 @@ export function BasicInfoSection({
   resourceType,
   idError,
   idGenerating,
+  idReadOnly,
   onItemIdChange,
   onItemNameChange,
   onDescriptionChange,
@@ -69,6 +71,7 @@ export function BasicInfoSection({
           size="2"
           radius="large"
           variant="surface"
+          disabled={idReadOnly}
         >
           <SegmentedControl.Item
             value="quick_app"
@@ -140,9 +143,9 @@ export function BasicInfoSection({
                 : "模块名称将拼接为 canopus_模块名称"
           }
         >
-          <div className="flex gap-2 items-start">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-stretch">
+          <div className="flex w-full gap-2 items-start">
+            <div className="flex-1 min-w-0 w-full">
+              <div className="flex w-full items-stretch">
                 {resourceType === "canopus" && (
                   <span className="flex shrink-0 select-none items-center whitespace-nowrap rounded-l-(--radius-5) border border-r-0 border-white/15 bg-white/10 px-3 text-sm text-white/50">
                     {CANOPUS_ID_PREFIX}
@@ -177,17 +180,20 @@ export function BasicInfoSection({
                   maxLength={
                     resourceType === "watchface" ? 12 : undefined
                   }
+                  disabled={idReadOnly}
                   radius="large"
-                  className={`${idError ? "!border-red-400/60" : ""} ${
-                    resourceType === "canopus" ? "!rounded-l-none" : ""
-                  }`}
+                  className={`w-full ${
+                    idError && resourceType !== "canopus"
+                      ? "!border-red-400/60"
+                      : ""
+                  } ${resourceType === "canopus" ? "!rounded-l-none" : ""}`}
                 />
               </div>
-              {idError && (
+              {idError && resourceType !== "canopus" && (
                 <p className="text-xs text-red-400 mt-1">{idError}</p>
               )}
             </div>
-            {resourceType === "watchface" && onGenerateId && (
+            {resourceType === "watchface" && onGenerateId && !idReadOnly && (
               <Button
                 type="button"
                 variant="soft"
