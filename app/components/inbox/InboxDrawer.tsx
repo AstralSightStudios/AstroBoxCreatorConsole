@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion";
 import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react";
 import { ScrollArea, Skeleton } from "@radix-ui/themes";
+import { createPortal } from "react-dom";
 import { InboxApi } from "~/api/astrobox/inbox";
 import {
   isCcNoticeMetadata,
@@ -29,7 +30,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const { count, markRead, markAllRead, remove } = useInbox();
   const navigate = useNavigate();
   const { isDesktop } = useNavVisibility();
-  const { factor, logicalHeight } = useUiScaleViewport();
+  const { factor, logicalHeight, portalContainer } = useUiScaleViewport();
   const [items, setItems] = useState<InboxNotification[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -447,40 +448,45 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
               </div>
             </motion.aside>
           ) : (
-            <motion.div
-              className="fixed inset-x-0 top-0 z-[120] w-full"
-              style={{
-                height: "var(--ui-viewport-height)",
-                paddingTop: "max(100px, calc(var(--ui-safe-area-top) + 56px))",
-              }}
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{
-                type: "tween",
-                duration: 0.28,
-                ease: [0.32, 0.72, 0, 1],
-              }}
-            >
-              {/* 窄屏底部抽屉：圆角顶 + 毛玻璃 + 可拖动把手 */}
-              <motion.div
-                style={{ y: sheetY }}
-                className="relative flex h-full w-full flex-col overflow-hidden rounded-t-[24px] border-t-[1.5px] border-[var(--nav-border-strong)] bg-[rgba(0,0,0,0.75)] pt-2.5 text-white backdrop-blur-md"
-              >
-                <button
-                  type="button"
-                  aria-label="收起信箱"
-                  onPointerDown={handleDragStart}
-                  style={{ touchAction: "none" }}
-                  className="tauri-no-drag mx-auto flex h-11 w-16 shrink-0 items-center justify-center bg-transparent text-[rgba(255,255,255,0.5)]"
-                >
-                  <DynamicDrawerHandle progress={dragProgress} direction="down" />
-                </button>
-                <div className="relative z-1 flex min-h-0 flex-1 flex-col pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
-                  {panelContent}
-                </div>
-              </motion.div>
-            </motion.div>
+            portalContainer
+              ? createPortal(
+                  <motion.div
+                    className="fixed inset-x-0 top-0 z-[120] w-full"
+                    style={{
+                      height: "var(--ui-viewport-height)",
+                      paddingTop: "max(100px, calc(var(--ui-safe-area-top) + 56px))",
+                    }}
+                    initial={{ y: "100%" }}
+                    animate={{ y: 0 }}
+                    exit={{ y: "100%" }}
+                    transition={{
+                      type: "tween",
+                      duration: 0.28,
+                      ease: [0.32, 0.72, 0, 1],
+                    }}
+                  >
+                    {/* 窄屏底部抽屉：圆角顶 + 毛玻璃 + 可拖动把手 */}
+                    <motion.div
+                      style={{ y: sheetY }}
+                      className="relative flex h-full w-full flex-col overflow-hidden rounded-t-[24px] border-t-[1.5px] border-[var(--nav-border-strong)] bg-[rgba(0,0,0,0.75)] pt-2.5 text-white backdrop-blur-md"
+                    >
+                      <button
+                        type="button"
+                        aria-label="收起信箱"
+                        onPointerDown={handleDragStart}
+                        style={{ touchAction: "none" }}
+                        className="tauri-no-drag mx-auto flex h-11 w-16 shrink-0 items-center justify-center bg-transparent text-[rgba(255,255,255,0.5)]"
+                      >
+                        <DynamicDrawerHandle progress={dragProgress} direction="down" />
+                      </button>
+                      <div className="relative z-1 flex min-h-0 flex-1 flex-col pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
+                        {panelContent}
+                      </div>
+                    </motion.div>
+                  </motion.div>,
+                  portalContainer,
+                )
+              : null
           )}
         </>
       ) : null}
