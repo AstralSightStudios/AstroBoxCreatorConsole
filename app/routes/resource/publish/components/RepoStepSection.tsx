@@ -67,6 +67,12 @@ export function RepoStepSection({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [uploadLogs]);
 
   const filteredRepos = useMemo(() => {
     const keyword = repoNameInput.trim().toLowerCase();
@@ -236,7 +242,10 @@ export function RepoStepSection({
         </div>
       </div>
       <div>
-        <div className="max-h-48 overflow-auto bg-black/25 border-t border-white/10 p-2.5 text-xs text-white/70">
+        <div
+          ref={logRef}
+          className="max-h-48 overflow-auto bg-black/25 border-t border-white/10 p-2.5 text-xs text-white/70"
+        >
           {uploadLogs.length === 0 ? (
             <p className="text-white/50">等待执行...</p>
           ) : (

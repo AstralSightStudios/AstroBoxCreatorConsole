@@ -1610,6 +1610,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setRepoStatus("success");
         setRepoMessage("");
         toast.success("仓库创建成功，文件已上传。");
+        addLog(`仓库：${repo.owner}/${repo.name} @ ${repo.commitSha.slice(0, 7)}`);
+        addLog(`仓库地址：${repo.htmlUrl}`);
         log.info("upload/repo", "仓库上传完成", {
           data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
         });
@@ -1835,6 +1837,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
+        toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
         log.info("pr/submit", "已更新现有 PR", { data: { prNumber: editContext.prNumber } });
         reportSuccess("publish/pr", "已更新现有 PR。");
         await endResourceSession("completed", `已更新现有 PR #${editContext.prNumber ?? "?"}`);
@@ -1922,6 +1925,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");
+      toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
       reportSuccess("publish/pr", "PR 已创建，可在审核列表中跟踪进度。");
       await endResourceSession(
         "pr_created",

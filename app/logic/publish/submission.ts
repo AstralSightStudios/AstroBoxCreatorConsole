@@ -40,6 +40,14 @@ interface UploadManifestRequest {
 interface PreparedAsset {
   path: string;
   base64Content: string;
+  size: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 async function prepareFileAsset(
@@ -50,14 +58,22 @@ async function prepareFileAsset(
   if (buffer.byteLength === 0) {
     throw new Error(`文件 ${asset.path} 内容为空，拒绝上传空文件。`);
   }
-  return { path: asset.path, base64Content: ensureBase64(buffer) };
+  return {
+    path: asset.path,
+    base64Content: ensureBase64(buffer),
+    size: buffer.byteLength,
+  };
 }
 
 async function prepareTextAsset(
   path: string,
   text: string,
 ): Promise<PreparedAsset> {
-  return { path, base64Content: ensureBase64(text) };
+  return {
+    path,
+    base64Content: ensureBase64(text),
+    size: new TextEncoder().encode(text).byteLength,
+  };
 }
 
 async function applyWatchfaceId(
@@ -283,7 +299,10 @@ async function batchUploadGitData(
 ): Promise<string> {
   // 1. Create blobs with low concurrency. GitHub 明确要求写请求避免并发，
   //    高并发 POST /git/blobs 会触发二级速率限制（secondary rate limit）。
-  onProgress?.(`创建 ${assets.length} 个文件的 blob...`);
+  const totalBytes = assets.reduce((sum, asset) => sum + asset.size, 0);
+  onProgress?.(
+    `创建 ${assets.length} 个文件的 blob（共 ${formatBytes(totalBytes)}）...`,
+  );
   const BLOB_CONCURRENCY = 2;
   const blobRefs: GitBlobRef[] = new Array(assets.length);
   let nextIndex = 0;
@@ -300,7 +319,9 @@ async function batchUploadGitData(
         type: "blob",
       };
       completed++;
-      onProgress?.(`已上传 blob ${completed}/${assets.length}（${assets[i].path}）`);
+      onProgress?.(
+        `已上传 blob ${completed}/${assets.length}（${assets[i].path}，${formatBytes(assets[i].size)}，${sha.slice(0, 7)}）`,
+      );
     }
   };
   await Promise.all(
@@ -327,6 +348,9 @@ async function batchUploadGitData(
   // 4. Update ref
   onProgress?.("更新分支引用...");
   await updateRef(repo, commitSha, token);
+  onProgress?.(
+    `提交完成：${commitSha.slice(0, 7)}（${assets.length} 个文件，共 ${formatBytes(totalBytes)}）`,
+  );
 
   return commitSha;
 }
