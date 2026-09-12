@@ -216,11 +216,11 @@ function normalizeUpdateLogs(value: unknown): ManifestUpdateLogEntry[] | undefin
     return logs.length > 0 ? logs : undefined;
 }
 
-/** 归一化数字版本号：非法值（非正整数）视为未提供。 */
+/** 归一化数字版本号：非法值（非有限数）视为未提供；0（0.0.0）为合法值。 */
 function normalizeVersionCode(value: unknown): number | undefined {
     if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
     const code = Math.trunc(value);
-    return code > 0 ? code : undefined;
+    return code >= 0 ? code : undefined;
 }
 
 function mediaAssetFingerprint(file: File): string {

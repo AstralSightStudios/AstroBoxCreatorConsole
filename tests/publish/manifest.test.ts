@@ -273,7 +273,7 @@ describe("manifest downloads updatelogs", () => {
     expect(manifest.downloads.xmb9.file_name).toBe("downloads/package-xmb9");
   });
 
-  test("writes numeric versionCode and omits it when invalid", () => {
+  test("writes numeric versionCode including 0 and omits invalid values", () => {
     const result = buildManifest({
       ...baseInput,
       downloads: [
@@ -286,10 +286,17 @@ describe("manifest downloads updatelogs", () => {
         },
         {
           platformId: "xmb10p",
-          version: "1.0.0",
+          version: "0.0.0",
           pathOverride: "downloads/a.bin",
           file: new File([], "a.bin"),
           versionCode: 0,
+        },
+        {
+          platformId: "xmb9",
+          version: "1.0.0",
+          pathOverride: "downloads/b.bin",
+          file: new File([], "b.bin"),
+          versionCode: -1,
         },
       ],
       ext: {},
@@ -302,8 +309,13 @@ describe("manifest downloads updatelogs", () => {
       versionCode: 2601003,
     });
     expect(manifest.downloads.xmb10p).toEqual({
-      version: "1.0.0",
+      version: "0.0.0",
       file_name: "downloads/a.bin",
+      versionCode: 0,
+    });
+    expect(manifest.downloads.xmb9).toEqual({
+      version: "1.0.0",
+      file_name: "downloads/b.bin",
     });
   });
 });
