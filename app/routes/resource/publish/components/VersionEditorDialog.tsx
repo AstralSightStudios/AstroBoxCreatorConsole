@@ -106,6 +106,9 @@ export function VersionEditorDialog({
       if (!versionCodeInput.trim() || !Number.isFinite(nextCode) || nextCode < 0) {
         return "请填写合法的 versionCode。";
       }
+      if (nextCode > 2147483647) {
+        return "versionCode 不能超过 2147483647（客户端按 32 位整数解析）。";
+      }
       if (previousVersionCode !== undefined && nextCode <= previousVersionCode) {
         return `versionCode 必须大于上次发布的 ${previousVersionCode}。`;
       }

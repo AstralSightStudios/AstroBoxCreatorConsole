@@ -1118,18 +1118,10 @@ export async function runResourceRuleChecks(options: {
         }`;
       } else {
         const issues: string[] = [];
-        const skippedVendors = new Set<string>();
         for (const deviceId of nextDeviceIds) {
           const next = nextDownloads[deviceId] ?? {};
           const hasPackage = Boolean((next.file_name ?? "").trim());
           if (!hasPackage) continue;
-          // ABNG 目前仅对小米做资源更新检测；非小米设备暂不校验 versionCode。
-          const canonical = resolver(deviceId) ?? deviceId;
-          const vendor = vendorByCanonicalId.get(canonical);
-          if (vendor && vendor !== "xiaomi") {
-            skippedVendors.add(vendor);
-            continue;
-          }
           const nextCode = next.versionCode;
           const base = baseDownloads[deviceId];
           if (nextCode === undefined || nextCode === null) {
@@ -1164,19 +1156,15 @@ export async function runResourceRuleChecks(options: {
             );
           }
         }
-        const vendorNote =
-          skippedVendors.size > 0
-            ? `（已跳过非小米设备：${Array.from(skippedVendors).join("、")}）`
-            : "";
         if (issues.length > 0) {
           checkStatus = "warn";
-          checkDetail = issues.join("；") + vendorNote;
+          checkDetail = issues.join("；");
         } else if (!baseEntry) {
           checkStatus = "pass";
-          checkDetail = `所有正式包体均已填写 versionCode${vendorNote}`;
+          checkDetail = "所有正式包体均已填写 versionCode";
         } else {
           checkStatus = "pass";
-          checkDetail = `更新包体的 versionCode 均已递增或未涉及包体变更${vendorNote}`;
+          checkDetail = "更新包体的 versionCode 均已递增或未涉及包体变更";
         }
       }
     }
