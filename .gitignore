@@ -8,3 +8,7 @@
 /dist/
 *.dmg
 /.opencode
+
+# Tailscale dev certs
+*.ts.net.crt
+*.ts.net.key
