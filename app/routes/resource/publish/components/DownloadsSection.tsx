@@ -157,6 +157,12 @@ export function DownloadsSection({
     Boolean(resourceId?.trim()) &&
     item.packageIdentity !== resourceId?.trim();
 
+  const isNonIncrementRow = (item: DownloadInput) =>
+    item.versionSource === "package" &&
+    item.versionCode !== undefined &&
+    item.previousVersionCode !== undefined &&
+    item.versionCode <= item.previousVersionCode;
+
   const selectedDeviceIds = useMemo(
     () => new Set(downloads.map((d) => d.platformId).filter(Boolean)),
     [downloads],
@@ -309,6 +315,32 @@ export function DownloadsSection({
           readable,
         },
       });
+      const current = downloads.find((d) => d.uid === uid);
+      const previousVersionCode = current?.previousVersionCode;
+      const mismatch =
+        info?.identityKind === "package" &&
+        Boolean(info?.identity) &&
+        Boolean(resourceId?.trim()) &&
+        info?.identity !== resourceId?.trim();
+      if (
+        readable &&
+        info?.versionCode !== undefined &&
+        previousVersionCode !== undefined &&
+        info.versionCode <= previousVersionCode &&
+        !mismatch
+      ) {
+        toast.warning(
+          `包体版本未递增（versionCode ${info.versionCode} ≤ 上次 ${previousVersionCode}），请修改版本后再提交。`,
+        );
+        setVersionEditor({
+          uid,
+          file,
+          previousVersion: current?.previousVersion,
+          previousVersionCode,
+          mismatch: false,
+        });
+        return;
+      }
       if (readable && info) {
         toast.success(`已从包体读取版本 ${formatPackageVersion(info)}，已锁定`);
       } else {
@@ -474,7 +506,11 @@ export function DownloadsSection({
             downloads.map((item, index) => (
               <div
                 key={item.uid || `download-${index}`}
-                className="rounded-lg border border-white/10 bg-black/20 p-2.5"
+                className={`rounded-lg border bg-black/20 p-2.5 ${
+                  isNonIncrementRow(item)
+                    ? "border-red-400/60"
+                    : "border-white/10"
+                }`}
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                   <span className="shrink-0 text-xs font-medium text-white/55">
@@ -687,6 +723,13 @@ export function DownloadsSection({
                   {isIdentityMismatch(item) && (
                     <span className="w-full text-xs text-red-300">
                       包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
+                    </span>
+                  )}
+
+                  {isNonIncrementRow(item) && (
+                    <span className="w-full text-xs text-red-300">
+                      versionCode 未递增（{item.versionCode} ≤ 上次{" "}
+                      {item.previousVersionCode}），请点「修改版本」。
                     </span>
                   )}
 
