@@ -162,6 +162,21 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                     <span className="truncate font-medium text-white">{comment.user?.login || "unknown"}</span>
                     <span className="hidden shrink-0 sm:inline">{formatRelativeTime(comment.created_at)}</span>
                   </span>
+                  {comment.review_state && (
+                    <span
+                      className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        comment.review_state === "APPROVE"
+                          ? "bg-emerald-500/15 text-emerald-100"
+                          : comment.review_state === "REQUEST_CHANGES"
+                          ? "bg-amber-500/15 text-amber-100"
+                          : "bg-white/10 text-white/70"
+                      }`}
+                    >
+                      {comment.review_state === "APPROVE" && "✓ 已批准"}
+                      {comment.review_state === "REQUEST_CHANGES" && "⚠ 请求变更"}
+                      {comment.review_state === "COMMENTED" && "💬 已评论"}
+                    </span>
+                  )}
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger>
                       <button

@@ -222,6 +222,9 @@ export default function ResourceReviewPage() {
   }, []);
 
   const loadPulls = async () => {
+    // 等待 orgMembers 加载完成，避免评论过滤失效
+    if (orgMembers.size === 0) return;
+
     setLoadingPulls(true);
     try {
       const list = await listReviewPullRequests("open");
@@ -360,7 +363,18 @@ export default function ResourceReviewPage() {
     setEditingTarget(null);
     setNoticeDraft(null);
     if (openNumber) {
-      void loadDetail(openNumber);
+      // 等待 orgMembers 加载完成，避免评论过滤失效
+      if (orgMembers.size === 0) {
+        const waitForOrgMembers = setInterval(() => {
+          if (orgMembers.size > 0) {
+            clearInterval(waitForOrgMembers);
+            void loadDetail(openNumber);
+          }
+        }, 100);
+        setTimeout(() => clearInterval(waitForOrgMembers), 5000);
+      } else {
+        void loadDetail(openNumber);
+      }
     } else {
       loadDetailRef.current += 1;
       setFiles([]);

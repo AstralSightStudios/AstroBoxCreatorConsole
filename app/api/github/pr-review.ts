@@ -44,6 +44,7 @@ export interface GithubIssueComment {
   };
   created_at?: string;
   pull_review_id?: number;
+  review_state?: "APPROVE" | "REQUEST_CHANGES" | "COMMENTED";
 }
 
 export interface GithubPullReview {
@@ -193,29 +194,28 @@ export async function listPullRequestComments(prNumber: number) {
 }
 
 /**
- * 只拉取 PR review（含 REQUEST_CHANGES / COMMENTED 且有正文的），并映射成
- * 评论结构。ABCC 的标签（NEEDFIX/REFUSE 等）只通过 review 发送，列表页用它
- * 替代完整时间线，避免为每个 PR 额外请求 issue 评论。
+ * 拉取所有非 PENDING 的 PR review（APPROVE / REQUEST_CHANGES / COMMENTED），
+ * 并映射成评论结构。ABCC 的标签（NEEDFIX/REFUSE 等）只通过 review 发送。
+ * 保留 body 为空的 review 以便在时间线显示 "Approved" 等状态。
  */
 export async function listPullRequestReviewComments(
   prNumber: number,
 ): Promise<GithubIssueComment[]> {
   const reviews = await listPullRequestReviews(prNumber);
   return reviews
-    .filter(
-      (review) =>
-        review.state !== "PENDING" &&
-        (review.state === "REQUEST_CHANGES" || review.state === "COMMENTED") &&
-        Boolean(review.body?.trim()),
-    )
-    .map((review) => ({
-      id: review.id,
-      body: review.body,
-      user: review.user,
-      created_at: review.submitted_at,
-      html_url: `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${prNumber}#review-${review.id}`,
-      pull_review_id: review.id,
-    }));
+    .filter((review) => review.state !== "PENDING")
+    .map((review) => {
+      const state = review.state as "APPROVE" | "REQUEST_CHANGES" | "COMMENTED";
+      return {
+        id: review.id,
+        body: review.body || (state === "APPROVE" ? "已批准" : state === "REQUEST_CHANGES" ? "请求变更" : "已评论"),
+        user: review.user,
+        created_at: review.submitted_at,
+        html_url: `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${prNumber}#review-${review.id}`,
+        pull_review_id: review.id,
+        review_state: state,
+      };
+    });
 }
 
 export async function listPullRequestTimeline(
