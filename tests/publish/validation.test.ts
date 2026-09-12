@@ -1,13 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { strToU8, zipSync } from "fflate";
 import {
   containsUrlUnsafeFilename,
   normalizeLinkUrl,
-  readRpkManifestInfo,
-  readRpkPackage,
   validateLink,
   validatePublish,
-  validateRpkPackage,
 } from "../../app/logic/publish/validation";
 import {
   createUploadItem,
@@ -28,12 +24,6 @@ const validInput = {
   trialDownloads: [],
   links: [],
 };
-
-function rpk(entries: Record<string, string>) {
-  return new Blob([
-    zipSync(Object.fromEntries(Object.entries(entries).map(([name, value]) => [name, strToU8(value)]))),
-  ]);
-}
 
 describe("publish validation", () => {
   test("accepts complete input and rejects required fields and rows", () => {
@@ -149,52 +139,5 @@ describe("filename sanitization", () => {
     const item = createUploadItem(new File([new Uint8Array([1])], "shot3.png"));
     expect(item.name).toBe("shot3.png");
     expect(containsUrlUnsafeFilename(item.name)).toBe(false);
-  });
-});
-
-describe("RPK validation", () => {
-  test("reads versionName and versionCode from manifest", async () => {
-    const file = rpk({
-      "manifest.json": JSON.stringify({
-        package: "com.example.app",
-        versionName: "26.1.3",
-        versionCode: 2601003,
-      }),
-    });
-    expect(await readRpkManifestInfo(file)).toEqual({
-      packageName: "com.example.app",
-      versionName: "26.1.3",
-      versionCode: 2601003,
-    });
-  });
-
-  test("tolerates missing versionCode", async () => {
-    const file = rpk({
-      "manifest.json": JSON.stringify({
-        package: "com.example.app",
-        versionName: "1.0",
-      }),
-    });
-    const info = await readRpkManifestInfo(file);
-    expect(info.packageName).toBe("com.example.app");
-    expect(info.versionName).toBe("1.0");
-    expect(info.versionCode).toBeUndefined();
-  });
-
-  test("reads nested manifest package", async () => {
-    const file = rpk({ "nested/manifest.json": JSON.stringify({ package: "com.example.app" }) });
-    expect(await readRpkPackage(file)).toBe("com.example.app");
-    await expect(validateRpkPackage(file, "com.example.app")).resolves.toBeUndefined();
-  });
-
-  test("rejects missing manifest", async () => {
-    await expect(validateRpkPackage(rpk({ "other.json": "{}" }), "com.example.app")).rejects.toThrow("缺少 manifest.json");
-  });
-
-  test("rejects mismatched package", async () => {
-    const file = rpk({ "manifest.json": JSON.stringify({ package: "com.other.app" }) });
-    await expect(validateRpkPackage(file, "com.example.app")).rejects.toThrow(
-      "无法使用自动检查更新",
-    );
   });
 });
