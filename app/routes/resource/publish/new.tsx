@@ -2944,6 +2944,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 setAuthors={setAuthors}
                 links={links}
                 setLinks={setLinks}
+                defaultAuthorName={
+                  mode === "new"
+                    ? accountState.astrobox?.username?.trim() ?? ""
+                    : ""
+                }
               />
               <DownloadsSection
                 downloads={downloads}

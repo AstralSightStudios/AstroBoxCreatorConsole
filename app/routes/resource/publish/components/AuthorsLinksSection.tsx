@@ -1,4 +1,5 @@
 import {
+  ArrowCounterClockwiseIcon,
   BinocularsIcon,
   MagnifyingGlassIcon,
   MinusIcon,
@@ -226,6 +227,7 @@ interface AuthorsLinksSectionProps {
   setAuthors: Dispatch<SetStateAction<AuthorInput[]>>;
   links: LinkInput[];
   setLinks: Dispatch<SetStateAction<LinkInput[]>>;
+  defaultAuthorName?: string;
 }
 
 export function AuthorsLinksSection({
@@ -233,6 +235,7 @@ export function AuthorsLinksSection({
   setAuthors,
   links,
   setLinks,
+  defaultAuthorName = "",
 }: AuthorsLinksSectionProps) {
   const [iconPickerIndex, setIconPickerIndex] = useState<number | null>(null);
   const [iconQuery, setIconQuery] = useState("");
@@ -333,30 +336,61 @@ export function AuthorsLinksSection({
                     </button>
                   </Table.RowHeaderCell>
                   <Table.RowHeaderCell>
-                    <TextField.Root
-                      placeholder={index === 0 ? "当前 AstroBox 账号" : "作者名称"}
-                      value={author.name}
-                      radius="large"
-                      onChange={(e) => {
-                        if (index === 0 && !firstAuthorEditConfirmed) {
-                          setPendingFirstAuthorName(e.target.value);
-                          setConfirmEditFirstAuthor(true);
-                          return;
-                        }
-                        logFieldChange(
-                          `author-name-${index}`,
-                          `作者名称(#${index + 1})`,
-                          e.target.value,
-                        );
-                        setAuthors((prev) =>
-                          prev.map((item, idx) =>
-                            idx === index
-                              ? { ...item, name: e.target.value }
-                              : item,
-                          ),
-                        );
-                      }}
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <TextField.Root
+                        className="min-w-0 flex-1"
+                        placeholder={index === 0 ? "当前 AstroBox 账号" : "作者名称"}
+                        value={author.name}
+                        radius="large"
+                        onChange={(e) => {
+                          if (index === 0 && !firstAuthorEditConfirmed) {
+                            setPendingFirstAuthorName(e.target.value);
+                            setConfirmEditFirstAuthor(true);
+                            return;
+                          }
+                          logFieldChange(
+                            `author-name-${index}`,
+                            `作者名称(#${index + 1})`,
+                            e.target.value,
+                          );
+                          setAuthors((prev) =>
+                            prev.map((item, idx) =>
+                              idx === index
+                                ? { ...item, name: e.target.value }
+                                : item,
+                            ),
+                          );
+                        }}
+                      />
+                      {index === 0 &&
+                      defaultAuthorName &&
+                      author.name.trim() !== defaultAuthorName ? (
+                        <Button
+                          type="button"
+                          variant="surface"
+                          color="gray"
+                          size="1"
+                          className="shrink-0"
+                          aria-label="恢复默认名称"
+                          title="恢复默认名称"
+                          onClick={() => {
+                            log.info("form/authors", "恢复第一个作者默认名称", {
+                              data: { name: defaultAuthorName },
+                            });
+                            setFirstAuthorEditConfirmed(false);
+                            setAuthors((prev) =>
+                              prev.map((item, idx) =>
+                                idx === 0
+                                  ? { ...item, name: defaultAuthorName }
+                                  : item,
+                              ),
+                            );
+                          }}
+                        >
+                          <ArrowCounterClockwiseIcon size={14} />
+                        </Button>
+                      ) : null}
+                    </div>
                   </Table.RowHeaderCell>
                   <Table.RowHeaderCell style={{ verticalAlign: "middle" }}>
                     <label className="flex h-full items-center gap-2 text-sm text-white/80">
