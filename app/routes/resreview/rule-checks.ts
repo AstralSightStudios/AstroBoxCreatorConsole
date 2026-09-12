@@ -14,6 +14,7 @@ import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { WATCHFACE_MAGIC, ZIP_MAGIC } from "~/logic/publish/package-version";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
   listSellerResourceConfigs,
@@ -335,8 +336,6 @@ function loadImageDimensions(
 // 包体类型检测（移植自 AstroBox-NG core get_file_type）
 // ---------------------------------------------------------------------------
 
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
-const WATCHFACE_MAGIC = [0x5a, 0xa5, 0x34, 0x12];
 const FACTORY_MAGIC = [0x60, 0x5a, 0x5a, 0x7e]; // \x60ZZ~
 
 const MIN_FIRMWARE_SIZE = 1_000_000;
