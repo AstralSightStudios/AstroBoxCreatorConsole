@@ -127,9 +127,12 @@ import {
   COVER_MAX_BYTES,
   COVER_RATIO,
   COVER_RATIO_TOLERANCE,
-  readRpkManifestInfo,
   validatePublish,
 } from "~/logic/publish/validation";
+import {
+  computePackageHash,
+  readPackageVersion,
+} from "~/logic/publish/package-version";
 import {
   buildRawFileUrl,
   fetchManifestForCatalogEntry,
@@ -228,15 +231,17 @@ function buildDownloadInputsFromManifest(params: {
     const fileName = info?.file_name || "";
     const rawLogs = info?.updatelogs;
     const rawVersionCode = info?.versionCode;
+    const parsedVersionCode =
+      typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
+        ? Math.trunc(rawVersionCode)
+        : undefined;
+    const version = info?.version || "";
     return {
       uid: crypto.randomUUID?.() ?? Math.random().toString(36),
       platformId,
-      version: info?.version || "",
+      version,
       encryptOnUpload: encryptedDeviceSet?.has(platformId) ?? false,
-      versionCode:
-        typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
-          ? Math.trunc(rawVersionCode)
-          : undefined,
+      versionCode: parsedVersionCode,
       updatelogs: Array.isArray(rawLogs)
         ? rawLogs
             .map((log) => ({
@@ -245,6 +250,10 @@ function buildDownloadInputsFromManifest(params: {
             }))
             .filter((log) => log.version || log.content)
         : undefined,
+      versionLocked: Boolean(fileName),
+      versionSource: "existing" as const,
+      previousVersion: version || undefined,
+      previousVersionCode: parsedVersionCode,
       file: fileName
         ? createExistingUploadItem(
             fileName.split("/").pop() || fileName,
@@ -532,6 +541,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [prBody, setPrBody] = useState("");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [versionCodeWarningOpen, setVersionCodeWarningOpen] = useState(false);
+  const [versionIncrementWarning, setVersionIncrementWarning] = useState<
+    DownloadInput[] | null
+  >(null);
   const [repoNameInput, setRepoNameInput] = useState("");
   const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
   const [userReposLoading, setUserReposLoading] = useState(false);
@@ -1998,6 +2010,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     encryptOnUpload?: boolean;
     versionCode?: number;
     updatelogs?: UpdateLogEntry[];
+    versionLocked?: boolean;
+    versionSource?: DownloadInput["versionSource"];
+    packageHash?: string;
+    packageIdentity?: string;
+    packageIdentityKind?: DownloadInput["packageIdentityKind"];
+    packageWritable?: boolean;
   }) => {
     log.info("download/row", "一键填充下载配置", {
       data: {
@@ -2015,6 +2033,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         file: template.file,
         encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
         versionCode: template.versionCode,
+        versionLocked: template.versionLocked,
+        versionSource: template.versionSource,
+        packageHash: template.packageHash,
+        packageIdentity: template.packageIdentity,
+        packageIdentityKind: template.packageIdentityKind,
+        packageWritable: template.packageWritable,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
           : undefined,
@@ -2096,6 +2120,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     encryptOnUpload?: boolean;
     versionCode?: number;
     updatelogs?: UpdateLogEntry[];
+    versionLocked?: boolean;
+    versionSource?: DownloadInput["versionSource"];
+    packageHash?: string;
+    packageIdentity?: string;
+    packageIdentityKind?: DownloadInput["packageIdentityKind"];
+    packageWritable?: boolean;
   }) => {
     log.info("download/trial/row", "一键填充试用下载配置", {
       data: {
@@ -2111,6 +2141,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         version: template.version,
         file: template.file,
         versionCode: template.versionCode,
+        versionLocked: template.versionLocked,
+        versionSource: template.versionSource,
+        packageHash: template.packageHash,
+        packageIdentity: template.packageIdentity,
+        packageIdentityKind: template.packageIdentityKind,
+        packageWritable: template.packageWritable,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
           : undefined,
@@ -2151,6 +2187,35 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     if (missingVersionCode) {
       setVersionCodeWarningOpen(true);
+      return;
+    }
+    const identityMismatch = [...downloads, ...trialDownloads].filter(
+      (d) =>
+        d.packageIdentityKind === "package" &&
+        Boolean(d.packageIdentity) &&
+        Boolean(itemId.trim()) &&
+        d.packageIdentity !== itemId.trim(),
+    );
+    if (identityMismatch.length > 0) {
+      toast.error(
+        `包体包名与资源 ID 不一致（${identityMismatch
+          .map(
+            (d) =>
+              `${sortedDeviceOptions.find((opt) => opt.id === d.platformId)?.name || d.platformId || "未选设备"}: ${d.packageIdentity}`,
+          )
+          .join("、")}），将无法自动检查更新，请先统一 ID。`,
+      );
+      return;
+    }
+    const nonIncrement = [...downloads, ...trialDownloads].filter(
+      (d) =>
+        d.versionSource === "package" &&
+        d.versionCode !== undefined &&
+        d.previousVersionCode !== undefined &&
+        d.versionCode <= d.previousVersionCode,
+    );
+    if (nonIncrement.length > 0) {
+      setVersionIncrementWarning(nonIncrement);
       return;
     }
     goToStep(1);
@@ -2261,6 +2326,30 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     };
   }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperInitial, wallpaperPayload]);
 
+  const refreshPackageVersions = useCallback(
+    async (rows: DownloadInput[]): Promise<DownloadInput[]> =>
+      Promise.all(
+        rows.map(async (row) => {
+          const upload = row.file;
+          if (!upload || upload.skipUpload || !upload.file?.size) return row;
+          const info = await readPackageVersion(upload.file);
+          if (!info.readable) return row;
+          return {
+            ...row,
+            version: info.version ?? row.version,
+            versionCode: info.versionCode ?? row.versionCode,
+            versionLocked: true,
+            versionSource: "package" as const,
+            packageHash: await computePackageHash(upload.file),
+            packageIdentity: info.identity,
+            packageIdentityKind: info.identityKind,
+            packageWritable: info.writable,
+          };
+        }),
+      ),
+    [],
+  );
+
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
     idsByTypeRef.current[data.resourceType] = data.itemId;
@@ -2278,8 +2367,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     setIcon(restoreMediaItem(data.icon));
     setCover(restoreMediaItem(data.cover));
-    setDownloads((data.downloads ?? []).map(restoreDownloadInput));
-    setTrialDownloads((data.trialDownloads ?? []).map(restoreDownloadInput));
+    const restoredDownloads = (data.downloads ?? []).map(restoreDownloadInput);
+    const restoredTrialDownloads = (data.trialDownloads ?? []).map(
+      restoreDownloadInput,
+    );
+    setDownloads(restoredDownloads);
+    setTrialDownloads(restoredTrialDownloads);
+    void refreshPackageVersions(restoredDownloads).then(setDownloads);
+    void refreshPackageVersions(restoredTrialDownloads).then(setTrialDownloads);
     setBundledResources(
       (Array.isArray(data.bundledResources) ? data.bundledResources : [])
         .map((item) => ({
@@ -2304,7 +2399,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         data.wallpaperBaseUrl ?? "",
       ),
     );
-  }, []);
+  }, [refreshPackageVersions]);
 
   // Auto-save debounce
   useEffect(() => {
@@ -2502,6 +2597,45 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     </Dialog.Root>
   );
 
+  const versionIncrementWarningDialog = (
+    <Dialog.Root
+      open={versionIncrementWarning !== null}
+      onOpenChange={(open) => {
+        if (!open) setVersionIncrementWarning(null);
+      }}
+    >
+      <Dialog.Content maxWidth="460px">
+        <Dialog.Title>versionCode 未递增</Dialog.Title>
+        <Dialog.Description size="2">
+          以下设备的包体已更新，但 versionCode 未大于上次发布的值，用户将无法检测到更新：
+        </Dialog.Description>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {(versionIncrementWarning ?? []).map((row) => (
+            <div
+              key={row.uid}
+              className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100"
+            >
+              {sortedDeviceOptions.find((opt) => opt.id === row.platformId)?.name ||
+                row.platformId ||
+                "未选设备"}
+              ：versionCode {row.versionCode} ≤ 上次 {row.previousVersionCode}
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-3">
+          <Button
+            variant="solid"
+            onClick={() => {
+              setVersionIncrementWarning(null);
+            }}
+          >
+            返回修改版本
+          </Button>
+        </div>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+
   // Draft action buttons
   const draftActions = !isEditing ? (
     <div className="flex flex-col gap-1.5 px-3 w-full">
@@ -2619,6 +2753,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     <Page>
       {autoSaveDialog}
       {versionCodeWarningDialog}
+      {versionIncrementWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
@@ -2816,26 +2951,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
-                 resourceId={itemId}
-                 validateFile={
-                   resourceType === "quick_app"
-                     ? async (file) => {
-                         const info = await readRpkManifestInfo(file);
-                         return {
-                           versionName: info.versionName,
-                           versionCode: info.versionCode,
-                           warning:
-                             info.packageName !== itemId
-                               ? {
-                                   packageName: info.packageName,
-                                   resourceId: itemId,
-                                 }
-                               : undefined,
-                         };
-                       }
-                     : undefined
-                 }
-                 onAddRow={addDownloadRow}
+                resourceId={itemId}
+                validateFile={
+                  resourceType === "quick_app" || resourceType === "watchface"
+                    ? readPackageVersion
+                    : undefined
+                }
+                onAddRow={addDownloadRow}
                 onRemoveRow={removeDownloadRow}
                 onUpdateRow={updateDownloadRow}
                 onBatchSetDevices={batchSetDownloadDevices}
@@ -2851,26 +2973,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
-                 allowEncryption={false}
-                 validateFile={
-                   resourceType === "quick_app"
-                     ? async (file) => {
-                         const info = await readRpkManifestInfo(file);
-                         return {
-                           versionName: info.versionName,
-                           versionCode: info.versionCode,
-                           warning:
-                             info.packageName !== itemId
-                               ? {
-                                   packageName: info.packageName,
-                                   resourceId: itemId,
-                                 }
-                               : undefined,
-                         };
-                       }
-                     : undefined
-                 }
-                 onAddRow={addTrialDownloadRow}
+                allowEncryption={false}
+                validateFile={
+                  resourceType === "quick_app" || resourceType === "watchface"
+                    ? readPackageVersion
+                    : undefined
+                }
+                onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
                 onBatchSetDevices={batchSetTrialDownloadDevices}

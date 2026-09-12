@@ -151,7 +151,7 @@ function readXiaomiBin(bytes: Uint8Array): PackageVersionInfo {
   };
 }
 
-function pickManifestName(entries: Unzipped): string | undefined {
+export function pickManifestName(entries: Unzipped): string | undefined {
   const names = Object.keys(entries);
   return (
     names.find((name) => name === "manifest.json") ??
@@ -159,7 +159,7 @@ function pickManifestName(entries: Unzipped): string | undefined {
   );
 }
 
-function findInnerBinName(entries: Unzipped): string | undefined {
+export function findInnerBinName(entries: Unzipped): string | undefined {
   const bins = Object.keys(entries).filter((name) =>
     name.toLowerCase().endsWith(".bin"),
   );
@@ -352,10 +352,10 @@ function writeZipManifest(
       manifest.version_name = target.version;
       changed = true;
     }
-    if (typeof manifest.versionCode === "number") {
+    if (manifest.versionCode !== undefined) {
       manifest.versionCode = target.versionCode;
       changed = true;
-    } else if (typeof manifest.version_code === "number") {
+    } else if (manifest.version_code !== undefined) {
       manifest.version_code = target.versionCode;
       changed = true;
     }
@@ -400,6 +400,24 @@ export async function writePackageVersion(
     }
   }
   throw new Error("不支持的包体格式，无法写入版本");
+}
+
+/** 计算包体内容哈希（SHA-256，非安全上下文回退 FNV-1a）。 */
+export async function computePackageHash(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const digest = await subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+  }
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `fnv1a-${hash.toString(16).padStart(8, "0")}-${bytes.length}`;
 }
 
 /** 版本展示：`1.2.3（versionCode 66052）`。 */

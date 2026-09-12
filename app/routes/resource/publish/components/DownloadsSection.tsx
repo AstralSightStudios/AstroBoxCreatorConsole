@@ -3,13 +3,14 @@ import {
   PlusIcon,
   MinusIcon,
   WarningDiamondIcon,
-  InfoIcon,
   ListChecksIcon,
   CopyIcon,
   ChecksIcon,
   NotebookIcon,
   QuestionIcon,
   TrashIcon,
+  LockSimpleIcon,
+  PencilSimpleLineIcon,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -28,13 +29,24 @@ import {
 import { useMemo, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
 import { createUploadItem } from "./uploadUtils";
-import { type DeviceOption, type DownloadInput } from "./types";
+import {
+  type DeviceOption,
+  type DownloadIdentityKind,
+  type DownloadInput,
+  type DownloadVersionSource,
+} from "./types";
 import { type UploadItem, SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
+import { VersionEditorDialog } from "./VersionEditorDialog";
 import { toast } from "sonner";
 import { log } from "~/logic/logging";
 import { logFieldChange } from "~/logic/logging/publish-flow";
 import type { UpdateLogEntry } from "./types";
+import {
+  computePackageHash,
+  formatPackageVersion,
+  type PackageVersionInfo,
+} from "~/logic/publish/package-version";
 
 const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   {
@@ -43,12 +55,13 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
   {
     label: "版本号",
-    description: "展示用版本名称（如 26.1.3），下载按钮和更新弹窗中会显示。",
+    description:
+      "展示用版本名称，导入包体后自动读取并锁定；如需修改请点「修改版本」改写包体。",
   },
   {
     label: "versionCode",
     description:
-      "数字版本号（如 2601003），AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；上传 RPK 时会自动读取。",
+      "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定。",
   },
   {
     label: "包体文件",
@@ -81,16 +94,7 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
-  validateFile?: (
-    file: File,
-  ) => Promise<
-    | {
-        versionName?: string;
-        versionCode?: number;
-        warning?: { packageName: string; resourceId: string };
-      }
-    | void
-  >;
+  validateFile?: (file: File) => Promise<PackageVersionInfo>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -104,6 +108,12 @@ interface DownloadsSectionProps {
     encryptOnUpload?: boolean;
     versionCode?: number;
     updatelogs?: UpdateLogEntry[];
+    versionLocked?: boolean;
+    versionSource?: DownloadVersionSource;
+    packageHash?: string;
+    packageIdentity?: string;
+    packageIdentityKind?: DownloadIdentityKind;
+    packageWritable?: boolean;
   }) => void;
 }
 
@@ -128,18 +138,24 @@ export function DownloadsSection({
 }: DownloadsSectionProps) {
   const [batchSelectOpen, setBatchSelectOpen] = useState(false);
   const [fillAllOpen, setFillAllOpen] = useState(false);
-  const [fileWarnings, setFileWarnings] = useState<
-    Record<string, { packageName: string; resourceId: string }>
-  >({});
-  const [warningDialog, setWarningDialog] = useState<{
-    packageName: string;
-    resourceId: string;
+  const [versionEditor, setVersionEditor] = useState<{
+    uid: string;
+    file: File;
+    previousVersion?: string;
+    previousVersionCode?: number;
+    mismatch: boolean;
   } | null>(null);
   const [updateLogEditor, setUpdateLogEditor] = useState<{
     uid: string;
     entries: UpdateLogEntry[];
   } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  const isIdentityMismatch = (item: DownloadInput) =>
+    item.packageIdentityKind === "package" &&
+    Boolean(item.packageIdentity) &&
+    Boolean(resourceId?.trim()) &&
+    item.packageIdentity !== resourceId?.trim();
 
   const selectedDeviceIds = useMemo(
     () => new Set(downloads.map((d) => d.platformId).filter(Boolean)),
@@ -186,6 +202,12 @@ export function DownloadsSection({
         encryptOnUpload: template.encryptOnUpload,
         versionCode: template.versionCode,
         updatelogs: template.updatelogs,
+        versionLocked: template.versionLocked,
+        versionSource: template.versionSource,
+        packageHash: template.packageHash,
+        packageIdentity: template.packageIdentity,
+        packageIdentityKind: template.packageIdentityKind,
+        packageWritable: template.packageWritable,
       });
     }
     setFillAllOpen(false);
@@ -257,40 +279,42 @@ export function DownloadsSection({
       data: { name: file.name, size: file.size },
     });
     try {
-      const meta = await validateFile?.(file);
+      const info = await validateFile?.(file);
       const uploadItem = createUploadItem(file);
+      const packageHash = await computePackageHash(file);
+      const readable = Boolean(info?.readable);
       onUpdateRow(uid, (row) => ({
         ...row,
         file: uploadItem,
         existingFileName: undefined,
-        ...(meta?.versionName ? { version: meta.versionName } : {}),
-        ...(meta?.versionCode !== undefined
-          ? { versionCode: meta.versionCode }
+        versionLocked: readable ? true : row.versionLocked,
+        versionSource: readable ? "package" : row.versionSource,
+        ...(readable && info?.version ? { version: info.version } : {}),
+        ...(readable && info?.versionCode !== undefined
+          ? { versionCode: info.versionCode }
           : {}),
+        packageHash,
+        packageIdentity: info?.identity,
+        packageIdentityKind: info?.identityKind,
+        packageWritable: info?.writable,
       }));
       log.info("download/file", "包体校验完成", {
         data: {
           name: file.name,
           size: file.size,
-          versionName: meta?.versionName ?? null,
-          versionCode: meta?.versionCode ?? null,
-          warning: meta?.warning ?? null,
+          source: info?.source ?? null,
+          version: info?.version ?? null,
+          versionCode: info?.versionCode ?? null,
+          identity: info?.identity ?? null,
+          readable,
         },
       });
-      if (meta?.warning) {
-        toast.warning(
-          `导入包体包名/表盘ID（${meta.warning.packageName}）与资源ID（${meta.warning.resourceId}）不一致，将无法自动检查更新。`,
-        );
-        setFileWarnings((prev) => ({
-          ...prev,
-          [uid]: meta.warning!,
-        }));
+      if (readable && info) {
+        toast.success(`已从包体读取版本 ${formatPackageVersion(info)}，已锁定`);
       } else {
-        setFileWarnings((prev) => {
-          const next = { ...prev };
-          delete next[uid];
-          return next;
-        });
+        toast.warning(
+          `无法从该包体解析版本${info?.reason ? `：${info.reason}` : ""}，请手动填写。`,
+        );
       }
     } catch (error) {
       log.error("download/file", `包体导入失败: ${file.name}`, {
@@ -298,6 +322,35 @@ export function DownloadsSection({
       });
       toast.error((error as Error).message);
     }
+  };
+
+  const applyVersionEdit = (updated: File, info: PackageVersionInfo) => {
+    if (!versionEditor) return;
+    const sourceId = downloads.find((d) => d.uid === versionEditor.uid)?.file?.id;
+    for (const row of downloads) {
+      if (!row.file) continue;
+      if (row.uid !== versionEditor.uid && (!sourceId || row.file.id !== sourceId)) {
+        continue;
+      }
+      onUpdateRow(row.uid, (r) => ({
+        ...r,
+        file: r.file ? { ...r.file, file: updated } : r.file,
+        version: info.version ?? r.version,
+        versionCode: info.versionCode ?? r.versionCode,
+        versionLocked: true,
+        versionSource: "package",
+        packageWritable: info.writable,
+        packageIdentity: info.identity,
+        packageIdentityKind: info.identityKind,
+      }));
+    }
+    log.info("download/version", "包体版本已改写", {
+      data: {
+        sourceId: sourceId ?? null,
+        version: info.version ?? null,
+        versionCode: info.versionCode ?? null,
+      },
+    });
   };
 
   return (
@@ -504,18 +557,6 @@ export function DownloadsSection({
                         ? `（${item.updatelogs.length} 条）`
                         : ""}
                     </button>
-                    {fileWarnings[item.uid] && (
-                      <button
-                        type="button"
-                        className="grid size-8 place-items-center rounded-lg text-yellow-300 transition hover:bg-yellow-400/10 hover:text-yellow-200"
-                        onClick={() =>
-                          setWarningDialog(fileWarnings[item.uid] || null)
-                        }
-                        aria-label="查看 RPK 包名提示"
-                      >
-                        <InfoIcon size={16} weight="bold" />
-                      </button>
-                    )}
                     <button
                       className="rounded-lg p-1 text-white/60 transition hover:bg-red-500/10 hover:text-red-300"
                       onClick={() => onRemoveRow(item.uid)}
@@ -526,64 +567,128 @@ export function DownloadsSection({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
-                  <div className="w-28 shrink-0 md:w-36">
-                    <TextField.Root
-                      placeholder="版本号"
-                      value={item.version}
-                      radius="large"
-                      className="min-w-0 w-full"
-                      onChange={(e) => {
-                        const device = sortedDeviceOptions.find(
-                          (opt) => opt.id === item.platformId,
-                        );
-                        logFieldChange(
-                          `download-version-${item.uid}`,
-                          `版本号(${device?.name ?? (item.platformId || "未选设备")})`,
-                          e.target.value,
-                        );
-                        onUpdateRow(item.uid, (row) => ({
-                          ...row,
-                          version: e.target.value,
-                        }));
-                      }}
-                    />
-                  </div>
+                  {item.versionLocked ? (
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 text-sm text-white/85">
+                        {item.version ? `版本 ${item.version}` : "版本未知"}
+                        {item.versionCode !== undefined && (
+                          <span className="text-xs text-white/45">
+                            versionCode {item.versionCode}
+                          </span>
+                        )}
+                        <span title="由包体自动读取，请勿手动修改">
+                          <LockSimpleIcon
+                            size={13}
+                            weight="bold"
+                            className="text-white/45"
+                          />
+                        </span>
+                      </span>
+                      {item.file &&
+                        !item.file.skipUpload &&
+                        item.packageWritable && (
+                          <Button
+                            size="1"
+                            variant="soft"
+                            color="gray"
+                            disabled={isIdentityMismatch(item)}
+                            title={
+                              isIdentityMismatch(item)
+                                ? "包体包名与资源 ID 不一致，禁止修改版本"
+                                : "修改包体版本"
+                            }
+                            onClick={() =>
+                              setVersionEditor({
+                                uid: item.uid,
+                                file: item.file!.file,
+                                previousVersion: item.previousVersion,
+                                previousVersionCode: item.previousVersionCode,
+                                mismatch: isIdentityMismatch(item),
+                              })
+                            }
+                          >
+                            <PencilSimpleLineIcon size={13} weight="bold" />
+                            修改版本
+                          </Button>
+                        )}
+                      {(item.previousVersion !== undefined ||
+                        item.previousVersionCode !== undefined) && (
+                        <span className="text-xs text-white/40">
+                          上次发布 {item.previousVersion ?? "-"}
+                          {item.previousVersionCode !== undefined
+                            ? ` · ${item.previousVersionCode}`
+                            : ""}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="w-28 shrink-0 md:w-36">
+                        <TextField.Root
+                          placeholder="版本号"
+                          value={item.version}
+                          radius="large"
+                          className="min-w-0 w-full"
+                          onChange={(e) => {
+                            const device = sortedDeviceOptions.find(
+                              (opt) => opt.id === item.platformId,
+                            );
+                            logFieldChange(
+                              `download-version-${item.uid}`,
+                              `版本号(${device?.name ?? (item.platformId || "未选设备")})`,
+                              e.target.value,
+                            );
+                            onUpdateRow(item.uid, (row) => ({
+                              ...row,
+                              version: e.target.value,
+                            }));
+                          }}
+                        />
+                      </div>
 
-                  <div
-                    className="w-24 shrink-0 md:w-28"
-                    title="数字版本号（versionCode），客户端用它检测是否有更新"
-                  >
-                    <TextField.Root
-                      placeholder="versionCode"
-                      value={
-                        item.versionCode !== undefined
-                          ? String(item.versionCode)
-                          : ""
-                      }
-                      radius="large"
-                      className="min-w-0 w-full"
-                      inputMode="numeric"
-                      onChange={(e) => {
-                        const device = sortedDeviceOptions.find(
-                          (opt) => opt.id === item.platformId,
-                        );
-                        const raw = e.target.value.trim();
-                        const parsed = raw === "" ? NaN : Number(raw);
-                        logFieldChange(
-                          `download-version-code-${item.uid}`,
-                          `versionCode(${device?.name ?? (item.platformId || "未选设备")})`,
-                          raw,
-                        );
-                        onUpdateRow(item.uid, (row) => ({
-                          ...row,
-                          versionCode:
-                            raw !== "" && Number.isFinite(parsed) && parsed > 0
-                              ? Math.trunc(parsed)
-                              : undefined,
-                        }));
-                      }}
-                    />
-                  </div>
+                      <div
+                        className="w-24 shrink-0 md:w-28"
+                        title="数字版本号（versionCode），客户端用它检测是否有更新"
+                      >
+                        <TextField.Root
+                          placeholder="versionCode"
+                          value={
+                            item.versionCode !== undefined
+                              ? String(item.versionCode)
+                              : ""
+                          }
+                          radius="large"
+                          className="min-w-0 w-full"
+                          inputMode="numeric"
+                          onChange={(e) => {
+                            const device = sortedDeviceOptions.find(
+                              (opt) => opt.id === item.platformId,
+                            );
+                            const raw = e.target.value.trim();
+                            const parsed = raw === "" ? NaN : Number(raw);
+                            logFieldChange(
+                              `download-version-code-${item.uid}`,
+                              `versionCode(${device?.name ?? (item.platformId || "未选设备")})`,
+                              raw,
+                            );
+                            onUpdateRow(item.uid, (row) => ({
+                              ...row,
+                              versionCode:
+                                raw !== "" && Number.isFinite(parsed) && parsed >= 0
+                                  ? Math.trunc(parsed)
+                                  : undefined,
+                            }));
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {isIdentityMismatch(item) && (
+                    <span className="w-full text-xs text-red-300">
+                      包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
+                    </span>
+                  )}
 
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     {item.file ? (
@@ -666,32 +771,19 @@ export function DownloadsSection({
         </div>
       </div>
 
-      <Dialog.Root
-        open={warningDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setWarningDialog(null);
-        }}
-      >
-        <Dialog.Content maxWidth="420px">
-          <Dialog.Title>自动检查更新提示</Dialog.Title>
-          <Dialog.Description size="2">
-            <div>
-              导入包体包名/表盘ID（{warningDialog?.packageName ?? ""}）与资源ID（
-              {warningDialog?.resourceId ?? ""}）不一致，将无法自动检查更新。
-            </div>
-            <div className="mt-2">
-              未填写 versionCode 时，用户同样无法检测到资源更新，请在包体行中填写数字版本号。
-            </div>
-          </Dialog.Description>
-          <div className="mt-4 flex justify-end">
-            <Dialog.Close>
-              <Button variant="soft" color="gray">
-                关闭
-              </Button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      {versionEditor && (
+        <VersionEditorDialog
+          open={versionEditor !== null}
+          onOpenChange={(open) => {
+            if (!open) setVersionEditor(null);
+          }}
+          file={versionEditor.file}
+          previousVersion={versionEditor.previousVersion}
+          previousVersionCode={versionEditor.previousVersionCode}
+          identityMismatch={versionEditor.mismatch}
+          onApply={applyVersionEdit}
+        />
+      )}
 
       <Dialog.Root
         open={updateLogEditor !== null}
