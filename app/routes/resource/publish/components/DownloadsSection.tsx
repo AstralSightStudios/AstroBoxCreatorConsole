@@ -82,6 +82,12 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
 ];
 
+/** `1.2.3（65536）`：展示版本 + 由包体派生的 versionCode。 */
+function formatVersionWithCode(version?: string, versionCode?: number): string {
+  const label = version?.trim() || "-";
+  return versionCode !== undefined ? `${label}（${versionCode}）` : label;
+}
+
 interface DownloadsSectionProps {
   title?: string;
   description?: string;
@@ -141,7 +147,6 @@ export function DownloadsSection({
   const [versionEditor, setVersionEditor] = useState<{
     uid: string;
     file: File;
-    previousVersion?: string;
     previousVersionCode?: number;
     mismatch: boolean;
   } | null>(null);
@@ -335,7 +340,6 @@ export function DownloadsSection({
         setVersionEditor({
           uid,
           file,
-          previousVersion: current?.previousVersion,
           previousVersionCode,
           mismatch: false,
         });
@@ -610,7 +614,6 @@ export function DownloadsSection({
                                   setVersionEditor({
                                     uid: item.uid,
                                     file: item.file!.file,
-                                    previousVersion: item.previousVersion,
                                     previousVersionCode: item.previousVersionCode,
                                     mismatch: isIdentityMismatch(item),
                                   })
@@ -620,15 +623,32 @@ export function DownloadsSection({
                                 修改版本
                               </Button>
                             )}
-                          {(item.previousVersion !== undefined ||
-                            item.previousVersionCode !== undefined) && (
+                          {item.previousVersion !== undefined ||
+                          item.previousVersionCode !== undefined ? (
                             <span className="text-xs text-white/40">
-                              上次发布 {item.previousVersion ?? "-"}
-                              {item.previousVersionCode !== undefined
-                                ? ` · ${item.previousVersionCode}`
-                                : ""}
+                              {item.versionSource === "package"
+                                ? "版本更新："
+                                : "上次发布 "}
+                              {item.versionSource === "package" ? (
+                                <>
+                                  {formatVersionWithCode(
+                                    item.previousVersion,
+                                    item.previousVersionCode,
+                                  )}
+                                  {" → "}
+                                  {formatVersionWithCode(
+                                    item.version,
+                                    item.versionCode,
+                                  )}
+                                </>
+                              ) : (
+                                formatVersionWithCode(
+                                  item.previousVersion,
+                                  item.previousVersionCode,
+                                )
+                              )}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -788,7 +808,12 @@ export function DownloadsSection({
                     onClick={() => void pickDownloadFile(item.uid)}
                   >
                     <UploadSimpleIcon size={16} weight="bold" />
-                    {item.file || item.existingFileName ? "更换包体" : "导入包体"}
+                    {item.previousVersion !== undefined ||
+                    item.previousVersionCode !== undefined
+                      ? "更新包体"
+                      : item.file || item.existingFileName
+                        ? "更换包体"
+                        : "导入包体"}
                   </Button>
                 </div>
               </div>
@@ -804,7 +829,6 @@ export function DownloadsSection({
             if (!open) setVersionEditor(null);
           }}
           file={versionEditor.file}
-          previousVersion={versionEditor.previousVersion}
           previousVersionCode={versionEditor.previousVersionCode}
           identityMismatch={versionEditor.mismatch}
           onApply={applyVersionEdit}

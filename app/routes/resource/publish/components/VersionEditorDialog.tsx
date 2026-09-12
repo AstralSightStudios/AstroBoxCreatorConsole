@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowClockwiseIcon,
-  LockSimpleIcon,
   WarningDiamondIcon,
 } from "@phosphor-icons/react";
 import { Button, Callout, Dialog, Text, TextField } from "~/components/ScaleAwareThemes";
+import { ScrubbableNumberField } from "~/components/wallpaper-editor/ScrubbableNumberField";
 import { toast } from "sonner";
 import {
   formatPackageVersion,
@@ -17,7 +17,6 @@ interface VersionEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   file: File;
-  previousVersion?: string;
   previousVersionCode?: number;
   /** 快应用包名与资源 ID 不一致时禁止改写。 */
   identityMismatch?: boolean;
@@ -55,7 +54,6 @@ export function VersionEditorDialog({
   open,
   onOpenChange,
   file,
-  previousVersion,
   previousVersionCode,
   identityMismatch,
   onApply,
@@ -132,21 +130,6 @@ export function VersionEditorDialog({
     previousVersionCode,
   ]);
 
-  const bump = (kind: "patch" | "minor" | "major") => {
-    setTriple((prev) => {
-      if (kind === "patch") {
-        if (prev.patch >= 255) return prev;
-        return { ...prev, patch: prev.patch + 1 };
-      }
-      if (kind === "minor") {
-        if (prev.minor >= 255) return prev;
-        return { ...prev, minor: prev.minor + 1, patch: 0 };
-      }
-      if (prev.major >= 255) return prev;
-      return { major: prev.major + 1, minor: 0, patch: 0 };
-    });
-  };
-
   const handleApply = async () => {
     if (!info || validationError) return;
     setApplying(true);
@@ -172,46 +155,27 @@ export function VersionEditorDialog({
     }
   };
 
-  const currentText = info ? formatPackageVersion(info) : "读取中…";
-  const previousText =
-    previousVersion || previousVersionCode !== undefined
-      ? `${previousVersion || "-"}${
-          previousVersionCode !== undefined ? `（versionCode ${previousVersionCode}）` : ""
-        }`
-      : null;
-  const previewText = isZipManifest
-    ? `${versionName.trim() || "-"}${
-        Number.isFinite(nextCode) ? `（versionCode ${Math.trunc(nextCode)}）` : ""
+  const currentLabel = info
+    ? `${info.version?.trim() || "-"}${
+        info.versionCode !== undefined ? `（${info.versionCode}）` : ""
       }`
-    : `${triple.major}.${triple.minor}.${triple.patch}（versionCode ${codeOf(triple)}）`;
+    : "读取中…";
+  const nextLabel = isZipManifest
+    ? `${versionName.trim() || "-"}${
+        Number.isFinite(nextCode) ? `（${Math.trunc(nextCode)}）` : ""
+      }`
+    : `${triple.major}.${triple.minor}.${triple.patch}（${codeOf(triple)}）`;
+  const previewText = `${currentLabel} → ${nextLabel}`;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content maxWidth="520px">
         <Dialog.Title>修改包体版本</Dialog.Title>
         <Dialog.Description size="2">
-          版本以包体内部为准，修改后会写回包体并统一包内所有版本字段。
+          版本以包体自身为准，修改后会更新包体。
         </Dialog.Description>
 
         <div className="mt-3 flex max-h-[var(--ui-viewport-height-60pct)] flex-col gap-3 overflow-y-auto pr-1">
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-            <div className="flex items-center gap-2 text-sm text-white/80">
-              <LockSimpleIcon size={14} weight="bold" />
-              当前包体版本：{currentText}
-            </div>
-            {info?.identity && (
-              <div className="mt-1 text-xs text-white/55">
-                包体标识：{info.identity}
-                {info.identityKind === "dial-id" ? "（表盘 ID）" : ""}
-              </div>
-            )}
-            {previousText && (
-              <div className="mt-1 text-xs text-white/55">
-                上次发布版本：{previousText}
-              </div>
-            )}
-          </div>
-
           {loading && <Text size="2" color="gray">正在读取包体版本…</Text>}
 
           {!loading && info && !info.writable && (
@@ -224,75 +188,74 @@ export function VersionEditorDialog({
           )}
 
           {!loading && isWatchfaceBin && (
-            <>
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                <Text size="1" color="gray">更新程度</Text>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button
-                    size="1"
-                    variant="soft"
-                    disabled={triple.patch >= 255}
-                    onClick={() => bump("patch")}
-                  >
-                    修订 patch
-                  </Button>
-                  <Button
-                    size="1"
-                    variant="soft"
-                    disabled={triple.minor >= 255}
-                    onClick={() => bump("minor")}
-                  >
-                    次版本 minor
-                  </Button>
-                  <Button
-                    size="1"
-                    variant="soft"
-                    disabled={triple.major >= 255}
-                    onClick={() => bump("major")}
-                  >
-                    主版本 major
-                  </Button>
-                  {atMax && <Text size="1" color="red">已达版本上限 255.255.255</Text>}
-                </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <TextField.Root
-                    className="w-20"
-                    inputMode="numeric"
-                    value={String(triple.major)}
-                    onChange={(e) =>
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <Text size="1" color="gray">更新程度</Text>
+              <div className="mt-2 flex items-end gap-2">
+                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="text-xs text-white/45">主版本</span>
+                  <ScrubbableNumberField
+                    value={triple.major}
+                    min={0}
+                    max={255}
+                    ariaLabel="主版本"
+                    onChange={(value) => {
+                      const next = Math.max(0, Math.min(255, Math.trunc(value)));
+                      setTriple((prev) =>
+                        next > prev.major
+                          ? { major: next, minor: 0, patch: 0 }
+                          : { ...prev, major: next },
+                      );
+                    }}
+                  />
+                </label>
+                <span className="pb-2 text-white/50">.</span>
+                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="text-xs text-white/45">次版本</span>
+                  <ScrubbableNumberField
+                    value={triple.minor}
+                    min={0}
+                    max={255}
+                    ariaLabel="次版本"
+                    onChange={(value) => {
+                      const next = Math.max(0, Math.min(255, Math.trunc(value)));
+                      setTriple((prev) =>
+                        next > prev.minor
+                          ? { ...prev, minor: next, patch: 0 }
+                          : { ...prev, minor: next },
+                      );
+                    }}
+                  />
+                </label>
+                <span className="pb-2 text-white/50">.</span>
+                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="text-xs text-white/45">修订</span>
+                  <ScrubbableNumberField
+                    value={triple.patch}
+                    min={0}
+                    max={255}
+                    ariaLabel="修订"
+                    onChange={(value) =>
                       setTriple((prev) => ({
                         ...prev,
-                        major: Math.max(0, Math.min(255, Number(e.target.value) || 0)),
+                        patch: Math.max(0, Math.min(255, Math.trunc(value))),
                       }))
                     }
                   />
-                  <span className="text-white/50">.</span>
-                  <TextField.Root
-                    className="w-20"
-                    inputMode="numeric"
-                    value={String(triple.minor)}
-                    onChange={(e) =>
-                      setTriple((prev) => ({
-                        ...prev,
-                        minor: Math.max(0, Math.min(255, Number(e.target.value) || 0)),
-                      }))
-                    }
-                  />
-                  <span className="text-white/50">.</span>
-                  <TextField.Root
-                    className="w-20"
-                    inputMode="numeric"
-                    value={String(triple.patch)}
-                    onChange={(e) =>
-                      setTriple((prev) => ({
-                        ...prev,
-                        patch: Math.max(0, Math.min(255, Number(e.target.value) || 0)),
-                      }))
-                    }
-                  />
-                </div>
+                </label>
               </div>
-            </>
+              {atMax && (
+                <Text size="1" color="red">已达版本上限 255.255.255</Text>
+              )}
+              <div className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-white/50">
+                <p className="mb-1 text-white/65">更新程度怎么选</p>
+                <p>• 修订：修点小问题、细节调整（1.2.3 → 1.2.4）</p>
+                <p>• 次版本：有新的内容或功能（1.2.3 → 1.3.0）</p>
+                <p>• 主版本：整体大改版（1.2.3 → 2.0.0）</p>
+                <p className="mt-1">
+                  每次发布新包体都要让版本比上一版大，否则用户收不到更新。
+                </p>
+              </div>
+            </div>
           )}
 
           {!loading && isZipManifest && (
@@ -318,7 +281,7 @@ export function VersionEditorDialog({
 
           <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
             <Text size="1" color="gray">预览</Text>
-            <div className="mt-1 text-sm text-white/85">{previewText}</div>
+            <div className="mt-1 break-all text-sm text-white/85">{previewText}</div>
           </div>
 
           {validationError && !loading && (
