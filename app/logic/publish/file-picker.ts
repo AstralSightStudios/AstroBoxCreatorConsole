@@ -1,3 +1,4 @@
+import { basename as tauriBasename } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { isTauriRuntime } from "~/logic/update/update-checker";
@@ -5,13 +6,17 @@ import { isTauriRuntime } from "~/logic/update/update-checker";
 /** 从 content:// 或绝对路径中提取文件名（兼容带查询参数与 URL 编码）。 */
 export function basenameFromPath(path: string): string {
   const clean = path.split("?")[0].split("#")[0];
-  const segments = clean.split(/[\\/]/);
-  const raw = segments[segments.length - 1] || "file";
+  let decoded = clean;
   try {
-    return decodeURIComponent(raw);
+    decoded = decodeURIComponent(clean);
   } catch {
-    return raw;
+    // 编码非法时退回原始字符串
   }
+  const segments = decoded.split(/[\\/]/);
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    if (segments[i]) return segments[i];
+  }
+  return "file";
 }
 
 /** 根据扩展名推断 MIME 类型，供构造内存 File 与后续指纹/上传使用。 */
@@ -26,8 +31,106 @@ export function mimeFromName(name: string): string {
     bmp: "image/bmp",
     svg: "image/svg+xml",
     avif: "image/avif",
+    heic: "image/heic",
+    heif: "image/heif",
   };
   return mimes[ext] || "application/octet-stream";
+}
+
+function startsWithBytes(bytes: Uint8Array, magic: number[]): boolean {
+  if (bytes.length < magic.length) return false;
+  for (let i = 0; i < magic.length; i += 1) {
+    if (bytes[i] !== magic[i]) return false;
+  }
+  return true;
+}
+
+function asciiAt(bytes: Uint8Array, offset: number, text: string): boolean {
+  if (bytes.length < offset + text.length) return false;
+  for (let i = 0; i < text.length; i += 1) {
+    if (bytes[offset + i] !== text.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+function sniffSvg(bytes: Uint8Array): boolean {
+  let start = 0;
+  if (startsWithBytes(bytes, [0xef, 0xbb, 0xbf])) start = 3;
+  while (
+    start < bytes.length &&
+    (bytes[start] === 0x20 ||
+      bytes[start] === 0x09 ||
+      bytes[start] === 0x0a ||
+      bytes[start] === 0x0d)
+  ) {
+    start += 1;
+  }
+  if (asciiAt(bytes, start, "<svg")) return true;
+  if (!asciiAt(bytes, start, "<?xml")) return false;
+  const head = new TextDecoder().decode(
+    bytes.subarray(start, Math.min(bytes.length, start + 256)),
+  );
+  return /<svg[\s>]/i.test(head);
+}
+
+/**
+ * 依据文件头魔数推断扩展名，识别失败返回 null。
+ * 用于原生选择器返回无后缀路径时补全（如 Android MediaStore 的 content://
+ * 路径末段只有数字 ID，直接取 basename 会丢失 .png 等后缀）。
+ */
+export function sniffExtension(bytes: Uint8Array): string | null {
+  if (startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47])) return "png";
+  if (startsWithBytes(bytes, [0xff, 0xd8, 0xff])) return "jpg";
+  if (startsWithBytes(bytes, [0x47, 0x49, 0x46, 0x38])) return "gif";
+  if (startsWithBytes(bytes, [0x42, 0x4d])) return "bmp";
+  if (startsWithBytes(bytes, [0x52, 0x49, 0x46, 0x46]) && asciiAt(bytes, 8, "WEBP")) {
+    return "webp";
+  }
+  if (asciiAt(bytes, 4, "ftyp")) {
+    if (asciiAt(bytes, 8, "avif") || asciiAt(bytes, 8, "avis")) return "avif";
+    if (
+      asciiAt(bytes, 8, "heic") ||
+      asciiAt(bytes, 8, "heix") ||
+      asciiAt(bytes, 8, "hevc") ||
+      asciiAt(bytes, 8, "mif1") ||
+      asciiAt(bytes, 8, "msf1")
+    ) {
+      return "heic";
+    }
+  }
+  if (sniffSvg(bytes)) return "svg";
+  return null;
+}
+
+const EXTENSION_PATTERN = /\.[A-Za-z0-9]{1,8}$/;
+
+/** 文件名缺少后缀时按文件头补全；已有后缀或无法识别则原样返回。 */
+export function ensureFileNameExtension(name: string, bytes: Uint8Array): string {
+  if (EXTENSION_PATTERN.test(name)) return name;
+  const ext = sniffExtension(bytes);
+  return ext ? `${name}.${ext}` : name;
+}
+
+/**
+ * 解析选中文件的真实文件名。
+ *
+ * Android 的图片选择器返回的是 `content://media/.../media/<数字ID>` 这类 URI，
+ * 直接取路径末段只能得到数字 ID，会丢掉 `.png` 等后缀。优先调用
+ * `@tauri-apps/api/path` 的 `basename`（其底层在 Android 上通过 PathPlugin
+ * 查询 `OpenableColumns.DISPLAY_NAME`，返回真实文件名，覆盖所有文件类型）；
+ * 拿不到或仍无后缀时，再按文件头魔数补全，保证上传路径带后缀。
+ */
+async function resolvePickedFileName(
+  path: string,
+  bytes: Uint8Array,
+): Promise<string> {
+  try {
+    const resolved = await tauriBasename(path);
+    if (resolved) return ensureFileNameExtension(resolved, bytes);
+  } catch {
+    // 原生解析失败时退回路径解析
+  }
+  return ensureFileNameExtension(basenameFromPath(path), bytes);
 }
 
 /**
@@ -37,8 +140,8 @@ export function mimeFromName(name: string): string {
  */
 async function pathToFile(path: string): Promise<File> {
   const bytes = await readFile(path);
-  const name = basenameFromPath(path);
   const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const name = await resolvePickedFileName(path, buffer);
   return new File([buffer], name, { type: mimeFromName(name) });
 }
 
