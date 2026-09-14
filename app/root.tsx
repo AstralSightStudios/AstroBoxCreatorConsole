@@ -7,6 +7,7 @@ import UiScaleShell from "./components/UiScaleShell";
 import PageTransition from "./components/transition/page-transition";
 import Nav from "./layout/nav";
 import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
+import AutoBetaUpdateChecker from "./components/update/AutoBetaUpdateChecker";
 import BroadcastDialogHost from "./components/announcement/BroadcastDialogHost";
 import AfdianMessageNotificationHost from "./components/afdian/AfdianMessageNotificationHost";
 import AfdianAiAutoReplyHost from "./components/afdian/AfdianAiAutoReplyHost";
@@ -58,6 +59,7 @@ export default function RootLayout() {
             <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
                 <AstroboxAccountRefresher />
                 <AutoUpdateChecker />
+                <AutoBetaUpdateChecker />
                 <BroadcastDialogHost />
                 <AfdianMessageNotificationHost />
                 <AfdianAiAutoReplyHost />

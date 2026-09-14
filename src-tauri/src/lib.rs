@@ -222,6 +222,53 @@ async fn write_text_file(path: String, content: String) -> Result<(), String> {
     fs::write(path_buf, content).map_err(|err| err.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadFileRequest {
+    url: String,
+    #[serde(default)]
+    headers: Option<HashMap<String, String>>,
+    target_path: String,
+}
+
+// Download a remote file (with optional auth headers) and write it straight to
+// disk. Used for GitHub Actions artifacts, which require a token even on public
+// repositories and are too large to shuttle through the IPC as base64.
+#[tauri::command]
+async fn download_file(
+    http_client: tauri::State<'_, AppHttpClient>,
+    request: DownloadFileRequest,
+) -> Result<u64, String> {
+    if !request.url.starts_with("https://") {
+        return Err("Only https URLs are allowed".into());
+    }
+
+    let mut builder = http_client.0.get(&request.url);
+    if let Some(headers) = request.headers {
+        for (key, value) in headers {
+            builder = builder.header(&key, value);
+        }
+    }
+
+    let response = builder
+        .header("User-Agent", "AstroBoxCreatorConsole")
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("download failed ({status})"));
+    }
+
+    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+    let path_buf = PathBuf::from(&request.target_path);
+    if let Some(parent) = path_buf.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(&path_buf, &bytes).map_err(|err| err.to_string())?;
+    Ok(bytes.len() as u64)
+}
+
 #[tauri::command]
 fn set_ui_scale_active(app: tauri::AppHandle, active: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -295,6 +342,7 @@ pub fn run() {
             encrypt_aes_256_ecb,
             app_build_info,
             write_text_file,
+            download_file,
             set_ui_scale_active,
             fetch_media,
             logger::frontend_log,

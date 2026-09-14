@@ -60,14 +60,18 @@ import {
   type NavItemPreferences,
 } from "~/config/nav";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
+import BetaUpdateAvailableDialog from "~/components/update/BetaUpdateAvailableDialog";
 import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
 import AfdianAiAutoReplySection from "~/components/settings/AfdianAiAutoReplySection";
 import {
   checkForUpdate,
+  fetchLatestArtifact,
   isTauriRuntime,
   useUpdateCheckDisabled,
   type UpdateInfo,
+  type BetaArtifactInfo,
 } from "~/logic/update/update-checker";
+import { useBetaUpdateEnabled } from "~/config/betaUpdate";
 import Page from "~/layout/page";
 import {
   hasRequiredNavRole,
@@ -798,9 +802,13 @@ export default function Settings() {
     navItemPreferences.itemOrder.length > 0;
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [autoCheckDisabled, setAutoCheckDisabled] = useUpdateCheckDisabled();
+  const [betaUpdateEnabled, setBetaUpdateEnabled] = useBetaUpdateEnabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [betaUpdateInfo, setBetaUpdateInfo] = useState<BetaArtifactInfo | null>(null);
+  const [betaUpdateDialogOpen, setBetaUpdateDialogOpen] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [checkingBetaUpdate, setCheckingBetaUpdate] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -880,6 +888,32 @@ export default function Settings() {
       );
     } finally {
       setCheckingUpdate(false);
+    }
+  };
+
+  const handleCheckBetaUpdate = async () => {
+    if (checkingBetaUpdate) return;
+    if (!isTauriRuntime() && !appVersion) {
+      toast.info("Beta 更新检测仅支持桌面端应用。");
+      return;
+    }
+    setCheckingBetaUpdate(true);
+    try {
+      // 手动检查绕过缓存，获取最新构建
+      const latest = await fetchLatestArtifact({ force: true });
+      if (!latest) {
+        toast.info("未找到可用的 GitHub Actions 构建产物。");
+        return;
+      }
+      // 手动检查无视「忽略此构建」，始终弹出
+      setBetaUpdateInfo(latest);
+      setBetaUpdateDialogOpen(true);
+    } catch (err) {
+      toast.error(
+        `检查 Beta 更新失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setCheckingBetaUpdate(false);
     }
   };
 
@@ -1066,9 +1100,7 @@ export default function Settings() {
               type="button"
               onClick={() => void handleCheckUpdate()}
               disabled={checkingUpdate}
-              className={`group flex w-full items-center gap-3 px-2 py-3 text-left hover:bg-white/[0.035] ${
-                autoCheckDisabled ? "" : "border-b border-white/[0.06]"
-              }`}
+              className={`group flex w-full items-center gap-3 px-2 py-3 text-left hover:bg-white/[0.035] border-b border-white/[0.06]`}
             >
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="text-[13.5px] font-medium text-white">
@@ -1095,7 +1127,36 @@ export default function Settings() {
               subtitle="启动时自动检测新版本并弹窗提示"
               checked={!autoCheckDisabled}
               onChange={(next) => setAutoCheckDisabled(!next)}
-              last
+            />
+            <button
+              type="button"
+              onClick={() => void handleCheckBetaUpdate()}
+              disabled={checkingBetaUpdate || !betaUpdateEnabled}
+              className={`group flex w-full items-center gap-3 px-2 py-3 text-left hover:bg-white/[0.035] border-b border-white/[0.06] ${!betaUpdateEnabled ? "opacity-50" : ""}`}
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="text-[13.5px] font-medium text-white">
+                  检查 Beta 更新 (Actions Artifacts)
+                  {checkingBetaUpdate ? "…" : ""}
+                </span>
+                <span className="truncate text-[12px] text-white/45">
+                  检测 GitHub Actions 最新构建产物
+                </span>
+              </div>
+              {checkingBetaUpdate ? (
+                <Spinner size="1" />
+              ) : (
+                <ArrowUpRightIcon
+                  size={15}
+                  className="shrink-0 text-white/30 transition group-hover:text-white/65"
+                />
+              )}
+            </button>
+            <ToggleRow
+              title="启用 Beta 更新检测"
+              subtitle="检测 GitHub Actions 构建产物而非正式 Release（默认关闭）"
+              checked={betaUpdateEnabled}
+              onChange={setBetaUpdateEnabled}
             />
             <LinkRow
               title="用户协议"
@@ -1124,6 +1185,12 @@ export default function Settings() {
           info={updateInfo}
           open={updateDialogOpen}
           onOpenChange={setUpdateDialogOpen}
+        />
+
+        <BetaUpdateAvailableDialog
+          info={betaUpdateInfo}
+          open={betaUpdateDialogOpen}
+          onOpenChange={setBetaUpdateDialogOpen}
         />
       </div>
     </Page>
