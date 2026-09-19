@@ -24,10 +24,7 @@ import {
   xiaomiVersionCodeFromVersion,
 } from "~/logic/publish/package-version";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
-import {
-  listSellerResourceConfigs,
-  listSellerResourceFileKeys,
-} from "~/api/astrobox/order";
+import { AdminApi } from "~/api/astrobox/admin";
 import {
   checkPaidFreeRatioForAuthor,
   type PaidRatioResult,
@@ -996,11 +993,14 @@ export async function runResourceRuleChecks(options: {
     let cryptoCheckError = "";
     if (astroboxToken && cryptoResourceId) {
       try {
-        const [fileKeys, configs] = await Promise.all([
-          listSellerResourceFileKeys({ resourceId: cryptoResourceId, limit: 500 }, astroboxToken),
-          listSellerResourceConfigs({ resourceId: cryptoResourceId }, astroboxToken),
-        ]);
-        encryptedDeviceSet = new Set(fileKeys.map((k) => k.deviceId));
+        // 审核人不是资源作者，卖家专属接口会因所有权校验返回
+        // “Resource is not owned by seller”。此处改用管理员接口按资源 ID 查询，
+        // 该接口返回该资源的 fileKeys / skus，审核人可用。
+        const configs = await AdminApi.orders.resourceConfigs({
+          resourceId: cryptoResourceId,
+          limit: 500,
+        });
+        encryptedDeviceSet = new Set(configs.fileKeys.map((k) => k.deviceId));
         mappedDeviceSet = new Set(
           configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
         );
