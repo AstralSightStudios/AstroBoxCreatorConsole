@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { loadAccountState } from "~/logic/account/store";
+import {
+  GITHUB_RAW_ACCEPT,
+  isTauriRuntime,
+  rawGithubUrlToApiUrl,
+  toProxiedApiUrl,
+} from "~/logic/github-raw";
 
 interface FetchMediaResponse {
   status: number;
@@ -11,27 +17,11 @@ interface FetchMediaResponse {
 const blobUrlCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
-const RAW_ORIGIN = "https://raw.githubusercontent.com";
-
-function toProxiedRawUrl(url: string): string {
-  if (inTauri()) return url;
-  return url.startsWith(RAW_ORIGIN) ? url.replace(RAW_ORIGIN, "/github-raw") : url;
-}
-
 function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
-}
-
-function inTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function authHeader(): Record<string, string> {
-  const token = loadAccountState().github?.token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function fetchProxiedMediaUrl(url: string): Promise<string> {
@@ -43,12 +33,22 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
   const pending = inflight.get(url);
   if (pending) return pending;
 
-  const headers = authHeader();
+  // GitHub raw 链接一律走带鉴权的 Contents API，不再回退匿名 raw CDN；
+  // 非 GitHub 链接直接取回（不携带 token，避免泄露到第三方）。
+  const apiUrl = rawGithubUrlToApiUrl(url);
+  const requestUrl = apiUrl ?? url;
+  const headers: Record<string, string> = {};
+  if (apiUrl) {
+    const token = loadAccountState().github?.token;
+    if (!token) throw new Error("未登录 GitHub，无法获取资源内容。");
+    headers.Authorization = `Bearer ${token}`;
+    headers.Accept = GITHUB_RAW_ACCEPT;
+  }
 
   const job = (async () => {
-    if (inTauri()) {
+    if (isTauriRuntime()) {
       const result = await invoke<FetchMediaResponse>("fetch_media", {
-        request: { url, headers },
+        request: { url: requestUrl, headers },
       });
       const bytes = base64ToBytes(result.body_base64);
       const blob = new Blob([bytes.buffer as ArrayBuffer], {
@@ -59,7 +59,7 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
       return blobUrl;
     }
 
-    const response = await fetch(toProxiedRawUrl(url), { headers });
+    const response = await fetch(toProxiedApiUrl(requestUrl), { headers });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
@@ -93,14 +93,15 @@ export function useProxiedMediaUrl(url: string | undefined) {
         if (!cancelled) setResolved(next);
       })
       .catch(() => {
-        if (!cancelled) setResolved(toProxiedRawUrl(url));
+        // 鉴权取回失败时不再回退 raw CDN，保持空状态。
+        if (!cancelled) setResolved("");
       });
     return () => {
       cancelled = true;
     };
   }, [url]);
 
-  return resolved || (url ? toProxiedRawUrl(url) : "");
+  return resolved;
 }
 
 export function clearMediaProxyCache() {

@@ -38,11 +38,15 @@ function decodeBase64(content?: string) {
 }
 
 export function buildRawFileUrl(owner: string, repo: string, ref: string, path: string) {
-    const encodedPath = path
+    const safeOwner = (owner || "").trim();
+    const safeRepo = (repo || "").trim();
+    // 提交哈希可能为空白字符串，直接拼进 URL 会产生带空格的非法地址。
+    const safeRef = (ref || "").trim() || MAIN_RESOURCE_BRANCH;
+    const encodedPath = (path || "")
         .split("/")
         .map((part) => encodeURIComponent(part))
         .join("/");
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${encodedPath}`;
+    return `https://raw.githubusercontent.com/${safeOwner}/${safeRepo}/${safeRef}/${encodedPath}`;
 }
 
 export async function fetchManifestForCatalogEntry(options: {

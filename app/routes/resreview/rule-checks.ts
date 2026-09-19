@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import {
+  GITHUB_RAW_ACCEPT,
+  isTauriRuntime,
+  rawGithubUrlToApiUrl,
+  toProxiedApiUrl,
+} from "~/logic/github-raw";
+import { fetchProxiedMediaUrl } from "~/logic/media-proxy";
 import { listRepoFileSizesAtCommit, type GithubPullFile } from "~/api/github/pr-review";
 import {
   loadDeviceOptions,
@@ -251,19 +258,8 @@ export function scanPatchForGarbled(files: GithubPullFile[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// 字节获取（Tauri fetch_media / Web 代理，支持 Range 截断）
+// 字节获取（GitHub Contents API 鉴权拉取，规避 raw CDN 限流）
 // ---------------------------------------------------------------------------
-
-function inTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-const RAW_ORIGIN = "https://raw.githubusercontent.com";
-
-function toProxiedRawUrl(url: string): string {
-  if (inTauri()) return url;
-  return url.startsWith(RAW_ORIGIN) ? url.replace(RAW_ORIGIN, "/github-raw") : url;
-}
 
 function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -278,43 +274,64 @@ interface FetchMediaResponse {
   body_base64: string;
 }
 
-export async function fetchResourceBytes(
+async function fetchBytes(
   url: string,
-  token: string,
+  headers: Record<string, string>,
   maxBytes?: number,
 ): Promise<Uint8Array> {
-  const authHeaders: Record<string, string> = token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
-
-  if (inTauri()) {
+  if (isTauriRuntime()) {
     // fetch_media 不支持 Range，拉取完整 body 后按需截断。
     const result = await invoke<FetchMediaResponse>("fetch_media", {
-      request: { url, headers: token ? authHeaders : undefined },
+      request: { url, headers },
     });
     let bytes = base64ToBytes(result.body_base64);
     if (maxBytes != null && bytes.length > maxBytes) bytes = bytes.subarray(0, maxBytes);
     return bytes;
   }
 
-  const reqHeaders: Record<string, string> = { ...authHeaders };
-  if (maxBytes != null) reqHeaders.Range = `bytes=0-${maxBytes - 1}`;
-  const response = await fetch(toProxiedRawUrl(url), { headers: reqHeaders });
+  const response = await fetch(toProxiedApiUrl(url), { headers });
   if (!response.ok && response.status !== 206) {
     throw new Error(`HTTP ${response.status}`);
   }
   const buffer = await response.arrayBuffer();
-  return new Uint8Array(buffer);
+  let bytes = new Uint8Array(buffer);
+  if (maxBytes != null && bytes.length > maxBytes) bytes = bytes.subarray(0, maxBytes);
+  return bytes;
+}
+
+export async function fetchResourceBytes(
+  url: string,
+  token: string,
+  maxBytes?: number,
+): Promise<Uint8Array> {
+  // 审核入口已强制 GitHub 登录：一律走带鉴权的 Contents API
+  // （Accept: application/vnd.github.raw），不再回退到匿名 raw CDN。
+  if (!token) throw new Error("未登录 GitHub，无法获取资源内容。");
+  const apiUrl = rawGithubUrlToApiUrl(url);
+  if (!apiUrl) throw new Error(`不是 GitHub 资源链接，无法鉴权获取：${url}`);
+  return fetchBytes(
+    apiUrl,
+    { Accept: GITHUB_RAW_ACCEPT, Authorization: `Bearer ${token}` },
+    maxBytes,
+  );
 }
 
 /**
  * 通过 Image 元素加载图片获取真实像素尺寸（用于宽高比校验）。
- * Tauri 直接用 raw URL；Web 走 /github-raw 同源代理避免 CORS。
+ * 先经 media-proxy 带鉴权取回 blob（走 Contents API），再交给 Image 读取尺寸，
+ * 避免直接请求 raw CDN 被限流。
  */
-function loadImageDimensions(
-  url: string,
+async function loadImageDimensions(
+  rawUrl: string,
   timeoutMs = 12_000,
 ): Promise<{ width: number; height: number } | undefined> {
+  let displayUrl: string;
+  try {
+    displayUrl = await fetchProxiedMediaUrl(rawUrl);
+  } catch {
+    // 鉴权取回失败（未登录/超限）时不再回退 raw CDN，直接放弃尺寸探测。
+    return undefined;
+  }
   return new Promise((resolve) => {
     if (typeof Image === "undefined") {
       resolve(undefined);
@@ -336,7 +353,7 @@ function loadImageDimensions(
           : undefined,
       );
     img.onerror = () => finish(undefined);
-    img.src = url;
+    img.src = displayUrl;
     setTimeout(() => finish(undefined), timeoutMs);
   });
 }
@@ -1345,7 +1362,7 @@ export async function runResourceRuleChecks(options: {
       .filter((img) => img.label === "icon" || img.label === "cover")
       .map(async (img) => {
         if (!img.url) return;
-        const dims = await loadImageDimensions(toProxiedRawUrl(img.url));
+        const dims = await loadImageDimensions(img.url);
         if (!dims) return;
         img.width = dims.width;
         img.height = dims.height;
