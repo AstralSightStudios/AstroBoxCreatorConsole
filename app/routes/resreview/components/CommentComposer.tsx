@@ -180,8 +180,11 @@ export function CommentComposer({
     }
     // 标签必须始终位于 body 开头：submitComment 与 deriveReviewStatus 都以
     // `^\s*\[ABCC_NEEDFIX` 识别是否走 REQUEST_CHANGES review 与状态推导。
+    // 非编辑状态在提交瞬间生成全新 tagId，避免同一 Composer 连续提交时复用
+    // 同一序号（会导致 deriveReviewStatus 按 id 合并条目、通知幂等键互相覆盖）。
     if (tagEnabled) {
-      body = `[ABCC_NEEDFIX_${tagIdRef.current}] ${body}`;
+      const tagId = editingTarget ? tagIdRef.current : makeNeedFixId();
+      body = `[ABCC_NEEDFIX_${tagId}] ${body}`;
     }
     onSubmit(body);
   };
