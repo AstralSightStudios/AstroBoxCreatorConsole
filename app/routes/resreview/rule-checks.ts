@@ -1053,6 +1053,32 @@ export async function runResourceRuleChecks(options: {
         return parts.join("；");
       })(),
     });
+
+    // --- check: 启用购买与加密功能但未使用 CC 加密 ---
+    // 该开关只应在确实使用 CC 加密（服务端存在加密文件密钥）时开启。
+    // 否则客户端进入详情页会先请求 purchase_info，失败后才回退普通下载。
+    const noEncryptionUsed =
+      !cryptoCheckError &&
+      encryptedDeviceSet !== null &&
+      encryptedDeviceSet.size === 0;
+    checks.push({
+      title: "启用购买与加密功能但未使用 CC 加密（enableAstroBoxCreatorFeatures）",
+      status: (() => {
+        if (!astroboxToken) return "manual";
+        if (!cryptoResourceId) return "warn";
+        if (cryptoCheckError) return "manual";
+        return noEncryptionUsed ? "fail" : "pass";
+      })(),
+      detail: (() => {
+        if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
+        if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
+        if (!cryptoResourceId)
+          return "manifest 缺少资源 ID，无法查询服务端配置";
+        if (noEncryptionUsed)
+          return "未登记任何加密文件密钥，却开启了购买与加密功能；客户端会先请求 purchase_info，失败后才回退普通下载。若未使用 CC 加密请关闭该开关。";
+        return "已登记加密文件密钥，购买与加密功能使用正常";
+      })(),
+    });
   }
 
   // --- check: manifest downloads 设备标识有效性 ---
