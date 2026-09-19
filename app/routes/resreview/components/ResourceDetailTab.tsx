@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
-import { Globe, Link as LinkIcon, YoutubeLogo, GithubLogo, TwitterLogo, DiscordLogo, MapPin, Play, ShoppingCart, File, Cube, Storefront } from "@phosphor-icons/react";
+import { useNavigate } from "react-router";
 import { useAccountState } from "~/logic/account/store";
+import { PhosphorIconByName } from "~/components/phosphor-icon";
 import { formatResourceType } from "~/logic/publish/resource-type";
 import {
   useAuthorsProStatuses,
@@ -65,28 +66,6 @@ function renderTextWithLinks(value: string): string {
   );
 }
 
-const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  globe: Globe,
-  link: LinkIcon,
-  youtube: YoutubeLogo,
-  github: GithubLogo,
-  twitter: TwitterLogo,
-  discord: DiscordLogo,
-  map: MapPin,
-  play: Play,
-  cart: ShoppingCart,
-  file: File,
-  cube: Cube,
-  store: Storefront,
-  storefront: Storefront,
-};
-
-function resolveLinkIcon(iconName?: string) {
-  if (!iconName) return null;
-  const key = iconName.trim().toLowerCase().replace(/[_-]/g, "");
-  return ICON_MAP[key] || null;
-}
-
 export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, resources.length - 1));
@@ -126,6 +105,7 @@ export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[
 // --- Full Resource Detail View ---
 
 function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
+  const navigate = useNavigate();
   const manifest = resource.manifest;
   const manifestItem = manifest?.item;
   const entry = resource.entry;
@@ -252,23 +232,59 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               <span className="text-xs text-white/55">作者</span>
               <div className="flex flex-col gap-1">
                 {authors.length > 0 ? (
-                  authors.map((author, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
-                    >
-                      <span className="min-w-0 break-all text-white">{author.name}</span>
-                      {author.bindABAccount ? (
-                        <ProBadge
-                          status={authorProStatuses[author.name] ?? { state: "loading" }}
-                        />
-                      ) : (
-                        <span className="ml-auto shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">
-                          未绑定
-                        </span>
-                      )}
-                    </div>
-                  ))
+                  authors.map((author, i) => {
+                    const status = author.bindABAccount
+                      ? authorProStatuses[author.name] ?? { state: "loading" as const }
+                      : null;
+                    const user = status?.state === "found" ? status.user : null;
+                    const canOpen = Boolean(user?.userId);
+                    const avatar = user?.avatar || "";
+                    return (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                      >
+                        {canOpen ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                `/admin/accounts?userId=${encodeURIComponent(user!.userId)}`,
+                              )
+                            }
+                            title="查看 AstroBox 账户详情"
+                            className="group flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            {avatar ? (
+                              <img
+                                src={avatar}
+                                alt=""
+                                className="h-7 w-7 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-xs text-white/50">
+                                {author.name.slice(0, 1)}
+                              </span>
+                            )}
+                            <span className="min-w-0 break-all text-white transition group-hover:text-blue-300 group-hover:underline">
+                              {author.name}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="min-w-0 flex-1 break-all text-white">
+                            {author.name}
+                          </span>
+                        )}
+                        {status ? (
+                          <ProBadge status={status} />
+                        ) : (
+                          <span className="ml-auto shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">
+                            未绑定
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
                 ) : (
                   <span className="text-xs text-white/45">未填写作者</span>
                 )}
@@ -280,23 +296,24 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
                 <span className="text-xs text-white/55">链接</span>
                 <div className="flex flex-col gap-1">
-                  {links.map((link, i) => {
-                    const IconComp = resolveLinkIcon(link.icon);
-                    return (
-                      <a
-                        key={i}
-                        href={link.url || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 hover:bg-white/10 transition"
-                      >
-                        {IconComp ? (
-                          <IconComp size={18} className="shrink-0 text-white/55" />
-                        ) : null}
-                        <span className="min-w-0 break-all text-white">{link.title || link.url}</span>
-                      </a>
-                    );
-                  })}
+                  {links.map((link, i) => (
+                    <a
+                      key={i}
+                      href={link.url || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 hover:bg-white/10 transition"
+                    >
+                      {link.icon ? (
+                        <PhosphorIconByName
+                          name={link.icon}
+                          size={18}
+                          className="shrink-0 text-white/55"
+                        />
+                      ) : null}
+                      <span className="min-w-0 break-all text-white">{link.title || link.url}</span>
+                    </a>
+                  ))}
                 </div>
               </div>
             )}

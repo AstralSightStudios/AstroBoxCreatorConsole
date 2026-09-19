@@ -1,7 +1,8 @@
 import { Badge, Button, IconButton, Select, Spinner, Tabs, Tooltip } from "~/components/ScaleAwareThemes";
 import { CaretLeft, CopyIcon, GithubLogoIcon, ArrowSquareOutIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import {
   AdminApi,
@@ -179,7 +180,17 @@ export default function AdminAccountsPage() {
     useState<(typeof BAN_STATUS_OPTIONS)[number]>("any");
   const [manageTab, setManageTab] = useState<"ban" | "vip" | "roles">("ban");
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
-  const [openUserId, setOpenUserId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openUserId = searchParams.get("userId");
+  const setOpenUserId = useCallback(
+    (userId: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (userId) next.set("userId", userId);
+      else next.delete("userId");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
   const [orders, setOrders] = useState<VipOrder[]>([]);
   const [loading, setLoading] = useState(false);

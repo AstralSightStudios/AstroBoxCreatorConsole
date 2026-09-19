@@ -14,10 +14,8 @@ import {
   TextField,
 } from "~/components/ScaleAwareThemes";
 import {
-  type ComponentType,
   type Dispatch,
   type SetStateAction,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -25,23 +23,15 @@ import { type AuthorInput, type LinkInput } from "./types";
 import { SectionCard } from "./shared";
 import { PHOSPHOR_ICON_NAMES } from "~/routes/resreview/phosphor-icons";
 import {
+  PhosphorIconByName,
+  phosphorIconNameToPascal,
+} from "~/components/phosphor-icon";
+import {
   normalizeLinkUrl,
   validateLink,
 } from "~/logic/publish/validation";
 import { log } from "~/logic/logging";
 import { logFieldChange } from "~/logic/logging/publish-flow";
-
-const iconNameToPascal = (name: string): string =>
-  name
-    .split("-")
-    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
-    .join("");
-
-type PhosphorIconComponent = ComponentType<{ size?: number; className?: string }>;
-
-const phosphorIconModules = import.meta.glob<Record<string, PhosphorIconComponent>>(
-  "/node_modules/@phosphor-icons/react/dist/csr/*.es.js",
-);
 
 function isSubsequence(needle: string, haystack: string): boolean {
     let cursor = 0;
@@ -163,7 +153,7 @@ function searchIcons(names: readonly string[], rawQuery: string): string[] {
     }
     return names
         .map((name) => {
-            const pascalName = iconNameToPascal(name);
+            const pascalName = phosphorIconNameToPascal(name);
             const matchScore = tokens.reduce(
                 (sum, token) => sum + iconMatchScore(name, pascalName, token),
                 0,
@@ -177,49 +167,6 @@ function searchIcons(names: readonly string[], rawQuery: string): string[] {
         .filter((option) => option.matched)
         .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
         .map((option) => option.name);
-}
-
-function PhosphorIconByName({
-  name,
-  size = 16,
-  className,
-}: {
-  name: string;
-  size?: number;
-  className?: string;
-}) {
-  const [Component, setComponent] = useState<
-    ComponentType<{ size?: number; className?: string }> | null
-  >(null);
-
-  useEffect(() => {
-    let active = true;
-    const modulePath = `/node_modules/@phosphor-icons/react/dist/csr/${iconNameToPascal(
-      name,
-    )}.es.js`;
-    const loader = phosphorIconModules[modulePath];
-    if (!loader) {
-      setComponent(null);
-      return;
-    }
-    loader()
-      .then((module) => {
-        if (!active) return;
-        const pascalName = iconNameToPascal(name);
-        const component =
-          module[`${pascalName}Icon`] || module[pascalName] || null;
-        setComponent(() => component);
-      })
-      .catch(() => {
-        if (active) setComponent(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [name]);
-
-  if (!Component) return <span className="grid size-5 place-items-center" />;
-  return <Component size={size} className={`text-white ${className ?? ""}`} />;
 }
 
 interface AuthorsLinksSectionProps {
@@ -461,7 +408,7 @@ export function AuthorsLinksSection({
                     }}
                   >
                     {link.icon ? (
-                      <PhosphorIconByName name={link.icon} size={16} />
+                      <PhosphorIconByName name={link.icon} size={16} className="text-white" />
                     ) : (
                       <BinocularsIcon size={15} />
                     )}
@@ -621,7 +568,7 @@ export function AuthorsLinksSection({
                   }}
                 >
                   <span className="grid size-10 shrink-0 place-items-center text-white">
-                    <PhosphorIconByName name={name} size={24} />
+                    <PhosphorIconByName name={name} size={24} className="text-white" />
                   </span>
                   <span className="w-full truncate">{name}</span>
                 </button>
