@@ -1391,61 +1391,109 @@ export async function runResourceRuleChecks(options: {
     detail: linkResult.detail,
   });
 
-  // --- check: 作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益 ---
+  // --- check: 作者绑定 AstroBox 声明有效 ---
+  // 只校验「声明已绑定 AstroBox」的作者能否匹配到真实账户，与 Creator Pro 权益分开。
   const rawAuthors = manifestItem?.author;
   const authorsList = Array.isArray(rawAuthors) ? rawAuthors : [];
-  const boundNames = authorsList
+  const declaredBoundNames = authorsList
     .filter((a) => a && a.bindABAccount && typeof a.name === "string" && a.name.trim())
+    .map((a) => (a as { name: string }).name.trim());
+  const declaredUnboundNames = authorsList
+    .filter((a) => a && !a.bindABAccount && typeof a.name === "string" && a.name.trim())
     .map((a) => (a as { name: string }).name.trim());
 
   let paidRatioResults: PaidRatioResult[] = [];
   let resolvedAuthorStatuses: Record<string, AuthorProStatus> | null = null;
 
-  if (boundNames.length === 0) {
+  if (declaredBoundNames.length === 0) {
     checks.push({
-      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
+      title: "作者绑定 AstroBox 声明有效",
       status: "pass",
-      detail: "无声明已绑定 AstroBox 的作者",
+      detail:
+        declaredUnboundNames.length > 0
+          ? `无作者声明绑定 AstroBox；未声明绑定：${declaredUnboundNames.join("、")}`
+          : "无作者声明绑定 AstroBox",
     });
   } else if (!astroboxToken) {
     checks.push({
-      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
+      title: "作者绑定 AstroBox 声明有效",
       status: "warn",
-      detail: `未登录 AstroBox，无法验证：${boundNames.join("、")}`,
+      detail: `未登录 AstroBox，无法验证绑定声明：${declaredBoundNames.join("、")}`,
     });
   } else {
-    const authorStatuses = await resolveAuthorProStatuses(boundNames, astroboxToken);
+    const authorStatuses = await resolveAuthorProStatuses(declaredBoundNames, astroboxToken);
     resolvedAuthorStatuses = authorStatuses;
-    const detailParts = boundNames.map((n) => {
+    const notFound = declaredBoundNames.filter(
+      (n) => authorStatuses[n]?.state === "not-found",
+    );
+    const errored = declaredBoundNames.filter(
+      (n) => authorStatuses[n]?.state === "error",
+    );
+    const detailParts = declaredBoundNames.map((n) => {
       const s = authorStatuses[n];
       if (s?.state === "found") {
-        const active = isVipActive(s.user.vip, s.user.vipExpireMap);
-        const pro = hasCreatorPro(s.user.vip) && active;
-        return `${n}: ${
-          pro
-            ? `有 ${vipTierLabel(s.user.vip)} 权益`
-            : `${vipTierLabel(s.user.vip)}${
-                !active && s.user.vip !== "None" ? "（已过期）" : ""
-              }`
-        }`;
+        const user = s.user;
+        return `${n}：已匹配账户 ${user.displayName || user.username || user.userId}`;
       }
-      if (s?.state === "not-found") return `${n}: 名称未匹配账户`;
-      if (s?.state === "error") return `${n}: 查询失败`;
-      if (s?.state === "no-auth") return `${n}: 未登录 AstroBox`;
-      return `${n}: 查询中`;
+      if (s?.state === "not-found") return `${n}：未匹配到 AstroBox 账户`;
+      if (s?.state === "error") return `${n}：查询失败（${s.message}）`;
+      if (s?.state === "no-auth") return `${n}：未登录 AstroBox`;
+      return `${n}：查询中`;
     });
-    const notFound = boundNames.filter((n) => authorStatuses[n]?.state === "not-found");
-    const noPro = boundNames.filter((n) => {
-      const s = authorStatuses[n];
-      if (s?.state !== "found") return false;
-      return !(hasCreatorPro(s.user.vip) && isVipActive(s.user.vip, s.user.vipExpireMap));
-    });
-    const hasError = boundNames.some((n) => authorStatuses[n]?.state === "error");
+    if (declaredUnboundNames.length > 0) {
+      detailParts.push(`未声明绑定：${declaredUnboundNames.join("、")}`);
+    }
     checks.push({
-      title: "作者绑定 AstroBox 声明真实有效且具 Creator Pro 权益",
-      status:
-        notFound.length > 0 ? "fail" : hasError || noPro.length > 0 ? "warn" : "pass",
+      title: "作者绑定 AstroBox 声明有效",
+      status: notFound.length > 0 ? "fail" : errored.length > 0 ? "warn" : "pass",
       detail: detailParts.join(" · "),
+    });
+  }
+
+  // --- check: 作者 Creator Pro 权益 ---
+  // 与绑定声明分离：账户未匹配属于绑定问题，此处只报告已匹配账户的真实权益状态。
+  if (declaredBoundNames.length === 0) {
+    checks.push({
+      title: "作者 Creator Pro 权益",
+      status: "pass",
+      detail: "无声明绑定的作者，无需校验 Creator Pro 权益",
+    });
+  } else if (!astroboxToken || !resolvedAuthorStatuses) {
+    checks.push({
+      title: "作者 Creator Pro 权益",
+      status: "warn",
+      detail: "未登录 AstroBox，无法查询作者 Creator Pro 权益",
+    });
+  } else {
+    const statuses = resolvedAuthorStatuses;
+    const detailParts = declaredBoundNames.map((n) => {
+      const s = statuses[n];
+      if (s?.state !== "found") return `${n}：账户未匹配，无法确认权益`;
+      const active = isVipActive(s.user.vip, s.user.vipExpireMap);
+      if (hasCreatorPro(s.user.vip)) {
+        return `${n}：有 ${vipTierLabel(s.user.vip)} 权益${active ? "" : "（已过期）"}`;
+      }
+      return `${n}：无 Creator Pro 权益（当前 ${vipTierLabel(s.user.vip)}）`;
+    });
+    const foundStatuses = declaredBoundNames
+      .map((n) => statuses[n])
+      .filter(
+        (s): s is Extract<AuthorProStatus, { state: "found" }> => s?.state === "found",
+      );
+    const allHavePro =
+      foundStatuses.length === declaredBoundNames.length &&
+      foundStatuses.every(
+        (s) => hasCreatorPro(s.user.vip) && isVipActive(s.user.vip, s.user.vipExpireMap),
+      );
+    checks.push({
+      title: "作者 Creator Pro 权益",
+      status: allHavePro ? "pass" : "warn",
+      detail:
+        (allHavePro
+          ? "绑定作者均持有有效 Creator Pro 权益，不受付费/免费比例限制"
+          : "存在无有效 Creator Pro 权益的绑定作者，将按 2 免费 : 1 付费比例校验") +
+        " · " +
+        detailParts.join(" · "),
     });
   }
 
@@ -1453,8 +1501,8 @@ export async function runResourceRuleChecks(options: {
   const newPaidType = entry.paid_type;
   const newResourceId = manifestItem?.id || entry.id;
 
-  if (boundNames.length > 0 && astroboxToken && resolvedAuthorStatuses) {
-    for (const name of boundNames) {
+  if (declaredBoundNames.length > 0 && astroboxToken && resolvedAuthorStatuses) {
+    for (const name of declaredBoundNames) {
       const status = resolvedAuthorStatuses[name];
       if (!status) continue;
       const result = await checkPaidFreeRatioForAuthor({
