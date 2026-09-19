@@ -260,10 +260,16 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-white/60">
         <span>
           类型：
-          <MatchBadge ok={pkg.typeMatch === "match"} warn={pkg.typeMatch === "inconclusive"} />
-          <span className="ml-1 text-white/45">
-            {pkg.detectedType}（{pkg.effectiveCategory === "watchface" ? "表盘" : pkg.effectiveCategory === "quick_app" ? "快应用" : "其他"}）
-          </span>
+          {pkg.encrypted ? (
+            <span className="ml-1 text-sky-300">已加密</span>
+          ) : (
+            <>
+              <MatchBadge ok={pkg.typeMatch === "match"} warn={pkg.typeMatch === "inconclusive"} />
+              <span className="ml-1 text-white/45">
+                {pkg.detectedType}（{pkg.effectiveCategory === "watchface" ? "表盘" : pkg.effectiveCategory === "quick_app" ? "快应用" : "其他"}）
+              </span>
+            </>
+          )}
         </span>
         <span>
           内嵌 ID：
@@ -274,7 +280,11 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
           />
           {pkg.detectedId && <span className="ml-1 text-white/45">检测到 {pkg.detectedId}</span>}
         </span>
-        {pkg.skipped && <span className="text-amber-300/80">包体过大/疑似加密，已跳过内容校验</span>}
+        {pkg.encrypted ? (
+          <span className="text-sky-300/80">已加密，跳过内容校验</span>
+        ) : pkg.skipped ? (
+          <span className="text-amber-300/80">包体过大，已跳过内容校验</span>
+        ) : null}
         {pkg.error && <span className="text-red-400">[错误：{pkg.error}]</span>}
       </div>
     </div>

@@ -21,6 +21,7 @@ import { normalizeBundledResources } from "~/logic/publish/manifest";
 import {
   WATCHFACE_MAGIC,
   ZIP_MAGIC,
+  computePackageHash,
   xiaomiVersionCodeFromVersion,
 } from "~/logic/publish/package-version";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
@@ -41,6 +42,7 @@ export type DetectedPackageType =
   | "abp"
   | "zip"
   | "binary"
+  | "encrypted"
   | "unknown";
 
 export interface PackageCheckResult {
@@ -56,6 +58,8 @@ export interface PackageCheckResult {
   idMatch: "match" | "mismatch" | "skipped";
   error?: string;
   skipped?: boolean;
+  /** 命中服务端加密文件密钥，内容为密文，跳过类型/内嵌 ID 校验。 */
+  encrypted?: boolean;
 }
 
 export interface ImageSizeInfo {
@@ -981,6 +985,11 @@ export async function runResourceRuleChecks(options: {
   // --- check: 购买与加密配置就绪 ---
   // 仅在 manifest.ext.enableAstroBoxCreatorFeatures 开启时才校验：
   // 未开启购买功能的资源在服务端可能残留历史映射，但与本次提交无关，不应提示。
+  //
+  // 加密文件密钥同时供下方「包体内容校验」识别加密包体，因此提到外层声明。
+  let encryptedDeviceSet: Set<string> | null = null;
+  let encryptedHashSet = new Set<string>();
+  let cryptoCheckError = "";
   const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
   if (creatorFeaturesEnabled) {
     const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
@@ -988,9 +997,7 @@ export async function runResourceRuleChecks(options: {
       new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
     ).filter(Boolean);
 
-    let encryptedDeviceSet: Set<string> | null = null;
     let mappedDeviceSet: Set<string> | null = null;
-    let cryptoCheckError = "";
     if (astroboxToken && cryptoResourceId) {
       try {
         // 审核人不是资源作者，卖家专属接口会因所有权校验返回
@@ -1001,6 +1008,9 @@ export async function runResourceRuleChecks(options: {
           limit: 500,
         });
         encryptedDeviceSet = new Set(configs.fileKeys.map((k) => k.deviceId));
+        encryptedHashSet = new Set(
+          configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
+        );
         mappedDeviceSet = new Set(
           configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
         );
@@ -1499,6 +1509,34 @@ export async function runResourceRuleChecks(options: {
         }
 
         result.detectedType = await detectPackageType(bytes, pkg.fileName, result.sizeBytes);
+
+        // 加密包识别：密文不含包体魔数，会被 detectPackageType 误判为 binary。
+        // 优先用完整内容哈希精确匹配服务端登记的加密文件密钥；超大包仅取头部
+        // 无法算全量哈希时，再按“该设备已登记加密密钥且头部非已知包体”兜底。
+        let encrypted = false;
+        if (encryptedHashSet.size > 0 && !result.skipped) {
+          const hash = await computePackageHash(new Blob([bytes as BlobPart]));
+          encrypted = encryptedHashSet.has(hash);
+        }
+        if (
+          !encrypted &&
+          result.detectedType === "binary" &&
+          encryptedDeviceSet &&
+          pkg.devices.some((device) => encryptedDeviceSet!.has(device))
+        ) {
+          encrypted = true;
+        }
+        if (encrypted) {
+          result.encrypted = true;
+          result.skipped = true;
+          result.detectedType = "encrypted";
+          result.effectiveCategory = "other";
+          result.typeMatch = "inconclusive";
+          result.idMatch = "skipped";
+          packageChecks.push(result);
+          continue;
+        }
+
         result.effectiveCategory = effectiveCategory(result.detectedType, pkg.fileName);
 
         // 类型匹配
@@ -1545,15 +1583,18 @@ export async function runResourceRuleChecks(options: {
 
     // 聚合：类型匹配
     const typeMismatch = packageChecks.filter((p) => p.typeMatch === "mismatch");
-    const typeInconclusive = packageChecks.filter((p) => p.typeMatch === "inconclusive");
+    const typeInconclusive = packageChecks.filter(
+      (p) => p.typeMatch === "inconclusive" && !p.encrypted,
+    );
+    const encryptedCount = packageChecks.filter((p) => p.encrypted).length;
     const packageDetail =
       packageChecks
-        .map(
-          (p) =>
-            `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
-              p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
-            }${p.error ? ` [${p.error}]` : ""}`,
-        )
+        .map((p) => {
+          if (p.encrypted) return `${p.fileName}: 已加密（跳过内容校验）`;
+          return `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
+            p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
+          }${p.error ? ` [${p.error}]` : ""}`;
+        })
         .join(" · ") || "无包体";
     checks.push({
       title: "包体类型与资源类别匹配",
@@ -1569,6 +1610,7 @@ export async function runResourceRuleChecks(options: {
         restype === "canopus"
           ? `模块（canopus）包体不做类型强校验 · ${packageDetail}`
           : (typeInconclusive.length > 0 ? "可能有问题，需要人工复核。" : "") +
+            (encryptedCount > 0 ? `${encryptedCount} 个包体已加密，跳过内容校验。` : "") +
             packageDetail,
     });
 
@@ -1623,6 +1665,8 @@ function resultTypeLabel(t: DetectedPackageType): string {
       return "ZIP（未确定）";
     case "binary":
       return "未知二进制";
+    case "encrypted":
+      return "已加密";
     default:
       return "未知";
   }
