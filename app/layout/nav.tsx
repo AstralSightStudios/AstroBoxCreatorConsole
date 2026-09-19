@@ -375,7 +375,7 @@ function DesktopNav({
 }: DesktopNavProps) {
   return (
     <aside
-      className={`relative isolate shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
+      className={`relative shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${isCollapsed ? "w-0" : "w-64"}`}
       aria-hidden={isCollapsed}
     >
       {!isCollapsed && (
