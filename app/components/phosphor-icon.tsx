@@ -1,4 +1,10 @@
 import { useEffect, useState, type ComponentType } from "react";
+import { GlobeIcon } from "@phosphor-icons/react";
+import { useProxiedMediaUrl } from "~/logic/media-proxy";
+import {
+  isLinkIconUrl,
+  resolveAstroboxPhosphorIcon,
+} from "~/logic/publish/phosphor-link-icon";
 
 type PhosphorIconComponent = ComponentType<{ size?: number; className?: string }>;
 
@@ -64,4 +70,49 @@ export function PhosphorIconByName({
     );
   }
   return <Component size={size} className={className} />;
+}
+
+/**
+ * 与 AstroBox 资源页一致的链接图标渲染：圆形灰底 + Phosphor 图标，
+ * 含 `/` 或 `.` 的 icon 按图片 URL 渲染，无法解析时回退地球图标。
+ * 与 `resolveAstroboxPhosphorIcon` 配套，保证 CC 预览和客户端一致。
+ */
+export function AstroboxLinkIcon({
+  icon,
+  size = 16,
+  className = "text-white/70",
+}: {
+  icon?: string;
+  size?: number;
+  className?: string;
+}) {
+  const raw = (icon || "").trim();
+  const box = size + 4;
+  const isUrl = isLinkIconUrl(raw);
+  const proxiedUrl = useProxiedMediaUrl(isUrl ? raw : undefined);
+
+  if (isUrl) {
+    return (
+      <img
+        src={proxiedUrl}
+        alt=""
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: box, height: box }}
+      />
+    );
+  }
+
+  const resolved = resolveAstroboxPhosphorIcon(raw);
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full bg-white/10"
+      style={{ width: box, height: box }}
+    >
+      {resolved ? (
+        <PhosphorIconByName name={resolved} size={size} className={className} />
+      ) : (
+        <GlobeIcon size={size} className={className} />
+      )}
+    </span>
+  );
 }

@@ -13,7 +13,10 @@ import {
   loadDeviceTokenResolver,
   type DeviceTokenResolver,
 } from "~/logic/devices/catalog";
-import { PHOSPHOR_ICON_NAMES } from "./phosphor-icons";
+import {
+  isLinkIconUrl,
+  resolveAstroboxPhosphorIcon,
+} from "~/logic/publish/phosphor-link-icon";
 import {
   resolveAuthorProStatuses,
   hasCreatorPro,
@@ -589,26 +592,12 @@ async function extractQuickAppPackage(
 // 外部链接 links 校验
 // ---------------------------------------------------------------------------
 
-const phosphorSet = new Set(PHOSPHOR_ICON_NAMES.map((n) => n.toLowerCase()));
-const LEGACY_LINK_ALIASES = new Set([
-  "globe", "link", "youtube", "github", "twitter", "discord",
-  "map", "play", "cart", "file", "cube", "store", "storefront",
-]);
-
-function normalizeIconName(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\-\s]/g, "");
-}
-
-export function isValidPhosphorIcon(raw: string): boolean {
-  const n = normalizeIconName(raw);
-  if (!n) return false;
-  if (phosphorSet.has(n)) return true;
-  if (phosphorSet.has(n + "logo")) return true;
-  if (phosphorSet.has(n + "icon")) return true;
-  if (n.endsWith("logo") && phosphorSet.has(n.slice(0, -"logo".length))) return true;
-  if (n.endsWith("icon") && phosphorSet.has(n.slice(0, -"icon".length))) return true;
-  if (LEGACY_LINK_ALIASES.has(n)) return true;
-  return false;
+/** icon 是否为 AstroBox 能渲染的链接图标（kebab-case Phosphor 名或 http(s) 图片 URL）。 */
+export function isValidLinkIcon(raw: string): boolean {
+  const icon = (raw || "").trim();
+  if (!icon) return false;
+  if (isLinkIconUrl(icon)) return /^https?:\/\//i.test(icon);
+  return resolveAstroboxPhosphorIcon(icon) !== null;
 }
 
 interface LinkIssue {
@@ -642,8 +631,11 @@ function validateLinks(links: unknown): { status: RuleCheckItem["status"]; detai
     if (!url) issues.push({ index, reason: "缺少 url" });
     if (!icon) {
       issues.push({ index, reason: "缺少 icon" });
-    } else if (!isValidPhosphorIcon(icon)) {
-      issues.push({ index, reason: `icon「${icon}」不在 Phosphor 图标库中` });
+    } else if (!isValidLinkIcon(icon)) {
+      issues.push({
+        index,
+        reason: `icon「${icon}」AstroBox 无法渲染（请用 kebab-case Phosphor 名，如 github-logo）`,
+      });
     }
   });
 
@@ -1403,7 +1395,7 @@ export async function runResourceRuleChecks(options: {
   // --- check: 外部链接 links 完整且 icon 合法 ---
   const linkResult = validateLinks(manifest?.links);
   checks.push({
-    title: "外部链接 links 完整且 icon 为合法 Phosphor 图标",
+    title: "外部链接 links 完整且 icon 可被 AstroBox 渲染",
     status: linkResult.status,
     detail: linkResult.detail,
   });

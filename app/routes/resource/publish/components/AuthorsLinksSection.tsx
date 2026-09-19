@@ -21,7 +21,7 @@ import {
 } from "react";
 import { type AuthorInput, type LinkInput } from "./types";
 import { SectionCard } from "./shared";
-import { PHOSPHOR_ICON_NAMES } from "~/routes/resreview/phosphor-icons";
+import { PHOSPHOR_LINK_ICON_NAMES } from "~/logic/publish/phosphor-link-icon";
 import {
   PhosphorIconByName,
   phosphorIconNameToPascal,
@@ -194,7 +194,7 @@ export function AuthorsLinksSection({
     useState(false);
 
   const filteredIcons = useMemo(
-    () => searchIcons(PHOSPHOR_ICON_NAMES, iconQuery),
+    () => searchIcons(PHOSPHOR_LINK_ICON_NAMES, iconQuery),
     [iconQuery],
   );
 

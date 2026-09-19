@@ -141,6 +141,7 @@ import {
   getWallpaperConfigUrl,
 } from "~/logic/publish/manifest-loader";
 import { syncBranchWithUpstream } from "~/logic/publish/fork";
+import { normalizeLinkIconName } from "~/logic/publish/phosphor-link-icon";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import {
   listDrafts,
@@ -854,7 +855,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           manifest.links?.map((link) => ({
             title: link.title || "",
             url: link.url || "",
-            icon: link.icon || "",
+            icon: normalizeLinkIconName(link.icon || ""),
           })) || [],
         );
 
