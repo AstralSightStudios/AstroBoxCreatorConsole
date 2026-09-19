@@ -1,4 +1,5 @@
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
+import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 import type { ReplyTarget, EditingTarget, NoticeDraft } from "./CommentComposer";
@@ -40,6 +41,9 @@ interface PullRequestReviewWorkspaceProps {
   onCancelEdit: () => void;
   onDeleteComment: (comment: GithubIssueComment) => void;
   onEditComment: (comment: GithubIssueComment) => void;
+  onRetryNotice?: (comment: GithubIssueComment) => void;
+  noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
+  checkingNoticeStatus?: boolean;
   onApprove: () => void;
   onMerge: () => void;
   onClose: (reason: string) => void;
@@ -89,6 +93,9 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             onCancelEdit={props.onCancelEdit}
             onDeleteComment={props.onDeleteComment}
             onEditComment={props.onEditComment}
+            onRetryNotice={props.onRetryNotice}
+            noticeStatusByCommentId={props.noticeStatusByCommentId}
+            checkingNoticeStatus={props.checkingNoticeStatus}
             onApprove={props.onApprove}
             onMerge={props.onMerge}
             onClose={props.onClose}

@@ -4,11 +4,13 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ArrowBendUpLeft,
   ArrowSquareOut,
+  ArrowsClockwise,
   DotsThreeVertical,
   PencilSimple,
   Trash,
 } from "@phosphor-icons/react";
 import type { GithubIssueComment } from "~/api/github/pr-review";
+import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
 import {
   parseReviewCommentBody,
   renderCommentMarkdownHtml,
@@ -24,9 +26,21 @@ export interface CommentTimelineProps {
   onReply?: (comment: GithubIssueComment) => void;
   onEdit?: (comment: GithubIssueComment) => void;
   onDelete?: (comment: GithubIssueComment) => void;
+  onRetryNotice?: (comment: GithubIssueComment) => void;
+  noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
+  checkingNoticeStatus?: boolean;
 }
 
-export function CommentTimeline({ comments, currentUsername, onReply, onEdit, onDelete }: CommentTimelineProps) {
+export function CommentTimeline({
+  comments,
+  currentUsername,
+  onReply,
+  onEdit,
+  onDelete,
+  onRetryNotice,
+  noticeStatusByCommentId,
+  checkingNoticeStatus,
+}: CommentTimelineProps) {
   const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({});
   const [deleteTarget, setDeleteTarget] = useState<GithubIssueComment | null>(null);
 
@@ -127,6 +141,8 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
         const longContent = isLongContent(parsed);
         const collapsed = isCollapsed(comment);
         const hasReplyTarget = Boolean(getReplyTargetId(parsed.replyTarget));
+        const isNeedFixNotice = parsed.tagType === "NEEDFIX" && Boolean(parsed.tagId);
+        const noticeStatus = noticeStatusByCommentId?.[comment.id];
 
         return (
           <div
@@ -177,6 +193,23 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                       {comment.review_state === "COMMENTED" && "💬 已评论"}
                     </span>
                   )}
+                  {isNeedFixNotice && noticeStatus && noticeStatus.state !== "sent" ? (
+                    <span
+                      className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        noticeStatus.state === "pending"
+                          ? "bg-sky-500/15 text-sky-100"
+                          : "bg-red-500/15 text-red-100"
+                      }`}
+                      title="该评论对应的 AstroBox 信箱通知未送达"
+                    >
+                      {noticeStatus.state === "pending" ? "待发送" : "没有发送"}
+                    </span>
+                  ) : null}
+                  {isNeedFixNotice && checkingNoticeStatus && !noticeStatus ? (
+                    <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60">
+                      检测中
+                    </span>
+                  ) : null}
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger>
                       <button
@@ -220,6 +253,18 @@ export function CommentTimeline({ comments, currentUsername, onReply, onEdit, on
                           <Trash size={14} />
                           删除
                         </DropdownMenu.Item>
+                      ) : null}
+                      {onRetryNotice && isNeedFixNotice ? (
+                        <>
+                          <DropdownMenu.Separator />
+                          <DropdownMenu.Item
+                            onSelect={() => onRetryNotice(comment)}
+                            className="gap-2"
+                          >
+                            <ArrowsClockwise size={14} />
+                            重试发送 AstroBox 信箱
+                          </DropdownMenu.Item>
+                        </>
                       ) : null}
                       {comment.html_url ? (
                         <DropdownMenu.Separator />

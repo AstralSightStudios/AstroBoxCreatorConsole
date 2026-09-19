@@ -7,7 +7,13 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState, getAstroboxToken } from "~/logic/account/store";
-import { sendCcNotice, findSentCcNotice, revokeCcNotice } from "~/logic/inbox/send";
+import {
+  sendCcNotice,
+  findSentCcNotice,
+  revokeCcNotice,
+  inspectCcNotices,
+  type CcNoticeDeliveryStatus,
+} from "~/logic/inbox/send";
 import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { resolveAuthorProStatuses } from "./owner-pro";
 import { useRepoEnv } from "~/config/repoEnv";
@@ -34,6 +40,7 @@ import {
   updatePullRequestComment,
   updatePullRequestReview,
   listOrganizationMembers,
+  type GithubIssueComment,
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
@@ -140,6 +147,11 @@ export default function ResourceReviewPage() {
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
   const [noticeDraft, setNoticeDraft] = useState<import("./components/CommentComposer").NoticeDraft | null>(null);
+  const [noticeStatusByCommentId, setNoticeStatusByCommentId] = useState<
+    Record<number, CcNoticeDeliveryStatus>
+  >({});
+  const [checkingNoticeStatus, setCheckingNoticeStatus] = useState(false);
+  const [noticeStatusTick, setNoticeStatusTick] = useState(0);
   const [rotate, setRotate] = useState(0);
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] =
@@ -382,6 +394,71 @@ export default function ResourceReviewPage() {
       setLoadingDetail(false);
     }
   }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
+
+  // 联网检测当前 PR 的 NEEDFIX 评论通知是否真的送达 AstroBox 信箱，
+  // 结果按 GitHub 评论 id 回填，供评论卡片展示「没有发送」标签与重试入口。
+  useEffect(() => {
+    if (!openNumber) {
+      setNoticeStatusByCommentId({});
+      return;
+    }
+    const comments = commentsByPr[openNumber] ?? [];
+    const targets = comments.flatMap((comment) => {
+      const parsed = parseReviewCommentBody(comment.body || "");
+      if (
+        parsed.tagType !== "NEEDFIX" ||
+        !parsed.tagId ||
+        typeof comment.id !== "number"
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: comment.id,
+          subtype: "review-changes-requested" as const,
+          tagId: parsed.tagId,
+          content: parsed.content,
+        },
+      ];
+    });
+    if (targets.length === 0) {
+      setNoticeStatusByCommentId({});
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingNoticeStatus(true);
+    void (async () => {
+      try {
+        const { userIds } = await resolveRecipientUserIds(
+          resourcePreviews,
+          getAstroboxToken(),
+        );
+        const statuses = await inspectCcNotices({
+          prNumber: openNumber,
+          userIds,
+          targets,
+        });
+        if (cancelled) return;
+        const next: Record<number, CcNoticeDeliveryStatus> = {};
+        for (const [id, status] of statuses) next[id] = status;
+        setNoticeStatusByCommentId(next);
+      } catch {
+        if (!cancelled) setNoticeStatusByCommentId({});
+      } finally {
+        if (!cancelled) setCheckingNoticeStatus(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    openNumber,
+    commentsByPr,
+    resourcePreviews,
+    accountState.astrobox?.token,
+    noticeStatusTick,
+  ]);
 
   const visiblePulls = useMemo(() => {
     let list = pulls;
@@ -629,13 +706,14 @@ export default function ResourceReviewPage() {
     createMode?: boolean;
     titleOverride?: string;
     bodyOverride?: string;
-  }) => {
+    force?: boolean;
+  }): Promise<boolean> => {
     const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
       resourcePreviews,
       getAstroboxToken(),
     );
-    if (userIds.length === 0) return;
-    await sendCcNotice({
+    if (userIds.length === 0) return false;
+    return sendCcNotice({
       subtype: params.subtype,
       tagId: params.tagId,
       content: params.content,
@@ -660,7 +738,29 @@ export default function ResourceReviewPage() {
           : params.content?.trim() ||
             params.senderNote?.trim() ||
             CC_NOTICE_BODIES[params.subtype]),
+    }, { force: params.force });
+  };
+
+  const retryCcNotice = async (comment: GithubIssueComment) => {
+    if (!openNumber) return;
+    const parsed = parseReviewCommentBody(comment.body || "");
+    if (parsed.tagType !== "NEEDFIX" || !parsed.tagId) {
+      toast.error("该评论不是可发送通知的 NEEDFIX 评论");
+      return;
+    }
+    const ok = await notifyCc({
+      subtype: "review-changes-requested",
+      prNumber: openNumber,
+      tagId: parsed.tagId,
+      content: parsed.content,
+      force: true,
     });
+    if (ok) {
+      toast.success("AstroBox 信箱通知已重新发送");
+      setNoticeStatusTick((prev) => prev + 1);
+    } else {
+      toast.error("重新发送失败，请稍后重试");
+    }
   };
 
   const topbarActions = null;
@@ -740,6 +840,9 @@ export default function ResourceReviewPage() {
                  onCancelEdit={() => { setEditingTarget(null); setNoticeDraft(null); }}
                  onDeleteComment={deleteComment}
                  onEditComment={editComment}
+                 onRetryNotice={retryCcNotice}
+                 noticeStatusByCommentId={noticeStatusByCommentId}
+                 checkingNoticeStatus={checkingNoticeStatus}
                  noticeDraft={noticeDraft}
                  onNoticeDraftChange={setNoticeDraft}
                 onApprove={approve}

@@ -3,6 +3,7 @@ import { useState, useCallback } from "react";
 import { Chats, GitDiff, Info, SealCheck } from "@phosphor-icons/react";
 import type { GithubIssueComment, GithubPullRequest, GithubPullFile } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
+import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { FileEntry } from "./FileEntry";
 import { PullRequestSummaryCard } from "./PullRequestSummaryCard";
@@ -35,6 +36,9 @@ export interface PullRequestReviewViewProps {
   onCancelEdit: () => void;
   onDeleteComment: (comment: GithubIssueComment) => void;
   onEditComment: (comment: GithubIssueComment) => void;
+  onRetryNotice?: (comment: GithubIssueComment) => void;
+  noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
+  checkingNoticeStatus?: boolean;
   submittingComment: boolean;
   approving: boolean;
   merging: boolean;
@@ -69,6 +73,9 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     onCancelEdit,
     onDeleteComment,
     onEditComment,
+    onRetryNotice,
+    noticeStatusByCommentId,
+    checkingNoticeStatus,
     submittingComment,
     approving,
     merging,
@@ -215,6 +222,9 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                     onReply={onReply}
                     onEdit={onEditComment}
                     onDelete={onDeleteComment}
+                    onRetryNotice={onRetryNotice}
+                    noticeStatusByCommentId={noticeStatusByCommentId}
+                    checkingNoticeStatus={checkingNoticeStatus}
                   />
                 )}
               </div>
