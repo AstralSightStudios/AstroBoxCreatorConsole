@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0D079FF2CFA242EFECAEE596 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50E9AD3618A5EC6599307371 /* UIKit.framework */; };
 		328D6A53766AC1F4757CBE3C /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 26824870A51CE0E8A3ED2122 /* WebKit.framework */; };
+		4250BC79305EEDF800129D3E /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4250BC78305EEDF800129D3E /* CoreAudio.framework */; };
 		429B9ED0300169E20039A41A /* CreatorConsole Icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 429B9ECF300169E20039A41A /* CreatorConsole Icon.icon */; };
 		451D509017F79F36ED26437A /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */; };
 		645B7ABC712274A289F1C076 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5424C97B716B309BC9BCFB38 /* LaunchScreen.storyboard */; };
@@ -28,6 +29,7 @@
 		26824870A51CE0E8A3ED2122 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		32A0F3515178259169DC7AA9 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		411A73CCBA748307AD26DE8A /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		4250BC78305EEDF800129D3E /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		429B9ECF300169E20039A41A /* CreatorConsole Icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "CreatorConsole Icon.icon"; sourceTree = "<group>"; };
 		4DD158977FFF056A0EE39FD7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		50E9AD3618A5EC6599307371 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
@@ -50,6 +52,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4250BC79305EEDF800129D3E /* CoreAudio.framework in Frameworks */,
 				451D509017F79F36ED26437A /* libapp.a in Frameworks */,
 				C50AC43E94DEEC5C80A018FF /* CoreGraphics.framework in Frameworks */,
 				F1FA22DEB094BC8D686986F3 /* Metal.framework in Frameworks */,
@@ -132,6 +135,7 @@
 		CBA31CDAEE4D5B10493EBD5B /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				4250BC78305EEDF800129D3E /* CoreAudio.framework */,
 				411A73CCBA748307AD26DE8A /* CoreGraphics.framework */,
 				6A2BAD9D54D2A1D3EFE40C19 /* libapp.a */,
 				0BB436C6BFF346847C6CA2F7 /* Metal.framework */,

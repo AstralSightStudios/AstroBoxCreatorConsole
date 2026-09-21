@@ -64,3 +64,7 @@ jni = "0.21.1"
 [patch.crates-io]
 swift-rs = { git = "https://github.com/searchstars/swift-rs" }
 tao = { git = "https://github.com/Searchstars/tao", rev = "112081883beaa648194422d2fb40d16538812549" }
+# Upstream tauri-plugin-notification (<=2.4.0) declares `init_plugin_notification`
+# without `public`; Swift 6.4 (Xcode 27) then emits it as a local symbol and the
+# iOS link fails. Vendored copy only adds `public` to that @_cdecl function.
+tauri-plugin-notification = { path = "patches/tauri-plugin-notification" }
