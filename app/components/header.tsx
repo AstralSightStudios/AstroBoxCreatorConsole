@@ -67,6 +67,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   cloudcontrol: "云控与资源推流",
   explorepage: "探索页管理",
   "admin/hotupdate": "热更新管理",
+  "admin/feed": "Feed 管理",
 };
 
 interface HeaderProps {

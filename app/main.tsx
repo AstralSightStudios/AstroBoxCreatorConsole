@@ -23,6 +23,7 @@ import AdminOrdersPage from "~/routes/admin/orders";
 import AdminReportsPage from "~/routes/admin/reports";
 import AdminHotUpdatePage from "~/routes/admin/hotupdate";
 import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
+import AdminFeedPage from "~/routes/admin/feed";
 import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
@@ -74,6 +75,7 @@ const router = createBrowserRouter([
       { path: "admin/inbox", element: <AdminInboxPage /> },
       { path: "admin/account-deletion", element: <AdminAccountDeletionPage /> },
       { path: "admin/hotupdate", element: <AdminHotUpdatePage /> },
+      { path: "admin/feed", element: <AdminFeedPage /> },
       { path: "new-resource", element: <NewResourcePublishPage /> },
       { path: "publish/edit", element: <ResourceEditPage /> },
       { path: "publish/wallpaper", element: <WallpaperEditorPage /> },
