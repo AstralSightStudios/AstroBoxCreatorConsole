@@ -9,6 +9,7 @@ import {
   TextField,
 } from "~/components/ScaleAwareThemes";
 import {
+  CaretDownIcon,
   LinkSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -17,6 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { parseAfdUrl } from "~/logic/publish/afdian-url";
+import { ExternalAuthorizationPanel } from "~/components/resource/ExternalAuthorizationPanel";
 import { reportFailure } from "~/logic/logging/feedback";
 import {
   deleteResourceSku,
@@ -158,6 +160,7 @@ export function EncryptConfigDialog({
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
   const [afdPasteUrl, setAfdPasteUrl] = useState("");
+  const [showExternal, setShowExternal] = useState(false);
   const [formMap, setFormMap] = useState<PlatformRows>({
     afd: [createEmptyRow("afd")],
     cdk: [createEmptyRow("cdk")],
@@ -677,6 +680,32 @@ export function EncryptConfigDialog({
                 </div>
               );
             })}
+
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setShowExternal((value) => !value)}
+          >
+            <span>
+              <span className="block text-sm font-medium text-white">
+                自有网站授权
+              </span>
+              <span className="mt-0.5 block text-xs text-white/50">
+                在你自己的网站售卖，由你的服务器签名授权后解密（可与爱发电并存）
+              </span>
+            </span>
+            <CaretDownIcon
+              size={16}
+              className={`text-white/60 transition-transform ${showExternal ? "rotate-180" : ""}`}
+            />
+          </button>
+          {showExternal && (
+            <div className="mt-3">
+              <ExternalAuthorizationPanel resourceId={resourceId} deviceId={deviceId} />
+            </div>
+          )}
+        </div>
 
         <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
           <div>

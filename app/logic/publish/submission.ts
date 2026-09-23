@@ -28,6 +28,11 @@ import type {
 } from "./manifest";
 import { encryptFileWithAes256Ecb } from "./encryption";
 import { submitResourceCryptoInfo } from "~/api/astrobox/resource";
+import { upsertExternalAuthorization } from "~/api/astrobox/order";
+import {
+  clearExternalAuthorizationDraft,
+  listExternalAuthorizationDrafts,
+} from "~/logic/publish/external-authorization-drafts";
 import { replaceWatchfaceIdInPackage } from "./watchface-id";
 
 interface UploadManifestRequest {
@@ -512,6 +517,8 @@ export async function uploadManifestAndAssets({
     }
   }
 
+  await registerExternalAuthorizationDrafts(itemId, normalizedRepo, commitSha, onProgress);
+
   return { ...normalizedRepo, commitSha };
 }
 
@@ -655,6 +662,8 @@ export async function upsertManifestAndAssets({
     }
   }
 
+  await registerExternalAuthorizationDrafts(itemId, targetRepo, commitSha, onProgress);
+
   return { ...targetRepo, commitSha };
 }
 
@@ -683,3 +692,37 @@ export async function submitPullRequest({
 }
 
 export type { RepoInfo } from "./github-actions";
+
+// 未上架资源在编辑器里暂存的自有网站授权配置，需要 commit 存在后带所有权证明登记。
+// 登记失败直接抛出，让发布流程明确展示失败，而不是让作者误以为保护已生效。
+async function registerExternalAuthorizationDrafts(
+  itemId: string,
+  repo: { owner: string; name: string },
+  commitSha: string,
+  onProgress?: (message: string) => void,
+) {
+  for (const draft of listExternalAuthorizationDrafts(itemId)) {
+    onProgress?.(`登记自有网站授权 ${draft.deviceId}`);
+    try {
+      await upsertExternalAuthorization({
+        ...draft,
+        repoOwner: repo.owner,
+        repoName: repo.name,
+        commitSha,
+      });
+      clearExternalAuthorizationDraft(draft.resourceId, draft.deviceId);
+      log.info("publish/external-auth", `自有网站授权已登记 ${draft.deviceId}`, {
+        data: { deviceId: draft.deviceId, commitSha },
+      });
+    } catch (error) {
+      log.error(
+        "publish/external-auth",
+        `自有网站授权登记失败 ${draft.deviceId}: ${String(error)}`,
+        { data: { deviceId: draft.deviceId, commitSha } },
+      );
+      throw new Error(
+        `自有网站授权登记失败（${draft.deviceId}）：${(error as Error)?.message || String(error)}`,
+      );
+    }
+  }
+}

@@ -314,3 +314,88 @@ export function reissueAfdianOrders(body: { items: AfdianReissueItem[] }) {
     body,
   );
 }
+
+// ---- 创作者自有网站授权 ----
+
+export interface DecryptPeriodLimits {
+    daily: number | null;
+    weekly: number | null;
+    monthly: number | null;
+}
+
+export interface DecryptLimits {
+    perIp: DecryptPeriodLimits;
+    distinctIps: DecryptPeriodLimits;
+}
+
+export interface ExternalAuthorizationConfig {
+    id: string;
+    resourceId: string;
+    deviceId: string;
+    enabled: boolean;
+    displayName: string;
+    authorizationUrl: string;
+    buyUrl: string;
+    issuer: string;
+    kid: string;
+    publicKey: string;
+    revision: number;
+    decryptLimits: DecryptLimits;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ExternalAuthorizationPlatformInfo {
+    protocol: string;
+    issuer: string;
+    alg: string;
+    kid: string;
+    publicKey: string;
+    challengeTyp: string;
+    grantTyp: string;
+}
+
+export interface UpsertExternalAuthorizationBody {
+    resourceId: string;
+    deviceId: string;
+    enabled?: boolean;
+    displayName?: string;
+    authorizationUrl: string;
+    buyUrl?: string;
+    issuer: string;
+    publicKey: string;
+    decryptLimits?: DecryptLimits;
+    // 资源未上架时的所有权证明
+    repoOwner?: string;
+    repoName?: string;
+    commitSha?: string;
+}
+
+// 服务端对未上架资源缺少 repo 证明时返回的原因，用于识别「需要发布时再登记」
+export const EXTERNAL_AUTHORIZATION_PROOF_REQUIRED =
+    "repo ownership proof required for unlisted resource";
+
+export function listExternalAuthorizations(body: { resourceId?: string } = {}) {
+    return sendApiRequest<{
+        platform: ExternalAuthorizationPlatformInfo;
+        configs: ExternalAuthorizationConfig[];
+    }>("/order/seller/external-authorization/list", "POST", undefined, body);
+}
+
+export function upsertExternalAuthorization(body: UpsertExternalAuthorizationBody) {
+    return sendApiRequest<ExternalAuthorizationConfig>(
+        "/order/seller/external-authorization/upsert",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function disableExternalAuthorization(body: { resourceId: string; deviceId: string }) {
+    return sendApiRequest<ExternalAuthorizationConfig>(
+        "/order/seller/external-authorization/disable",
+        "POST",
+        undefined,
+        body,
+    );
+}
