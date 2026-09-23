@@ -228,6 +228,22 @@ export interface AdminResourceCommerceConfigs {
     createdAt: string;
     updatedAt: string;
   }>;
+  // 创作者自有网站授权配置摘要（旧服务端不返回该字段）
+  externalAuthorizations?: Array<{
+    id: string;
+    sellerUserId: string;
+    resourceId: string;
+    deviceId: string;
+    enabled: boolean;
+    displayName: string;
+    authorizationUrl: string;
+    buyUrl: string;
+    issuer: string;
+    kid: string;
+    revision: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
 }
 
 function buildQuery(params: Record<string, unknown>) {

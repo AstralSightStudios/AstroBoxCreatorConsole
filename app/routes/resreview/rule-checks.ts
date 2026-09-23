@@ -1020,9 +1020,19 @@ export async function runResourceRuleChecks(options: {
         encryptedHashSet = new Set(
           configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
         );
-        mappedDeviceSet = new Set(
-          configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
+        // 启用中的 SKU 映射或启用中且归属作者本人的自有网站授权，都算作购买映射
+        const fileKeyOwnerByDevice = new Map(
+          configs.fileKeys.map((k) => [k.deviceId, k.firstOwnerId]),
         );
+        mappedDeviceSet = new Set([
+          ...configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
+          ...(configs.externalAuthorizations ?? [])
+            .filter((c) => {
+              const owner = fileKeyOwnerByDevice.get(c.deviceId);
+              return c.enabled && (!owner || owner === c.sellerUserId);
+            })
+            .map((c) => c.deviceId),
+        ]);
       } catch (err) {
         cryptoCheckError = err instanceof Error ? err.message : String(err);
       }
@@ -1054,7 +1064,7 @@ export async function runResourceRuleChecks(options: {
         if (missingEncryption.length > 0)
           parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
         if (missingMapping.length > 0)
-          parts.push(`缺少付费平台映射的设备：${missingMapping.join(", ")}`);
+          parts.push(`缺少付费平台映射或自有网站授权的设备：${missingMapping.join(", ")}`);
         if (parts.length === 0)
           parts.push(
             `全部 ${fullDownloadDevices.length} 个正式下载设备均已配置加密密钥与付费映射`,
