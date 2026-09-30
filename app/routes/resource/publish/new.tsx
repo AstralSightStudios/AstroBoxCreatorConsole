@@ -114,7 +114,8 @@ import {
   type ResourceType,
 } from "~/logic/publish/resource-type";
 import { MediaSection } from "./components/MediaSection";
-import { AuthorsLinksSection } from "./components/AuthorsLinksSection";
+import { AuthorsSection } from "./components/AuthorsSection";
+import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection, type ExistingRepoOption } from "./components/RepoStepSection";
@@ -2964,17 +2965,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                  onRemoveCover={handleRemoveCover}
                  onMediaDimensions={handleMediaDimensions}
                />
-              <AuthorsLinksSection
+              <AuthorsSection
                 authors={authors}
                 setAuthors={setAuthors}
-                links={links}
-                setLinks={setLinks}
                 defaultAuthorName={
                   mode === "new"
                     ? accountState.astrobox?.username?.trim() ?? ""
                     : ""
                 }
               />
+              <LinksSection links={links} setLinks={setLinks} />
               <DownloadsSection
                 downloads={downloads}
                 sortedDeviceOptions={sortedDeviceOptions}
