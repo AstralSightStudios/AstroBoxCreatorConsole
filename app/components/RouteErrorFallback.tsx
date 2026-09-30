@@ -1,6 +1,6 @@
 import { ArrowCounterClockwiseIcon, HouseIcon } from "@phosphor-icons/react";
 import { Button } from "@radix-ui/themes";
-import { Link, useNavigate, useRouteError } from "react-router";
+import { useNavigate, useRouteError } from "react-router";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -42,25 +42,29 @@ export default function RouteErrorFallback() {
           </p>
         )}
         <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+          {/*
+            两个按钮都用 navigate 而不是 <Link>：<a> 里嵌 <button> 是非法 HTML
+            （a 的 activation behavior 会被交互内容后代屏蔽），Radix Themes 的
+            Button 也没有 asChild，只能靠事件冒泡到 Link 上，行为不可靠 ——
+            表现就是错误页上的「回到首页」点了没反应。
+          */}
           <Button
             variant="soft"
             onClick={() => {
               if (window.history.length > 1) {
                 navigate(-1);
               } else {
-                navigate("/");
+                navigate("/", { replace: true });
               }
             }}
           >
             <ArrowCounterClockwiseIcon size={15} />
             返回上一页
           </Button>
-          <Link to="/" replace>
-            <Button variant="solid">
-              <HouseIcon size={15} />
-              回到首页
-            </Button>
-          </Link>
+          <Button variant="solid" onClick={() => navigate("/", { replace: true })}>
+            <HouseIcon size={15} />
+            回到首页
+          </Button>
         </div>
       </div>
     </div>
