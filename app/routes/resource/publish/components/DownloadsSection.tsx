@@ -7,7 +7,6 @@ import {
   CopyIcon,
   ChecksIcon,
   NotebookIcon,
-  QuestionIcon,
   TrashIcon,
   LockSimpleIcon,
   PencilSimpleLineIcon,
@@ -36,7 +35,7 @@ import {
   type DownloadInput,
   type DownloadVersionSource,
 } from "./types";
-import { type UploadItem, SectionCard } from "./shared";
+import { type UploadItem, FieldHelpButton, FieldHelpDialog, SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
 import { VersionEditorDialog } from "./VersionEditorDialog";
 import { toast } from "sonner";
@@ -395,15 +394,10 @@ export function DownloadsSection({
       title={title}
       description={description}
       headerExtra={
-        <button
-          type="button"
+        <FieldHelpButton
           onClick={() => setHelpOpen(true)}
-          className="grid size-7 shrink-0 place-items-center rounded-full border border-white/15 bg-white/[0.04] text-white/60 transition hover:bg-white/10 hover:text-white"
-          aria-label="下载配置字段说明"
           title="下载配置字段说明"
-        >
-          <QuestionIcon size={14} weight="bold" />
-        </button>
+        />
       }
     >
       {deviceError && (
@@ -916,35 +910,12 @@ export function DownloadsSection({
         </Dialog.Content>
       </Dialog.Root>
 
-      <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
-        <Dialog.Content maxWidth="520px">
-          <Dialog.Title>{title}字段说明</Dialog.Title>
-          <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-56pct)]">
-            <div className="flex flex-col gap-3 pr-1">
-              {DOWNLOAD_FIELD_HELP.map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5"
-                >
-                  <div className="text-sm font-medium text-white/80">
-                    {item.label}
-                  </div>
-                  <div className="mt-0.5 text-[13px] leading-relaxed text-white/60">
-                    {item.description}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-          <div className="mt-4 flex justify-end">
-            <Dialog.Close>
-              <Button variant="soft" color="gray">
-                关闭
-              </Button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      <FieldHelpDialog
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title={`${title}字段说明`}
+        items={DOWNLOAD_FIELD_HELP}
+      />
 
       <div className="flex flex-col px-1.5 py-1 w-full">
         {helperText && <p className="text-xs text-white/60">{helperText}</p>}

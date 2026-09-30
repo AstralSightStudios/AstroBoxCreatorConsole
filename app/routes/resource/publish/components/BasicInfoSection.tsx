@@ -6,10 +6,77 @@ import {
   SegmentedControl,
 } from "~/components/ScaleAwareThemes";
 import { DiceFiveIcon } from "@phosphor-icons/react";
-import { Field, SectionCard } from "./shared";
+import { useMemo, useState } from "react";
+import {
+  Field,
+  FieldHelpButton,
+  FieldHelpDialog,
+  type FieldHelpItem,
+  SectionCard,
+} from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
 import { CANOPUS_ID_PREFIX } from "~/logic/publish/canopus-id";
 import type { ResourceType } from "~/logic/publish/resource-type";
+
+function describeItemId(resourceType: ResourceType): FieldHelpItem {
+  if (resourceType === "quick_app") {
+    return {
+      label: "资源 ID（快应用）",
+      description:
+        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。",
+      links: [
+        {
+          label: "Oracle Java 语言规范 · 包命名",
+          href: "https://docs.oracle.com/javase/specs/jls/se24/html/jls-6.html#jls-6.1",
+        },
+        {
+          label: "Google Java Style Guide · 包命名",
+          href: "https://google.github.io/styleguide/javaguide.html#s5.2.1-package-and-module-names",
+        },
+      ],
+    };
+  }
+  if (resourceType === "watchface") {
+    return {
+      label: "资源 ID（表盘）",
+      description:
+        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，已发布后不要改动。",
+    };
+  }
+  return {
+    label: "资源 ID（模块）",
+    description: `由 ${CANOPUS_ID_PREFIX} 前缀加模块名组成，只需填写模块名。模块名仅支持字母、数字、下划线和中划线，且以字母或数字开头。`,
+  };
+}
+
+function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
+  return [
+    {
+      label: "资源类型",
+      description: `决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块自动补 ${CANOPUS_ID_PREFIX} 前缀。已发布的资源不可修改。`,
+    },
+    {
+      label: "资源名称",
+      description: "展示在资源列表和详情页的名称，建议简短直观。",
+    },
+    describeItemId(resourceType),
+    {
+      label: "资源简介",
+      description:
+        "参与社区的推荐推流，描述不准或内容单薄会让资源难以被目标用户看到，同时也是审核参考。请准确说明实际功能，并尽量写全主要功能、适用场景和使用方法。",
+    },
+    {
+      label: "标签",
+      description:
+        "参与社区搜索和推荐推流，是资源被用户找到的重要途径。围绕资源的真实用途准确添加，宁可多打几个覆盖面更广的 tag，建议不超过 10 个。",
+    },
+    {
+      label: "付费类型",
+      description:
+        "免费：可直接使用。付费：可先体验部分功能，购买后解锁完整功能。强制付费：不购买则无法使用。",
+    },
+  ];
+}
 
 interface BasicInfoSectionProps {
   itemId: string;
@@ -56,10 +123,18 @@ export function BasicInfoSection({
   onResourceTypeChange,
   onGenerateId,
 }: BasicInfoSectionProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const fieldHelp = useMemo(() => buildFieldHelp(resourceType), [resourceType]);
   return (
     <SectionCard
       title="基本信息"
       description="用于标识与展示的核心信息，务必认真填写。"
+      headerExtra={
+        <FieldHelpButton
+          onClick={() => setHelpOpen(true)}
+          title="基本信息字段说明"
+        />
+      }
     >
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2 px-1.5 pt-1.5">
@@ -284,6 +359,12 @@ export function BasicInfoSection({
           </Select.Root>
         </Field>
       </div>
+      <FieldHelpDialog
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title="基本信息字段说明"
+        items={fieldHelp}
+      />
     </SectionCard>
   );
 }
