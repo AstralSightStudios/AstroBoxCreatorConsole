@@ -568,7 +568,7 @@ export function DownloadsSection({
                     type="button"
                     aria-label="删除该设备行"
                     title="删除"
-                    className="shrink-0 rounded-lg p-1 text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+                    className="ml-auto shrink-0 rounded-lg p-1 text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
                     onClick={() => onRemoveRow(item.uid)}
                   >
                     <MinusIcon size={16} weight="bold" />
@@ -727,9 +727,23 @@ export function DownloadsSection({
                       )}
                     </div>
                   )}
+                </div>
 
+                {isIdentityMismatch(item) && (
+                  <p className="text-xs text-red-300">
+                    包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
+                  </p>
+                )}
+                {isNonIncrementRow(item) && (
+                  <p className="text-xs text-red-300">
+                    versionCode 未递增（{item.versionCode} ≤ 上次{" "}
+                    {item.previousVersionCode}），请点「修改版本」。
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   {isVip && allowEncryption && (
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2 max-lg:ml-auto">
                       <span className="text-xs text-white/65">加密上传</span>
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
@@ -764,55 +778,42 @@ export function DownloadsSection({
                       )}
                     </div>
                   )}
-                </div>
-
-                {isIdentityMismatch(item) && (
-                  <p className="text-xs text-red-300">
-                    包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
-                  </p>
-                )}
-                {isNonIncrementRow(item) && (
-                  <p className="text-xs text-red-300">
-                    versionCode 未递增（{item.versionCode} ≤ 上次{" "}
-                    {item.previousVersionCode}），请点「修改版本」。
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    radius="large"
-                    variant="soft"
-                    color="gray"
-                    onClick={() =>
-                      setUpdateLogEditor({
-                        uid: item.uid,
-                        entries: (item.updatelogs ?? []).map((log) => ({
-                          ...log,
-                        })),
-                      })
-                    }
-                  >
-                    <NotebookIcon size={16} weight="bold" />
-                    配置更新日志
-                    {item.updatelogs && item.updatelogs.length > 0
-                      ? `（${item.updatelogs.length} 条）`
-                      : ""}
-                  </Button>
-                  <Button
-                    radius="large"
-                    variant={
-                      item.file || item.existingFileName ? "outline" : "solid"
-                    }
-                    onClick={() => void pickDownloadFile(item.uid)}
-                  >
-                    <UploadSimpleIcon size={16} weight="bold" />
-                    {item.previousVersion !== undefined ||
-                    item.previousVersionCode !== undefined
-                      ? "更新包体"
-                      : item.file || item.existingFileName
-                        ? "更换包体"
-                        : "导入包体"}
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
+                    <Button
+                      radius="large"
+                      variant="soft"
+                      color="gray"
+                      onClick={() =>
+                        setUpdateLogEditor({
+                          uid: item.uid,
+                          entries: (item.updatelogs ?? []).map((log) => ({
+                            ...log,
+                          })),
+                        })
+                      }
+                    >
+                      <NotebookIcon size={16} weight="bold" />
+                      配置更新日志
+                      {item.updatelogs && item.updatelogs.length > 0
+                        ? `（${item.updatelogs.length} 条）`
+                        : ""}
+                    </Button>
+                    <Button
+                      radius="large"
+                      variant={
+                        item.file || item.existingFileName ? "outline" : "solid"
+                      }
+                      onClick={() => void pickDownloadFile(item.uid)}
+                    >
+                      <UploadSimpleIcon size={16} weight="bold" />
+                      {item.previousVersion !== undefined ||
+                      item.previousVersionCode !== undefined
+                        ? "更新包体"
+                        : item.file || item.existingFileName
+                          ? "更换包体"
+                          : "导入包体"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))
