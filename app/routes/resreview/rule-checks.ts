@@ -70,6 +70,8 @@ export interface PackageCheckResult {
   skipped?: boolean;
   /** 命中服务端加密文件密钥，内容为密文，跳过类型/内嵌 ID 校验。 */
   encrypted?: boolean;
+  /** 加密判定依据是完整内容哈希精确匹配（true）还是「头部非已知包体」兜底（false）。 */
+  encryptedByHash?: boolean;
 }
 
 export interface ImageSizeInfo {
@@ -991,35 +993,37 @@ export async function runResourceRuleChecks(options: {
     })(),
   });
 
-  // --- check: 购买与加密配置就绪 ---
-  // 仅在 manifest.ext.enableAstroBoxCreatorFeatures 开启时才校验：
-  // 未开启购买功能的资源在服务端可能残留历史映射，但与本次提交无关，不应提示。
+  // --- 加密与付费配置（查询始终执行，判定按开关分流） ---
+  // 服务端加密文件密钥有两处用途：判定「是否加密上传却没开启
+  // ext.enableAstroBoxCreatorFeatures」，以及供下方「包体内容校验」识别密文。
+  // 两者都与开关状态无关，因此查询无条件执行。
   //
-  // 加密文件密钥同时供下方「包体内容校验」识别加密包体，因此提到外层声明。
+  // 付费映射（skus / externalAuthorizations）不同：未开启购买功能的资源在服务端
+  // 可能残留历史映射，与本次提交无关、不应提示，因此仅在开关开启时才消费。
   let encryptedDeviceSet: Set<string> | null = null;
   let encryptedHashSet = new Set<string>();
+  let mappedDeviceSet: Set<string> | null = null;
   let cryptoCheckError = "";
   const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
-  if (creatorFeaturesEnabled) {
-    const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
-    const fullDownloadDevices = Array.from(
-      new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
-    ).filter(Boolean);
+  const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
+  const fullDownloadDevices = Array.from(
+    new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
+  ).filter(Boolean);
 
-    let mappedDeviceSet: Set<string> | null = null;
-    if (astroboxToken && cryptoResourceId) {
-      try {
-        // 审核人不是资源作者，卖家专属接口会因所有权校验返回
-        // “Resource is not owned by seller”。此处改用管理员接口按资源 ID 查询，
-        // 该接口返回该资源的 fileKeys / skus，审核人可用。
-        const configs = await AdminApi.orders.resourceConfigs({
-          resourceId: cryptoResourceId,
-          limit: 500,
-        });
-        encryptedDeviceSet = new Set(configs.fileKeys.map((k) => k.deviceId));
-        encryptedHashSet = new Set(
-          configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
-        );
+  if (astroboxToken && cryptoResourceId) {
+    try {
+      // 审核人不是资源作者，卖家专属接口会因所有权校验返回
+      // “Resource is not owned by seller”。此处改用管理员接口按资源 ID 查询，
+      // 该接口返回该资源的 fileKeys / skus，审核人可用。
+      const configs = await AdminApi.orders.resourceConfigs({
+        resourceId: cryptoResourceId,
+        limit: 500,
+      });
+      encryptedDeviceSet = new Set(configs.fileKeys.map((k) => k.deviceId));
+      encryptedHashSet = new Set(
+        configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
+      );
+      if (creatorFeaturesEnabled) {
         // 启用中的 SKU 映射或启用中且归属作者本人的自有网站授权，都算作购买映射
         const fileKeyOwnerByDevice = new Map(
           configs.fileKeys.map((k) => [k.deviceId, k.firstOwnerId]),
@@ -1033,11 +1037,13 @@ export async function runResourceRuleChecks(options: {
             })
             .map((c) => c.deviceId),
         ]);
-      } catch (err) {
-        cryptoCheckError = err instanceof Error ? err.message : String(err);
       }
+    } catch (err) {
+      cryptoCheckError = err instanceof Error ? err.message : String(err);
     }
+  }
 
+  if (creatorFeaturesEnabled) {
     const missingEncryption = encryptedDeviceSet
       ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
       : [];
@@ -1607,9 +1613,11 @@ export async function runResourceRuleChecks(options: {
         // 优先用完整内容哈希精确匹配服务端登记的加密文件密钥；超大包仅取头部
         // 无法算全量哈希时，再按“该设备已登记加密密钥且头部非已知包体”兜底。
         let encrypted = false;
+        let encryptedByHash = false;
         if (encryptedHashSet.size > 0 && !result.skipped) {
           const hash = await computePackageHash(new Blob([bytes as BlobPart]));
           encrypted = encryptedHashSet.has(hash);
+          encryptedByHash = encrypted;
         }
         if (
           !encrypted &&
@@ -1621,6 +1629,7 @@ export async function runResourceRuleChecks(options: {
         }
         if (encrypted) {
           result.encrypted = true;
+          result.encryptedByHash = encryptedByHash;
           result.skipped = true;
           result.detectedType = "encrypted";
           result.effectiveCategory = "other";
@@ -1734,6 +1743,72 @@ export async function runResourceRuleChecks(options: {
                   }${p.error ? ` [${p.error}]` : ""}`;
                 })
                 .join(" · "),
+    });
+  }
+
+  // --- check: 已加密上传但未开启 enableAstroBoxCreatorFeatures ---
+  // 客户端依据 ext.enableAstroBoxCreatorFeatures 决定是否请求加密文件密钥并解密；
+  // 开关关闭时密文直接进入包体类型嗅探必然失败（AES-256-ECB 密文不含已知魔数），
+  // 最终在设备上安装时报未知资源类型。
+  //
+  // encryptOnUpload 不写入 manifest，审核侧无法直接读取，因此以「包体是否确为密文」
+  // 为准：完整内容哈希精确命中才是 fail；仅由「头部非已知包体」兜底判定的，
+  // 以及因超大包只取头部或拉取失败而无法确认的，都只提示人工复核，避免误伤
+  // 曾经加密过、后来改为明文的资源（服务端密钥会残留）。
+  if (!creatorFeaturesEnabled) {
+    const encryptedPackages = packageChecks.filter((p) => p.encrypted);
+    const confirmedEncrypted = encryptedPackages.filter((p) => p.encryptedByHash);
+    const heuristicEncrypted = encryptedPackages.filter((p) => !p.encryptedByHash);
+    const unverifiableEncryptedDevices = Array.from(
+      new Set(
+        packageChecks
+          .filter(
+            (p) =>
+              !p.encrypted &&
+              (p.skipped || p.error) &&
+              p.kind === "正式包" &&
+              p.devices.some((d) => encryptedDeviceSet?.has(d)),
+          )
+          .flatMap((p) => p.devices),
+      ),
+    );
+    checks.push({
+      title: "已加密上传但未开启 enableAstroBoxCreatorFeatures",
+      status: (() => {
+        if (!astroboxToken) return "manual";
+        if (!cryptoResourceId) return "warn";
+        if (cryptoCheckError) return "manual";
+        if (confirmedEncrypted.length > 0) return "fail";
+        if (heuristicEncrypted.length > 0 || unverifiableEncryptedDevices.length > 0)
+          return "manual";
+        return "pass";
+      })(),
+      detail: (() => {
+        if (!astroboxToken) return "未登录 AstroBox，无法校验服务端加密配置";
+        if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
+        if (!cryptoResourceId) return "manifest 缺少资源 ID，无法查询服务端加密配置";
+        const parts: string[] = [];
+        if (confirmedEncrypted.length > 0)
+          parts.push(
+            `以下包体内容与已登记的加密文件密钥完全一致，确认仍为密文：${confirmedEncrypted
+              .map((p) => p.fileName)
+              .join(", ")}。客户端不会请求加密密钥、不解密包体，安装必然失败；请要求创作者开启 ext.enableAstroBoxCreatorFeatures 后重新提交。`,
+          );
+        if (heuristicEncrypted.length > 0)
+          parts.push(
+            `以下包体疑似密文（内容哈希与已登记密钥不一致，仅能按头部判定）：${heuristicEncrypted
+              .map((p) => p.fileName)
+              .join(", ")}，请人工确认。`,
+          );
+        if (unverifiableEncryptedDevices.length > 0)
+          parts.push(
+            `以下设备登记过加密文件密钥，但对应包体内容无法确认（超大包仅取头部或拉取失败）：${unverifiableEncryptedDevices.join(
+              ", ",
+            )}，请人工核对是否仍为密文。`,
+          );
+        if (parts.length === 0) return "未检测到密文包体，与未开启该开关一致";
+        return parts.join("；");
+      })(),
     });
   }
 
