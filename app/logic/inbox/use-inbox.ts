@@ -2,7 +2,6 @@ import { useCallback, useEffect } from "react";
 import { InboxApi } from "~/api/astrobox/inbox";
 import { useAccountState } from "~/logic/account/store";
 import {
-  getInboxUnreadCount,
   setInboxUnreadCount,
   useInboxUnreadCount,
 } from "./store";
@@ -63,7 +62,12 @@ export function useInboxPolling() {
 }
 
 /**
- * 信箱编排：已读/删除操作（操作后刷新未读计数）。
+ * 信箱编排：已读/删除操作 + 未读计数刷新。
+ *
+ * 写操作**不再吞异常**，调用方负责 toast 提示；本地状态一律等服务端成功
+ * 后由列表重拉 + `refreshUnread()` 收敛，不做乐观更新（与 AstroBox 端一致），
+ * 否则接口失败时会出现「消息已消失 / 角标已减」但实际没生效的假象。
+ *
  * 未读轮询由 Nav 顶层统一挂载 useInboxPolling，避免重复计时器。
  */
 export function useInbox() {
@@ -74,44 +78,13 @@ export function useInbox() {
       const { count: next } = await InboxApi.unreadCount();
       setInboxUnreadCount(next);
     } catch {
-      // ignore
+      // 计数刷新失败不影响主流程，下一轮轮询会纠正。
     }
   }, []);
 
-  const markRead = useCallback(
-    async (id: string) => {
-      try {
-        await InboxApi.markRead(id);
-      } catch {
-        // ignore
-      }
-      setInboxUnreadCount(Math.max(0, getInboxUnreadCount() - 1));
-      void refreshUnread();
-    },
-    [refreshUnread],
-  );
-
-  const markAllRead = useCallback(async () => {
-    try {
-      await InboxApi.markAllRead();
-    } catch {
-      // ignore
-    }
-    setInboxUnreadCount(0);
-    void refreshUnread();
-  }, [refreshUnread]);
-
-  const remove = useCallback(
-    async (id: string) => {
-      try {
-        await InboxApi.remove(id);
-      } catch {
-        // ignore
-      }
-      void refreshUnread();
-    },
-    [refreshUnread],
-  );
+  const markRead = useCallback((id: string) => InboxApi.markRead(id), []);
+  const markAllRead = useCallback(() => InboxApi.markAllRead(), []);
+  const remove = useCallback((id: string) => InboxApi.remove(id), []);
 
   return { count, refreshUnread, markRead, markAllRead, remove };
 }

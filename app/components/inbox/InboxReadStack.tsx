@@ -148,7 +148,7 @@ export default function InboxReadStack({
             initial={false}
             className={`absolute inset-x-0 top-0 origin-top ${
               isBlurredStackCard
-                ? "overflow-hidden rounded-[14px] corner-rounded bg-[var(--inbox-stacked-card-bg)] backdrop-blur-md"
+                ? "overflow-hidden rounded-[14px] squircle bg-[var(--inbox-stacked-card-bg)] backdrop-blur-md"
                 : ""
             }`}
             style={{

@@ -74,6 +74,11 @@
     corner-shape: superellipse(1.75);
 }
 
+/* 与 AstroBox 端保持一致（web/src/tailwind.css .squircle） */
+.squircle {
+    corner-shape: superellipse(1.5);
+}
+
 /* ---- 信箱 / 浮层面板 ---- */
 :root {
     --app-background: #111113;
@@ -89,7 +94,12 @@
     --nav-active-bg: rgba(62, 99, 221, 0.26);
     --nav-active-bg-hover: rgba(62, 99, 221, 0.32);
     --nav-active-bg-active: rgba(62, 99, 221, 0.38);
+    --nav-active-color: rgba(255, 255, 255, 0.9);
     --nav-panel-shadow: 0 20px 48px rgba(6, 10, 25, 0.28);
+
+    --text-color: #ffffff;
+    --color-danger-bg: rgba(255, 92, 92, 0.15);
+    --color-danger-text: #ff9c9c;
 
     --inbox-expanded-card-bg: #353538;
     --inbox-stacked-card-bg: rgba(71, 71, 75, 0.3);
@@ -98,6 +108,7 @@
     --inbox-control-bg-hover: rgba(255, 255, 255, 0.12);
     --inbox-control-bg-active: rgba(255, 255, 255, 0.16);
     --inbox-link-decoration: rgba(255, 255, 255, 0.35);
+    --floating-panel-handle-bg: rgba(255, 255, 255, 0.5);
 }
 
 /* ---- 界面缩放视口 ---- */

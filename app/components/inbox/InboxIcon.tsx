@@ -9,7 +9,7 @@ export default function InboxIcon({ read }: { read: boolean }) {
     <PackageIcon
       size={22}
       weight="fill"
-      className={read ? "opacity-40 text-white/60" : "opacity-80 text-white"}
+      className={read ? "opacity-40" : "opacity-80"}
     />
   );
 }

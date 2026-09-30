@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion";
 import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react";
 import { ScrollArea, Skeleton } from "@radix-ui/themes";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { InboxApi } from "~/api/astrobox/inbox";
 import {
   isCcNoticeMetadata,
   type InboxNotification,
 } from "~/logic/inbox/types";
 import { useInbox } from "~/logic/inbox/use-inbox";
+import { useAccountState } from "~/logic/account/store";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import DynamicDrawerHandle from "./DynamicDrawerHandle";
@@ -24,18 +27,38 @@ interface InboxDrawerProps {
   onClose: () => void;
 }
 
-const PAGE_SIZE = 30;
+/** 与 AstroBox 端一致：一次拉满 60 条，不做分页。 */
+const PAGE_SIZE = 60;
+const INBOX_QUERY_KEY = "astrobox-inbox";
+
+function errorText(err: unknown) {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
-  const { count, markRead, markAllRead, remove } = useInbox();
+  const { count, markRead, markAllRead, remove, refreshUnread } = useInbox();
   const navigate = useNavigate();
   const { isDesktop } = useNavVisibility();
   const { factor, logicalHeight, portalContainer } = useUiScaleViewport();
-  const [items, setItems] = useState<InboxNotification[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const token = useAccountState().astrobox?.token;
+  // 首次打开前不请求，之后由 React Query 缓存；抽屉常驻挂载，开合不再打接口。
+  const [hasOpenedOnce, setHasOpenedOnce] = useState(false);
+  const {
+    data: inboxData,
+    error: inboxError,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: [INBOX_QUERY_KEY, token],
+    queryFn: () => InboxApi.list({ limit: PAGE_SIZE }),
+    enabled: hasOpenedOnce && Boolean(token),
+    refetchOnWindowFocus: false,
+  });
+  // 信箱只展示资源审核通知，其余类型（评论回复等）由 AstroBox 端负责。
+  const items = useMemo(
+    () => (inboxData?.items ?? []).filter((m) => m.kind === "cc-notice"),
+    [inboxData],
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [readStackExpanded, setReadStackExpanded] = useState(false);
   const [bulkPending, setBulkPending] = useState(false);
@@ -105,23 +128,13 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
     [handleDragEnd, handleDragMove],
   );
 
-  const loadInitial = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await InboxApi.list({ limit: PAGE_SIZE });
-      setItems(res.items.filter((m) => m.kind === "cc-notice"));
-      setNextCursor(res.nextCursor);
-      setHasMore(res.hasMore);
-    } catch {
-      // 静默失败，保留空态。
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    if (open) setHasOpenedOnce(true);
+  }, [open]);
 
   useEffect(() => {
-    if (open) void loadInitial();
-  }, [open, loadInitial]);
+    if (inboxError) toast.error(errorText(inboxError));
+  }, [inboxError]);
 
   // 桌面端没有 X 按钮，点遮罩或按 Escape 也能关闭。
   useEffect(() => {
@@ -149,50 +162,23 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
     setExpandedId(null);
   }, [canCollapseReadMessages, expandedId, readMessages, readStackExpanded]);
 
-  const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const res = await InboxApi.list({ limit: PAGE_SIZE, cursor: nextCursor });
-      setItems((prev) => [
-        ...prev,
-        ...res.items.filter((m) => m.kind === "cc-notice"),
-      ]);
-      setNextCursor(res.nextCursor);
-      setHasMore(res.hasMore);
-    } catch {
-      // ignore
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [nextCursor, loadingMore]);
-
-  const applyReadLocal = useCallback((id: string) => {
-    setItems((prev) =>
-      prev.map((m) =>
-        m.id === id && !m.readAt
-          ? { ...m, readAt: new Date().toISOString() }
-          : m,
-      ),
-    );
-  }, []);
-
   const handleMarkRead = useCallback(
     async (message: InboxNotification) => {
       if (message.readAt || pendingActionsRef.current.has(message.id)) return;
       pendingActionsRef.current.set(message.id, "read");
       setPendingActions(new Map(pendingActionsRef.current));
       try {
-        applyReadLocal(message.id);
         await markRead(message.id);
-      } catch {
-        // ignore
+        await refetch();
+        await refreshUnread();
+      } catch (err) {
+        toast.error(errorText(err));
       } finally {
         pendingActionsRef.current.delete(message.id);
         setPendingActions(new Map(pendingActionsRef.current));
       }
     },
-    [applyReadLocal, markRead],
+    [markRead, refetch, refreshUnread],
   );
 
   // 关闭抽屉时，若仍有展开中的未读消息，先补记已读。
@@ -217,18 +203,16 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
     if (bulkPending) return;
     setBulkPending(true);
     try {
-      setItems((prev) =>
-        prev.map((m) =>
-          m.readAt ? m : { ...m, readAt: new Date().toISOString() },
-        ),
-      );
       await markAllRead();
-    } catch {
-      // ignore
+      await refetch();
+      await refreshUnread();
+      toast.success("已全部标记为已读");
+    } catch (err) {
+      toast.error(errorText(err));
     } finally {
       setBulkPending(false);
     }
-  }, [bulkPending, markAllRead]);
+  }, [bulkPending, markAllRead, refetch, refreshUnread]);
 
   const handleDeleteMessage = useCallback(
     async (id: string) => {
@@ -236,16 +220,17 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
       pendingActionsRef.current.set(id, "delete");
       setPendingActions(new Map(pendingActionsRef.current));
       try {
-        setItems((prev) => prev.filter((m) => m.id !== id));
         await remove(id);
-      } catch {
-        // ignore
+        await refetch();
+        await refreshUnread();
+      } catch (err) {
+        toast.error(errorText(err));
       } finally {
         pendingActionsRef.current.delete(id);
         setPendingActions(new Map(pendingActionsRef.current));
       }
     },
-    [remove],
+    [refetch, refreshUnread, remove],
   );
 
   const handleToggleMessage = useCallback(
@@ -286,10 +271,10 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
     <>
       <header className="flex items-start justify-between gap-3 px-5.5 pt-5.5">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[17px] font-[700] leading-none text-white">
+          <h1 className="text-[17px] font-[700] leading-none text-[color:var(--text-color)]">
             信箱
           </h1>
-          <p className="mt-1 text-[12px] text-white/50">{count} 条未读</p>
+          <p className="mt-1 text-[12px] opacity-50">{count} 条未读</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <PanelButton
@@ -302,9 +287,9 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
         </div>
       </header>
 
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 overscroll-y-contain touch-pan-y">
         <div className="flex flex-col gap-2 px-3.5 pb-3.5">
-          {loading && items.length === 0 ? (
+          {isLoading && items.length === 0 ? (
             <div
               className="flex flex-col gap-2"
               role="status"
@@ -315,7 +300,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
               {Array.from({ length: 3 }).map((_, index) => (
                 <div
                   key={`inbox-message-skeleton-${index}`}
-                  className="flex items-start gap-3 rounded-[14px] corner-rounded bg-[var(--nav-btn-bg)] p-3"
+                  className="flex items-start gap-3 rounded-[14px] squircle bg-[var(--nav-btn-bg)] p-3"
                   aria-hidden="true"
                 >
                   <Skeleton className="size-[22px] shrink-0 rounded-full" />
@@ -328,7 +313,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
               ))}
             </div>
           ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm text-white/45">
+            <div className="py-16 text-center text-sm opacity-45">
               暂无审核通知
             </div>
           ) : (
@@ -350,18 +335,22 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
                 <div className="flex flex-col gap-2 pt-1">
                   <div className="flex items-center justify-between px-2 pt-2.5">
                     <div className="min-w-0 flex-1">
-                      <h2 className="text-[17px] font-[700] leading-none text-white">
-                        已读
+                      <h2 className="text-[17px] font-[700] leading-none text-[color:var(--text-color)]">
+                        已读通知
                       </h2>
-                      <p className="mt-1 text-[12px] text-white/50">
-                        {readMessages.length} 条
+                      <p className="mt-1 text-[12px] opacity-50">
+                        {readMessages.length} 条通知
                       </p>
                     </div>
                     {canCollapseReadMessages ? (
                       <motion.button
                         whileTap={{ scale: 0.94 }}
                         type="button"
-                        aria-label={readStackExpanded ? "折叠已读" : "展开已读"}
+                        aria-label={
+                          readStackExpanded
+                            ? "收起已读通知"
+                            : "展开已读通知"
+                        }
                         className={iconButtonClass}
                         onClick={() => setReadStackExpanded((prev) => !prev)}
                       >
@@ -389,7 +378,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
                       <button
                         type="button"
                         className="tauri-no-drag absolute inset-0 z-20 rounded-[14px]"
-                        aria-label="展开已读列表"
+                        aria-label={`展开 ${readMessages.length} 条已读通知`}
                         onClick={() => setReadStackExpanded(true)}
                       />
                     ) : null}
@@ -398,17 +387,6 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
               )}
             </>
           )}
-
-          {hasMore ? (
-            <button
-              type="button"
-              onClick={() => void loadMore()}
-              disabled={loadingMore}
-              className="tauri-no-drag block w-full rounded-md py-2 text-center text-xs text-white/50 transition-colors hover:bg-white/5 hover:text-white/80 disabled:opacity-50"
-            >
-              {loadingMore ? "加载中…" : "加载更多"}
-            </button>
-          ) : null}
         </div>
       </ScrollArea>
     </>
@@ -427,7 +405,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
           />
           {isDesktop ? (
             <motion.aside
-              className="fixed z-[120] flex w-[min(387px,calc(var(--ui-viewport-width)-1rem))] flex-col overflow-hidden rounded-[18px] text-white shadow-[var(--nav-panel-shadow)]"
+              className="fixed z-[120] flex w-[min(387px,calc(var(--ui-viewport-width)-1rem))] flex-col overflow-hidden rounded-[18px] text-[color:var(--text-color)] shadow-[var(--nav-panel-shadow)]"
               style={{
                 top: "max(0.5rem, var(--ui-safe-area-top))",
                 bottom: "max(0.5rem, var(--ui-safe-area-bottom))",
@@ -443,7 +421,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
                 className="absolute inset-0 rounded-[18px] border border-[var(--nav-border-strong)] backdrop-blur-[40px]"
                 style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
               />
-              <div className="relative z-1 flex h-full w-full flex-col">
+              <div className="relative z-1 flex h-full w-full flex-col gap-2.5">
                 {panelContent}
               </div>
             </motion.aside>
@@ -468,18 +446,18 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
                     {/* 窄屏底部抽屉：圆角顶 + 毛玻璃 + 可拖动把手 */}
                     <motion.div
                       style={{ y: sheetY }}
-                      className="relative flex h-full w-full flex-col overflow-hidden rounded-t-[24px] border-t-[1.5px] border-[var(--nav-border-strong)] bg-[rgba(0,0,0,0.75)] pt-2.5 text-white backdrop-blur-md"
+                      className="relative flex h-full w-full flex-col overflow-hidden rounded-t-[28px] border-t-[1.5px] border-[var(--nav-border-strong)] bg-[rgba(0,0,0,0.75)] pt-2.5 text-[color:var(--text-color)] backdrop-blur-md"
                     >
                       <button
                         type="button"
                         aria-label="收起信箱"
                         onPointerDown={handleDragStart}
                         style={{ touchAction: "none" }}
-                        className="tauri-no-drag mx-auto flex h-11 w-16 shrink-0 items-center justify-center bg-transparent text-[rgba(255,255,255,0.5)]"
+                        className="tauri-no-drag mx-auto flex h-[15px] w-16 shrink-0 items-center justify-center bg-transparent text-[color:var(--floating-panel-handle-bg)]"
                       >
                         <DynamicDrawerHandle progress={dragProgress} direction="down" />
                       </button>
-                      <div className="relative z-1 flex min-h-0 flex-1 flex-col pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
+                      <div className="relative z-1 flex min-h-0 flex-1 flex-col gap-2.5 pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
                         {panelContent}
                       </div>
                     </motion.div>

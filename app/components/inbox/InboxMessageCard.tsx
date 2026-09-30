@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CaretUpIcon,
@@ -18,7 +18,7 @@ import {
   isCcNoticeMetadata,
   type InboxNotification,
 } from "~/logic/inbox/types";
-import { renderCommentMarkdownHtml } from "~/routes/resreview/utils/comment";
+import { renderInboxMarkdownHtml } from "~/logic/inbox/markdown";
 
 interface InboxMessageCardProps {
   message: InboxNotification;
@@ -92,21 +92,15 @@ export default function InboxMessageCard({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-white/90">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
             {message.title}
           </h3>
           {badgeElement}
-          <p className="mb-1 text-[11px] text-white/35">
+          <p className="mb-1 text-[11px] opacity-35">
             {formatTime(message.createdAt)}
           </p>
-          {unread ? (
-            <span
-              aria-label="未读"
-              className="h-2 w-2 shrink-0 rounded-full bg-red-500"
-            />
-          ) : null}
         </div>
-        <p className="mt-1 truncate text-sm leading-5 text-white/55">
+        <p className="mt-1 truncate text-sm opacity-55">
           {message.body}
         </p>
       </div>
@@ -125,16 +119,16 @@ export default function InboxMessageCard({
           onClick={() => onToggleMessage(message.id)}
           aria-expanded
         >
-          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-white/90">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
             {message.title}
           </h3>
           {badgeElement}
-          <p className="mb-1 text-[11px] text-white/35">
+          <p className="mb-1 text-[11px] opacity-35">
             {formatTime(message.createdAt)}
           </p>
-          <CaretUpIcon size={14} className="shrink-0 text-white/40" />
+          <CaretUpIcon size={14} className="shrink-0 opacity-40" />
         </button>
-        <div className="mt-0 text-sm leading-6 text-white/75">
+        <div className="mt-0 text-sm opacity-75">
           <MarkdownBody body={message.body} />
         </div>
       </div>
@@ -164,7 +158,7 @@ export default function InboxMessageCard({
           scale: expanded ? 0.985 : 1,
         }}
         transition={cardExpandTransition}
-        className={`group relative rounded-[14px] corner-rounded p-3 transition-colors ${
+        className={`group relative rounded-[14px] squircle p-3 text-[color:var(--text-color)] transition-colors ${
           unread
             ? "bg-[var(--nav-active-bg)]"
             : blurredBackground
@@ -180,7 +174,7 @@ export default function InboxMessageCard({
             disabled={busy}
             aria-busy={pendingAction === "read" || undefined}
             className={[
-              "tauri-no-drag absolute right-3 bottom-3 inline-flex h-8 min-w-14 items-center justify-center gap-1 rounded-full bg-[var(--inbox-control-bg)] px-3.5 text-[13px] font-[500] text-white backdrop-blur-md transition-[background-color,opacity,transform] hover:bg-[var(--inbox-control-bg-hover)] active:scale-[0.96] active:bg-[var(--inbox-control-bg-active)] disabled:cursor-not-allowed",
+              "tauri-no-drag absolute right-3 bottom-3 inline-flex h-8 min-w-14 items-center justify-center rounded-full bg-[var(--inbox-control-bg)] px-3.5 text-[13px] font-[500] text-[color:var(--text-color)] backdrop-blur-md transition-[background-color,opacity,transform] hover:bg-[var(--inbox-control-bg-hover)] active:scale-[0.96] active:bg-[var(--inbox-control-bg-active)] disabled:cursor-not-allowed",
               busy
                 ? "opacity-100"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
@@ -190,14 +184,7 @@ export default function InboxMessageCard({
               onMarkRead(message);
             }}
           >
-            {pendingAction === "read" ? (
-              <Spinner size="1" />
-            ) : (
-              <>
-                <CheckCircleIcon size={14} />
-                标记已读
-              </>
-            )}
+            {pendingAction === "read" ? <Spinner size="1" /> : "标记已读"}
           </button>
         )}
       </motion.div>
@@ -210,7 +197,7 @@ export default function InboxMessageCard({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.985 }}
             transition={cardExpandTransition}
-            className="absolute inset-x-0 top-0 z-20 rounded-[14px] corner-rounded bg-[var(--inbox-expanded-card-bg)] p-3 text-white shadow-[var(--inbox-expanded-card-shadow)]"
+            className="absolute inset-x-0 top-0 z-20 rounded-[14px] squircle bg-[var(--inbox-expanded-card-bg)] p-3 text-[color:var(--text-color)] shadow-[var(--inbox-expanded-card-shadow)]"
             style={{ transformOrigin: "top center" }}
           >
             {expandedContent}
@@ -265,12 +252,15 @@ export default function InboxMessageCard({
 }
 
 function MarkdownBody({ body }: { body: string }) {
-  const safeBody = body.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  const safeBody = useMemo(
+    () => body.replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
+    [body],
+  );
   return (
     <div
-      className="break-words whitespace-pre-wrap"
+      className="text-sm text-[color:var(--text-color)] opacity-75"
       dangerouslySetInnerHTML={{
-        __html: renderCommentMarkdownHtml(safeBody),
+        __html: renderInboxMarkdownHtml(safeBody),
       }}
     />
   );
