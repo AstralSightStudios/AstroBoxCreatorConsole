@@ -41,7 +41,7 @@ import {
 import { useNavVisibility } from "./nav-visibility-context";
 import { AstroBoxLogo } from "~/components/svgs";
 import InboxBell from "~/components/inbox/InboxBell";
-import InboxDrawer from "~/components/inbox/InboxDrawer";
+import { useInboxDrawer } from "~/components/inbox/drawer-context";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
 import TitlebarEffect from "~/components/TitlebarEffect";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
@@ -511,7 +511,7 @@ function NavHeader({
   const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
   const [showAfdianLogoutConfirm, setShowAfdianLogoutConfirm] = useState(false);
   const [afdianLoggingOut, setAfdianLoggingOut] = useState(false);
-  const [inboxOpen, setInboxOpen] = useState(false);
+  const { openInbox } = useInboxDrawer();
   const githubLoginState = useGithubLoginState();
   const afdianSessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
@@ -621,7 +621,16 @@ function NavHeader({
             )}
           </div>
           <div className="nav-account-actions flex items-center gap-2">
-            <InboxBell onClick={() => setInboxOpen(true)} />
+            <InboxBell
+              onClick={() => {
+                // 与 AstroBox 端一致：未登录不打开抽屉，直接提示。
+                if (!accountState.astrobox?.token) {
+                  toast.error("请先登录 AstroBox 账号");
+                  return;
+                }
+                openInbox();
+              }}
+            />
             <Popover.Trigger>
               <button
                 type="button"
@@ -647,8 +656,6 @@ function NavHeader({
           onAfdianLogout={handleAfdianLogout}
         />
       </Popover.Root>
-
-      <InboxDrawer open={inboxOpen} onClose={() => setInboxOpen(false)} />
 
       <LogoutConfirmDialog
         open={showGithubLogoutConfirm}

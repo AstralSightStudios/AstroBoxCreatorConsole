@@ -13,7 +13,14 @@ import AfdianMessageNotificationHost from "./components/afdian/AfdianMessageNoti
 import AfdianAiAutoReplyHost from "./components/afdian/AfdianAiAutoReplyHost";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
+import { InboxDrawerProvider, useInboxDrawer } from "./components/inbox/drawer-context";
+import InboxDrawer from "./components/inbox/InboxDrawer";
 import { Toaster } from "sonner";
+
+function InboxDrawerHost() {
+  const { open, closeInbox } = useInboxDrawer();
+  return <InboxDrawer open={open} onClose={closeInbox} />;
+}
 
 function AstroboxAccountRefresher() {
     const hasRefreshedRef = useRef(false);
@@ -69,12 +76,19 @@ export default function RootLayout() {
                     </main>
                 ) : (
                     <NavVisibilityProvider>
-                        <div className="flex h-full min-h-0 w-full flex-row">
-                            <Nav />
-                            <main className="flex-1 h-full min-w-0">
-                                <PageTransition />
-                            </main>
-                        </div>
+                        {/* 信箱浮层必须挂在 <Nav /> 之外：窄屏 Nav 自身就是 vaul
+                            Drawer，信箱留在它子树里会共享同一套浮层判定，点消息会
+                            连带收起侧栏并把信箱一起卸载。结构对齐 AstroBox 端
+                            （InboxButton 挂在页面 header，全链路无 Drawer）。 */}
+                        <InboxDrawerProvider>
+                            <div className="flex h-full min-h-0 w-full flex-row">
+                                <Nav />
+                                <main className="flex-1 h-full min-w-0">
+                                    <PageTransition />
+                                </main>
+                            </div>
+                            <InboxDrawerHost />
+                        </InboxDrawerProvider>
                     </NavVisibilityProvider>
                 )}
                 <Toaster
