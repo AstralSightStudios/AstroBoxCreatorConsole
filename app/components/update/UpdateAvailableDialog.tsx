@@ -1,5 +1,6 @@
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { useMemo } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -43,13 +44,15 @@ export default function UpdateAvailableDialog({
 
 
 
-        <div className="mb-4 max-h-[var(--ui-viewport-height-46pct)] overflow-auto rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {notesHtml ? (
-            <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
-          ) : (
-            <p className="text-white/40">本次更新暂无说明。</p>
-          )}
-        </div>
+        <ScrollArea className="mb-4 max-h-[var(--ui-viewport-height-46pct)] overflow-hidden rounded-lg border border-white/10 bg-white/[0.02]">
+          <div className="p-3 text-[13px] leading-relaxed text-white/80">
+            {notesHtml ? (
+              <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
+            ) : (
+              <p className="text-white/40">本次更新暂无说明。</p>
+            )}
+          </div>
+        </ScrollArea>
 
         <Flex justify="between" align="center">
           <Button variant="soft" color="gray" onClick={handleIgnore}>

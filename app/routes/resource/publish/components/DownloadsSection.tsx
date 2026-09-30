@@ -27,6 +27,7 @@ import {
   Dialog,
 } from "~/components/ScaleAwareThemes";
 import { useMemo, useState } from "react";
+import { ScrollArea } from "~/components/scroll-area";
 import { pickFiles } from "~/logic/publish/file-picker";
 import { createUploadItem } from "./uploadUtils";
 import {
@@ -441,10 +442,7 @@ export function DownloadsSection({
                   批量选择设备
                 </Button>
               </Popover.Trigger>
-              <Popover.Content
-                width="320px"
-                className="max-h-[400px] overflow-y-auto"
-              >
+              <Popover.Content width="320px">
                 <BatchDeviceSelector
                   vendorGroups={vendorGroups}
                   selectedIds={selectedDeviceIds}
@@ -846,53 +844,55 @@ export function DownloadsSection({
           <Dialog.Description size="2">
             按版本记录资源更新内容，发布后客户端可在资源更新时展示。
           </Dialog.Description>
-          <div className="mt-3 flex max-h-[var(--ui-viewport-height-52pct)] flex-col gap-3 overflow-y-auto pr-1">
-            {updateLogEditor?.entries.map((log, index) => (
-              <div
-                key={index}
-                className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-white/55">
-                    第 {index + 1} 条
-                  </span>
-                  <Button
-                    size="1"
-                    variant="ghost"
-                    color="red"
-                    onClick={() => removeUpdateLogEntry(index)}
-                  >
-                    <TrashIcon size={14} />
-                    删除
-                  </Button>
+          <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-52pct)]">
+            <div className="flex flex-col gap-3 pr-1">
+              {updateLogEditor?.entries.map((log, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-white/55">
+                      第 {index + 1} 条
+                    </span>
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      color="red"
+                      onClick={() => removeUpdateLogEntry(index)}
+                    >
+                      <TrashIcon size={14} />
+                      删除
+                    </Button>
+                  </div>
+                  <TextField.Root
+                    placeholder="版本号，如 1.2.0"
+                    value={log.version}
+                    radius="large"
+                    className="w-full"
+                    onChange={(e) =>
+                      updateUpdateLogEntry(index, { version: e.target.value })
+                    }
+                  />
+                  <TextArea
+                    placeholder="本次更新内容，每行一条"
+                    value={log.content}
+                    radius="large"
+                    className="mt-2 w-full"
+                    rows={3}
+                    onChange={(e) =>
+                      updateUpdateLogEntry(index, { content: e.target.value })
+                    }
+                  />
                 </div>
-                <TextField.Root
-                  placeholder="版本号，如 1.2.0"
-                  value={log.version}
-                  radius="large"
-                  className="w-full"
-                  onChange={(e) =>
-                    updateUpdateLogEntry(index, { version: e.target.value })
-                  }
-                />
-                <TextArea
-                  placeholder="本次更新内容，每行一条"
-                  value={log.content}
-                  radius="large"
-                  className="mt-2 w-full"
-                  rows={3}
-                  onChange={(e) =>
-                    updateUpdateLogEntry(index, { content: e.target.value })
-                  }
-                />
-              </div>
-            ))}
-            {(!updateLogEditor || updateLogEditor.entries.length === 0) && (
-              <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
-                还没有更新日志。可添加多条，按版本展示更新内容。
-              </p>
-            )}
-          </div>
+              ))}
+              {(!updateLogEditor || updateLogEditor.entries.length === 0) && (
+                <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                  还没有更新日志。可添加多条，按版本展示更新内容。
+                </p>
+              )}
+            </div>
+          </ScrollArea>
           <div className="mt-3 flex items-center justify-between">
             <Button size="1" variant="soft" color="gray" onClick={addUpdateLogEntry}>
               <PlusIcon size={14} weight="bold" />
@@ -918,21 +918,23 @@ export function DownloadsSection({
       <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
         <Dialog.Content maxWidth="520px">
           <Dialog.Title>{title}字段说明</Dialog.Title>
-          <div className="mt-3 flex max-h-[var(--ui-viewport-height-56pct)] flex-col gap-3 overflow-y-auto pr-1">
-            {DOWNLOAD_FIELD_HELP.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5"
-              >
-                <div className="text-sm font-medium text-white/80">
-                  {item.label}
+          <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-56pct)]">
+            <div className="flex flex-col gap-3 pr-1">
+              {DOWNLOAD_FIELD_HELP.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5"
+                >
+                  <div className="text-sm font-medium text-white/80">
+                    {item.label}
+                  </div>
+                  <div className="mt-0.5 text-[13px] leading-relaxed text-white/60">
+                    {item.description}
+                  </div>
                 </div>
-                <div className="mt-0.5 text-[13px] leading-relaxed text-white/60">
-                  {item.description}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </ScrollArea>
           <div className="mt-4 flex justify-end">
             <Dialog.Close>
               <Button variant="soft" color="gray">
@@ -1003,34 +1005,36 @@ function BatchDeviceSelector({
           {allSelected ? "取消全选" : "全选"}
         </Button>
       </div>
-      <div className="flex flex-col gap-2.5 max-h-[280px] overflow-y-auto pr-1">
-        {Array.from(vendorGroups.entries()).map(([vendor, devices]) => (
-          <div key={vendor} className="flex flex-col gap-1">
-            <Text size="1" color="gray" weight="medium" className="px-0.5">
-              {vendor}
-            </Text>
-            <div className="flex flex-col gap-0.5">
-              {devices.map((device) => (
-                <label
-                  key={device.id}
-                  className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/5 cursor-pointer transition"
-                >
-                  <Checkbox
-                    checked={pending.has(device.id)}
-                    onCheckedChange={() => toggle(device.id)}
-                  />
-                  <Text size="2" className="flex-1">
-                    {device.name}
-                  </Text>
-                  <Text size="1" color="gray">
-                    {device.id}
-                  </Text>
-                </label>
-              ))}
+      <ScrollArea className="max-h-[280px]">
+        <div className="flex flex-col gap-2.5">
+          {Array.from(vendorGroups.entries()).map(([vendor, devices]) => (
+            <div key={vendor} className="flex flex-col gap-1">
+              <Text size="1" color="gray" weight="medium" className="px-0.5">
+                {vendor}
+              </Text>
+              <div className="flex flex-col gap-0.5">
+                {devices.map((device) => (
+                  <label
+                    key={device.id}
+                    className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/5 cursor-pointer transition"
+                  >
+                    <Checkbox
+                      checked={pending.has(device.id)}
+                      onCheckedChange={() => toggle(device.id)}
+                    />
+                    <Text size="2" className="flex-1">
+                      {device.name}
+                    </Text>
+                    <Text size="1" color="gray">
+                      {device.id}
+                    </Text>
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </ScrollArea>
       <div className="flex justify-between items-center pt-1 border-t border-white/10">
         <Text size="1" color="gray">
           已选 {pending.size} / {allIds.length}

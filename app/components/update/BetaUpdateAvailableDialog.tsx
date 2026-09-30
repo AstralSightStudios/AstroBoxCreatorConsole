@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { DownloadSimpleIcon, GitBranchIcon, SpinnerIcon } from "@phosphor-icons/react";
 import { Button, Dialog, Flex } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
@@ -89,13 +90,15 @@ export default function BetaUpdateAvailableDialog({
       <Dialog.Content maxWidth="560px">
         <Dialog.Title>发现新的 Beta 构建 #{info.runNumber}</Dialog.Title>
 
-        <div className="mb-4 max-h-[var(--ui-viewport-height-46pct)] overflow-auto rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {notesHtml ? (
-            <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
-          ) : (
-            <p className="text-white/40">本次构建暂无详细信息。</p>
-          )}
-        </div>
+        <ScrollArea className="mb-4 max-h-[var(--ui-viewport-height-46pct)] overflow-hidden rounded-lg border border-white/10 bg-white/[0.02]">
+          <div className="p-3 text-[13px] leading-relaxed text-white/80">
+            {notesHtml ? (
+              <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
+            ) : (
+              <p className="text-white/40">本次构建暂无详细信息。</p>
+            )}
+          </div>
+        </ScrollArea>
 
         <Flex justify="between" align="center">
           <Button variant="soft" color="gray" onClick={handleIgnore}>

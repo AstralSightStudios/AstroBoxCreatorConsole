@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { ScrollArea } from "~/components/scroll-area";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import type { PrResourcePreview } from "../types";
 
@@ -32,11 +33,8 @@ function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void })
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
     };
   }, [onClose]);
 
@@ -45,24 +43,26 @@ function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void })
       role="dialog"
       aria-modal="true"
       aria-label="图片预览"
-      className="fixed inset-0 z-50 overflow-auto bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div className="grid min-h-full min-w-full place-items-center p-6">
-        <img
-          src={proxiedUrl}
-          alt="预览大图"
-          onClick={(event) => {
-            event.stopPropagation();
-            setActual((value) => !value);
-          }}
-          className={
-            actual
-              ? "max-h-none max-w-none cursor-zoom-out"
-              : "max-h-[calc(var(--ui-viewport-height)-4rem)] max-w-[calc(var(--ui-viewport-width)-4rem)] cursor-zoom-in object-contain"
-          }
-        />
-      </div>
+      <ScrollArea horizontal className="h-full w-full overscroll-contain">
+        <div className="grid min-h-full min-w-full place-items-center p-6">
+          <img
+            src={proxiedUrl}
+            alt="预览大图"
+            onClick={(event) => {
+              event.stopPropagation();
+              setActual((value) => !value);
+            }}
+            className={
+              actual
+                ? "max-h-none max-w-none cursor-zoom-out"
+                : "max-h-[calc(var(--ui-viewport-height)-4rem)] max-w-[calc(var(--ui-viewport-width)-4rem)] cursor-zoom-in object-contain"
+            }
+          />
+        </div>
+      </ScrollArea>
       <button
         type="button"
         onClick={onClose}

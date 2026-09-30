@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GithubPullFile } from "~/api/github/pr-review";
+import { ScrollArea } from "~/components/scroll-area";
 import { isImagePath, isVideoPath } from "../utils";
 import { ProxiedImage, ProxiedVideo } from "./ProxiedMedia";
 
@@ -47,7 +48,10 @@ export function FileEntry({ file, onComment }: { file: GithubPullFile; onComment
 
 export function DiffBlock({ patch }: { patch: string }) {
   return (
-    <div className="mt-2 max-h-96 max-w-full overflow-auto rounded border border-white/10 bg-black/30">
+    <ScrollArea
+      horizontal
+      className="mt-2 max-h-96 max-w-full overflow-hidden rounded border border-white/10 bg-black/30"
+    >
       <pre className="w-max min-w-full whitespace-pre py-2 font-mono-sarasa text-xs leading-5 text-white/65">
         {patch.split(/\r?\n/).map((line, index) => {
           const tone =
@@ -65,6 +69,6 @@ export function DiffBlock({ patch }: { patch: string }) {
           );
         })}
       </pre>
-    </div>
+    </ScrollArea>
   );
 }

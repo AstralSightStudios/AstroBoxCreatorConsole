@@ -1,4 +1,5 @@
 import { Button, Dialog, IconButton, Spinner, Tooltip } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { CopyIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -277,47 +278,49 @@ function ReportDetail({
         分类：{report.reasonCategory || "--"} · 创建于 {formatDateTime(report.createdAt)}
       </Dialog.Description>
 
-      <div className="flex max-h-[var(--ui-viewport-height-78pct)] flex-col gap-4 overflow-y-auto pr-1">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 rounded-xl bg-black/20 p-3 text-sm">
-          <Info label="状态" value={STATUS_LABELS[report.status]} />
-          <Info label="类型" value={report.reportType} />
-          <Info label="举报人" value={<CopyableId value={report.senderId} label="举报人 userId" />} />
-          <Info label="评论 ID" value={<CopyableId value={report.commentId} label="评论 ID" />} />
-          <Info label="资源 ID" value={<CopyableId value={report.resourceId} label="资源 ID" />} />
-          <Info label="处理人" value={<CopyableId value={report.handledBy} label="处理人" />} />
-        </div>
+      <ScrollArea className="max-h-[var(--ui-viewport-height-78pct)]">
+        <div className="flex flex-col gap-4 pr-1">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 rounded-xl bg-black/20 p-3 text-sm">
+            <Info label="状态" value={STATUS_LABELS[report.status]} />
+            <Info label="类型" value={report.reportType} />
+            <Info label="举报人" value={<CopyableId value={report.senderId} label="举报人 userId" />} />
+            <Info label="评论 ID" value={<CopyableId value={report.commentId} label="评论 ID" />} />
+            <Info label="资源 ID" value={<CopyableId value={report.resourceId} label="资源 ID" />} />
+            <Info label="处理人" value={<CopyableId value={report.handledBy} label="处理人" />} />
+          </div>
 
-        <div className="rounded-xl bg-black/20 p-3">
-          <h3 className="mb-2 text-sm font-semibold text-white">举报理由</h3>
-          <p className="whitespace-pre-wrap text-sm leading-6 text-white/75">{report.reason}</p>
-          {report.evidence.length > 0 && (
-            <div className="mt-3 flex flex-col gap-1 text-sm text-white/60">
-              {report.evidence.map((item) => (
-                <a key={item} href={item} target="_blank" rel="noreferrer" className="truncate underline">
-                  {item}
-                </a>
-              ))}
-            </div>
+          <div className="rounded-xl bg-black/20 p-3">
+            <h3 className="mb-2 text-sm font-semibold text-white">举报理由</h3>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-white/75">{report.reason}</p>
+            {report.evidence.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1 text-sm text-white/60">
+                {report.evidence.map((item) => (
+                  <a key={item} href={item} target="_blank" rel="noreferrer" className="truncate underline">
+                    {item}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {report.reportType === "comment" && report.commentId && (
+            <CommentContextSection
+              commentId={report.commentId}
+              parentId={report.commentParentId}
+              catalogIndex={catalogIndex}
+            />
           )}
+
+          {report.reportType === "resource" && report.resourceId && (
+            <ResourceContextSection
+              resourceId={report.resourceId}
+              catalogIndex={catalogIndex}
+            />
+          )}
+
+          <ResolutionForm report={report} onChanged={onChanged} />
         </div>
-
-        {report.reportType === "comment" && report.commentId && (
-          <CommentContextSection
-            commentId={report.commentId}
-            parentId={report.commentParentId}
-            catalogIndex={catalogIndex}
-          />
-        )}
-
-        {report.reportType === "resource" && report.resourceId && (
-          <ResourceContextSection
-            resourceId={report.resourceId}
-            catalogIndex={catalogIndex}
-          />
-        )}
-
-        <ResolutionForm report={report} onChanged={onChanged} />
-      </div>
+      </ScrollArea>
     </>
   );
 }

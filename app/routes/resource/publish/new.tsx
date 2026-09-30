@@ -9,6 +9,7 @@ import {
   AlertDialog,
   Dialog,
 } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import {
   FileXIcon,
   UploadIcon,
@@ -2700,49 +2701,51 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               草稿箱
             </Button>
           </Popover.Trigger>
-          <Popover.Content width="300px" className="max-h-[360px] overflow-y-auto">
-            <div className="flex flex-col gap-2">
-              <Text size="2" weight="medium">已保存的草稿</Text>
-              {draftList.length === 0 ? (
-                <Text size="1" color="gray" className="py-4 text-center">
-                  暂无草稿
-                </Text>
-              ) : (
-                <div className="flex flex-col gap-1">
-                  {draftList.map((draft) => (
-                    <div
-                      key={draft.id}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 transition group"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <Text size="2" className="truncate block">{draft.name}</Text>
-                        <Text size="1" color="gray" className="flex items-center gap-1">
-                          <ClockIcon size={10} />
-                          {formatDraftTime(draft.savedAt)}
-                        </Text>
+          <Popover.Content width="300px">
+            <ScrollArea className="max-h-[360px]">
+              <div className="flex flex-col gap-2">
+                <Text size="2" weight="medium">已保存的草稿</Text>
+                {draftList.length === 0 ? (
+                  <Text size="1" color="gray" className="py-4 text-center">
+                    暂无草稿
+                  </Text>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {draftList.map((draft) => (
+                      <div
+                        key={draft.id}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 transition group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <Text size="2" className="truncate block">{draft.name}</Text>
+                          <Text size="1" color="gray" className="flex items-center gap-1">
+                            <ClockIcon size={10} />
+                            {formatDraftTime(draft.savedAt)}
+                          </Text>
+                        </div>
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          onClick={() => handleRestoreDraft(draft)}
+                          className="opacity-0 group-hover:opacity-100 transition"
+                        >
+                          恢复
+                        </Button>
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          color="red"
+                          onClick={() => handleDeleteDraft(draft.id)}
+                          className="opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <TrashIcon size={12} />
+                        </Button>
                       </div>
-                      <Button
-                        size="1"
-                        variant="ghost"
-                        onClick={() => handleRestoreDraft(draft)}
-                        className="opacity-0 group-hover:opacity-100 transition"
-                      >
-                        恢复
-                      </Button>
-                      <Button
-                        size="1"
-                        variant="ghost"
-                        color="red"
-                        onClick={() => handleDeleteDraft(draft.id)}
-                        className="opacity-0 group-hover:opacity-100 transition"
-                      >
-                        <TrashIcon size={12} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           </Popover.Content>
         </Popover.Root>
       </div>

@@ -7,6 +7,7 @@ import {
   UploadSimpleIcon,
 } from "@phosphor-icons/react";
 import { Button, Dialog, IconButton, Spinner, TextField } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -180,7 +181,7 @@ export default function BlogsManagerDialog({
                 刷新
               </Button>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto px-1 py-1">
+            <ScrollArea className="min-h-0 flex-1 overflow-hidden px-1 py-1">
               {loading && (
                 <div className="grid place-items-center py-12">
                   <Spinner />
@@ -204,7 +205,7 @@ export default function BlogsManagerDialog({
                   onCancelNewFolder={cancelNewFolder}
                 />
               )}
-            </div>
+            </ScrollArea>
           </section>
 
           <section className="flex flex-col gap-3">

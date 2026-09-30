@@ -1,4 +1,5 @@
 import { Button, Dialog, Spinner } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { CopyIcon, TrashIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -501,42 +502,44 @@ function OrderDialog({
       <Dialog.Description size="2" className="mb-3">
         {order.platform} · 卖家 {order.sellerUserId} · 创建于 {formatDateTime(order.createdAt)}
       </Dialog.Description>
-      <div className="grid max-h-[var(--ui-viewport-height-72pct)] gap-3 overflow-y-auto md:grid-cols-2">
-        <Field label="平台">
-          <select className={inputClass} value={form.platform} onChange={(e) => setForm((v) => ({ ...v, platform: e.target.value as CommercePlatform }))}>
-            {PLATFORMS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </Field>
-        <Field label="订单 ID">
-          <input className={inputClass} value={form.externalOrderId} onChange={(e) => setForm((v) => ({ ...v, externalOrderId: e.target.value }))} />
-        </Field>
-        <Field label="状态">
-          <select className={inputClass} value={form.status} onChange={(e) => setForm((v) => ({ ...v, status: e.target.value as PublicOrderStatus }))}>
-            {ORDER_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </Field>
-        <Field label="买家 AstroBox ID">
-          <input className={inputClass} value={form.buyerUserId} onChange={(e) => setForm((v) => ({ ...v, buyerUserId: e.target.value }))} />
-        </Field>
-        <Field label="买家平台 ID">
-          <input className={inputClass} value={form.buyerPlatformUserId} onChange={(e) => setForm((v) => ({ ...v, buyerPlatformUserId: e.target.value }))} />
-        </Field>
-        <Field label="资源 ID">
-          <input className={inputClass} value={form.resourceId} onChange={(e) => setForm((v) => ({ ...v, resourceId: e.target.value }))} />
-        </Field>
-        <Field label="设备 ID">
-          <input className={inputClass} value={form.deviceId} onChange={(e) => setForm((v) => ({ ...v, deviceId: e.target.value }))} />
-        </Field>
-        <Field label="商品 ID">
-          <input className={inputClass} value={form.externalProductId} onChange={(e) => setForm((v) => ({ ...v, externalProductId: e.target.value }))} />
-        </Field>
-        <Field label="SKU ID">
-          <input className={inputClass} value={form.externalSkuId} onChange={(e) => setForm((v) => ({ ...v, externalSkuId: e.target.value }))} />
-        </Field>
-        <Field label="原始 payload JSON">
-          <textarea className={textareaClass} value={form.rawPayloadText} onChange={(e) => setForm((v) => ({ ...v, rawPayloadText: e.target.value }))} />
-        </Field>
-      </div>
+      <ScrollArea className="max-h-[var(--ui-viewport-height-72pct)]">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="平台">
+            <select className={inputClass} value={form.platform} onChange={(e) => setForm((v) => ({ ...v, platform: e.target.value as CommercePlatform }))}>
+              {PLATFORMS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </Field>
+          <Field label="订单 ID">
+            <input className={inputClass} value={form.externalOrderId} onChange={(e) => setForm((v) => ({ ...v, externalOrderId: e.target.value }))} />
+          </Field>
+          <Field label="状态">
+            <select className={inputClass} value={form.status} onChange={(e) => setForm((v) => ({ ...v, status: e.target.value as PublicOrderStatus }))}>
+              {ORDER_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </Field>
+          <Field label="买家 AstroBox ID">
+            <input className={inputClass} value={form.buyerUserId} onChange={(e) => setForm((v) => ({ ...v, buyerUserId: e.target.value }))} />
+          </Field>
+          <Field label="买家平台 ID">
+            <input className={inputClass} value={form.buyerPlatformUserId} onChange={(e) => setForm((v) => ({ ...v, buyerPlatformUserId: e.target.value }))} />
+          </Field>
+          <Field label="资源 ID">
+            <input className={inputClass} value={form.resourceId} onChange={(e) => setForm((v) => ({ ...v, resourceId: e.target.value }))} />
+          </Field>
+          <Field label="设备 ID">
+            <input className={inputClass} value={form.deviceId} onChange={(e) => setForm((v) => ({ ...v, deviceId: e.target.value }))} />
+          </Field>
+          <Field label="商品 ID">
+            <input className={inputClass} value={form.externalProductId} onChange={(e) => setForm((v) => ({ ...v, externalProductId: e.target.value }))} />
+          </Field>
+          <Field label="SKU ID">
+            <input className={inputClass} value={form.externalSkuId} onChange={(e) => setForm((v) => ({ ...v, externalSkuId: e.target.value }))} />
+          </Field>
+          <Field label="原始 payload JSON">
+            <textarea className={textareaClass} value={form.rawPayloadText} onChange={(e) => setForm((v) => ({ ...v, rawPayloadText: e.target.value }))} />
+          </Field>
+        </div>
+      </ScrollArea>
       <div className="mt-4 flex justify-between gap-2">
         <Button color="red" variant="soft" disabled={saving} onClick={remove}>删除订单</Button>
         <div className="flex gap-2">

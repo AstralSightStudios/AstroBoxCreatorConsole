@@ -63,6 +63,7 @@ import {
   getAiApiKeyStatus,
 } from "~/api/ai";
 import { Dialog, Popover } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import {
   Bubble,
@@ -1014,120 +1015,122 @@ function MessageComposer({
               sideOffset={10}
               width="320px"
               size="1"
-              className="max-h-96 overflow-y-auto p-0!"
+              className="p-0!"
             >
-              <div className="px-3 py-2.5">
-                <Text size="2" weight="medium">
-                  私信工具
-                </Text>
-              </div>
-
-              <div className="flex items-center gap-3 border-t border-white/10 px-3 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/70">
-                  <RobotIcon size={17} />
+              <ScrollArea className="max-h-96">
+                <div className="px-3 py-2.5">
+                  <Text size="2" weight="medium">
+                    私信工具
+                  </Text>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-white/90">
-                    AI 自动回复
-                  </p>
-                  <p className="truncate text-xs text-white/45">
-                    {!aiAutoReplySupported
-                      ? "仅支持桌面客户端"
-                      : aiApiKeyStatusQuery.isLoading && !hasKeywordAutoReply
-                        ? "正在检查配置"
-                        : aiAutoReplyConfigured
-                          ? aiAutoReplyConfig.enabled
-                            ? "已开启"
-                            : "已配置"
-                          : "需要先完成配置"}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="1"
-                  variant="ghost"
-                  color="gray"
-                  aria-label="配置 AI 自动回复"
-                  onClick={openAiAutoReplySettings}
-                >
-                  <GearSixIcon size={15} />
-                </Button>
-                <Switch
-                  size="1"
-                  aria-label="AI 自动回复"
-                  checked={aiAutoReplyConfig.enabled}
-                  disabled={
-                    !aiAutoReplySupported ||
-                    (!aiAutoReplyConfig.enabled && !aiAutoReplyConfigured)
-                  }
-                  onCheckedChange={setAfdianAiAutoReplyEnabled}
-                />
-              </div>
 
-              <div className="border-t border-white/10 px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-medium text-white/65">常用语</p>
+                <div className="flex items-center gap-3 border-t border-white/10 px-3 py-3">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/70">
+                    <RobotIcon size={17} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white/90">
+                      AI 自动回复
+                    </p>
+                    <p className="truncate text-xs text-white/45">
+                      {!aiAutoReplySupported
+                        ? "仅支持桌面客户端"
+                        : aiApiKeyStatusQuery.isLoading && !hasKeywordAutoReply
+                          ? "正在检查配置"
+                          : aiAutoReplyConfigured
+                            ? aiAutoReplyConfig.enabled
+                              ? "已开启"
+                              : "已配置"
+                            : "需要先完成配置"}
+                    </p>
+                  </div>
                   <Button
                     type="button"
                     size="1"
                     variant="ghost"
                     color="gray"
-                    onClick={openQuickReplyManager}
+                    aria-label="配置 AI 自动回复"
+                    onClick={openAiAutoReplySettings}
                   >
-                    管理
+                    <GearSixIcon size={15} />
                   </Button>
+                  <Switch
+                    size="1"
+                    aria-label="AI 自动回复"
+                    checked={aiAutoReplyConfig.enabled}
+                    disabled={
+                      !aiAutoReplySupported ||
+                      (!aiAutoReplyConfig.enabled && !aiAutoReplyConfigured)
+                    }
+                    onCheckedChange={setAfdianAiAutoReplyEnabled}
+                  />
                 </div>
-                <div className="mt-1.5 flex flex-col gap-1">
-                  {quickReplies.length === 0 ? (
-                    <p className="py-2 text-center text-xs text-white/40">
-                      暂无常用语
-                    </p>
-                  ) : (
-                    quickReplies.map((reply) => (
-                      <Button
-                        key={reply}
-                        type="button"
-                        size="1"
-                        variant="ghost"
-                        color="gray"
-                        radius="large"
-                        className="h-auto! w-full! justify-start! whitespace-normal! px-2! py-1.5! text-left! font-normal!"
-                        onClick={() => insertQuickReply(reply)}
-                      >
-                        {reply}
-                      </Button>
-                    ))
-                  )}
-                </div>
-              </div>
 
-              <div className="border-t border-white/10 px-3 py-3">
-                <p className="text-xs font-medium text-white/65">发送快捷键</p>
-                <SegmentedControl.Root
-                  size="1"
-                  radius="full"
-                  value={sendShortcut}
-                  className="mt-2 w-full"
-                  onValueChange={(shortcut) =>
-                    onSendShortcutChange(shortcut as SendShortcut)
-                  }
-                >
-                  <SegmentedControl.Item value="enter" className="flex-1">
-                    Enter
-                  </SegmentedControl.Item>
-                  <SegmentedControl.Item
-                    value="shift-enter"
-                    className="flex-1"
+                <div className="border-t border-white/10 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-white/65">常用语</p>
+                    <Button
+                      type="button"
+                      size="1"
+                      variant="ghost"
+                      color="gray"
+                      onClick={openQuickReplyManager}
+                    >
+                      管理
+                    </Button>
+                  </div>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {quickReplies.length === 0 ? (
+                      <p className="py-2 text-center text-xs text-white/40">
+                        暂无常用语
+                      </p>
+                    ) : (
+                      quickReplies.map((reply) => (
+                        <Button
+                          key={reply}
+                          type="button"
+                          size="1"
+                          variant="ghost"
+                          color="gray"
+                          radius="large"
+                          className="h-auto! w-full! justify-start! whitespace-normal! px-2! py-1.5! text-left! font-normal!"
+                          onClick={() => insertQuickReply(reply)}
+                        >
+                          {reply}
+                        </Button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 px-3 py-3">
+                  <p className="text-xs font-medium text-white/65">发送快捷键</p>
+                  <SegmentedControl.Root
+                    size="1"
+                    radius="full"
+                    value={sendShortcut}
+                    className="mt-2 w-full"
+                    onValueChange={(shortcut) =>
+                      onSendShortcutChange(shortcut as SendShortcut)
+                    }
                   >
-                    Shift + Enter
-                  </SegmentedControl.Item>
-                </SegmentedControl.Root>
-                <p className="mt-1.5 text-xs text-white/40">
-                  {sendOnEnter
-                    ? "Enter 发送，Shift + Enter 换行"
-                    : "Shift + Enter 发送，Enter 换行"}
-                </p>
-              </div>
+                    <SegmentedControl.Item value="enter" className="flex-1">
+                      Enter
+                    </SegmentedControl.Item>
+                    <SegmentedControl.Item
+                      value="shift-enter"
+                      className="flex-1"
+                    >
+                      Shift + Enter
+                    </SegmentedControl.Item>
+                  </SegmentedControl.Root>
+                  <p className="mt-1.5 text-xs text-white/40">
+                    {sendOnEnter
+                      ? "Enter 发送，Shift + Enter 换行"
+                      : "Shift + Enter 发送，Enter 换行"}
+                  </p>
+                </div>
+              </ScrollArea>
             </Popover.Content>
           </Popover.Root>
           <textarea
@@ -1176,46 +1179,48 @@ function MessageComposer({
           <Dialog.Description size="2" className="mt-1 text-white/55">
             常用语保存在当前设备，点击加号即可快速插入。
           </Dialog.Description>
-          <div className="mt-4 flex max-h-72 flex-col gap-2 overflow-y-auto">
-            {quickReplyDrafts.map((reply, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={reply}
-                  maxLength={200}
-                  aria-label={`常用语 ${index + 1}`}
-                  className="h-9 min-w-0 flex-1 rounded-lg border-0 bg-white/[0.08] px-3 text-sm text-white/90 outline-none placeholder:text-white/35"
-                  placeholder="输入常用语"
-                  onChange={(event) =>
-                    setQuickReplyDrafts((items) =>
-                      items.map((item, itemIndex) =>
-                        itemIndex === index ? event.target.value : item,
-                      ),
-                    )
-                  }
-                />
-                <Button
-                  type="button"
-                  size="2"
-                  variant="soft"
-                  color="red"
-                  aria-label={`删除常用语 ${index + 1}`}
-                  onClick={() =>
-                    setQuickReplyDrafts((items) =>
-                      items.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                >
-                  <TrashIcon size={16} />
-                </Button>
-              </div>
-            ))}
-            {quickReplyDrafts.length === 0 && (
-              <p className="py-4 text-center text-sm text-white/45">
-                暂无常用语
-              </p>
-            )}
-          </div>
+          <ScrollArea className="mt-4 max-h-72">
+            <div className="flex flex-col gap-2">
+              {quickReplyDrafts.map((reply, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={reply}
+                    maxLength={200}
+                    aria-label={`常用语 ${index + 1}`}
+                    className="h-9 min-w-0 flex-1 rounded-lg border-0 bg-white/[0.08] px-3 text-sm text-white/90 outline-none placeholder:text-white/35"
+                    placeholder="输入常用语"
+                    onChange={(event) =>
+                      setQuickReplyDrafts((items) =>
+                        items.map((item, itemIndex) =>
+                          itemIndex === index ? event.target.value : item,
+                        ),
+                      )
+                    }
+                  />
+                  <Button
+                    type="button"
+                    size="2"
+                    variant="soft"
+                    color="red"
+                    aria-label={`删除常用语 ${index + 1}`}
+                    onClick={() =>
+                      setQuickReplyDrafts((items) =>
+                        items.filter((_, itemIndex) => itemIndex !== index),
+                      )
+                    }
+                  >
+                    <TrashIcon size={16} />
+                  </Button>
+                </div>
+              ))}
+              {quickReplyDrafts.length === 0 && (
+                <p className="py-4 text-center text-sm text-white/45">
+                  暂无常用语
+                </p>
+              )}
+            </div>
+          </ScrollArea>
           <Button
             type="button"
             variant="soft"

@@ -8,6 +8,7 @@ import {
   Switch,
   TextField,
 } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import {
   CaretDownIcon,
   LinkSimpleIcon,
@@ -545,113 +546,115 @@ export function EncryptConfigDialog({
                     </div>
                   </div>
 
-                  <div className="max-h-[var(--ui-viewport-height-52pct)] space-y-3 overflow-y-auto pr-1">
-                    {rows.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-white/15 px-4 py-8 text-center text-sm text-white/55">
-                        当前设备没有商品映射。点击下方按钮添加，保存后即可接收对应商品的权益。
-                      </div>
-                    )}
-                    {rows.map((row, index) => (
-                      <div
-                        key={row.rowId}
-                        className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                      >
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-white/45">
-                              商品映射 {index + 1}
-                            </span>
-                            <Badge
-                              color={row.productType === 2 ? "violet" : "blue"}
-                              variant="soft"
+                  <ScrollArea className="max-h-[var(--ui-viewport-height-52pct)]">
+                    <div className="space-y-3 pr-1">
+                      {rows.length === 0 && (
+                        <div className="rounded-xl border border-dashed border-white/15 px-4 py-8 text-center text-sm text-white/55">
+                          当前设备没有商品映射。点击下方按钮添加，保存后即可接收对应商品的权益。
+                        </div>
+                      )}
+                      {rows.map((row, index) => (
+                        <div
+                          key={row.rowId}
+                          className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                        >
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-white/45">
+                                商品映射 {index + 1}
+                              </span>
+                              <Badge
+                                color={row.productType === 2 ? "violet" : "blue"}
+                                variant="soft"
+                              >
+                                {getMappingTypeLabel(row)}
+                              </Badge>
+                            </div>
+                            <Button
+                              size="1"
+                              variant="ghost"
+                              color="red"
+                              onClick={() => removeRow(platform, row.rowId)}
+                              aria-label={`删除第 ${index + 1} 条映射`}
                             >
-                              {getMappingTypeLabel(row)}
-                            </Badge>
+                              <TrashIcon size={15} />
+                              删除
+                            </Button>
                           </div>
-                          <Button
-                            size="1"
-                            variant="ghost"
-                            color="red"
-                            onClick={() => removeRow(platform, row.rowId)}
-                            aria-label={`删除第 ${index + 1} 条映射`}
-                          >
-                            <TrashIcon size={15} />
-                            删除
-                          </Button>
-                        </div>
 
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <TextField.Root
-                            size="2"
-                            placeholder="商品 ID / plan_id"
-                            value={row.externalProductId}
-                            onChange={(event) =>
-                              updateRow(platform, row.rowId, {
-                                externalProductId: event.target.value,
-                              })
-                            }
-                            radius="large"
-                          />
-                          <TextField.Root
-                            size="2"
-                            placeholder="SKU ID / sku_id"
-                            value={row.externalSkuId}
-                            onChange={(event) =>
-                              updateRow(platform, row.rowId, {
-                                externalSkuId: event.target.value,
-                              })
-                            }
-                            radius="large"
-                          />
-                          <TextField.Root
-                            size="2"
-                            placeholder="显示标题（可选）"
-                            value={row.title}
-                            onChange={(event) =>
-                              updateRow(platform, row.rowId, {
-                                title: event.target.value,
-                              })
-                            }
-                            radius="large"
-                          />
-                          <TextField.Root
-                            size="2"
-                            placeholder="购买链接（可选）"
-                            value={row.buyUrl}
-                            onChange={(event) => {
-                              const buyUrl = event.target.value;
-                              updateRow(platform, row.rowId, {
-                                buyUrl,
-                                productType: parseAfdUrl(buyUrl).productType,
-                              });
-                            }}
-                            radius="large"
-                          />
-                        </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <TextField.Root
+                              size="2"
+                              placeholder="商品 ID / plan_id"
+                              value={row.externalProductId}
+                              onChange={(event) =>
+                                updateRow(platform, row.rowId, {
+                                  externalProductId: event.target.value,
+                                })
+                              }
+                              radius="large"
+                            />
+                            <TextField.Root
+                              size="2"
+                              placeholder="SKU ID / sku_id"
+                              value={row.externalSkuId}
+                              onChange={(event) =>
+                                updateRow(platform, row.rowId, {
+                                  externalSkuId: event.target.value,
+                                })
+                              }
+                              radius="large"
+                            />
+                            <TextField.Root
+                              size="2"
+                              placeholder="显示标题（可选）"
+                              value={row.title}
+                              onChange={(event) =>
+                                updateRow(platform, row.rowId, {
+                                  title: event.target.value,
+                                })
+                              }
+                              radius="large"
+                            />
+                            <TextField.Root
+                              size="2"
+                              placeholder="购买链接（可选）"
+                              value={row.buyUrl}
+                              onChange={(event) => {
+                                const buyUrl = event.target.value;
+                                updateRow(platform, row.rowId, {
+                                  buyUrl,
+                                  productType: parseAfdUrl(buyUrl).productType,
+                                });
+                              }}
+                              radius="large"
+                            />
+                          </div>
 
-                        <div className="mt-3 flex items-center gap-4">
-                          <label className="flex items-center gap-2 text-sm text-white/80">
-                            <Switch
-                              checked={row.isPaid}
-                              onCheckedChange={(checked) =>
-                                updateRow(platform, row.rowId, { isPaid: checked })
-                              }
-                            />
-                            付费
-                          </label>
-                          <label className="flex items-center gap-2 text-sm text-white/80">
-                            <Switch
-                              checked={row.enabled}
-                              onCheckedChange={(checked) =>
-                                updateRow(platform, row.rowId, { enabled: checked })
-                              }
-                            />
-                            启用
-                          </label>
+                          <div className="mt-3 flex items-center gap-4">
+                            <label className="flex items-center gap-2 text-sm text-white/80">
+                              <Switch
+                                checked={row.isPaid}
+                                onCheckedChange={(checked) =>
+                                  updateRow(platform, row.rowId, { isPaid: checked })
+                                }
+                              />
+                              付费
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-white/80">
+                              <Switch
+                                checked={row.enabled}
+                                onCheckedChange={(checked) =>
+                                  updateRow(platform, row.rowId, { enabled: checked })
+                                }
+                              />
+                              启用
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Button

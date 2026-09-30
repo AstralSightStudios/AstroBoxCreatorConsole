@@ -1,4 +1,5 @@
 import { Button, Dialog } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -244,7 +245,10 @@ export default function ExplorePageManager() {
               <Button size="1" variant="soft">关闭</Button>
             </Dialog.Close>
           </div>
-          <div className="max-h-[var(--ui-viewport-height-80pct)] min-h-[420px] overflow-auto rounded-xl bg-[#101012] p-3">
+          <ScrollArea
+            horizontal
+            className="max-h-[var(--ui-viewport-height-80pct)] min-h-[420px] overflow-hidden rounded-xl bg-[#101012] p-3"
+          >
             {payload ? (
               <ExplorePreviewContent
                 payload={payload}
@@ -257,7 +261,7 @@ export default function ExplorePageManager() {
                 JSON 无法解析
               </div>
             )}
-          </div>
+          </ScrollArea>
         </Dialog.Content>
       </Dialog.Root>
     </div>

@@ -4,6 +4,7 @@ import {
   WarningDiamondIcon,
 } from "@phosphor-icons/react";
 import { Button, Callout, Dialog, Text, TextField } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { ScrubbableNumberField } from "~/components/wallpaper-editor/ScrubbableNumberField";
 import { toast } from "sonner";
 import {
@@ -175,124 +176,126 @@ export function VersionEditorDialog({
           版本以包体自身为准，修改后会更新包体。
         </Dialog.Description>
 
-        <div className="mt-3 flex max-h-[var(--ui-viewport-height-60pct)] flex-col gap-3 overflow-y-auto pr-1">
-          {loading && <Text size="2" color="gray">正在读取包体版本…</Text>}
+        <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-60pct)]">
+          <div className="flex flex-col gap-3 pr-1">
+            {loading && <Text size="2" color="gray">正在读取包体版本…</Text>}
 
-          {!loading && info && !info.writable && (
-            <Callout.Root color="amber">
-              <Callout.Icon>
-                <WarningDiamondIcon size={18} weight="fill" />
-              </Callout.Icon>
-              <Callout.Text>{info.reason || "该包体暂不支持内置改写版本。"}</Callout.Text>
-            </Callout.Root>
-          )}
+            {!loading && info && !info.writable && (
+              <Callout.Root color="amber">
+                <Callout.Icon>
+                  <WarningDiamondIcon size={18} weight="fill" />
+                </Callout.Icon>
+                <Callout.Text>{info.reason || "该包体暂不支持内置改写版本。"}</Callout.Text>
+              </Callout.Root>
+            )}
 
-          {!loading && isWatchfaceBin && (
+            {!loading && isWatchfaceBin && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <Text size="1" color="gray">更新程度</Text>
+                <div className="mt-2 flex items-end gap-2">
+                  <label className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-xs text-white/45">主版本</span>
+                    <ScrubbableNumberField
+                      value={triple.major}
+                      min={0}
+                      max={255}
+                      ariaLabel="主版本"
+                      onChange={(value) => {
+                        const next = Math.max(0, Math.min(255, Math.trunc(value)));
+                        setTriple((prev) =>
+                          next > prev.major
+                            ? { major: next, minor: 0, patch: 0 }
+                            : { ...prev, major: next },
+                        );
+                      }}
+                    />
+                  </label>
+                  <span className="pb-2 text-white/50">.</span>
+                  <label className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-xs text-white/45">次版本</span>
+                    <ScrubbableNumberField
+                      value={triple.minor}
+                      min={0}
+                      max={255}
+                      ariaLabel="次版本"
+                      onChange={(value) => {
+                        const next = Math.max(0, Math.min(255, Math.trunc(value)));
+                        setTriple((prev) =>
+                          next > prev.minor
+                            ? { ...prev, minor: next, patch: 0 }
+                            : { ...prev, minor: next },
+                        );
+                      }}
+                    />
+                  </label>
+                  <span className="pb-2 text-white/50">.</span>
+                  <label className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-xs text-white/45">修订</span>
+                    <ScrubbableNumberField
+                      value={triple.patch}
+                      min={0}
+                      max={255}
+                      ariaLabel="修订"
+                      onChange={(value) =>
+                        setTriple((prev) => ({
+                          ...prev,
+                          patch: Math.max(0, Math.min(255, Math.trunc(value))),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                {atMax && (
+                  <Text size="1" color="red">已达版本上限 255.255.255</Text>
+                )}
+                <div className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-white/50">
+                  <p className="mb-1 text-white/65">更新程度怎么选</p>
+                  <p>• 修订：修点小问题、细节调整（1.2.3 → 1.2.4）</p>
+                  <p>• 次版本：有新的内容或功能（1.2.3 → 1.3.0）</p>
+                  <p>• 主版本：整体大改版（1.2.3 → 2.0.0）</p>
+                  <p className="mt-1">
+                    每次发布新包体都要让版本比上一版大，否则用户收不到更新。
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!loading && isZipManifest && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <Text size="1" color="gray">包内版本</Text>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <TextField.Root
+                    placeholder="versionName，如 2.5.0"
+                    className="min-w-[160px] flex-1"
+                    value={versionName}
+                    onChange={(e) => setVersionName(e.target.value)}
+                  />
+                  <TextField.Root
+                    placeholder="versionCode"
+                    className="w-32"
+                    inputMode="numeric"
+                    value={versionCodeInput}
+                    onChange={(e) => setVersionCodeInput(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-              <Text size="1" color="gray">更新程度</Text>
-              <div className="mt-2 flex items-end gap-2">
-                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="text-xs text-white/45">主版本</span>
-                  <ScrubbableNumberField
-                    value={triple.major}
-                    min={0}
-                    max={255}
-                    ariaLabel="主版本"
-                    onChange={(value) => {
-                      const next = Math.max(0, Math.min(255, Math.trunc(value)));
-                      setTriple((prev) =>
-                        next > prev.major
-                          ? { major: next, minor: 0, patch: 0 }
-                          : { ...prev, major: next },
-                      );
-                    }}
-                  />
-                </label>
-                <span className="pb-2 text-white/50">.</span>
-                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="text-xs text-white/45">次版本</span>
-                  <ScrubbableNumberField
-                    value={triple.minor}
-                    min={0}
-                    max={255}
-                    ariaLabel="次版本"
-                    onChange={(value) => {
-                      const next = Math.max(0, Math.min(255, Math.trunc(value)));
-                      setTriple((prev) =>
-                        next > prev.minor
-                          ? { ...prev, minor: next, patch: 0 }
-                          : { ...prev, minor: next },
-                      );
-                    }}
-                  />
-                </label>
-                <span className="pb-2 text-white/50">.</span>
-                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="text-xs text-white/45">修订</span>
-                  <ScrubbableNumberField
-                    value={triple.patch}
-                    min={0}
-                    max={255}
-                    ariaLabel="修订"
-                    onChange={(value) =>
-                      setTriple((prev) => ({
-                        ...prev,
-                        patch: Math.max(0, Math.min(255, Math.trunc(value))),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              {atMax && (
-                <Text size="1" color="red">已达版本上限 255.255.255</Text>
-              )}
-              <div className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-white/50">
-                <p className="mb-1 text-white/65">更新程度怎么选</p>
-                <p>• 修订：修点小问题、细节调整（1.2.3 → 1.2.4）</p>
-                <p>• 次版本：有新的内容或功能（1.2.3 → 1.3.0）</p>
-                <p>• 主版本：整体大改版（1.2.3 → 2.0.0）</p>
-                <p className="mt-1">
-                  每次发布新包体都要让版本比上一版大，否则用户收不到更新。
-                </p>
-              </div>
+              <Text size="1" color="gray">预览</Text>
+              <div className="mt-1 break-all text-sm text-white/85">{previewText}</div>
             </div>
-          )}
 
-          {!loading && isZipManifest && (
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-              <Text size="1" color="gray">包内版本</Text>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <TextField.Root
-                  placeholder="versionName，如 2.5.0"
-                  className="min-w-[160px] flex-1"
-                  value={versionName}
-                  onChange={(e) => setVersionName(e.target.value)}
-                />
-                <TextField.Root
-                  placeholder="versionCode"
-                  className="w-32"
-                  inputMode="numeric"
-                  value={versionCodeInput}
-                  onChange={(e) => setVersionCodeInput(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-            <Text size="1" color="gray">预览</Text>
-            <div className="mt-1 break-all text-sm text-white/85">{previewText}</div>
+            {validationError && !loading && (
+              <Callout.Root color="red">
+                <Callout.Icon>
+                  <WarningDiamondIcon size={18} weight="fill" />
+                </Callout.Icon>
+                <Callout.Text>{validationError}</Callout.Text>
+              </Callout.Root>
+            )}
           </div>
-
-          {validationError && !loading && (
-            <Callout.Root color="red">
-              <Callout.Icon>
-                <WarningDiamondIcon size={18} weight="fill" />
-              </Callout.Icon>
-              <Callout.Text>{validationError}</Callout.Text>
-            </Callout.Root>
-          )}
-        </div>
+        </ScrollArea>
 
         <div className="mt-4 flex justify-end gap-3">
           <Dialog.Close>

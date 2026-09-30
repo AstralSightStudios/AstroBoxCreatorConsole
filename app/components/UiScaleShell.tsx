@@ -35,6 +35,7 @@ type UiScaleStyle = CSSProperties & {
     "--ui-viewport-height-46pct": string;
     "--ui-viewport-height-52pct": string;
     "--ui-viewport-height-56pct": string;
+    "--ui-viewport-height-60pct": string;
     "--ui-viewport-height-64pct": string;
     "--ui-viewport-height-72pct": string;
     "--ui-viewport-height-78pct": string;
@@ -181,6 +182,7 @@ export default function UiScaleShell({
         "--ui-viewport-height-46pct": `${metrics.logicalHeight * 0.46}px`,
         "--ui-viewport-height-52pct": `${metrics.logicalHeight * 0.52}px`,
         "--ui-viewport-height-56pct": `${metrics.logicalHeight * 0.56}px`,
+        "--ui-viewport-height-60pct": `${metrics.logicalHeight * 0.6}px`,
         "--ui-viewport-height-64pct": `${metrics.logicalHeight * 0.64}px`,
         "--ui-viewport-height-72pct": `${metrics.logicalHeight * 0.72}px`,
         "--ui-viewport-height-78pct": `${metrics.logicalHeight * 0.78}px`,

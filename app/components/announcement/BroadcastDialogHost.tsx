@@ -1,4 +1,5 @@
 import { Button, Dialog, Flex } from "~/components/ScaleAwareThemes";
+import { ScrollArea } from "~/components/scroll-area";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBroadcasts,
@@ -59,13 +60,15 @@ export default function BroadcastDialogHost() {
       <Dialog.Content maxWidth="480px">
         <Dialog.Title>{current?.title ?? ""}</Dialog.Title>
 
-        <div className="mb-4 max-h-[var(--ui-viewport-height-52pct)] overflow-auto rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white/80">
-          {contentHtml ? (
-            <div dangerouslySetInnerHTML={{ __html: contentHtml }} />
-          ) : (
-            <p className="text-white/40">（无正文）</p>
-          )}
-        </div>
+        <ScrollArea className="mb-4 max-h-[var(--ui-viewport-height-52pct)] overflow-hidden rounded-lg border border-white/10 bg-white/[0.02]">
+          <div className="p-3 text-[13px] leading-relaxed text-white/80">
+            {contentHtml ? (
+              <div dangerouslySetInnerHTML={{ __html: contentHtml }} />
+            ) : (
+              <p className="text-white/40">（无正文）</p>
+            )}
+          </div>
+        </ScrollArea>
 
         <Flex justify="end" gap="3">
           <Button onClick={dismissCurrent}>知道了</Button>
