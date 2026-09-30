@@ -1063,8 +1063,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         downloads,
         trialDownloads,
         links,
+        enableAstroBoxCreatorFeatures,
       }),
-    [itemId, itemName, previews, icon, cover, downloads, trialDownloads, links],
+    [
+      itemId,
+      itemName,
+      previews,
+      icon,
+      cover,
+      downloads,
+      trialDownloads,
+      links,
+      enableAstroBoxCreatorFeatures,
+    ],
   );
 
   const handlePreviewUpload = async (files: File[]) => {

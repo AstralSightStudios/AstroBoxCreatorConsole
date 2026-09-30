@@ -322,7 +322,7 @@ export function ExtSection({
                 启用购买与资源加密相关功能
               </p>
               <p className="text-xs text-white/60">
-                开启后客户端将尝试获取该资源的purchase_info。
+                使用加密上传，或通过 AstroBox 配置付费相关功能时必须开启本开关，否则客户端不解密包体。
               </p>
             </div>
             <Switch

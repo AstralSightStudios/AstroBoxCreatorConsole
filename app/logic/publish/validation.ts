@@ -12,6 +12,7 @@ export interface ValidationDownloadInput {
   version: string;
   file: ValidationUploadItem | null;
   existingFileName?: string;
+  encryptOnUpload?: boolean;
 }
 
 export interface ValidationLinkInput {
@@ -31,6 +32,7 @@ export interface PublishValidationInput {
   downloads: ValidationDownloadInput[];
   trialDownloads: ValidationDownloadInput[];
   links: ValidationLinkInput[];
+  enableAstroBoxCreatorFeatures: boolean;
 }
 
 /** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
@@ -86,6 +88,18 @@ function validateDownloadRows(
       ? [`${label}第 ${index + 1} 行缺少${missing.join("、")}。`]
       : [];
   });
+}
+
+/** 列出启用了加密上传的正式下载设备标识。试用包体不支持加密上传，不参与判断。 */
+function encryptedDownloadDevices(rows: ValidationDownloadInput[]): string[] {
+  return Array.from(
+    new Set(
+      rows
+        .filter((row) => row.encryptOnUpload === true)
+        .map((row) => row.platformId.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 export function containsUrlUnsafeFilename(name: string): boolean {
@@ -159,6 +173,15 @@ export function validatePublish(
   if (input.downloads.length === 0) errors.push("请至少添加一个正式下载设备。");
   errors.push(...validateDownloadRows(input.downloads, "正式下载"));
   errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));
+  // 加密上传的包体必须同时开启 ext.enableAstroBoxCreatorFeatures：
+  // 客户端依据该开关决定是否请求 purchase_info 与加密文件密钥，
+  // 开关关闭时密文不会被解密，类型嗅探失败后安装直接报错。
+  const encryptedDevices = encryptedDownloadDevices(input.downloads);
+  if (encryptedDevices.length > 0 && !input.enableAstroBoxCreatorFeatures) {
+    errors.push(
+      `以下设备启用了加密上传：${encryptedDevices.join("、")}。加密包体必须同时开启「启用购买与资源加密相关功能」，否则客户端不会请求加密密钥、不解密包体，安装时会失败。`,
+    );
+  }
   errors.push(...validateUrlUnsafeFilenames(input));
   const linkErrors = input.links.map(validateLink);
   const linkErrorText = linkErrors.filter(Boolean).join("；");

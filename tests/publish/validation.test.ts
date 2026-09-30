@@ -23,6 +23,7 @@ const validInput = {
   downloads: [{ platformId: "device", version: "1.0", file: image }],
   trialDownloads: [],
   links: [],
+  enableAstroBoxCreatorFeatures: false,
 };
 
 describe("publish validation", () => {
@@ -118,6 +119,65 @@ describe("publish validation", () => {
       coverPreviewId: "p2",
     });
     expect(clean.errors.filter((e) => e.includes("重命名"))).toEqual([]);
+  });
+
+  test("requires enableAstroBoxCreatorFeatures when a download row is encrypted", () => {
+    const encryptedRow = {
+      platformId: "device",
+      version: "1.0",
+      file: image,
+      encryptOnUpload: true,
+    };
+
+    // 加密上传但未开启开关：拦截，并点名具体设备
+    const blocked = validatePublish({
+      ...validInput,
+      downloads: [encryptedRow],
+      enableAstroBoxCreatorFeatures: false,
+    });
+    const joined = blocked.errors.join(" ");
+    expect(joined).toContain("启用购买与资源加密相关功能");
+    expect(joined).toContain("device");
+    expect(joined).toContain("不解密");
+
+    // 加密上传且已开启开关：放行
+    const allowed = validatePublish({
+      ...validInput,
+      downloads: [encryptedRow],
+      enableAstroBoxCreatorFeatures: true,
+    });
+    expect(allowed.errors).toEqual([]);
+
+    // 未加密且未开启开关：与本次改动无关，不产生提示
+    expect(validatePublish(validInput).errors).toEqual([]);
+
+    // encryptOnUpload 为 false / undefined 均视为未加密
+    expect(
+      validatePublish({
+        ...validInput,
+        downloads: [{ ...encryptedRow, encryptOnUpload: false }],
+      }).errors,
+    ).toEqual([]);
+
+    // 多设备加密时列出全部设备标识
+    const multi = validatePublish({
+      ...validInput,
+      downloads: [
+        encryptedRow,
+        { platformId: "device2", version: "1.0", file: image, encryptOnUpload: true },
+      ],
+      enableAstroBoxCreatorFeatures: false,
+    }).errors.join(" ");
+    expect(multi).toContain("device、device2");
+
+    // 试用包体不支持加密上传，即便误带 encryptOnUpload 也不参与判断
+    expect(
+      validatePublish({
+        ...validInput,
+        trialDownloads: [encryptedRow],
+        enableAstroBoxCreatorFeatures: false,
+      }).errors,
+    ).toEqual([]);
   });
 });
 
