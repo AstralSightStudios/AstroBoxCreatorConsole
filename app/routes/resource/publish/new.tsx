@@ -132,6 +132,7 @@ import {
   COVER_RATIO_TOLERANCE,
   validatePublish,
 } from "~/logic/publish/validation";
+import { flashFirstDownloadRow } from "~/logic/publish/scroll-highlight";
 import {
   computePackageHash,
   readPackageVersion,
@@ -544,7 +545,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [prMessage, setPrMessage] = useState("");
   const [prBody, setPrBody] = useState("");
   const [activeStepIndex, setActiveStepIndex] = useState(0);
-  const [versionCodeWarningOpen, setVersionCodeWarningOpen] = useState(false);
+  const [versionCodeWarningRows, setVersionCodeWarningRows] = useState<
+    DownloadInput[] | null
+  >(null);
   const [versionIncrementWarning, setVersionIncrementWarning] = useState<
     DownloadInput[] | null
   >(null);
@@ -2214,13 +2217,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleNextFromDownloadConfig = () => {
-    const missingVersionCode = downloads.some(
+    const missingVersionCode = downloads.filter(
       (d) =>
         (d.file !== null || Boolean(d.existingFileName)) &&
         (d.versionCode === undefined || d.versionCode === null),
     );
-    if (missingVersionCode) {
-      setVersionCodeWarningOpen(true);
+    if (missingVersionCode.length > 0) {
+      setVersionCodeWarningRows(missingVersionCode);
       return;
     }
     const identityMismatch = [...downloads, ...trialDownloads].filter(
@@ -2600,8 +2603,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const versionCodeWarningDialog = (
     <Dialog.Root
-      open={versionCodeWarningOpen}
-      onOpenChange={setVersionCodeWarningOpen}
+      open={versionCodeWarningRows !== null}
+      onOpenChange={(open) => {
+        if (!open) setVersionCodeWarningRows(null);
+      }}
     >
       <Dialog.Content maxWidth="440px">
         <Dialog.Title>未填写 versionCode</Dialog.Title>
@@ -2609,18 +2614,35 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           有包体未填写 versionCode，未填写 versionCode 将导致 AstroBox
           无法为用户自动检查更新。建议返回下载配置补充数字版本号，或选择仍然继续。
         </Dialog.Description>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {(versionCodeWarningRows ?? []).map((row, index) => (
+            <div
+              key={row.uid}
+              className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+            >
+              {sortedDeviceOptions.find((opt) => opt.id === row.platformId)?.name ||
+                row.platformId ||
+                `第 ${index + 1} 行`}
+              ：未填写 versionCode
+            </div>
+          ))}
+        </div>
         <div className="flex justify-end gap-3 mt-4">
           <Button
             variant="soft"
             color="gray"
-            onClick={() => setVersionCodeWarningOpen(false)}
+            onClick={() => {
+              const rows = versionCodeWarningRows;
+              setVersionCodeWarningRows(null);
+              flashFirstDownloadRow(rows);
+            }}
           >
             返回填写
           </Button>
           <Button
             variant="solid"
             onClick={() => {
-              setVersionCodeWarningOpen(false);
+              setVersionCodeWarningRows(null);
               goToStep(1);
             }}
           >
@@ -2660,7 +2682,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           <Button
             variant="solid"
             onClick={() => {
+              const rows = versionIncrementWarning;
               setVersionIncrementWarning(null);
+              flashFirstDownloadRow(rows);
             }}
           >
             返回修改版本

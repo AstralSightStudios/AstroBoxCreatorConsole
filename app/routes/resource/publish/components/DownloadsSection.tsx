@@ -502,6 +502,7 @@ export function DownloadsSection({
             downloads.map((item, index) => (
               <div
                 key={item.uid || `download-${index}`}
+                data-download-row-uid={item.uid}
                 className={`flex flex-col gap-2.5 rounded-lg border bg-black/20 p-2.5 ${
                   isNonIncrementRow(item)
                     ? "border-red-400/60"
