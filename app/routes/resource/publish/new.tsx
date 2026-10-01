@@ -1081,6 +1081,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     ],
   );
 
+  /** 已上传包体但未填写 versionCode 的行。versionCode 为强制项，缺失时不允许进入后续步骤。 */
+  const rowsMissingVersionCode = useMemo(
+    () =>
+      downloads.filter(
+        (d) =>
+          (d.file !== null || Boolean(d.existingFileName)) &&
+          (d.versionCode === undefined || d.versionCode === null),
+      ),
+    [downloads],
+  );
+
   const handlePreviewUpload = async (files: File[]) => {
     if (!files.length) return;
     const fileList = files;
@@ -2198,6 +2209,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setActiveStepIndex(0);
       return;
     }
+    // versionCode 为强制项。校验放在 goToStep 而非「下一步」按钮上，
+    // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
+    if (target > 0 && rowsMissingVersionCode.length > 0) {
+      setVersionCodeWarningRows(rowsMissingVersionCode);
+      setActiveStepIndex(0);
+      return;
+    }
     if (target > 0 && publishValidation.errors.length) {
       toast.error(publishValidation.errors[0]);
       setActiveStepIndex(0);
@@ -2217,15 +2235,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleNextFromDownloadConfig = () => {
-    const missingVersionCode = downloads.filter(
-      (d) =>
-        (d.file !== null || Boolean(d.existingFileName)) &&
-        (d.versionCode === undefined || d.versionCode === null),
-    );
-    if (missingVersionCode.length > 0) {
-      setVersionCodeWarningRows(missingVersionCode);
-      return;
-    }
     const identityMismatch = [...downloads, ...trialDownloads].filter(
       (d) =>
         d.packageIdentityKind === "package" &&
@@ -2611,8 +2620,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       <Dialog.Content maxWidth="440px">
         <Dialog.Title>未填写 versionCode</Dialog.Title>
         <Dialog.Description size="2">
-          有包体未填写 versionCode，未填写 versionCode 将导致 AstroBox
-          无法为用户自动检查更新。建议返回下载配置补充数字版本号，或选择仍然继续。
+          以下包体未填写 versionCode。未填写 versionCode
+          将导致 AstroBox 无法为用户自动检查更新，填写后方可继续。
         </Dialog.Description>
         <div className="mt-3 flex flex-col gap-1.5">
           {(versionCodeWarningRows ?? []).map((row, index) => (
@@ -2629,8 +2638,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         </div>
         <div className="flex justify-end gap-3 mt-4">
           <Button
-            variant="soft"
-            color="gray"
+            variant="solid"
             onClick={() => {
               const rows = versionCodeWarningRows;
               setVersionCodeWarningRows(null);
@@ -2638,15 +2646,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             }}
           >
             返回填写
-          </Button>
-          <Button
-            variant="solid"
-            onClick={() => {
-              setVersionCodeWarningRows(null);
-              goToStep(1);
-            }}
-          >
-            仍然继续
           </Button>
         </div>
       </Dialog.Content>
