@@ -48,9 +48,13 @@ case "$MODE" in
 
         BUILD_DIR="$SCRIPT_DIR/build-prebuilt"
         rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR/src"
+        mkdir -p "$BUILD_DIR/src/AstroBoxCreatorConsole"
 
-        ln -sf "$PROJECT_ROOT" "$BUILD_DIR/src/AstroBoxCreatorConsole"
+        # 只把 PKGBUILD.prebuilt 实际引用的 LICENSE 复制进来。
+        # 早期这里用 `ln -sf "$PROJECT_ROOT" ...` 把整个仓库软链进构建目录，
+        # 该链接指回仓库根目录，与仓库自身构成符号链接环：递归扫描构建目录
+        # （Vite dev 的文件监听、find、备份工具等）会无限深入并以 ELOOP 报错。
+        cp "$PROJECT_ROOT/LICENSE" "$BUILD_DIR/src/AstroBoxCreatorConsole/LICENSE"
 
         cp "$SCRIPT_DIR/PKGBUILD.prebuilt" "$BUILD_DIR/PKGBUILD"
         sed -i "s/^pkgver=.*/pkgver=${APP_VERSION}/" "$BUILD_DIR/PKGBUILD"
