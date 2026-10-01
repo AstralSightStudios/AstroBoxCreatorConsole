@@ -13,7 +13,12 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
-import { SectionCard } from "./shared";
+import {
+  type FieldHelpItem,
+  FieldHelpButton,
+  FieldHelpDialog,
+  SectionCard,
+} from "./shared";
 import type {
   BundledResourceInput,
   BundledResourceMode,
@@ -68,6 +73,34 @@ function ProxiedIcon({ url }: { url: string }) {
   );
 }
 
+const EXT_FIELD_HELP: FieldHelpItem[] = [
+  {
+    label: "启用购买与资源加密相关功能",
+    description:
+      "使用加密上传，或通过 AstroBox 配置付费相关功能时必须开启，否则客户端不解密包体。",
+  },
+  {
+    label: "捆绑项的两种安装方式",
+    description:
+      "必需：用户安装本资源时必须一并安装；推荐：安装时展示可勾选项，由用户自行决定。点击已添加捆绑项上的「必需 / 推荐」徽章即可切换。",
+  },
+  {
+    label: "捆绑资源与插件",
+    description:
+      "捆绑对象可以选择「资源」（来自资源目录 index_v2.csv）或「插件」（来自 AstroBox-NG-Plugin-Repo 索引）。资源无法捆绑自身。",
+  },
+  {
+    label: "绑定项图标与存在性",
+    description:
+      "已添加的捆绑项会显示对应资源的图标与名称。若出现「目录中已不存在」的红色提示，说明该资源已被从资源目录删除，提交后 PR 审核会判定失败，请移除该捆绑项。",
+  },
+  {
+    label: "ext 自定义 JSON",
+    description:
+      "这里的 JSON 仅用于补充其他自定义字段，会与结构化字段合并后写入 manifest。ext.bundledResources 由上方的捆绑配置自动生成，不要手写。",
+  },
+];
+
 interface CatalogContext {
   entries: CatalogEntry[];
 }
@@ -120,6 +153,7 @@ export function ExtSection({
   onChange,
   onToggleCreatorFeatures,
 }: ExtSectionProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogContext | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -127,7 +161,8 @@ export function ExtSection({
   const [query, setQuery] = useState("");
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [pickerType, setPickerType] = useState<BundledResourceType>("resource");
-  const [pickerMode, setPickerMode] = useState<BundledResourceMode>("required");
+  // 默认「推荐」：推荐是基础选项，强制安装是例外，避免误选把不必要的资源设为必需。
+  const [pickerMode, setPickerMode] = useState<BundledResourceMode>("recommend");
   const [plugins, setPlugins] = useState<NgPluginIndexEntry[] | null>(null);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [pluginsError, setPluginsError] = useState("");
@@ -152,10 +187,15 @@ export function ExtSection({
     }
   };
 
+  // 已选捆绑项需要展示图标与存在性校验，因此只要存在捆绑资源就提前拉目录，
+  // 不必等用户打开选择器。
+  const needsCatalog =
+    pickerOpen ||
+    bundledResources.some((item) => item.type === "resource");
   useEffect(() => {
-    if (!pickerOpen || catalog || catalogLoading) return;
+    if (!needsCatalog || catalog || catalogLoading) return;
     void loadCatalog();
-  }, [pickerOpen]);
+  }, [needsCatalog]);
 
   const loadPlugins = async () => {
     setPluginsLoading(true);
@@ -170,12 +210,15 @@ export function ExtSection({
     }
   };
 
+  // 同理：已选插件捆绑项也要显示图标，存在即拉插件索引。
+  const needsPlugins =
+    (pickerOpen && pickerType === "plugin") ||
+    bundledResources.some((item) => item.type === "plugin");
   useEffect(() => {
-    if (!pickerOpen || pickerType !== "plugin") return;
-    if (plugins || pluginsLoading) return;
+    if (!needsPlugins || plugins || pluginsLoading) return;
     void loadPlugins();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickerOpen, pickerType]);
+  }, [needsPlugins]);
 
   const selectableEntries = useMemo(() => {
     if (!catalog) return [];
@@ -272,6 +315,54 @@ export function ExtSection({
     );
   };
 
+  const catalogById = useMemo(() => {
+    const map = new Map<string, CatalogEntry>();
+    for (const entry of catalog?.entries ?? []) {
+      if (entry.id) map.set(entry.id, entry);
+    }
+    return map;
+  }, [catalog]);
+
+  const pluginByName = useMemo(() => {
+    const map = new Map<string, NgPluginIndexEntry>();
+    for (const plugin of plugins ?? []) {
+      const name = ngPluginDisplayName(plugin);
+      if (name) map.set(name, plugin);
+    }
+    return map;
+  }, [plugins]);
+
+  /** 已选捆绑项的展示信息：名称 / 图标 / 类型 / 是否仍存在于目录或插件索引。 */
+  const bundledDetails = useMemo(
+    () =>
+      bundledResources.map((item) => {
+        if (item.type === "plugin") {
+          const key = item.name || item.id;
+          const plugin = pluginByName.get(key);
+          return {
+            resource: item,
+            displayName: plugin ? ngPluginDisplayName(plugin) : key,
+            typeLabel: plugin?.manifest?.version
+              ? `插件 v${plugin.manifest.version}`
+              : "插件",
+            iconUrl: plugin ? ngPluginIconUrl(plugin) : "",
+            missing: plugins != null && !plugin,
+          };
+        }
+        const entry = catalogById.get(item.id);
+        return {
+          resource: item,
+          displayName: entry?.name || item.name || item.id,
+          typeLabel: entry ? formatResourceType(entry.restype) : "资源",
+          iconUrl: entry ? iconUrlFor(entry) : "",
+          missing: catalog != null && !entry,
+        };
+      }),
+    [bundledResources, catalog, catalogById, plugins, pluginByName],
+  );
+
+  const missingBundledCount = bundledDetails.filter((d) => d.missing).length;
+
   const pluginSearchTokens = useMemo(
     () =>
       pluginQuery
@@ -313,6 +404,12 @@ export function ExtSection({
     <SectionCard
       title="扩展字段 (ext)"
       description="结构化扩展字段会自动写入 ext；这里的 JSON 仅用于补充其他自定义字段。"
+      headerExtra={
+        <FieldHelpButton
+          onClick={() => setHelpOpen(true)}
+          title="扩展字段说明"
+        />
+      }
     >
       <div className="flex flex-col gap-3">
         <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
@@ -332,9 +429,9 @@ export function ExtSection({
           </div>
         </div>
 
-        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 px-3 py-3">
           <div className="flex items-start justify-between gap-3 pb-1">
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <p className="text-sm font-medium text-white">捆绑资源配置</p>
               <p className="text-xs text-white/60">
                 必需：安装本资源时必须同时安装；推荐：用户安装时可自行勾选。支持捆绑资源与插件。
@@ -344,55 +441,85 @@ export function ExtSection({
               type="button"
               variant="soft"
               size="1"
+              className="shrink-0 text-xs!"
               onClick={() => setPickerOpen(true)}
             >
               <PlusIcon size={14} weight="bold" />
               添加捆绑项
             </Button>
           </div>
+          {missingBundledCount > 0 && (
+            <p className="mt-1 text-xs text-red-400">
+              有 {missingBundledCount} 个捆绑项已不在
+              {bundledResources.some((item) => item.type === "plugin")
+                ? "资源目录 / 插件索引"
+                : "资源目录"}
+              中，提交后 PR 审核会判定失败，请移除。
+            </p>
+          )}
           {bundledResources.length === 0 ? (
             <p className="px-1 py-2 text-sm text-white/40">暂未配置捆绑项</p>
           ) : (
             <div className="mt-2 flex flex-col gap-2">
-              {bundledResources.map((resource) => (
-                <div
-                  key={resource.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-sm text-white">
-                        {resource.name || resource.id}
-                      </span>
-                      <Badge color="gray" variant="soft" className="shrink-0">
-                        {resource.type === "plugin" ? "插件" : "资源"}
-                      </Badge>
-                      <Badge
-                        color={resource.mode === "required" ? "red" : "grass"}
-                        variant="soft"
-                        className="shrink-0 cursor-pointer select-none"
-                        onClick={() =>
-                          onToggleBundledResourceMode(
-                            resource.id,
-                            resource.mode === "required" ? "recommend" : "required",
-                          )
-                        }
-                      >
-                        {resource.mode === "required" ? "必需" : "推荐"}
-                      </Badge>
-                    </div>
-                    <p className="truncate text-xs text-white/40">{resource.id}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="grid size-6 shrink-0 place-items-center rounded-full text-white/50 transition hover:bg-white/15 hover:text-white"
-                    onClick={() => onRemoveBundledResource(resource.id)}
-                    aria-label={`移除捆绑项 ${resource.id}`}
+              {bundledDetails.map((detail) => {
+                const resource = detail.resource;
+                return (
+                  <div
+                    key={`${resource.type}:${resource.id}`}
+                    className={`flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+                      detail.missing
+                        ? "border-red-400/40 bg-red-500/10"
+                        : "border-white/10 bg-white/[0.04]"
+                    }`}
                   >
-                    <XIcon size={14} />
-                  </button>
-                </div>
-              ))}
+                    <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-black/30">
+                      <ProxiedIcon url={detail.iconUrl} />
+                    </span>
+                    {/* min-w-0 + flex-wrap：徽章在窄屏换行而非撑破容器 */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="min-w-0 max-w-full truncate text-sm text-white">
+                          {detail.displayName}
+                        </span>
+                        <Badge color="gray" variant="soft" className="shrink-0">
+                          {detail.typeLabel}
+                        </Badge>
+                        <Badge
+                          color={resource.mode === "required" ? "red" : "grass"}
+                          variant="soft"
+                          className="shrink-0 cursor-pointer select-none"
+                          onClick={() =>
+                            onToggleBundledResourceMode(
+                              resource.id,
+                              resource.mode === "required"
+                                ? "recommend"
+                                : "required",
+                            )
+                          }
+                        >
+                          {resource.mode === "required" ? "必需" : "推荐"}
+                        </Badge>
+                        {detail.missing && (
+                          <Badge color="red" variant="soft" className="shrink-0">
+                            目录中已不存在
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="min-w-0 max-w-full truncate text-xs text-white/40">
+                        {resource.id}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="grid size-6 shrink-0 place-items-center rounded-full text-white/50 transition hover:bg-white/15 hover:text-white"
+                      onClick={() => onRemoveBundledResource(resource.id)}
+                      aria-label={`移除捆绑项 ${resource.id}`}
+                    >
+                      <XIcon size={14} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -435,8 +562,8 @@ export function ExtSection({
                 onValueChange={(val) => setPickerMode(val as BundledResourceMode)}
                 size="1"
               >
-                <SegmentedControl.Item value="required">必需</SegmentedControl.Item>
                 <SegmentedControl.Item value="recommend">推荐</SegmentedControl.Item>
+                <SegmentedControl.Item value="required">必需</SegmentedControl.Item>
               </SegmentedControl.Root>
             </label>
           </div>
@@ -624,6 +751,13 @@ export function ExtSection({
           </div>
         </Dialog.Content>
       </Dialog.Root>
+
+      <FieldHelpDialog
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title="扩展字段说明"
+        items={EXT_FIELD_HELP}
+      />
     </SectionCard>
   );
 }
