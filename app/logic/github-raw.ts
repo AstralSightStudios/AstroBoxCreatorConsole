@@ -13,8 +13,13 @@ export function isTauriRuntime(): boolean {
 
 /**
  * 把 `raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}` 转成
- * GitHub Contents API 地址。仅适用于 ref 为提交 SHA 或单段分支名（不含 `/`）的场景，
- * 即本项目中 `buildRawFileUrl` 生成的所有 raw 链接。
+ * GitHub Contents API 地址。ref 为提交 SHA 或单段分支名时直接取第三段。
+ *
+ * 插件市场索引（`AstroBox-NG-Plugin-Repo/index.json`）给出的 repo 是
+ * `https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/` 形式，
+ * ref 带 `refs/heads/` 前缀且分支名本身不含 `/`。若按单段 ref 解析，会把
+ * `heads` 当成路径首段、ref 变成 `refs`，Contents API 返回 404 导致插件图标
+ * 全部加载失败。因此这里显式识别 `refs/heads|-tags/{branch}` 前缀。
  *
  * 无法识别时返回 null；审核链路的调用方应据此报错，而不是回退到匿名 raw CDN。
  */
@@ -23,7 +28,18 @@ export function rawGithubUrlToApiUrl(rawUrl: string): string | null {
   const rest = rawUrl.slice(RAW_GITHUB_ORIGIN.length + 1);
   const segments = rest.split("/");
   if (segments.length < 4) return null;
-  const [owner, repo, ref, ...pathParts] = segments;
+  const [owner, repo, ...tail] = segments;
+  let ref = tail[0];
+  let pathParts = tail.slice(1);
+  if (
+    ref === "refs" &&
+    (tail[1] === "heads" || tail[1] === "tags") &&
+    tail[2] &&
+    tail.length >= 4
+  ) {
+    ref = `refs/${tail[1]}/${tail[2]}`;
+    pathParts = tail.slice(3);
+  }
   const path = pathParts.join("/");
   if (!owner || !repo || !ref || !path) return null;
   return `${GITHUB_API_ORIGIN}/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;

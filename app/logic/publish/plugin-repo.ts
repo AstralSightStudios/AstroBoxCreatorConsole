@@ -35,10 +35,25 @@ export function ngPluginDisplayName(entry: NgPluginIndexEntry): string {
     return entry.manifest?.name || "";
 }
 
+/**
+ * 与 AstroBox-NG `web/src/logic/pluginMarket.ts` 的 `normalizeFolderPath` +
+ * `buildFileUrl` 保持一致：清理 `./`、前导 /、尾随 / 与反斜杠，再按
+ * `repo + folder + file` 拼接。index.json 里 icon 一律是相对路径（如 `icon.png`），
+ * 但仍兜底绝对 URL，避免拼出 `.../dist/https://...` 这种非法地址。
+ */
+function normalizePluginFolder(folder?: string): string {
+  const trimmed = (folder || "").trim().replace(/\\/g, "/");
+  if (!trimmed || trimmed === ".") return "";
+  return trimmed.replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
 export function ngPluginIconUrl(entry: NgPluginIndexEntry): string {
-    const icon = entry.manifest?.icon;
-    if (!icon) return "";
-    const base = entry.repo.endsWith("/") ? entry.repo : `${entry.repo}/`;
-    const folder = entry.folder ? `${entry.folder.replace(/\/+$/, "")}/` : "";
-    return `${base}${folder}${icon}`;
+  const icon = (entry.manifest?.icon || "").trim();
+  if (!icon) return "";
+  if (icon.startsWith("http://") || icon.startsWith("https://")) return icon;
+  const base = entry.repo.replace(/\/+$/, "");
+  const folder = normalizePluginFolder(entry.folder);
+  const file = icon.replace(/^\/+/, "");
+  if (!folder) return `${base}/${file}`;
+  return `${base}/${folder}/${file}`;
 }
