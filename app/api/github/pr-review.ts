@@ -47,8 +47,19 @@ export interface GithubIssueComment {
   review_state?: "APPROVE" | "REQUEST_CHANGES" | "COMMENTED";
 }
 
+function normalizeReviewState(
+  state: string,
+): "APPROVE" | "REQUEST_CHANGES" | "COMMENTED" {
+  if (state === "APPROVED" || state === "APPROVE") return "APPROVE";
+  if (state === "CHANGES_REQUESTED" || state === "REQUEST_CHANGES") {
+    return "REQUEST_CHANGES";
+  }
+  return "COMMENTED";
+}
+
 export interface GithubPullReview {
   id: number;
+  /** GitHub 返回的状态串：PENDING / APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED */
   state: string;
   user?: {
     login: string;
@@ -194,9 +205,9 @@ export async function listPullRequestComments(prNumber: number) {
 }
 
 /**
- * 拉取所有非 PENDING 的 PR review（APPROVE / REQUEST_CHANGES / COMMENTED），
- * 并映射成评论结构。ABCC 的标签（NEEDFIX/REFUSE 等）只通过 review 发送。
- * 保留 body 为空的 review 以便在时间线显示 "Approved" 等状态。
+ * 拉取所有非 PENDING 的 PR review（APPROVED / CHANGES_REQUESTED / COMMENTED），
+ * 并映射成评论结构。NEEDFIX 走 review 接口，CLOSE/REFUSE/FIXED/REOPEN 走 issue
+ * 评论接口。保留 body 为空的 review 以便在时间线显示「已批准」等状态。
  */
 export async function listPullRequestReviewComments(
   prNumber: number,
@@ -205,7 +216,9 @@ export async function listPullRequestReviewComments(
   return reviews
     .filter((review) => review.state !== "PENDING")
     .map((review) => {
-      const state = review.state as "APPROVE" | "REQUEST_CHANGES" | "COMMENTED";
+      // GitHub 返回的状态串是 APPROVED / CHANGES_REQUESTED，与提交时用的
+      // APPROVE / REQUEST_CHANGES 不同，这里统一归一化给 UI 用。
+      const state = normalizeReviewState(review.state);
       return {
         id: review.id,
         body: review.body || (state === "APPROVE" ? "已批准" : state === "REQUEST_CHANGES" ? "请求变更" : "已评论"),

@@ -205,7 +205,9 @@ async function fetchPrTimelineComments(
         .filter(
             (review: any) =>
                 review.state !== "PENDING" &&
-                (review.state === "REQUEST_CHANGES" ||
+                // GitHub REST 返回的状态串是 CHANGES_REQUESTED / COMMENTED，
+                // 不是提交时用的 REQUEST_CHANGES，写错会把 NEEDFIX 全部丢掉。
+                (review.state === "CHANGES_REQUESTED" ||
                     review.state === "COMMENTED") &&
                 typeof review.body === "string" &&
                 review.body.trim(),
