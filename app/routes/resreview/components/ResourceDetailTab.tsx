@@ -14,6 +14,7 @@ import { usePaidRatioStatus } from "../utils/paid-ratio";
 import type { PrResourcePreview } from "../types";
 import { ResourceDownloadsSection } from "./ResourceDownloadsSection";
 import { ResourceImagesSection } from "./ResourceImagesSection";
+import { BundledResourcesSection } from "./BundledResourcesSection";
 
 // --- Helpers ---
 
@@ -66,7 +67,16 @@ function renderTextWithLinks(value: string): string {
   );
 }
 
-export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[] }) {
+export function ResourceDetailTab({
+  resources,
+  imageHighlight,
+  onImageHighlightHandled,
+}: {
+  resources: PrResourcePreview[];
+  /** 自动检查 Tab 传下来的待高亮图片标签（icon / cover / preview N）。 */
+  imageHighlight?: string | null;
+  onImageHighlightHandled?: () => void;
+}) {
   const [activeIdx, setActiveIdx] = useState(0);
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, resources.length - 1));
   const resource = resources[safeActiveIdx];
@@ -76,7 +86,13 @@ export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[
   }
 
   if (resources.length === 1) {
-    return <ResourceDetailView resource={resource} />;
+    return (
+      <ResourceDetailView
+        resource={resource}
+        imageHighlight={imageHighlight}
+        onImageHighlightHandled={onImageHighlightHandled}
+      />
+    );
   }
 
   return (
@@ -97,14 +113,27 @@ export function ResourceDetailTab({ resources }: { resources: PrResourcePreview[
           </button>
         ))}
       </div>
-      <ResourceDetailView key={resource.entry.id} resource={resource} />
+      <ResourceDetailView
+        key={resource.entry.id}
+        resource={resource}
+        imageHighlight={imageHighlight}
+        onImageHighlightHandled={onImageHighlightHandled}
+      />
     </div>
   );
 }
 
 // --- Full Resource Detail View ---
 
-function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
+function ResourceDetailView({
+  resource,
+  imageHighlight,
+  onImageHighlightHandled,
+}: {
+  resource: PrResourcePreview;
+  imageHighlight?: string | null;
+  onImageHighlightHandled?: () => void;
+}) {
   const navigate = useNavigate();
   const manifest = resource.manifest;
   const manifestItem = manifest?.item;
@@ -155,7 +184,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
       )}
 
       {/* Resource Info Grid (2 columns) */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <InfoCell label="资源仓库">
           <a
             href={`https://github.com/${entry.repo_owner}/${entry.repo_name}`}
@@ -179,9 +208,10 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
       </div>
 
       {/* Resource Info + Devices (2 columns on xl) */}
-      <div className="grid gap-3 xl:grid-cols-2">
+      {/* grid 子项默认 min-width:auto，长 ID / 徽章会撑破列宽，必须显式 min-w-0 */}
+      <div className="grid min-w-0 gap-3 xl:grid-cols-2">
         {/* Resource Info Section */}
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
           <div className="mb-2 text-xs font-semibold text-white/55">资源信息</div>
           <div className="space-y-2">
             <InfoRow label="资源名称" value={manifestItem?.name || entry.name || "-"} />
@@ -207,6 +237,9 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
               label="AstroBoxCreator 加密功能"
               value={manifest?.ext?.enableAstroBoxCreatorFeatures ? "开启" : "关闭"}
             />
+
+            {/* 捆绑资源（ext.bundledResources） */}
+            <BundledResourcesSection resource={resource} />
 
             {/* Tags */}
             <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
@@ -344,7 +377,11 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
         <ResourceDownloadsSection resource={resource} />
       </div>
 
-      <ResourceImagesSection resource={resource} />
+      <ResourceImagesSection
+        resource={resource}
+        highlightLabel={imageHighlight}
+        onHighlightHandled={onImageHighlightHandled}
+      />
 
     </div>
   );
@@ -354,7 +391,7 @@ function ResourceDetailView({ resource }: { resource: PrResourcePreview }) {
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
       <span className="text-xs text-white/55">{label}</span>
       <p className="mt-0.5 break-all text-sm font-medium text-white">{children}</p>
     </div>
@@ -364,8 +401,8 @@ function InfoCell({ label, children }: { label: string; children: React.ReactNod
 function InfoRow({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
   const isUrl = value ? hasUrl(value) : false;
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 md:flex-row md:items-start md:justify-between">
-      <span className="text-xs text-white/55">{label}</span>
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 md:flex-row md:items-start md:justify-between">
+      <span className="shrink-0 text-xs text-white/55">{label}</span>
       {children ? (
         <div className="min-w-0 flex-1">{children}</div>
       ) : isUrl ? (
