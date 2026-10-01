@@ -19,6 +19,10 @@ import {
   type PackageCheckResult,
 } from "../rule-checks";
 import type { PaidRatioResult } from "../utils/paid-ratio";
+import {
+  describeRpkDebug,
+  type RpkDebugLevel,
+} from "~/logic/publish/rpk-signature";
 import { LoadingIndicator } from "./LoadingIndicator";
 
 interface RuleCheckPanelProps {
@@ -362,6 +366,24 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
           />
           {pkg.detectedId && <span className="ml-1 text-white/45">检测到 {pkg.detectedId}</span>}
         </span>
+        {pkg.debugVerdict && (
+          <span>
+            签名/构建：
+            <DebugBadge level={pkg.debugVerdict.level} />
+            <span className="ml-1 text-white/45">
+              {describeRpkDebug(pkg.debugVerdict)}
+              {pkg.debugVerdict.certificates[0]?.subjectCn
+                ? ` · 证书 CN=${pkg.debugVerdict.certificates[0].subjectCn}`
+                : ""}
+              {pkg.debugVerdict.certificates[0]?.fingerprintSha256
+                ? ` · 指纹 ${pkg.debugVerdict.certificates[0].fingerprintSha256
+                    .split(":")
+                    .slice(0, 4)
+                    .join(":")}`
+                : ""}
+            </span>
+          </span>
+        )}
         {pkg.encrypted ? (
           <span className="text-sky-300/80">已加密，跳过内容校验</span>
         ) : pkg.skipped ? (
@@ -369,8 +391,22 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
         ) : null}
         {pkg.error && <span className="text-red-400">[错误：{pkg.error}]</span>}
       </div>
+      {pkg.debugVerdict && pkg.debugVerdict.details.length > 0 && (
+        <ul className="mt-1 list-disc pl-4 text-[11px] text-white/45">
+          {pkg.debugVerdict.details.map((d) => (
+            <li key={d}>{d}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
+}
+
+function DebugBadge({ level }: { level: RpkDebugLevel }) {
+  if (level === "pass") return <span className="ml-1 text-emerald-400">正式包</span>;
+  if (level === "fail") return <span className="ml-1 text-red-400">调试包</span>;
+  if (level === "warn") return <span className="ml-1 text-amber-400">疑似调试包</span>;
+  return <span className="ml-1 text-white/45">无法验签</span>;
 }
 
 function MatchBadge({

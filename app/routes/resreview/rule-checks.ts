@@ -39,6 +39,11 @@ import {
   computePackageHash,
   xiaomiVersionCodeFromVersion,
 } from "~/logic/publish/package-version";
+import {
+  describeRpkDebug,
+  detectRpkDebug,
+  type RpkDebugVerdict,
+} from "~/logic/publish/rpk-signature";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
 import {
   fetchNgPluginIndex,
@@ -81,6 +86,8 @@ export interface PackageCheckResult {
   encrypted?: boolean;
   /** 加密判定依据是完整内容哈希精确匹配（true）还是「头部非已知包体」兜底（false）。 */
   encryptedByHash?: boolean;
+  /** 快应用 rpk 的 debug 调试包判定结论；非快应用包体不产出。 */
+  debugVerdict?: RpkDebugVerdict;
 }
 
 export interface ImageSizeInfo {
@@ -1724,6 +1731,20 @@ export async function runResourceRuleChecks(options: {
         } else {
           result.idMatch = "skipped";
         }
+
+        // 快应用 rpk 的 debug 调试包判定。
+        // - result.skipped（超大包只取头部）时字节被截断，zip 中央目录与签名块
+        //   都不在手上，无法判定。
+        // - 加密包已在上面 continue，签名块已被密文破坏。
+        // - 只对确认为快应用类别的包体执行，表盘/固件/canopus 不适用。
+        if (
+          !result.skipped &&
+          !result.encrypted &&
+          restype !== "canopus" &&
+          result.effectiveCategory === "quick_app"
+        ) {
+          result.debugVerdict = await detectRpkDebug(bytes);
+        }
       } catch (err) {
         result.error = err instanceof Error ? err.message : String(err);
         result.typeMatch = "inconclusive";
@@ -1786,6 +1807,57 @@ export async function runResourceRuleChecks(options: {
       })(),
       anchor: "packages",
     });
+
+    // 聚合：快应用包体是否为正式发布包。
+    // 工具链只有 `aiot release`（PRODUCTION）才要求开发者私钥，PRODUCTION 的证书
+    // 候选里没有内置证书，因此命中内置调试证书即等价于「这是调试构建产物」。
+    // 明细逐包展示在下方「包体内容校验」中，这里与上面两项一致，只给结论标记。
+    const debugChecked = packageChecks.filter((p) => p.debugVerdict);
+    if (debugChecked.length > 0) {
+      const debugFail = debugChecked.filter((p) => p.debugVerdict?.level === "fail");
+      const debugWarn = debugChecked.filter((p) => p.debugVerdict?.level === "warn");
+      const debugSkip = debugChecked.filter((p) => p.debugVerdict?.level === "skip");
+      const debugPass = debugChecked.filter((p) => p.debugVerdict?.level === "pass");
+      checks.push({
+        title: "快应用包体为正式发布包（非 debug 调试包）",
+        status:
+          debugFail.length > 0
+            ? "fail"
+            : debugWarn.length > 0
+              ? "warn"
+              : debugSkip.length === debugChecked.length
+                ? "manual"
+                : "pass",
+        detail: (() => {
+          const parts: string[] = [];
+          if (debugFail.length > 0) {
+            const names = debugFail
+              .map((p) => p.fileName)
+              .slice(0, 3)
+              .join("、");
+            parts.push(
+              `${debugFail.length} 个包体是调试包（${names}${debugFail.length > 3 ? " 等" : ""}），需要求创作者用 \`aiot release\` 重新打包。`,
+            );
+          }
+          if (debugWarn.length > 0) {
+            const ids = [
+              ...new Set(debugWarn.flatMap((p) => p.debugVerdict?.soft ?? [])),
+            ];
+            parts.push(
+              `${debugWarn.length} 个包体命中软证据（${ids.join("、")}），建议人工确认。`,
+            );
+          }
+          if (debugSkip.length > 0) {
+            parts.push(`${debugSkip.length} 个包体无法验签，需人工确认。`);
+          }
+          if (parts.length === 0) {
+            parts.push(`全部 ${debugPass.length} 个快应用包体均为正式发布包。`);
+          }
+          return parts.join("");
+        })(),
+        anchor: "packages",
+      });
+    }
   }
 
   // --- check: 已加密上传但未开启 enableAstroBoxCreatorFeatures ---
