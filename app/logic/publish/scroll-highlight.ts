@@ -49,18 +49,27 @@ export function locateAndFlash(selector: string): void {
       }
       return;
     }
-    const reduced = prefersReducedMotion();
-    el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
-    if (reduced || typeof el.animate !== "function") return;
-    activeFlashes.get(el)?.cancel();
-    const animation = el.animate(FLASH_KEYFRAMES, {
-      duration: FLASH_DURATION,
-      iterations: FLASH_ITERATIONS,
-      easing: "ease-in-out",
-    });
-    activeFlashes.set(el, animation);
+    scrollAndFlash(el);
   };
   attempt();
+}
+
+/**
+ * 滚动到元素并闪烁。已挂载的元素（React ref 拿到的）直接调用，
+ * 不需要走选择器重试。
+ */
+export function scrollAndFlash(el: HTMLElement | null | undefined): void {
+  if (!el) return;
+  const reduced = prefersReducedMotion();
+  el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+  if (reduced || typeof el.animate !== "function") return;
+  activeFlashes.get(el)?.cancel();
+  const animation = el.animate(FLASH_KEYFRAMES, {
+    duration: FLASH_DURATION,
+    iterations: FLASH_ITERATIONS,
+    easing: "ease-in-out",
+  });
+  activeFlashes.set(el, animation);
 }
 
 /** 定位并高亮下载配置中的某一行（正式下载与试用下载共用，uid 全局唯一）。 */
