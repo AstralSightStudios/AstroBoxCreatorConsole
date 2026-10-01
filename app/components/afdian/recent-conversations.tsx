@@ -1,4 +1,5 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useAfdianSessionDropPrompt } from "~/logic/afdian/login-prompt";
 import { Avatar, Badge, Spinner } from "@radix-ui/themes";
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
@@ -79,6 +80,7 @@ export default function AfdianRecentConversations({
     return rightTime - leftTime;
   });
   const visibleConversations = conversations.slice(0, limit);
+  useAfdianSessionDropPrompt(query.error, query.isError);
 
   useEffect(() => {
     if (

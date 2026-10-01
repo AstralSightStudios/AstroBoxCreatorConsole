@@ -230,8 +230,8 @@ export function DownloadsSection({
     setUpdateLogEditor({
       ...updateLogEditor,
       entries: [
-        ...updateLogEditor.entries,
         { version: row?.version ?? "", content: "" },
+        ...updateLogEditor.entries,
       ],
     });
   };
@@ -838,7 +838,7 @@ export function DownloadsSection({
         <Dialog.Content maxWidth="620px">
           <Dialog.Title>配置更新日志</Dialog.Title>
           <Dialog.Description size="2">
-            按版本记录资源更新内容，发布后客户端可在资源更新时展示。
+            越靠上的日志越先显示。新添加的一条会出现在最上方。
           </Dialog.Description>
           <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-52pct)]">
             <div className="flex flex-col gap-3 pr-1">

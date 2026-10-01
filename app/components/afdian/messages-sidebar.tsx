@@ -3,7 +3,7 @@ import { Avatar, Badge, Button, Spinner } from "@radix-ui/themes";
 import { CaretDownIcon, PushPinSimpleIcon } from "@phosphor-icons/react";
 import type { PartialOptions } from "overlayscrollbars";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   useEffect,
   useMemo,
@@ -23,6 +23,7 @@ import {
   getAfdianSessionStatus,
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
+import { useAfdianSessionDropPrompt } from "~/logic/afdian/login-prompt";
 
 const DIALOG_LIST_SCROLLBAR_OPTIONS: PartialOptions = {
   overflow: { x: "hidden", y: "scroll" },
@@ -276,6 +277,7 @@ export function AfdianDialogList({
 
 export default function AfdianMessagesSidebar() {
   const nativeAvailable = isAfdianNativeAvailable();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionQuery = useQuery({
     queryKey: AFDIAN_SESSION_QUERY_KEY,
@@ -296,6 +298,7 @@ export default function AfdianMessagesSidebar() {
   });
   const dialogs = dialogsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const selectedUserId = searchParams.get("userId") || "";
+  useAfdianSessionDropPrompt(dialogsQuery.error, dialogsQuery.isError);
 
   const selectDialog = (userId: string) => {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -328,9 +331,13 @@ export default function AfdianMessagesSidebar() {
     );
   } else if (!sessionQuery.data?.connected) {
     content = (
-      <p className="px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center text-sm text-white/45">
-        尚未登录爱发电
-      </p>
+      <div className="flex flex-col items-center gap-3 px-3 pb-8 pt-[calc(var(--afdian-dialog-list-top-inset)+var(--space-8))] text-center">
+        <p className="text-sm text-white/80">尚未登录爱发电</p>
+        <p className="text-sm text-white/45">登录后即可查看私信对话。</p>
+        <Button size="1" onClick={() => navigate("/settings")}>
+          登录爱发电
+        </Button>
+      </div>
     );
   } else if (dialogsQuery.isError) {
     content = (

@@ -59,6 +59,11 @@ import {
   isAfdianNativeAvailable,
 } from "~/api/afdian-account";
 import {
+  isAfdianLoginRequiredError,
+  notifyAfdianSessionDropped,
+  useAfdianSessionDropPrompt,
+} from "~/logic/afdian/login-prompt";
+import {
   AI_API_KEY_STATUS_QUERY_KEY,
   getAiApiKeyStatus,
 } from "~/api/ai";
@@ -1495,6 +1500,8 @@ export default function AfdianMessagesPage() {
     staleTime: 10_000,
     retry: 1,
   });
+  useAfdianSessionDropPrompt(dialogsQuery.error, dialogsQuery.isError);
+  useAfdianSessionDropPrompt(messagesQuery.error, messagesQuery.isError);
   const messages = useMemo(() => {
     const unique = new Map<string, AfdianMessage>();
     for (const item of messagesQuery.data?.pages.flatMap((page) => page.items) ?? []) {
@@ -1687,6 +1694,9 @@ export default function AfdianMessagesPage() {
         if (viewport) viewport.scrollTop = viewport.scrollHeight;
       });
     } catch (error) {
+      if (isAfdianLoginRequiredError(error)) {
+        notifyAfdianSessionDropped(queryClient);
+      }
       setSendError(
         typeof error === "string"
           ? error
@@ -1781,7 +1791,7 @@ export default function AfdianMessagesPage() {
             <p className="text-white/80">尚未登录爱发电</p>
             <p className="text-sm text-white/50">登录后即可查看私信对话。</p>
             <Button onClick={() => navigate("/settings")}>
-              前往设置
+              登录爱发电
             </Button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button, Spinner } from "@radix-ui/themes";
 import { useNavigate } from "react-router";
+import { useAfdianSessionDropPrompt } from "~/logic/afdian/login-prompt";
 import {
   AFDIAN_INCOME_QUERY_KEY,
   AFDIAN_SESSION_QUERY_KEY,
@@ -70,6 +71,7 @@ export default function AfdianIncomeOverview() {
     retry: 1,
   });
   const connected = sessionQuery.data?.connected === true;
+  useAfdianSessionDropPrompt(incomeQuery.error, incomeQuery.isError);
 
   if (!nativeAvailable) return null;
 
@@ -106,10 +108,10 @@ export default function AfdianIncomeOverview() {
       ) : !sessionQuery.isLoading && !connected ? (
         <div className="flex items-center justify-between gap-3 px-1.5 py-3">
           <p className="text-size-small text-white/55">
-            登录爱发电后即可查看收入数据。
+            尚未登录爱发电，登录后即可查看收入数据。
           </p>
           <Button variant="soft" onClick={() => navigate("/settings")}>
-            前往设置
+            登录爱发电
           </Button>
         </div>
       ) : (

@@ -308,6 +308,13 @@ struct AfdianSendMessagePayload<'a> {
     auth_token: &'a str,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AfdianSessionProbe {
+    connected: bool,
+    expired: bool,
+}
+
 #[tauri::command]
 pub(crate) fn afdian_session_status() -> Result<AfdianSessionStatus, String> {
     let session = load_session()?;
@@ -315,6 +322,34 @@ pub(crate) fn afdian_session_status() -> Result<AfdianSessionStatus, String> {
         connected: session.is_some(),
         display_name: session.map(|value| value.display_name),
     })
+}
+
+/// 进软件时核对本地爱发电会话是否仍有效。确认失效则清掉本地会话。
+#[tauri::command]
+pub(crate) async fn afdian_probe_session(
+    http_client: tauri::State<'_, AppHttpClient>,
+) -> Result<AfdianSessionProbe, String> {
+    let Some(session) = load_session()? else {
+        return Ok(AfdianSessionProbe {
+            connected: false,
+            expired: false,
+        });
+    };
+
+    match fetch_display_name(&http_client.0, &session.auth_token).await {
+        Ok(_) => Ok(AfdianSessionProbe {
+            connected: true,
+            expired: false,
+        }),
+        Err(message) if is_afdian_login_failure(&message) => {
+            clear_session()?;
+            Ok(AfdianSessionProbe {
+                connected: false,
+                expired: true,
+            })
+        }
+        Err(message) => Err(message),
+    }
 }
 
 #[tauri::command]
@@ -1599,6 +1634,21 @@ fn extract_auth_token(response: &Value) -> Result<String, String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .ok_or_else(|| "爱发电登录响应中没有有效凭据".into())
+}
+
+fn is_afdian_login_failure(message: &str) -> bool {
+    const HINTS: [&str; 7] = [
+        "请先登录",
+        "尚未登录",
+        "未登录",
+        "登录已过期",
+        "登录失效",
+        "登录已失效",
+        "请重新登录",
+    ];
+    HINTS.iter().any(|hint| message.contains(hint))
+        || message.contains("HTTP 401")
+        || message.contains("HTTP 403")
 }
 
 fn ensure_api_success(response: &Value, fallback: &str) -> Result<(), String> {

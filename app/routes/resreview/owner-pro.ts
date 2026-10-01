@@ -108,9 +108,9 @@ export function useAuthorsProStatuses(
   return statuses;
 }
 
-/** 是否拥有 Creator Console Pro 权益（CreatorPlus / CreatorPro）。 */
+/** 是否拥有 Creator Pro 权益。Creator Plus 不计入。 */
 export function hasCreatorPro(vip: VipTier): boolean {
-  return vip === "CreatorPro" || vip === "CreatorPlus";
+  return vip === "CreatorPro";
 }
 
 export function vipTierLabel(vip: VipTier): string {

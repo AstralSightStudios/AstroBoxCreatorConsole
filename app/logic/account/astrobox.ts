@@ -4,6 +4,7 @@ import { CASDOOR_CONFIG } from "~/config/casdoor";
 import { ASTROBOX_SERVER_CONFIG } from "~/config/abserver";
 import { loadLoginMethod } from "~/config/loginMethod";
 import { ApiError, isUserBannedError } from "~/api/astrobox/request";
+import { notifyAstroboxSessionExpired } from "./session-notice";
 import { getSelfUserInfo } from "~/api/astrobox/auth";
 import {
     getAstroboxToken,
@@ -237,6 +238,7 @@ let lastAccountRefreshAt = 0;
 // 高频触发场景），不传则总是执行（用于首次挂载等明确刷新）。
 export async function refreshAstroboxAccount(options?: { throttleMs?: number }) {
     const token = getAstroboxToken();
+    const hadSession = Boolean(token);
     if (!token) return false;
 
     const throttleMs = options?.throttleMs ?? 0;
@@ -265,7 +267,8 @@ export async function refreshAstroboxAccount(options?: { throttleMs?: number }) 
             error instanceof ApiError &&
             (error.status === 401 || error.status === 403)
         ) {
-            clearAstroboxAccount();
+            if (getAstroboxToken()) clearAstroboxAccount();
+            if (hadSession) notifyAstroboxSessionExpired();
         }
 
         // 失败时放开节流，允许尽快重试

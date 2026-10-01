@@ -317,6 +317,7 @@ pub fn run() {
             github_request,
             afdian_request,
             afdian::afdian_session_status,
+            afdian::afdian_probe_session,
             afdian::afdian_password_login,
             afdian::afdian_send_quick_login_code,
             afdian::afdian_refresh_captcha,
