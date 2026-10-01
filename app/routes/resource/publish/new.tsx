@@ -133,7 +133,6 @@ import {
 import { flashFirstDownloadRow } from "~/logic/publish/scroll-highlight";
 import {
   rowsMissingVersionCode,
-  rowsReusingExistingPackage,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
 } from "~/logic/publish/pre-publish-checks";
@@ -1633,14 +1632,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           throw new Error(
             `资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`,
           );
-        }
-        if (
-          ownedId &&
-          itemId.trim() !== ownedId &&
-          rowsReusingExistingPackage([...downloads, ...trialDownloads]).length >
-            0
-        ) {
-          throw new Error("表盘 ID 已变更，请重新上传所有表盘包体文件。");
         }
       }
 

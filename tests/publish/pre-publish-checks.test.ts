@@ -9,7 +9,6 @@ import {
   checkIconDimensions,
   rowHasPackage,
   rowsMissingVersionCode,
-  rowsReusingExistingPackage,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
 } from "../../app/logic/publish/pre-publish-checks";
@@ -192,23 +191,5 @@ describe("pre-publish checks: rowsWithNonIncrementedVersionCode", () => {
       withPackage({ uid: "c", versionSource: "package", previousVersionCode: 9 }),
     ];
     expect(rowsWithNonIncrementedVersionCode(rows)).toEqual([]);
-  });
-});
-
-describe("pre-publish checks: rowsReusingExistingPackage", () => {
-  test("detects both existing filenames and skipUpload assets", () => {
-    const rows = [
-      row({ uid: "a", existingFileName: "old.bin" }),
-      row({
-        uid: "b",
-        file: {
-          name: "old.bin",
-          file: new File([], "old.bin"),
-          skipUpload: true,
-        },
-      }),
-      withPackage({ uid: "c" }),
-    ];
-    expect(rowsReusingExistingPackage(rows).map((r) => r.uid)).toEqual(["a", "b"]);
   });
 });

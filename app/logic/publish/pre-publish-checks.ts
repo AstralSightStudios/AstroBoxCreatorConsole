@@ -102,13 +102,3 @@ export function rowsWithNonIncrementedVersionCode(
       row.versionCode <= row.previousVersionCode,
   );
 }
-
-/**
- * 复用了仓库已有包体的行。表盘 ID 变更后必须重新上传全部包体，
- * 否则设备上仍是旧标识。
- */
-export function rowsReusingExistingPackage(
-  rows: DownloadInput[],
-): DownloadInput[] {
-  return rows.filter((row) => Boolean(row.file?.skipUpload || row.existingFileName));
-}
