@@ -756,21 +756,25 @@ export function DownloadsSection({
                           }));
                         }}
                       />
-                      {item.encryptOnUpload && (
-                        <EncryptConfigDialog
-                          resourceId={resourceId || ""}
-                          deviceId={item.platformId}
-                          deviceName={
-                            sortedDeviceOptions.find(
-                              (opt) => opt.id === item.platformId,
-                            )?.name || item.platformId
-                          }
-                          triggerDisabled={!item.encryptOnUpload}
-                          allDeviceIds={downloads
-                            .map((d) => d.platformId)
-                            .filter(Boolean)}
-                        />
-                      )}
+                      {/*
+                        付费映射与自有网站授权的入口不再挂在「加密上传」开关之下。
+                        付费与加密是两项独立功能：「付费但不加密」（走自有支付路径校验）
+                        与「仅加密不售卖」都是合法配置，若继续以 encryptOnUpload 作为
+                        渲染前提，这两种作者在发布页将无从配置。
+                      */}
+                      <EncryptConfigDialog
+                        resourceId={resourceId || ""}
+                        deviceId={item.platformId}
+                        deviceName={
+                          sortedDeviceOptions.find(
+                            (opt) => opt.id === item.platformId,
+                          )?.name || item.platformId
+                        }
+                        triggerDisabled={false}
+                        allDeviceIds={downloads
+                          .map((d) => d.platformId)
+                          .filter(Boolean)}
+                      />
                     </div>
                   )}
                   <div className="flex shrink-0 items-center gap-2 lg:ml-auto">

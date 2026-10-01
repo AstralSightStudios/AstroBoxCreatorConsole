@@ -54,6 +54,11 @@ import {
   checkPaidFreeRatioForAuthor,
   type PaidRatioResult,
 } from "./utils/paid-ratio";
+import {
+  describeLockedDevice,
+  evaluateDeviceGates,
+  findUnpaidSkuDevices,
+} from "./utils/purchase-gate";
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -1056,11 +1061,10 @@ export async function runResourceRuleChecks(options: {
   // ext.enableAstroBoxCreatorFeatures」，以及供下方「包体内容校验」识别密文。
   // 两者都与开关状态无关，因此查询无条件执行。
   //
-  // 付费映射（skus / externalAuthorizations）不同：未开启购买功能的资源在服务端
-  // 可能残留历史映射，与本次提交无关、不应提示，因此仅在开关开启时才消费。
+  // 付费侧（skus / products / externalAuthorizations）只在该开关开启时消费：
+  // 未开启购买功能的资源在服务端可能残留历史映射，与本次提交无关。
   let encryptedDeviceSet: Set<string> | null = null;
   let encryptedHashSet = new Set<string>();
-  let mappedDeviceSet: Set<string> | null = null;
   let cryptoCheckError = "";
   const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
   const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
@@ -1072,7 +1076,7 @@ export async function runResourceRuleChecks(options: {
     try {
       // 审核人不是资源作者，卖家专属接口会因所有权校验返回
       // “Resource is not owned by seller”。此处改用管理员接口按资源 ID 查询，
-      // 该接口返回该资源的 fileKeys / skus，审核人可用。
+      // 该接口返回该资源的 fileKeys / skus / products / externalAuthorizations。
       const configs = await AdminApi.orders.resourceConfigs({
         resourceId: cryptoResourceId,
         limit: 500,
@@ -1081,85 +1085,121 @@ export async function runResourceRuleChecks(options: {
       encryptedHashSet = new Set(
         configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
       );
+
       if (creatorFeaturesEnabled) {
-        // 启用中的 SKU 映射或启用中且归属作者本人的自有网站授权，都算作购买映射
-        const fileKeyOwnerByDevice = new Map(
-          configs.fileKeys.map((k) => [k.deviceId, k.firstOwnerId]),
-        );
-        mappedDeviceSet = new Set([
-          ...configs.skus.filter((s) => s.enabled).map((s) => s.deviceId),
-          ...(configs.externalAuthorizations ?? [])
-            .filter((c) => {
-              const owner = fileKeyOwnerByDevice.get(c.deviceId);
-              return c.enabled && (!owner || owner === c.sellerUserId);
-            })
-            .map((c) => c.deviceId),
-        ]);
+        // 资源作者账户 id：用于校验配置归属（服务端 checkConfigUsable 的判定之一）。
+        const authorName = (Array.isArray(manifestItem?.author) ? manifestItem?.author : [])
+          .map((a: unknown) =>
+            a && typeof (a as { name?: unknown }).name === "string"
+              ? (a as { name: string }).name.trim()
+              : "",
+          )
+          .find(Boolean);
+        const authorStatus = authorName
+          ? (await resolveAuthorProStatuses([authorName], astroboxToken))[authorName]
+          : undefined;
+        const sellerUserId =
+          authorStatus?.state === "found" ? authorStatus.user.userId : undefined;
+
+        const { reasons, stale } = evaluateDeviceGates({
+          devices: fullDownloadDevices,
+          skus: configs.skus,
+          products: configs.products,
+          externalAuthorizations: configs.externalAuthorizations ?? [],
+          fileKeys: configs.fileKeys,
+          sellerUserId,
+        });
+
+        const locked = reasons.filter((r) => r.verdict === "locked");
+        const freeDevices = reasons.filter((r) => r.verdict === "free");
+        const paidDevices = reasons.filter((r) => r.verdict !== "free");
+        const missingEncryption = encryptedDeviceSet
+          ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
+          : [];
+
+        // 只有「付费却无任何解锁路径」会让用户既不能下载也不能购买，是唯一的硬错误。
+        checks.push({
+          title: "设备付费门槛与解锁路径自洽（enableAstroBoxCreatorFeatures）",
+          status: (() => {
+            if (locked.length > 0) return "fail";
+            if (missingEncryption.length > 0) return "fail";
+            if (stale.rejectedOwnerDevices.length > 0) return "warn";
+            if (stale.pendingManifestDeviceSkus.length > 0) return "warn";
+            return "pass";
+          })(),
+          detail: (() => {
+            const parts: string[] = [];
+            for (const r of locked) parts.push(`${r.deviceId}：${describeLockedDevice(r)}`);
+            if (missingEncryption.length > 0)
+              parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
+            if (stale.rejectedOwnerDevices.length > 0)
+              parts.push(
+                `以下设备的配置卖家不是资源作者，服务端已永久忽略，不影响用户下载，建议联系作者清理：${stale.rejectedOwnerDevices.join(", ")}`,
+              );
+            if (stale.pendingManifestDeviceSkus.length > 0)
+              parts.push(
+                `以下 SKU 指向 manifest 中不存在的设备，合入后不会生效：${stale.pendingManifestDeviceSkus.join(", ")}`,
+              );
+            if (parts.length > 0) return parts.join("；");
+            if (freeDevices.length > 0 && paidDevices.length === 0)
+              return `${freeDevices.length} 个设备均为「仅加密、不售卖」，无需付费映射：${freeDevices.map((r) => r.deviceId).join(", ")}`;
+            if (freeDevices.length > 0)
+              return `${freeDevices.length} 个设备仅加密不售卖（${freeDevices.map((r) => r.deviceId).join(", ")}），${paidDevices.length} 个设备付费且解锁路径可用`;
+            return `${paidDevices.length} 个设备付费，解锁路径均可用（自有购买入口或自有网站授权）`;
+          })(),
+        });
+
+        // 收了钱却没开「付费」开关：用户不必购买即可下载。
+        const unpaidSkuDevices = findUnpaidSkuDevices({
+          devices: fullDownloadDevices,
+          skus: configs.skus,
+        });
+        if (unpaidSkuDevices.length > 0) {
+          checks.push({
+            title: "已配置付费映射但未标记为付费",
+            status: "warn",
+            detail: `以下设备存在启用中的 SKU，但「付费」开关未打开，服务端视为免费，用户无需购买即可下载：${unpaidSkuDevices.join(", ")}。若确实不收费可忽略；否则请在「配置付费平台映射」中打开「付费」。`,
+          });
+        }
       }
     } catch (err) {
       cryptoCheckError = err instanceof Error ? err.message : String(err);
     }
   }
 
-  if (creatorFeaturesEnabled) {
-    const missingEncryption = encryptedDeviceSet
-      ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
-      : [];
-    const missingMapping = mappedDeviceSet
-      ? fullDownloadDevices.filter((d) => !mappedDeviceSet!.has(d))
-      : [];
-
+  if (creatorFeaturesEnabled && (encryptedDeviceSet === null || cryptoCheckError)) {
     checks.push({
-      title: "购买与加密配置就绪（enableAstroBoxCreatorFeatures）",
-      status: (() => {
-        if (!astroboxToken) return "manual";
-        if (!cryptoResourceId) return "warn";
-        if (cryptoCheckError) return "manual";
-        if (missingEncryption.length > 0 || missingMapping.length > 0)
-          return "fail";
-        return "pass";
-      })(),
-      detail: (() => {
-        if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
-        if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
-        if (!cryptoResourceId)
-          return "manifest 缺少资源 ID，无法查询服务端配置";
-        const parts: string[] = [];
-        if (missingEncryption.length > 0)
-          parts.push(`缺少文件加密密钥的设备：${missingEncryption.join(", ")}`);
-        if (missingMapping.length > 0)
-          parts.push(`缺少付费平台映射或自有网站授权的设备：${missingMapping.join(", ")}`);
-        if (parts.length === 0)
-          parts.push(
-            `全部 ${fullDownloadDevices.length} 个正式下载设备均已配置加密密钥与付费映射`,
-          );
-        return parts.join("；");
-      })(),
+      title: "设备付费门槛与解锁路径自洽（enableAstroBoxCreatorFeatures）",
+      status: "manual",
+      detail: cryptoCheckError
+        ? `校验失败：${cryptoCheckError}`
+        : "未登录 AstroBox，无法校验服务端配置",
     });
+  }
 
+  if (creatorFeaturesEnabled) {
     // --- check: 启用购买与加密功能但未使用 CC 加密 ---
     // 该开关只应在确实使用 CC 加密（服务端存在加密文件密钥）时开启。
-    // 否则客户端进入详情页会先请求 purchase_info，失败后才回退普通下载。
+    // 未加密时客户端仍可正常下载，判定降级为 warn 提示明文分发。
     const noEncryptionUsed =
       !cryptoCheckError &&
       encryptedDeviceSet !== null &&
       encryptedDeviceSet.size === 0;
     checks.push({
-      title: "启用购买与加密功能但未使用 CC 加密（enableAstroBoxCreatorFeatures）",
+      title: "启用购买与加密功能但未登记加密文件密钥",
       status: (() => {
         if (!astroboxToken) return "manual";
         if (!cryptoResourceId) return "warn";
         if (cryptoCheckError) return "manual";
-        return noEncryptionUsed ? "fail" : "pass";
+        return noEncryptionUsed ? "warn" : "pass";
       })(),
       detail: (() => {
         if (!astroboxToken) return "未登录 AstroBox，无法校验服务端配置";
         if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
-        if (!cryptoResourceId)
-          return "manifest 缺少资源 ID，无法查询服务端配置";
+        if (!cryptoResourceId) return "manifest 缺少资源 ID，无法查询服务端配置";
         if (noEncryptionUsed)
-          return "未登记任何加密文件密钥，却开启了购买与加密功能；客户端会先请求 purchase_info，失败后才回退普通下载。若未使用 CC 加密请关闭该开关。";
-        return "已登记加密文件密钥，购买与加密功能使用正常";
+          return "未登记任何加密文件密钥，包体将以明文形式存放在公开仓库中。若这是有意为之（仅启用购买校验、不加密包体）可忽略。";
+        return "已登记加密文件密钥，加密配置正常";
       })(),
     });
   }
