@@ -216,11 +216,7 @@ export function LinksSection({ links, setLinks }: LinksSectionProps) {
             title="外部链接"
             description="外链用于补充官网、文档、社区等入口。"
             headerExtra={
-                <div className="flex items-center gap-1.5">
-                    <FieldHelpButton
-                        onClick={() => setHelpOpen(true)}
-                        title="外部链接字段说明"
-                    />
+                <div className="flex shrink-0 items-center gap-1.5">
                     <Button
                         type="button"
                         variant="soft"
@@ -237,6 +233,10 @@ export function LinksSection({ links, setLinks }: LinksSectionProps) {
                         <PlusIcon size={14} weight="bold" />
                         添加链接
                     </Button>
+                    <FieldHelpButton
+                        onClick={() => setHelpOpen(true)}
+                        title="外部链接字段说明"
+                    />
                 </div>
             }
         >

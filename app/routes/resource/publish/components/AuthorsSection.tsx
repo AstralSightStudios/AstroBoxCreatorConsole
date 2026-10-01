@@ -72,11 +72,7 @@ export function AuthorsSection({
             title="作者"
             description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，修改需二次确认。"
             headerExtra={
-                <div className="flex items-center gap-1.5">
-                    <FieldHelpButton
-                        onClick={() => setHelpOpen(true)}
-                        title="作者字段说明"
-                    />
+                <div className="flex shrink-0 items-center gap-1.5">
                     <Button
                         type="button"
                         variant="soft"
@@ -87,6 +83,10 @@ export function AuthorsSection({
                         <PlusIcon size={14} weight="bold" />
                         添加作者
                     </Button>
+                    <FieldHelpButton
+                        onClick={() => setHelpOpen(true)}
+                        title="作者字段说明"
+                    />
                 </div>
             }
         >
