@@ -25,14 +25,14 @@ export function SectionCard({
 }) {
   return (
     <div
-      className={`rounded-[14px] border border-white/10 bg-nav-item w-full ${className}`}
+      className={`min-w-0 rounded-[14px] border border-white/10 bg-nav-item w-full ${className}`}
     >
-      <div className={`flex flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
+      <div className={`flex min-w-0 flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
         <div
-          className={`flex flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
+          className={`flex min-w-0 flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[18px] font-medium text-white">{title}</p>
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <p className="min-w-0 text-[18px] font-medium text-white">{title}</p>
             {headerExtra}
           </div>
           {description && (
