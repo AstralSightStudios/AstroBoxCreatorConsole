@@ -126,6 +126,7 @@ import { validatePublish } from "~/logic/publish/validation";
 import {
   COVER_COMPRESS_TARGET_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
+  PREVIEW_COMPRESS_TARGET_BYTES,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
@@ -311,7 +312,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               ),
             );
           }, 160);
-          const processed = await compressImageFile(file, 500 * 1024);
+          const processed = await compressImageFile(file, PREVIEW_COMPRESS_TARGET_BYTES);
           log.debug("media/preview", "读取预览图尺寸", {
             data: { name: file.name, compressedSize: processed.size },
           });

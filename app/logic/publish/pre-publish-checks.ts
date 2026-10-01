@@ -21,6 +21,8 @@ export const ICON_MAX_DIMENSION = 500;
 export const ICON_COMPRESS_TARGET_BYTES = 100 * 1024;
 /** 封面压缩目标即体积上限，压缩后仍超标则拒绝。 */
 export const COVER_COMPRESS_TARGET_BYTES = COVER_MAX_BYTES;
+/** 预览图压缩目标字节数（无硬性上限，仅按此目标压缩）。 */
+export const PREVIEW_COMPRESS_TARGET_BYTES = 500 * 1024;
 
 /** 尺寸可缺失：读取失败时 width/height 为空，判定函数会给出「无法读取」。 */
 export interface ImageDimensions {
