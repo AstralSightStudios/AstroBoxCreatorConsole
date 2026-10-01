@@ -8,8 +8,10 @@ export interface ParsedReviewComment {
   content: string;
 }
 
-const COMMENT_TAG_PATTERN = /^\s*\[ABCC_([A-Z_]+)_([^\]]+)\]\s*([\s\S]*)$/i;
-const LEADING_TAG_PATTERN = /^\s*\[ABCC_(?:[A-Z_]+)_[^\]]+\]\s*/i;
+// tagId 部分必须可选：[ABCC_CLOSE] / [ABCC_REFUSE] 由审核动作直接发出，不带 tagId。
+// group1 用惰性匹配，否则 `[ABCC_NEEDFIX_abc]` 会被拆成 tagType=NEEDFIX_abc、tagId 为空。
+const COMMENT_TAG_PATTERN = /^\s*\[ABCC_([A-Z_]+?)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
+const LEADING_TAG_PATTERN = /^\s*\[ABCC_[A-Z_]+(?:_[^\]]+)?\]\s*/i;
 
 export const escapeHtml = (value: string): string =>
   value
