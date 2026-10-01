@@ -13,6 +13,11 @@ import {
   type GithubPullRequest,
 } from "~/api/github/pr-review";
 import { PUBLISH_CONFIG } from "~/config/publish";
+import {
+  buildCcNoticeCheckTarget,
+  type CcNoticeCheckTarget,
+} from "~/logic/inbox/send";
+import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile } from "~/logic/publish/github-actions";
 import {
@@ -31,6 +36,7 @@ import {
   submissionCsvPath,
   submissionRequestPath,
 } from "~/logic/publish/submission-protocol";
+import { parseReviewCommentBody } from "./utils/comment";
 
 export function isImagePath(path: string) {
   return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(path);
@@ -66,6 +72,97 @@ export async function runWithConcurrency<T, R>(
 
 export function makeNeedFixId() {
   return Math.random().toString(36).slice(2, 8);
+}
+
+/** 一条审核通知对应的 GitHub 评论。commentId 为空表示只挂在 PR 概览上。 */
+export interface CcNoticeTargetPlan {
+  target: CcNoticeCheckTarget;
+  commentId?: number;
+}
+
+/**
+ * 按 PR 时间线推导需要检测送达状态的审核通知：
+ * - 每条 NEEDFIX 评论 → 一条 review-changes-requested（按 tagId 区分）
+ * - 最新一条 CLOSE / REFUSE 标签评论 → review-closed / review-refused（无 tagId）
+ * - review-approved 是合入时发送的 PR 级通知，只进 subtypeKeys（PR 概览展示）
+ */
+export function buildCcNoticeCheckPlan(
+  prNumber: number,
+  comments: GithubIssueComment[],
+): {
+  targets: CcNoticeCheckTarget[];
+  commentIdByKey: Record<string, number>;
+  subtypeKeys: Map<CcNoticeSubtype, string>;
+} {
+  const planned: CcNoticeTargetPlan[] = [];
+  const commentIdByKey: Record<string, number> = {};
+  const subtypeKeys = new Map<CcNoticeSubtype, string>();
+  const latestByTagType: Record<string, GithubIssueComment> = {};
+
+  for (const comment of comments) {
+    const parsed = parseReviewCommentBody(comment.body || "");
+    if (parsed.tagType === "NEEDFIX" && parsed.tagId) {
+      const target = buildCcNoticeCheckTarget({
+        prNumber,
+        subtype: "review-changes-requested",
+        tagId: parsed.tagId,
+        content: parsed.content,
+      });
+      planned.push({
+        target,
+        ...(typeof comment.id === "number" ? { commentId: comment.id } : {}),
+      });
+      if (typeof comment.id === "number") commentIdByKey[target.key] = comment.id;
+      continue;
+    }
+    if (parsed.tagType === "CLOSE" || parsed.tagType === "REFUSE") {
+      // 同一条 PR 可能多次关闭/拒绝，只跟踪最新一条对应的通知。
+      if (
+        !latestByTagType[parsed.tagType] ||
+        (comment.created_at || "") >=
+          (latestByTagType[parsed.tagType].created_at || "")
+      ) {
+        latestByTagType[parsed.tagType] = comment;
+      }
+    }
+  }
+
+  for (const [tagType, subtype] of [
+    ["CLOSE", "review-closed"],
+    ["REFUSE", "review-refused"],
+  ] as const) {
+    const comment = latestByTagType[tagType];
+    const target = buildCcNoticeCheckTarget({
+      prNumber,
+      subtype,
+      ...(comment
+        ? { content: parseReviewCommentBody(comment.body || "").content }
+        : {}),
+    });
+    subtypeKeys.set(subtype, target.key);
+    planned.push({
+      target,
+      ...(comment && typeof comment.id === "number"
+        ? { commentId: comment.id }
+        : {}),
+    });
+    if (comment && typeof comment.id === "number") {
+      commentIdByKey[target.key] = comment.id;
+    }
+  }
+
+  const approvedTarget = buildCcNoticeCheckTarget({
+    prNumber,
+    subtype: "review-approved",
+  });
+  subtypeKeys.set("review-approved", approvedTarget.key);
+  planned.push({ target: approvedTarget });
+
+  return {
+    targets: planned.map((item) => item.target),
+    commentIdByKey,
+    subtypeKeys,
+  };
 }
 
 export function formatTime(value?: string) {

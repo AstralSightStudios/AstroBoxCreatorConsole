@@ -135,6 +135,7 @@ export interface InboxMessage {
   readAt: string | null;
   deletedByAdminAt?: string | null;
   deletedByUserAt?: string | null;
+  deletedBySystemAt?: string | null;
 }
 
 export interface AdminPublicOrder {

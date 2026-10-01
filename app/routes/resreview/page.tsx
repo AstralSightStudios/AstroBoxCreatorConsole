@@ -15,6 +15,9 @@ import {
   type CcNoticeDeliveryStatus,
 } from "~/logic/inbox/send";
 import type { CcNoticeSubtype } from "~/logic/inbox/types";
+
+/** notifyCc 的三态：发送成功 / 找不到收件人（根本没发）/ 发送失败。 */
+type CcNoticeSendResult = "sent" | "skipped" | "failed";
 import { resolveAuthorProStatuses } from "./owner-pro";
 import { useRepoEnv } from "~/config/repoEnv";
 import { useReviewMode } from "~/config/publishMode";
@@ -47,6 +50,7 @@ import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
 import {
+  buildCcNoticeCheckPlan,
   loadPrResourcePreviews,
   loadStagingPrResourcePreviews,
   getErrorMessage,
@@ -149,6 +153,9 @@ export default function ResourceReviewPage() {
   const [noticeDraft, setNoticeDraft] = useState<import("./components/CommentComposer").NoticeDraft | null>(null);
   const [noticeStatusByCommentId, setNoticeStatusByCommentId] = useState<
     Record<number, CcNoticeDeliveryStatus>
+  >({});
+  const [noticeStatusBySubtype, setNoticeStatusBySubtype] = useState<
+    Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>>
   >({});
   const [checkingNoticeStatus, setCheckingNoticeStatus] = useState(false);
   const [noticeStatusTick, setNoticeStatusTick] = useState(0);
@@ -395,34 +402,19 @@ export default function ResourceReviewPage() {
     }
   }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
 
-  // 联网检测当前 PR 的 NEEDFIX 评论通知是否真的送达 AstroBox 信箱，
-  // 结果按 GitHub 评论 id 回填，供评论卡片展示「没有发送」标签与重试入口。
+  // 检测当前 PR 的四类审核通知（NEEDFIX / 通过 / 关闭 / 拒绝）是否送达
+  // AstroBox 信箱：按评论回填到卡片上，同时给 PR 概览提供一份按 subtype 的汇总。
   useEffect(() => {
     if (!openNumber) {
       setNoticeStatusByCommentId({});
+      setNoticeStatusBySubtype({});
       return;
     }
     const comments = commentsByPr[openNumber] ?? [];
-    const targets = comments.flatMap((comment) => {
-      const parsed = parseReviewCommentBody(comment.body || "");
-      if (
-        parsed.tagType !== "NEEDFIX" ||
-        !parsed.tagId ||
-        typeof comment.id !== "number"
-      ) {
-        return [];
-      }
-      return [
-        {
-          id: comment.id,
-          subtype: "review-changes-requested" as const,
-          tagId: parsed.tagId,
-          content: parsed.content,
-        },
-      ];
-    });
-    if (targets.length === 0) {
+    const plan = buildCcNoticeCheckPlan(openNumber, comments);
+    if (plan.targets.length === 0) {
       setNoticeStatusByCommentId({});
+      setNoticeStatusBySubtype({});
       return;
     }
 
@@ -437,14 +429,29 @@ export default function ResourceReviewPage() {
         const statuses = await inspectCcNotices({
           prNumber: openNumber,
           userIds,
-          targets,
+          targets: plan.targets,
         });
         if (cancelled) return;
-        const next: Record<number, CcNoticeDeliveryStatus> = {};
-        for (const [id, status] of statuses) next[id] = status;
-        setNoticeStatusByCommentId(next);
+        const byComment: Record<number, CcNoticeDeliveryStatus> = {};
+        for (const [key, commentId] of Object.entries(
+          plan.commentIdByKey,
+        ) as [string, number][]) {
+          const status = statuses.get(key);
+          if (status) byComment[commentId] = status;
+        }
+        const bySubtype: Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>> =
+          {};
+        for (const [subtype, key] of plan.subtypeKeys) {
+          const status = statuses.get(key);
+          if (status) bySubtype[subtype] = status;
+        }
+        setNoticeStatusByCommentId(byComment);
+        setNoticeStatusBySubtype(bySubtype);
       } catch {
-        if (!cancelled) setNoticeStatusByCommentId({});
+        if (!cancelled) {
+          setNoticeStatusByCommentId({});
+          setNoticeStatusBySubtype({});
+        }
       } finally {
         if (!cancelled) setCheckingNoticeStatus(false);
       }
@@ -707,13 +714,15 @@ export default function ResourceReviewPage() {
     titleOverride?: string;
     bodyOverride?: string;
     force?: boolean;
-  }): Promise<boolean> => {
+  }): Promise<CcNoticeSendResult> => {
     const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
       resourcePreviews,
       getAstroboxToken(),
     );
-    if (userIds.length === 0) return false;
-    return sendCcNotice({
+    // 作者没有在 manifest 里声明绑定 AstroBox 账号，或按名称匹配不到账号，
+    // 通知压根发不出去，单独返回 skipped 供调用方提示，不要和发送失败混淆。
+    if (userIds.length === 0) return "skipped";
+    const ok = await sendCcNotice({
       subtype: params.subtype,
       tagId: params.tagId,
       content: params.content,
@@ -739,28 +748,55 @@ export default function ResourceReviewPage() {
             params.senderNote?.trim() ||
             CC_NOTICE_BODIES[params.subtype]),
     }, { force: params.force });
+    return ok ? "sent" : "failed";
+  };
+
+  const retryCcNoticeFor = async (params: {
+    subtype: CcNoticeSubtype;
+    tagId?: string;
+    content?: string;
+    senderNote?: string;
+  }) => {
+    if (!openNumber) return;
+    const result = await notifyCc({
+      subtype: params.subtype,
+      prNumber: openNumber,
+      tagId: params.tagId,
+      content: params.content,
+      senderNote: params.senderNote,
+      force: true,
+    });
+    if (result === "sent") {
+      toast.success("AstroBox 信箱通知已重新发送");
+      setNoticeStatusTick((prev) => prev + 1);
+      return;
+    }
+    if (result === "skipped") {
+      toast.error("未找到收件人，请确认作者已在 manifest 中绑定 AstroBox 账号");
+      return;
+    }
+    toast.error("重新发送失败，请稍后重试");
   };
 
   const retryCcNotice = async (comment: GithubIssueComment) => {
-    if (!openNumber) return;
     const parsed = parseReviewCommentBody(comment.body || "");
-    if (parsed.tagType !== "NEEDFIX" || !parsed.tagId) {
-      toast.error("该评论不是可发送通知的 NEEDFIX 评论");
+    if (parsed.tagType === "NEEDFIX" && parsed.tagId) {
+      await retryCcNoticeFor({
+        subtype: "review-changes-requested",
+        tagId: parsed.tagId,
+        content: parsed.content,
+      });
       return;
     }
-    const ok = await notifyCc({
-      subtype: "review-changes-requested",
-      prNumber: openNumber,
-      tagId: parsed.tagId,
-      content: parsed.content,
-      force: true,
-    });
-    if (ok) {
-      toast.success("AstroBox 信箱通知已重新发送");
-      setNoticeStatusTick((prev) => prev + 1);
-    } else {
-      toast.error("重新发送失败，请稍后重试");
+    if (parsed.tagType === "CLOSE" || parsed.tagType === "REFUSE") {
+      await retryCcNoticeFor({
+        subtype: parsed.tagType === "CLOSE" ? "review-closed" : "review-refused",
+        content: parsed.content,
+        senderNote: parsed.content,
+      });
+      return;
     }
+    toast.error("该评论没有对应的 AstroBox 信箱通知");
   };
 
   const topbarActions = null;
@@ -841,8 +877,10 @@ export default function ResourceReviewPage() {
                  onDeleteComment={deleteComment}
                  onEditComment={editComment}
                  onRetryNotice={retryCcNotice}
-                 noticeStatusByCommentId={noticeStatusByCommentId}
-                 checkingNoticeStatus={checkingNoticeStatus}
+noticeStatusByCommentId={noticeStatusByCommentId}
+                noticeStatusBySubtype={noticeStatusBySubtype}
+                checkingNoticeStatus={checkingNoticeStatus}
+                onRetrySubtypeNotice={(subtype) => { void retryCcNoticeFor({ subtype }); }}
                  noticeDraft={noticeDraft}
                  onNoticeDraftChange={setNoticeDraft}
                 onApprove={approve}

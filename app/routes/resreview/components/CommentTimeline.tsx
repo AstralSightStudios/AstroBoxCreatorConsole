@@ -31,6 +31,29 @@ export interface CommentTimelineProps {
   checkingNoticeStatus?: boolean;
 }
 
+type NoticeBadgeState = Exclude<CcNoticeDeliveryStatus["state"], "sent">;
+
+const NOTICE_STATE_LABEL: Record<NoticeBadgeState, string> = {
+  pending: "待发送",
+  unsent: "没有发送",
+  unmatched: "未匹配作者",
+  unverified: "未能校验",
+};
+
+const NOTICE_STATE_CLASS: Record<NoticeBadgeState, string> = {
+  pending: "bg-sky-500/15 text-sky-100",
+  unsent: "bg-red-500/15 text-red-100",
+  unmatched: "bg-amber-500/15 text-amber-100",
+  unverified: "bg-white/10 text-white/60",
+};
+
+const NOTICE_STATE_TITLE: Record<NoticeBadgeState, string> = {
+  pending: "该评论对应的 AstroBox 信箱通知待补发",
+  unsent: "该评论对应的 AstroBox 信箱通知未送达",
+  unmatched: "未找到收件人：请确认作者已在 manifest 中绑定 AstroBox 账号",
+  unverified: "未能读取 AstroBox 信箱（权限不足或网络异常），本机也没有发送记录",
+};
+
 export function CommentTimeline({
   comments,
   currentUsername,
@@ -141,8 +164,19 @@ export function CommentTimeline({
         const longContent = isLongContent(parsed);
         const collapsed = isCollapsed(comment);
         const hasReplyTarget = Boolean(getReplyTargetId(parsed.replyTarget));
-        const isNeedFixNotice = parsed.tagType === "NEEDFIX" && Boolean(parsed.tagId);
-        const noticeStatus = noticeStatusByCommentId?.[comment.id];
+        // NEEDFIX / CLOSE / REFUSE 三种标签各自对应一种信箱通知，只有存在
+        // 对应通知的标签才显示送达状态；其余标签（如 FIXED/REOPEN）不发通知。
+        const noticeSubtype =
+          parsed.tagType === "NEEDFIX" && parsed.tagId
+            ? "review-changes-requested"
+            : parsed.tagType === "CLOSE"
+              ? "review-closed"
+              : parsed.tagType === "REFUSE"
+                ? "review-refused"
+                : null;
+        const noticeStatus = noticeSubtype
+          ? noticeStatusByCommentId?.[comment.id]
+          : undefined;
 
         return (
           <div
@@ -193,19 +227,17 @@ export function CommentTimeline({
                       {comment.review_state === "COMMENTED" && "💬 已评论"}
                     </span>
                   )}
-                  {isNeedFixNotice && noticeStatus && noticeStatus.state !== "sent" ? (
+                  {noticeStatus && noticeStatus.state !== "sent" ? (
                     <span
                       className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        noticeStatus.state === "pending"
-                          ? "bg-sky-500/15 text-sky-100"
-                          : "bg-red-500/15 text-red-100"
+                        NOTICE_STATE_CLASS[noticeStatus.state]
                       }`}
-                      title="该评论对应的 AstroBox 信箱通知未送达"
+                      title={NOTICE_STATE_TITLE[noticeStatus.state]}
                     >
-                      {noticeStatus.state === "pending" ? "待发送" : "没有发送"}
+                      {NOTICE_STATE_LABEL[noticeStatus.state]}
                     </span>
                   ) : null}
-                  {isNeedFixNotice && checkingNoticeStatus && !noticeStatus ? (
+                  {noticeSubtype && checkingNoticeStatus && !noticeStatus ? (
                     <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60">
                       检测中
                     </span>
@@ -254,7 +286,9 @@ export function CommentTimeline({
                           删除
                         </DropdownMenu.Item>
                       ) : null}
-                      {onRetryNotice && isNeedFixNotice ? (
+                      {onRetryNotice &&
+                      noticeSubtype &&
+                      noticeStatus?.state !== "unverified" ? (
                         <>
                           <DropdownMenu.Separator />
                           <DropdownMenu.Item

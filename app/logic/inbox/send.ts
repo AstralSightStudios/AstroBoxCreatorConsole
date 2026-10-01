@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { AdminApi } from "~/api/astrobox/admin";
+import { AdminApi, type InboxMessage } from "~/api/astrobox/admin";
 import type { CcNoticeMetadata, CcNoticeSubtype } from "./types";
 
 export interface CcNoticePayload {
@@ -104,29 +104,26 @@ function normalizeNoticeContent(content: string | null | undefined): string {
 }
 
 /**
- * 判断一封服务端信件是否对应某条待检测通知。
- * 历史数据里同一 PR 可能因旧 bug 复用相同 tagId，因此再用正文区分；
- * 正文缺失（旧数据）时退回只比对 subtype/prNumber/tagId。
+ * 正文比对：历史数据里同一 PR 可能因旧 bug 复用相同 tagId，所以正常情况下还要
+ * 再比正文；但服务端/旧记录里正文为空时降级为只比 subtype/prNumber/tagId，
+ * 避免把「确实送达过的通知」误判成未送达。
  */
-function serverMessageMatches(
-  metadata: unknown,
-  target: CcNoticeCheckTarget,
-  prNumber: number,
+function noticeContentMatches(
+  stored: string | null | undefined,
+  expected: string | undefined,
 ): boolean {
-  if (typeof metadata !== "object" || metadata === null) return false;
-  const meta = metadata as CcNoticeMetadata;
-  if (meta.subtype !== target.subtype || meta.prNumber !== prNumber) return false;
-  if ((meta.tagId ?? "") !== (target.tagId ?? "")) return false;
-  if (target.content !== undefined) {
-    return (
-      normalizeNoticeContent(meta.content) ===
-      normalizeNoticeContent(target.content)
-    );
-  }
-  return true;
+  if (expected === undefined) return true;
+  const actual = normalizeNoticeContent(stored);
+  if (!actual) return true;
+  return actual === normalizeNoticeContent(expected);
 }
 
-export type CcNoticeDeliveryState = "sent" | "pending" | "unsent";
+export type CcNoticeDeliveryState =
+  | "sent"
+  | "pending"
+  | "unsent"
+  | "unmatched"
+  | "unverified";
 
 export interface CcNoticeDeliveryStatus {
   state: CcNoticeDeliveryState;
@@ -134,76 +131,182 @@ export interface CcNoticeDeliveryStatus {
 }
 
 export interface CcNoticeCheckTarget {
-  /** GitHub 评论 id，用于把检测结果回填到对应评论。 */
-  id: number;
+  /** 业务键，与发送幂等键一致（prNumber:subtype:tagId），作为检测结果的主键。 */
+  key: string;
   subtype: CcNoticeSubtype;
   tagId?: string;
   content?: string;
 }
 
+/** 组装检测目标，key 必须与 sendCcNotice 的幂等键保持一致。 */
+export function buildCcNoticeCheckTarget(params: {
+  prNumber: number;
+  subtype: CcNoticeSubtype;
+  tagId?: string;
+  content?: string;
+}): CcNoticeCheckTarget {
+  return {
+    key: buildNoticeKey(params.subtype, params.prNumber, params.tagId),
+    subtype: params.subtype,
+    tagId: params.tagId,
+    content: params.content,
+  };
+}
+
 /**
- * 联网检测一批审核通知是否真的送达了 AstroBox 信箱。
- * 以服务端 /admin/inbox 的 cc-notice 记录为准；网络不可用时回退本地记录，
- * 本地队列中待补发的条目标记为 pending。
+ * 把服务端命中的信件回填成本机发送记录。
+ * 这样「检测到已发送」和「能撤回」用的是同一份数据，审核人换设备打开
+ * PR 时也能取到 bulkId 做撤回/重发，而不会重复投递一份。
+ */
+function adoptServerRecord(
+  key: string,
+  message: { bulkId?: string | null; title: string; body: string; metadata: unknown },
+  params: { prNumber: number; userIds: string[] },
+): void {
+  const bulkId = message.bulkId ?? "";
+  if (!bulkId) return;
+  const records = loadBulkRecords();
+  if (records[key]?.bulkId === bulkId) return;
+  const meta = (message.metadata ?? {}) as CcNoticeMetadata;
+  records[key] = {
+    bulkId,
+    payload: {
+      subtype: meta.subtype,
+      tagId: meta.tagId ?? undefined,
+      content: meta.content ?? undefined,
+      senderNote: meta.senderNote ?? undefined,
+      prNumber: meta.prNumber ?? params.prNumber,
+      prUrl: meta.prUrl ?? "",
+      resourceId: meta.resourceId ?? undefined,
+      resourceName: meta.resourceName ?? undefined,
+      deepLink: meta.deepLink ?? undefined,
+      userIds: params.userIds,
+      title: message.title,
+      body: message.body,
+    },
+  };
+  persistBulkRecords(records);
+  const sentKeys = loadSentKeys();
+  if (!sentKeys.has(key)) {
+    sentKeys.add(key);
+    persistSentKeys(sentKeys);
+  }
+}
+
+/**
+ * 服务端 /admin/inbox 没有按 metadata 过滤的能力，只能按收件人 + kind 拉取后
+ * 在客户端匹配。list 已支持 cursor（服务端转成 createdAt < cursor），所以这里
+ * 翻页取全；封顶页数避免极端情况下请求过多。
+ */
+const CC_NOTICE_PAGE_SIZE = 100;
+const CC_NOTICE_MAX_PAGES = 10;
+
+async function fetchCcNotices(userIds: string[]): Promise<InboxMessage[]> {
+  const perUser = await Promise.all(
+    userIds.map(async (userId) => {
+      const collected: InboxMessage[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < CC_NOTICE_MAX_PAGES; page += 1) {
+        const response = await AdminApi.inbox.list({
+          userId,
+          kind: "cc-notice",
+          limit: CC_NOTICE_PAGE_SIZE,
+          cursor,
+        });
+        collected.push(...response.items);
+        if (!response.hasMore || !response.nextCursor) break;
+        cursor = response.nextCursor;
+      }
+      return collected;
+    }),
+  );
+  return perUser.flat();
+}
+
+/**
+ * 检测一批审核通知是否真的送达了 AstroBox 信箱。
+ * 以本机发送记录为准（发送动作发生在审核人设备上，本地记录是直接证据），
+ * 再用服务端 /admin/inbox 做补充确认并回填 bulkId；完全找不到收件人时标记
+ * unmatched，区别于「有收件人但没送达」；连信箱都读不到时标记 unverified，
+ * 不再断言「没有发送」，避免权限不足/断网被误报成漏发。
  */
 export async function inspectCcNotices(params: {
   prNumber: number;
   userIds: string[];
   targets: CcNoticeCheckTarget[];
-}): Promise<Map<number, CcNoticeDeliveryStatus>> {
-  const result = new Map<number, CcNoticeDeliveryStatus>();
+}): Promise<Map<string, CcNoticeDeliveryStatus>> {
+  const result = new Map<string, CcNoticeDeliveryStatus>();
   if (params.targets.length === 0) return result;
 
-  const keyOf = (target: CcNoticeCheckTarget) =>
-    buildNoticeKey(target.subtype, params.prNumber, target.tagId);
-
   for (const target of params.targets) {
-    result.set(target.id, { state: "unsent" });
+    result.set(target.key, { state: "unsent" });
   }
+
+  // 本地发送记录：任何情况下都参与判定，避免服务端查询成功后反而把
+  // 「本机确实发过」的通知判成未送达。
+  const records = loadBulkRecords();
   for (const target of params.targets) {
-    if (isPendingInQueue(keyOf(target))) {
-      result.set(target.id, { state: "pending" });
+    const record = records[target.key];
+    if (!record?.bulkId) continue;
+    if (!noticeContentMatches(record.payload.content, target.content)) continue;
+    result.set(target.key, { state: "sent", bulkId: record.bulkId });
+  }
+
+  // 待补发队列里还挂着、且本地没有成功记录的，标记为待发送。
+  for (const target of params.targets) {
+    if (result.get(target.key)?.state === "sent") continue;
+    if (isPendingInQueue(target.key)) {
+      result.set(target.key, { state: "pending" });
     }
   }
 
-  let serverChecked = false;
-  if (params.userIds.length > 0) {
-    try {
-      const responses = await Promise.all(
-        params.userIds.map((userId) =>
-          AdminApi.inbox.list({ userId, kind: "cc-notice", limit: 100 }),
-        ),
-      );
-      const messages = responses.flatMap((response) => response.items);
-      for (const target of params.targets) {
-        const hit = messages.find((item) =>
-          serverMessageMatches(item.metadata, target, params.prNumber),
-        );
-        if (hit) {
-          result.set(target.id, { state: "sent", bulkId: hit.bulkId ?? undefined });
-        }
-      }
-      serverChecked = true;
-    } catch {
-      serverChecked = false;
-    }
-  }
-
-  if (!serverChecked) {
-    const records = loadBulkRecords();
+  if (params.userIds.length === 0) {
+    // 收件人都没解析出来，通知根本不可能发出去，单独标记以便提示作者未绑定。
     for (const target of params.targets) {
-      if (result.get(target.id)?.state === "sent") continue;
-      const record = records[keyOf(target)];
-      if (!record) continue;
-      if (
-        target.content !== undefined &&
-        normalizeNoticeContent(record.payload.content) !==
-          normalizeNoticeContent(target.content)
-      ) {
-        continue;
-      }
-      result.set(target.id, { state: "sent", bulkId: record.bulkId });
+      if (result.get(target.key)?.state === "sent") continue;
+      result.set(target.key, { state: "unmatched" });
     }
+    return result;
+  }
+
+  let messages: InboxMessage[];
+  try {
+    messages = await fetchCcNotices(params.userIds);
+  } catch {
+    // 读不到信箱（权限不足 / 断网）：只能说「未能校验」，不能说「没有发送」。
+    for (const target of params.targets) {
+      if (result.get(target.key)?.state === "sent") continue;
+      result.set(target.key, { state: "unverified" });
+    }
+    return result;
+  }
+
+  // 服务端 adminList 不过滤 deletedByUserAt（用户侧 listForUser 会过滤），
+  // 创作者自己删掉的通知不能算送达，这里在客户端补上过滤。
+  const alive = messages.filter(
+    (item) =>
+      !item.deletedByAdminAt &&
+      !item.deletedByUserAt &&
+      !item.deletedBySystemAt,
+  );
+
+  for (const target of params.targets) {
+    if (result.get(target.key)?.state === "sent") continue;
+    const hit = alive.find(
+      (item) =>
+        typeof item.bulkId === "string" &&
+        (item.metadata as CcNoticeMetadata | null)?.subtype === target.subtype &&
+        ((item.metadata as CcNoticeMetadata | null)?.tagId ?? "") ===
+          (target.tagId ?? "") &&
+        (item.metadata as CcNoticeMetadata | null)?.prNumber === params.prNumber &&
+        noticeContentMatches(
+          (item.metadata as CcNoticeMetadata | null)?.content,
+          target.content,
+        ),
+    );
+    if (!hit) continue;
+    adoptServerRecord(target.key, hit, params);
+    result.set(target.key, { state: "sent", bulkId: hit.bulkId ?? undefined });
   }
 
   return result;
