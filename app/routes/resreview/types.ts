@@ -50,10 +50,20 @@ export interface PullReviewState {
   items: { id: string; message: string; fixed: boolean }[];
 }
 
+/**
+ * 检查项对应的「详情容器」锚点。检查清单只给结论，具体逐条明细由面板底部的
+ * 结构化容器展示，因此有明细的检查项填上锚点，UI 在行右侧渲染跳转按钮。
+ */
+export type RuleCheckAnchorKind = "packages" | "paidRatio" | "images";
+
 export interface RuleCheckItem {
   title: string;
   status: "pass" | "fail" | "warn" | "manual";
   detail: string;
+  /** 详情容器锚点；缺省表示该项没有逐条明细，detail 本身已足够。 */
+  anchor?: RuleCheckAnchorKind;
+  /** images 锚点下具体高亮哪张图（icon / cover / preview 序号）。 */
+  anchorLabel?: string;
 }
 
 export interface RepoFileChangeInfo {

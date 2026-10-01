@@ -29,12 +29,21 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import {
+  COVER_MAX_BYTES,
+  ICON_COMPRESS_TARGET_BYTES,
+  PREVIEW_COMPRESS_TARGET_BYTES,
+} from "~/logic/publish/pre-publish-checks";
+import {
   WATCHFACE_MAGIC,
   ZIP_MAGIC,
   computePackageHash,
   xiaomiVersionCodeFromVersion,
 } from "~/logic/publish/package-version";
 import { fetchCatalogEntries } from "~/logic/publish/catalog";
+import {
+  fetchNgPluginIndex,
+  ngPluginDisplayName,
+} from "~/logic/publish/plugin-repo";
 import { AdminApi } from "~/api/astrobox/admin";
 import {
   checkPaidFreeRatioForAuthor,
@@ -688,14 +697,23 @@ function resolveCanonicalSet(
 
 // ---------------------------------------------------------------------------
 // 体积阈值
+//
+// 与发布流程（app/logic/publish/pre-publish-checks.ts + new.tsx 的
+// compressImageFile 调用）保持一致，避免「创作者按发布页提示压到刚好达标、
+// 审核页却判过大」这种自相矛盾：
+//   - warn 阈值 = 发布流程的压缩目标字节数，超过即说明没走压缩或压不动；
+//   - fail 阈值 = 发布流程的硬性上限（封面 COVER_MAX_BYTES 会直接拒绝上传），
+//     其余两类取压缩目标的 2 倍作为「明显异常」线。
 // ---------------------------------------------------------------------------
 
-const ICON_WARN = 150 * 1024;
-const ICON_FAIL = 500 * 1024;
-const COVER_WARN = 400 * 1024;
-const COVER_FAIL = 1.5 * 1024 * 1024;
-const PREVIEW_WARN = 600 * 1024;
-const PREVIEW_FAIL = 2 * 1024 * 1024;
+/** 封面没有独立的压缩目标（压缩目标即硬上限），留出 80% 作为「偏大」提示带。 */
+const COVER_WARN = Math.floor(COVER_MAX_BYTES * 0.8);
+
+const ICON_WARN = ICON_COMPRESS_TARGET_BYTES; // 100KB
+const COVER_FAIL = COVER_MAX_BYTES; // 600KB，发布页超此值直接拒绝
+const PREVIEW_WARN = PREVIEW_COMPRESS_TARGET_BYTES; // 500KB
+const ICON_FAIL = ICON_COMPRESS_TARGET_BYTES * 2; // 200KB
+const PREVIEW_FAIL = PREVIEW_COMPRESS_TARGET_BYTES * 2; // 1000KB
 
 const PACKAGE_FULL_FETCH_LIMIT = 25 * 1024 * 1024; // 超过则不下载完整包做内容校验
 const PACKAGE_HEAD_SCAN = 2 * 1024 * 1024; // 超限时仅取头部做魔数识别
@@ -918,7 +936,7 @@ export async function runResourceRuleChecks(options: {
   const bundledEntries = normalizeBundledResources(manifest?.ext?.bundledResources);
   if (bundledEntries.length > 0) {
     const bundledResourceItems = bundledEntries.filter((r) => r.type === "resource");
-    const bundledPluginCount = bundledEntries.length - bundledResourceItems.length;
+    const bundledPluginItems = bundledEntries.filter((r) => r.type === "plugin");
     const selfResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
     const selfBound = bundledResourceItems.filter((r) => r.id === selfResourceId);
     let catalogIdMap: Map<string, string> | null = null;
@@ -935,29 +953,62 @@ export async function runResourceRuleChecks(options: {
         catalogError = err instanceof Error ? err.message : String(err);
       }
     }
+    // 插件同样校验存在性，避免绑到插件仓库里已删除的名称。
+    let pluginNameSet: Set<string> | null = null;
+    let pluginError = "";
+    if (bundledPluginItems.length > 0) {
+      try {
+        pluginNameSet = new Set((await fetchNgPluginIndex()).map(ngPluginDisplayName));
+      } catch (err) {
+        pluginError = err instanceof Error ? err.message : String(err);
+      }
+    }
     const missingInCatalog =
       catalogIdMap != null
         ? bundledResourceItems.filter((r) => !catalogIdMap!.has(r.id ?? ""))
         : [];
+    const missingPlugins =
+      pluginNameSet != null
+        ? bundledPluginItems.filter((r) => !pluginNameSet!.has(r.name || r.id || ""))
+        : [];
     const requiredCount = bundledEntries.filter((r) => r.mode === "required").length;
+    const lookupUnavailable =
+      (catalogIdMap == null && bundledResourceItems.length > 0) ||
+      (pluginNameSet == null && bundledPluginItems.length > 0);
     checks.push({
       title: "ext.bundledResources 捆绑配置有效",
       status: (() => {
-        if (selfBound.length > 0 || missingInCatalog.length > 0) return "fail";
-        if (catalogIdMap == null && bundledResourceItems.length > 0) return "manual";
+        if (
+          selfBound.length > 0 ||
+          missingInCatalog.length > 0 ||
+          missingPlugins.length > 0
+        )
+          return "fail";
+        if (lookupUnavailable) return "manual";
         return "pass";
       })(),
       detail: (() => {
-        const summary = `必需 ${requiredCount} / 推荐 ${bundledEntries.length - requiredCount}${
-          bundledPluginCount > 0 ? `（含插件 ${bundledPluginCount}，暂不校验）` : ""
-        }`;
+        const summary = `必需 ${requiredCount} / 推荐 ${bundledEntries.length - requiredCount}`;
+        // 具体是哪些捆绑项有问题，在「资源信息」Tab 的「捆绑资源」区块里
+        // 已逐条标红展示，这里只给数量结论。
         if (selfBound.length > 0)
-          return `捆绑项不能绑定自身：${selfBound.map((r) => r.id).join(", ")}`;
+          return `${summary}；${selfBound.length} 个捆绑项绑定了资源自身`;
         if (missingInCatalog.length > 0)
-          return `目录中不存在的捆绑资源：${missingInCatalog.map((r) => r.id).join(", ")}`;
-        if (catalogIdMap == null && bundledResourceItems.length > 0)
-          return `${summary}；无法加载资源目录进行校验：${catalogError}`;
-        return `${summary}；捆绑资源均存在（${bundledResourceItems.map((r) => catalogIdMap!.get(r.id ?? "") || r.name || r.id || "").join("、")}）`;
+          return `${summary}；${missingInCatalog.length} 个捆绑资源已不在资源目录中`;
+        if (missingPlugins.length > 0)
+          return `${summary}；${missingPlugins.length} 个捆绑插件已不在插件索引中`;
+        if (lookupUnavailable) {
+          const reasons = [
+            catalogIdMap == null && bundledResourceItems.length > 0
+              ? `无法加载资源目录：${catalogError}`
+              : "",
+            pluginNameSet == null && bundledPluginItems.length > 0
+              ? `无法加载插件索引：${pluginError}`
+              : "",
+          ].filter(Boolean);
+          return `${summary}；${reasons.join("；")}`;
+        }
+        return `${summary}；全部捆绑项均存在于目录或插件索引中`;
       })(),
     });
   }
@@ -1344,8 +1395,10 @@ export async function runResourceRuleChecks(options: {
   const hasFailImage = imageOverLimits.some((i) => i.over === "fail");
   const hasWarnImage = imageOverLimits.some((i) => i.over === "warn");
   const missingImageSize = imageSizes.some((i) => i.sizeBytes == null);
+  const overFailed = imageSizes.filter((i) => i.overLimit === "fail");
+  const overWarned = imageSizes.filter((i) => i.overLimit === "warn");
   checks.push({
-    title: "图片体积合理（icon ≤ 500KB / cover ≤ 1.5MB / preview ≤ 2MB）",
+    title: `图片体积合理（icon ≤ ${formatBytes(ICON_WARN)} / cover ≤ ${formatBytes(COVER_WARN)} / preview ≤ ${formatBytes(PREVIEW_WARN)}）`,
     status: hasFailImage
       ? "fail"
       : hasWarnImage
@@ -1353,14 +1406,22 @@ export async function runResourceRuleChecks(options: {
         : missingImageSize
           ? "warn"
           : "pass",
-    detail: imageSizes
-      .map(
-        (i) =>
-          `${i.label}: ${formatBytes(i.sizeBytes)}${
-            i.overLimit === "fail" ? "（过大）" : i.overLimit === "warn" ? "（偏大）" : i.sizeBytes == null ? "（未取到体积）" : ""
-          }`,
-      )
-      .join(" · "),
+    // 逐张图片的体积见面板底部「图片体积与宽高比」容器，这里只给汇总结论。
+    detail: (() => {
+      const parts: string[] = [];
+      if (overFailed.length > 0)
+        parts.push(
+          `${overFailed.length} 张超出上限（${Array.from(new Set(overFailed.map((i) => i.label))).join("、")}）`,
+        );
+      if (overWarned.length > 0)
+        parts.push(
+          `${overWarned.length} 张偏大（${Array.from(new Set(overWarned.map((i) => i.label))).join("、")}）`,
+        );
+      if (missingImageSize) parts.push("部分图片未取到体积");
+      return parts.length > 0 ? parts.join("；") : "所有图片体积均在发布流程上限内";
+    })(),
+    anchor: overFailed[0]?.label ? "images" : undefined,
+    anchorLabel: overFailed[0]?.label,
   });
 
   // --- check: 图片宽高比 ---
@@ -1393,19 +1454,17 @@ export async function runResourceRuleChecks(options: {
         : ratioMissing.length > 0
           ? "warn"
           : "pass",
-    detail:
-      ratioTargets
-        .map((i) => {
-          const ratioText = i.ratio != null ? i.ratio.toFixed(2) : "-";
-          const tag =
-            i.ratioValid === false
-              ? "（不符）"
-              : i.width == null
-                ? "（未取到尺寸）"
-                : "";
-          return `${i.label}: ${ratioText}${tag}`;
-        })
-        .join(" · ") || "无 icon/cover",
+    detail: (() => {
+      if (ratioInvalid.length > 0)
+        return `${ratioInvalid.length} 张宽高比不符（${ratioInvalid
+          .map((i) => `${i.label} ${i.ratio?.toFixed(2) ?? "-"}`)
+          .join("、")}）`;
+      if (ratioMissing.length > 0)
+        return `${ratioMissing.map((i) => i.label).join("、")} 未取到尺寸，需人工确认`;
+      return "icon 与 cover 宽高比均符合要求";
+    })(),
+    anchor: ratioInvalid[0]?.label ? "images" : undefined,
+    anchorLabel: ratioInvalid[0]?.label,
   });
 
   // --- check: 外部链接 links 完整且 icon 合法 ---
@@ -1454,24 +1513,17 @@ export async function runResourceRuleChecks(options: {
     const errored = declaredBoundNames.filter(
       (n) => authorStatuses[n]?.state === "error",
     );
-    const detailParts = declaredBoundNames.map((n) => {
-      const s = authorStatuses[n];
-      if (s?.state === "found") {
-        const user = s.user;
-        return `${n}：已匹配账户 ${user.displayName || user.username || user.userId}`;
-      }
-      if (s?.state === "not-found") return `${n}：未匹配到 AstroBox 账户`;
-      if (s?.state === "error") return `${n}：查询失败（${s.message}）`;
-      if (s?.state === "no-auth") return `${n}：未登录 AstroBox`;
-      return `${n}：查询中`;
-    });
-    if (declaredUnboundNames.length > 0) {
-      detailParts.push(`未声明绑定：${declaredUnboundNames.join("、")}`);
-    }
+    // 逐个作者的匹配状态在「资源信息」Tab 的作者列表里已有徽章展示，
+    // 这里只给汇总结论，不重复罗列每个作者。
+    const parts: string[] = [];
+    if (notFound.length > 0) parts.push(`${notFound.length} 个作者未匹配到 AstroBox 账户`);
+    if (errored.length > 0) parts.push(`${errored.length} 个作者查询失败`);
+    if (declaredUnboundNames.length > 0)
+      parts.push(`${declaredUnboundNames.length} 个作者未声明绑定`);
     checks.push({
       title: "作者绑定 AstroBox 声明有效",
       status: notFound.length > 0 ? "fail" : errored.length > 0 ? "warn" : "pass",
-      detail: detailParts.join(" · "),
+      detail: parts.length > 0 ? parts.join("；") : "声明绑定的作者均已匹配到 AstroBox 账户",
     });
   }
 
@@ -1491,15 +1543,6 @@ export async function runResourceRuleChecks(options: {
     });
   } else {
     const statuses = resolvedAuthorStatuses;
-    const detailParts = declaredBoundNames.map((n) => {
-      const s = statuses[n];
-      if (s?.state !== "found") return `${n}：账户未匹配，无法确认权益`;
-      const active = isVipActive(s.user.vip, s.user.vipExpireMap);
-      if (hasCreatorPro(s.user.vip)) {
-        return `${n}：有 ${vipTierLabel(s.user.vip)} 权益${active ? "" : "（已过期）"}`;
-      }
-      return `${n}：无 Creator Pro 权益（当前 ${vipTierLabel(s.user.vip)}）`;
-    });
     const foundStatuses = declaredBoundNames
       .map((n) => statuses[n])
       .filter(
@@ -1513,12 +1556,11 @@ export async function runResourceRuleChecks(options: {
     checks.push({
       title: "作者 Creator Pro 权益",
       status: allHavePro ? "pass" : "warn",
-      detail:
-        (allHavePro
-          ? "绑定作者均持有有效 Creator Pro 权益，不受付费/免费比例限制"
-          : "存在无有效 Creator Pro 权益的绑定作者，将按 2 免费 : 1 付费比例校验") +
-        " · " +
-        detailParts.join(" · "),
+      // 逐个作者的权益在「资源信息」Tab 的作者列表里已有徽章展示，
+      // 这里只给结论，不重复罗列。
+      detail: allHavePro
+        ? "绑定作者均持有有效 Creator Pro 权益，不受付费/免费比例限制"
+        : "存在无有效 Creator Pro 权益的绑定作者，其已发布资源需遵循免费与付费比例规则",
     });
   }
 
@@ -1542,25 +1584,36 @@ export async function runResourceRuleChecks(options: {
     }
 
     if (paidRatioResults.length > 0) {
-      const ratioDetails = paidRatioResults.map((r) => {
-        if (r.error) return `${r.authorName}: ${r.error}`;
-        if (r.hasPro) return `${r.authorName}: ${r.vipTier ? vipTierLabel(r.vipTier) : "Pro"}，不受比例限制`;
-        if (!r.ratio) return `${r.authorName}: 无法判断`;
-        if (r.ratio.compliant) {
-          return `${r.authorName}: 免费 ${r.ratio.freeCount} / 付费 ${r.ratio.paidCount}，合规`;
-        }
-        return `${r.authorName}: 免费 ${r.ratio.freeCount} / 付费 ${r.ratio.paidCount}，${r.ratio.reason}`;
-      });
-
-      const anyNonCompliant = paidRatioResults.some(
+      const nonCompliant = paidRatioResults.filter(
         (r) => r.ratio && !r.ratio.compliant,
       );
-      const anyError = paidRatioResults.some((r) => r.error);
+      const errored = paidRatioResults.filter((r) => r.error);
+      const unverifiable = paidRatioResults.filter(
+        (r) => !r.error && !r.hasPro && !r.ratio,
+      );
 
       checks.push({
         title: "非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费）",
-        status: anyNonCompliant ? "fail" : anyError ? "warn" : "pass",
-        detail: ratioDetails.join(" · "),
+        status:
+          nonCompliant.length > 0
+            ? "fail"
+            : errored.length > 0 || unverifiable.length > 0
+              ? "warn"
+              : "pass",
+        // 逐个作者的比例明细由面板底部的「作者已发布资源及付费/免费比例」
+        // 容器结构化展示，这里只给结论。
+        detail: (() => {
+          const parts: string[] = [];
+          if (nonCompliant.length > 0)
+            parts.push(`${nonCompliant.length} 位作者不满足 2 免费 : 1 付费比例`);
+          if (errored.length > 0) parts.push(`${errored.length} 位作者查询失败`);
+          if (unverifiable.length > 0)
+            parts.push(`${unverifiable.length} 位作者无法判断比例`);
+          return parts.length > 0
+            ? parts.join("；")
+            : "所有无 Creator Pro 权益的作者均满足 2 免费 : 1 付费比例";
+        })(),
+        anchor: "paidRatio",
       });
     }
   }
@@ -1575,11 +1628,8 @@ export async function runResourceRuleChecks(options: {
       status: "warn",
       detail: "未检测到包体（manifest 无 downloads）",
     });
-    checks.push({
-      title: "包体内嵌 ID 与资源 ID 一致",
-      status: "warn",
-      detail: "未检测到包体",
-    });
+    // 「包体内嵌 ID 与资源 ID 一致」在此分支不输出：没有包体时该结论无意义，
+    // 具体明细统一交给下方「包体内容校验」区块。
   } else {
     const resourceId = manifestId || csvId;
 
@@ -1689,15 +1739,6 @@ export async function runResourceRuleChecks(options: {
       (p) => p.typeMatch === "inconclusive" && !p.encrypted,
     );
     const encryptedCount = packageChecks.filter((p) => p.encrypted).length;
-    const packageDetail =
-      packageChecks
-        .map((p) => {
-          if (p.encrypted) return `${p.fileName}: 已加密（跳过内容校验）`;
-          return `${p.fileName}: ${resultTypeLabel(p.detectedType)}${
-            p.typeMatch === "mismatch" ? "（不匹配）" : p.typeMatch === "inconclusive" ? "（无法确认）" : "（匹配）"
-          }${p.error ? ` [${p.error}]` : ""}`;
-        })
-        .join(" · ") || "无包体";
     checks.push({
       title: "包体类型与资源类别匹配",
       status:
@@ -1710,15 +1751,20 @@ export async function runResourceRuleChecks(options: {
               : "pass",
       detail:
         restype === "canopus"
-          ? `模块（canopus）包体不做类型强校验 · ${packageDetail}`
-          : (typeInconclusive.length > 0 ? "可能有问题，需要人工复核。" : "") +
+          ? "模块（canopus）包体不做类型强校验"
+          : (typeInconclusive.length > 0 ? "部分包体类型无法确认，需要人工复核。" : "") +
             (encryptedCount > 0 ? `${encryptedCount} 个包体已加密，跳过内容校验。` : "") +
-            packageDetail,
+            (typeMismatch.length > 0
+              ? `${typeMismatch.length} 个包体类型与资源类别不匹配。`
+              : "包体类型与资源类别一致。"),
+      anchor: "packages",
     });
 
-    // 聚合：内嵌 ID
+    // 内嵌 ID 聚合结论：明细不重复罗列（下方「包体内容校验」已逐包体结构化展示
+    // 匹配结果与检测到的 ID），这里只作为标记项保留，保证该项异常时列表顶部
+    // 就有醒目条目，不会因为「只有这一个问题」而被漏看。
     const idMismatch = packageChecks.filter((p) => p.idMatch === "mismatch");
-    const idSkipped = packageChecks.filter((p) => p.idMatch === "skipped");
+    const idSkippedAll = packageChecks.every((p) => p.idMatch === "skipped");
     checks.push({
       title: "包体内嵌 ID 与资源 ID 一致",
       status:
@@ -1726,23 +1772,19 @@ export async function runResourceRuleChecks(options: {
           ? "fail"
           : restype === "watchface" || restype === "canopus"
             ? "pass"
-            : idSkipped.length === packageChecks.length
+            : idSkippedAll
               ? "warn"
               : "pass",
-      detail:
-        restype === "watchface"
-          ? "表盘包体内嵌 ID 不再强制校验（安装时会强制修改为 CSV/manifest 的 ID）"
-          : restype === "canopus"
-            ? "模块包体内嵌 ID 不做强制校验"
-            : (resourceId ? `资源 ID: ${resourceId} · ` : "") +
-              packageChecks
-                .map((p) => {
-                  const detected = p.detectedId ? `检测到 ${p.detectedId}` : "未检测到";
-                  return `${p.fileName}: ${
-                    p.idMatch === "match" ? "匹配" : p.idMatch === "mismatch" ? `不匹配（${detected}）` : "跳过"
-                  }${p.error ? ` [${p.error}]` : ""}`;
-                })
-                .join(" · "),
+      detail: (() => {
+        if (restype === "watchface")
+          return "表盘安装时会强制改写 ID 文件，无需校验包体内嵌 ID";
+        if (restype === "canopus") return "模块包体内嵌 ID 不做强制校验";
+        if (idMismatch.length > 0)
+          return `${idMismatch.length} 个包体内嵌 ID 与资源 ID 不一致`;
+        if (idSkippedAll) return "所有包体均跳过内嵌 ID 校验";
+        return `全部 ${packageChecks.length} 个包体内嵌 ID 与资源 ID 一致`;
+      })(),
+      anchor: "packages",
     });
   }
 
