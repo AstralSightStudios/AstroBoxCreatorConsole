@@ -18,7 +18,7 @@ import {
   type ResourceRuleCheckResult,
   type PackageCheckResult,
 } from "../rule-checks";
-import type { PaidRatioResult } from "../utils/paid-ratio";
+import { resetPaidRatioCaches, type PaidRatioResult } from "../utils/paid-ratio";
 import {
   describeRpkDebug,
   type RpkDebugLevel,
@@ -102,7 +102,10 @@ export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: Ru
     reloadTick,
   );
 
-  const reload = useCallback(() => setReloadTick((n) => n + 1), []);
+  const reload = useCallback(() => {
+    resetPaidRatioCaches();
+    setReloadTick((n) => n + 1);
+  }, []);
 
   if (resources.length === 0) {
     return <p className="text-sm text-white/45">没有从目录 diff 中识别到资源条目。</p>;
@@ -176,6 +179,12 @@ function RuleCheckResultView({
 }) {
   const { checks, packageChecks, imageSizes, repoTruncated, paidRatioChecks } = result;
 
+  // 只有真正列出资源清单或判定为 Creator Pro 时才值得展示容器；
+  // 「免费资源跳过判定」「账户未匹配」没有清单可列。
+  const listedRatioChecks = (paidRatioChecks ?? []).filter(
+    (r) => r.status === "checked" || r.status === "pro",
+  );
+
   const counts = useMemo(() => {
     const c = { pass: 0, fail: 0, warn: 0, manual: 0 };
     for (const ch of checks) c[ch.status] += 1;
@@ -200,10 +209,10 @@ function RuleCheckResultView({
   const anchorAvailable = useCallback(
     (anchor: AnchorKind) => {
       if (anchor === "packages") return packageChecks.length > 0;
-      if (anchor === "paidRatio") return Boolean(paidRatioChecks?.length);
+      if (anchor === "paidRatio") return listedRatioChecks.length > 0;
       return imageSizes.length > 0;
     },
-    [packageChecks.length, paidRatioChecks, imageSizes.length],
+    [packageChecks.length, listedRatioChecks.length, imageSizes.length],
   );
 
   const registerAnchor = (anchor: AnchorKind) => (el: HTMLDivElement | null) => {
@@ -265,9 +274,9 @@ function RuleCheckResultView({
       )}
 
       {/* 付费/免费比例详情 */}
-      {paidRatioChecks && paidRatioChecks.length > 0 && (
+      {listedRatioChecks.length > 0 && (
         <div ref={registerAnchor("paidRatio")}>
-          <PaidRatioBlock results={paidRatioChecks} />
+          <PaidRatioBlock results={listedRatioChecks} />
         </div>
       )}
 
@@ -529,38 +538,35 @@ function PaidRatioBlock({ results }: { results: PaidRatioResult[] }) {
 }
 
 function PaidRatioAuthorRow({ result }: { result: PaidRatioResult }) {
-  const ratio = result.ratio;
-  const compliant = ratio?.compliant;
-
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <span className="font-medium text-white">{result.authorName}</span>
-        {result.hasPro ? (
+        {result.status === "pro" ? (
           <span className="text-emerald-400">Creator Pro，不受比例限制</span>
-        ) : ratio ? (
+        ) : result.status === "checked" ? (
           <>
             <span className="text-white/60">
-              免费 {ratio.freeCount} / 付费 {ratio.paidCount}
+              免费 {result.ratio.freeCount} / 付费 {result.ratio.paidCount}
             </span>
             <span
               className={
-                compliant ? "text-emerald-400" : "text-amber-400 font-semibold"
+                result.ratio.compliant
+                  ? "text-emerald-400"
+                  : "text-amber-400 font-semibold"
               }
             >
-              {compliant ? "合规" : "不合规"}
+              {result.ratio.compliant ? "合规" : "不合规"}
             </span>
           </>
         ) : (
-          <span className="text-white/45">
-            {result.error || "无法判断"}
-          </span>
+          <span className="text-white/45">{result.reason}</span>
         )}
       </div>
-      {!compliant && ratio && (
-        <div className="mt-1 text-xs text-amber-300/80">{ratio.reason}</div>
+      {result.status === "checked" && !result.ratio.compliant && (
+        <div className="mt-1 text-xs text-amber-300/80">{result.ratio.reason}</div>
       )}
-      {result.resources.length > 0 && (
+      {result.status === "checked" && result.resources.length > 0 && (
         <div className="mt-2 flex flex-col gap-1">
           {result.resources.map((res, j) => (
             <div key={j} className="flex items-center gap-2 text-xs">

@@ -52,6 +52,8 @@ import {
 import { AdminApi } from "~/api/astrobox/admin";
 import {
   checkPaidFreeRatioForAuthor,
+  isPaidEntry,
+  pickRatioAuthorName,
   type PaidRatioResult,
 } from "./utils/paid-ratio";
 import {
@@ -1612,57 +1614,59 @@ export async function runResourceRuleChecks(options: {
   }
 
   // --- check: 非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费） ---
+  // 资源只归属「第一位声明绑定 AstroBox 的作者」，只判他一个人的名下资源。
   const newPaidType = entry.paid_type;
   const newResourceId = manifestItem?.id || entry.id;
+  const originalResourceId = preview.originalId;
+  const ratioAuthorName = pickRatioAuthorName(authorsList);
+  const ratioSubjectIsPaid = isPaidEntry(newPaidType);
 
-  if (declaredBoundNames.length > 0 && astroboxToken && resolvedAuthorStatuses) {
-    for (const name of declaredBoundNames) {
-      const status = resolvedAuthorStatuses[name];
-      if (!status) continue;
+  if (ratioAuthorName && astroboxToken && resolvedAuthorStatuses) {
+    const status = resolvedAuthorStatuses[ratioAuthorName];
+    if (status) {
       const result = await checkPaidFreeRatioForAuthor({
-        authorName: name,
+        authorName: ratioAuthorName,
         authorStatus: status,
         astroboxToken,
         githubToken: token,
         newEntryPaidType: newPaidType,
         newEntryId: newResourceId,
+        originalEntryId: originalResourceId,
       });
       paidRatioResults.push(result);
     }
+  }
 
-    if (paidRatioResults.length > 0) {
-      const nonCompliant = paidRatioResults.filter(
-        (r) => r.ratio && !r.ratio.compliant,
-      );
-      const errored = paidRatioResults.filter((r) => r.error);
-      const unverifiable = paidRatioResults.filter(
-        (r) => !r.error && !r.hasPro && !r.ratio,
-      );
+  if (paidRatioResults.length > 0) {
+    const nonCompliant = paidRatioResults.filter(
+      (r) => r.status === "checked" && !r.ratio.compliant,
+    );
+    const errored = paidRatioResults.filter((r) => r.status === "unresolved");
+    const pro = paidRatioResults.filter((r) => r.status === "pro");
 
-      checks.push({
-        title: "非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费）",
-        status:
-          nonCompliant.length > 0
-            ? "fail"
-            : errored.length > 0 || unverifiable.length > 0
-              ? "warn"
-              : "pass",
-        // 逐个作者的比例明细由面板底部的「作者已发布资源及付费/免费比例」
-        // 容器结构化展示，这里只给结论。
-        detail: (() => {
-          const parts: string[] = [];
-          if (nonCompliant.length > 0)
-            parts.push(`${nonCompliant.length} 位作者不满足 2 免费 : 1 付费比例`);
-          if (errored.length > 0) parts.push(`${errored.length} 位作者查询失败`);
-          if (unverifiable.length > 0)
-            parts.push(`${unverifiable.length} 位作者无法判断比例`);
-          return parts.length > 0
-            ? parts.join("；")
-            : "所有无 Creator Pro 权益的作者均满足 2 免费 : 1 付费比例";
-        })(),
-        anchor: "paidRatio",
-      });
-    }
+    checks.push({
+      title: "非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费）",
+      status:
+        nonCompliant.length > 0
+          ? "fail"
+          : errored.length > 0
+            ? "warn"
+            : "pass",
+      // 逐个作者的比例明细由面板底部的「作者已发布资源及付费/免费比例」
+      // 容器结构化展示，这里只给结论。
+      detail: (() => {
+        if (nonCompliant.length > 0)
+          return `${ratioAuthorName} 不满足 2 免费 : 1 付费比例`;
+        if (errored.length > 0) return `${ratioAuthorName} 的比例无法判断（${errored[0].reason}）`;
+        if (pro.length > 0) return `${ratioAuthorName} 持有有效 Creator Pro 权益，不受付费/免费比例限制`;
+        return ratioSubjectIsPaid
+          ? `${ratioAuthorName} 满足 2 免费 : 1 付费比例`
+          : "本次提交为免费资源，不改变付费/免费比例";
+      })(),
+      anchor: paidRatioResults.some((r) => r.status === "checked" || r.status === "pro")
+        ? "paidRatio"
+        : undefined,
+    });
   }
 
   // --- 包体内容校验（类型匹配 + 内嵌 ID） ---

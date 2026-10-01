@@ -10,7 +10,7 @@ import {
   isVipActive,
   type AuthorProStatus,
 } from "../owner-pro";
-import { usePaidRatioStatus } from "../utils/paid-ratio";
+import { pickRatioAuthorName, usePaidRatioStatus } from "../utils/paid-ratio";
 import type { PrResourcePreview } from "../types";
 import { ResourceDownloadsSection } from "./ResourceDownloadsSection";
 import { ResourceImagesSection } from "./ResourceImagesSection";
@@ -156,6 +156,8 @@ function ResourceDetailView({
   }, [manifest?.item?.author]);
 
   const accountState = useAccountState();
+  // 资源只归属第一位声明绑定 AstroBox 的作者，比例只判他。
+  const ratioAuthorName = useMemo(() => pickRatioAuthorName(authors), [authors]);
   const boundAuthorNames = useMemo(
     () => authors.filter((a) => a.bindABAccount).map((a) => a.name),
     [authors],
@@ -166,12 +168,13 @@ function ResourceDetailView({
   );
 
   const paidRatioStatus = usePaidRatioStatus({
-    boundAuthorNames,
+    ratioAuthorName,
     authorProStatuses,
     astroboxToken: accountState.astrobox?.token,
     githubToken: accountState.github?.token,
     paidType: entry.paid_type,
     resourceId: manifestItem?.id || entry.id,
+    originalResourceId: resource.originalId,
   });
 
   return (
@@ -221,16 +224,30 @@ function ResourceDetailView({
             <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
             {paidRatioStatus.state === "non-compliant" && (
               <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {paidRatioStatus.authors.map((a) => (
-                  <div key={a.name}>
-                    {a.name}：免费 {a.freeCount} / 付费 {a.paidCount} - {a.reason}
-                  </div>
-                ))}
+                <div>
+                  {paidRatioStatus.authorName}：免费 {paidRatioStatus.freeCount} / 付费{" "}
+                  {paidRatioStatus.paidCount} — {paidRatioStatus.reason}
+                </div>
+                <div className="mt-1.5 flex flex-col gap-0.5 text-amber-100/80">
+                  {paidRatioStatus.resources.map((r) => (
+                    <div key={r.id} className="flex items-center gap-1.5">
+                      <span
+                        className={
+                          r.paidKind === "paid" ? "text-amber-300" : "text-emerald-300/80"
+                        }
+                      >
+                        {r.paidKind === "paid" ? "付费" : "免费"}
+                      </span>
+                      <span>{r.name}</span>
+                      <span className="text-amber-100/40">{r.id}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-            {paidRatioStatus.state === "error" && (
+            {paidRatioStatus.state === "unresolved" && (
               <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/70">
-                比例检查失败：{paidRatioStatus.message}
+                比例检查失败：{paidRatioStatus.authorName} {paidRatioStatus.reason}
               </div>
             )}
             <InfoRow

@@ -397,20 +397,38 @@ async function fetchManifest(entry: CatalogEntry, token: string) {
   return JSON.parse(decodeBase64(file.content)) as ManifestV2;
 }
 
+/**
+ * 从目录 diff 的「被删除行」反推本次提交顶替掉的原资源 ID。
+ *
+ * 旧式直提 index_v2.csv 的 PR 没有 request.json，只能看 diff。编辑允许改
+ * 资源 ID，此时 diff 呈现为一行 `-旧ID` + 一行 `+新ID`，两行无法按 ID 关联；
+ * 只在「整个 diff 只删了一行」这种无歧义的情况下才认定它们是同一个资源，
+ * 拿不准就返回 undefined（比例判定退回到按 ID 匹配的原位编辑逻辑）。
+ */
+export function deriveOriginalId(entry: CatalogEntry, removedEntries: CatalogEntry[]): string | undefined {
+  const sameId = removedEntries.find((item) => item.id.trim() === entry.id.trim());
+  if (sameId) return sameId.id.trim();
+  if (removedEntries.length === 1) return removedEntries[0].id.trim();
+  return undefined;
+}
+
 export async function loadPrResourcePreviews(
   files: GithubPullFile[],
   token: string,
 ): Promise<PrResourcePreview[]> {
   const entries = extractCatalogEntriesFromFiles(files);
+  const removedEntries = extractOldCatalogEntriesFromFiles(files);
   const MAX_PREVIEWS = 40;
   return runWithConcurrency(
     entries.map((entry, index) => ({ entry, index })),
     6,
     async ({ entry, index }) => {
       const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
+      const originalId = deriveOriginalId(entry, removedEntries);
       if (index >= MAX_PREVIEWS) {
         return {
           entry,
+          originalId,
           ref,
           manifestError: `变更条目过多，已跳过 manifest 拉取（共 ${entries.length} 项，仅处理前 ${MAX_PREVIEWS} 项）`,
           iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
@@ -425,6 +443,7 @@ export async function loadPrResourcePreviews(
         const coverPath = manifest.item?.cover || entry.cover;
         return {
           entry,
+          originalId,
           ref,
           manifest,
           iconUrl: buildResourceRawUrl(entry, ref, iconPath),
@@ -437,6 +456,7 @@ export async function loadPrResourcePreviews(
       } catch (err) {
         return {
           entry,
+          originalId,
           ref,
           manifestError: getErrorMessage(err),
           iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
@@ -518,6 +538,7 @@ export async function loadStagingPrResourcePreviews(
         return {
           entry,
           baseEntry,
+          originalId: request.original_id || undefined,
           ref,
           request,
           predictedAction:
@@ -536,6 +557,7 @@ export async function loadStagingPrResourcePreviews(
         return {
           entry,
           baseEntry,
+          originalId: request.original_id || undefined,
           ref,
           request,
           predictedAction:

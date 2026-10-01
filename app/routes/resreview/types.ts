@@ -30,6 +30,11 @@ export interface PrResourcePreview {
   entry: CatalogEntry;
   baseEntry?: CatalogEntry;
   ref: string;
+  /**
+   * 本次提交顶替掉的原资源 ID。编辑允许改资源 ID，因此可能与 `entry.id` 不同；
+   * 比例判定要靠它把原行摘掉，否则同一资源会既算免费又算付费。
+   */
+  originalId?: string;
   request?: {
     mode: "create" | "edit";
     originalId?: string | null;
