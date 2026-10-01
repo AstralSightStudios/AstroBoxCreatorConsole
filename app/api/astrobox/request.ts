@@ -7,6 +7,7 @@ import {
     setAstroboxTokens,
     logoutAccount,
 } from "~/logic/account/store";
+import { notifyAstroboxSessionExpired } from "~/logic/account/session-notice";
 
 // 统一的接口错误：尽量把服务端返回的真实信息透出来，而不是 axios 默认的
 // "Request failed with status code 4xx"。保留 status/response 兼容历史上读
@@ -140,7 +141,9 @@ function processRefreshQueue(result: RefreshResult) {
     refreshQueue = [];
 
     if (result === "invalid") {
+        const hadSession = Boolean(getAstroboxToken() || getAstroboxRefreshToken());
         logoutAccount("astrobox");
+        if (hadSession) notifyAstroboxSessionExpired();
         queue.forEach(({ reject }) => {
             reject(
                 new ApiError("登录已过期，请重新登录", {

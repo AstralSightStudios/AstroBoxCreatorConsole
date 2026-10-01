@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { Button } from "@radix-ui/themes";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import {
     getCreatorConsoleDashboard,
@@ -18,6 +20,7 @@ import Page from "~/layout/page";
 import { loadDeviceNameMap, resolveDeviceName } from "~/logic/devices/catalog";
 import { getCreatorAnalysisResources } from "~/api/astrobox/analysis";
 import { loadOwnedCatalogResourcesForCurrentUser } from "~/logic/publish/resources";
+import { useAccountState } from "~/logic/account/store";
 
 const DEFAULT_FILTERS: {
     period: DashboardPeriod;
@@ -340,6 +343,9 @@ function normalizeDashboardDeviceNames(
 }
 
 export default function Home() {
+    const navigate = useNavigate();
+    const accountState = useAccountState();
+    const astroboxToken = accountState.astrobox?.token;
     const [dashboardData, setDashboardData] =
         useState<CreatorConsoleDashboardResponse | null>(null);
     const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -404,6 +410,14 @@ export default function Home() {
     }, [resourceOptions, selectedResourceId]);
 
     useEffect(() => {
+        if (!astroboxToken) {
+            setDashboardLoading(false);
+            setDashboardData(null);
+            setDashboardError("");
+            setDashboardWarning("");
+            return;
+        }
+
         let active = true;
         const shouldUseFilters = period !== "all" || Boolean(selectedResourceId);
 
@@ -483,7 +497,7 @@ export default function Home() {
         return () => {
             active = false;
         };
-    }, [period, selectedResourceId]);
+    }, [astroboxToken, period, selectedResourceId]);
 
     const handleExport = async () => {
         if (!dashboardData) {
@@ -537,16 +551,34 @@ export default function Home() {
                     {dashboardWarning}
                 </p>
             )}
+            {!astroboxToken && (
+                <div className="mb-2 flex items-center justify-between gap-3 rounded-xl bg-nav-item px-4 py-3">
+                    <p className="text-size-small text-white/70">
+                        请先登录 AstroBox 账号后再查看下载数据。
+                    </p>
+                    <Button variant="soft" onClick={() => navigate("/login")}>
+                        登录
+                    </Button>
+                </div>
+            )}
             <DownloadOverview
                 data={dashboardData?.overview}
                 loading={dashboardLoading}
-                error={dashboardError}
+                error={
+                    astroboxToken
+                        ? dashboardError
+                        : "请先登录 AstroBox 账号。"
+                }
             />
             <AfdianIncomeOverview />
             <AnalysisSummary
                 data={dashboardData}
                 loading={dashboardLoading}
-                error={dashboardError}
+                error={
+                    astroboxToken
+                        ? dashboardError
+                        : "请先登录 AstroBox 账号。"
+                }
             />
             </div>
         </Page>

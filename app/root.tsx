@@ -16,6 +16,7 @@ import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { InboxDrawerProvider, useInboxDrawer } from "./components/inbox/drawer-context";
 import InboxDrawer from "./components/inbox/InboxDrawer";
 import { Toaster } from "sonner";
+import SessionExpiredPrompt from "./components/session-expired-prompt";
 
 function InboxDrawerHost() {
   const { open, closeInbox } = useInboxDrawer();
@@ -91,6 +92,7 @@ export default function RootLayout() {
                         </InboxDrawerProvider>
                     </NavVisibilityProvider>
                 )}
+                <SessionExpiredPrompt />
                 <Toaster
                     position="bottom-right"
                     richColors

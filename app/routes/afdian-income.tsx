@@ -16,6 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useState } from "react";
+import { useAfdianSessionDropPrompt } from "~/logic/afdian/login-prompt";
 import { useNavigate } from "react-router";
 import {
   AFDIAN_MANAGEMENT_OVERVIEW_QUERY_KEY,
@@ -103,6 +104,7 @@ function LoadingState() {
 }
 
 function ErrorState({ error, retry }: { error: unknown; retry: () => void }) {
+  useAfdianSessionDropPrompt(error, true);
   return (
     <div className="flex flex-col items-center gap-3 py-16 text-center">
       <p className="text-sm text-white/55">
@@ -433,7 +435,7 @@ export default function AfdianIncomePage() {
           <div className="flex flex-col items-center gap-3 rounded-xl bg-nav-item px-5 py-12 text-center">
             <p className="text-white/80">尚未登录爱发电</p>
             <p className="text-sm text-white/50">登录后即可查看收入与赞助者数据。</p>
-            <Button onClick={() => navigate("/settings")}>前往设置</Button>
+            <Button onClick={() => navigate("/settings")}>登录爱发电</Button>
           </div>
         ) : (
           <>

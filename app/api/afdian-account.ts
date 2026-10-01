@@ -8,6 +8,11 @@ export interface AfdianSessionStatus {
   displayName?: string | null;
 }
 
+export interface AfdianSessionProbe {
+  connected: boolean;
+  expired: boolean;
+}
+
 export interface AfdianQuickCodeResult {
   status: "sent" | "captchaRequired" | "captchaInvalid";
   message: string;
@@ -34,6 +39,10 @@ export function isAfdianNativeAvailable() {
 
 export function getAfdianSessionStatus() {
   return invoke<AfdianSessionStatus>("afdian_session_status");
+}
+
+export function probeAfdianSession() {
+  return invoke<AfdianSessionProbe>("afdian_probe_session");
 }
 
 export function loginAfdianWithPassword(account: string, password: string) {
