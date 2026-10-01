@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { Check, X, Warning, ArrowsClockwise, Spinner } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  ArrowDownIcon,
+  ArrowSquareOutIcon,
+  Check,
+  X,
+  Warning,
+  ArrowsClockwise,
+  Spinner,
+} from "@phosphor-icons/react";
 import { useAccountState } from "~/logic/account/store";
+import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
 import type { GithubPullFile } from "~/api/github/pr-review";
 import type { PrResourcePreview, RuleCheckItem } from "../types";
 import {
@@ -15,6 +24,8 @@ import { LoadingIndicator } from "./LoadingIndicator";
 interface RuleCheckPanelProps {
   resources: PrResourcePreview[];
   prFiles: GithubPullFile[];
+  /** 跳到「资源信息」Tab 并高亮指定图片（icon / cover / preview）。 */
+  onJumpToResourceImage?: (label: string) => void;
 }
 
 interface CheckState {
@@ -71,7 +82,7 @@ const STATUS_META: Record<
   manual: { icon: Spinner, color: "text-white/45", label: "人工" },
 };
 
-export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
+export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: RuleCheckPanelProps) {
   const accountState = useAccountState();
   const token = accountState.github?.token || "";
   const astroboxToken = accountState.astrobox?.token;
@@ -133,20 +144,31 @@ export function RuleCheckPanel({ resources, prFiles }: RuleCheckPanelProps) {
           result={result}
           loading={loading}
           onReload={reload}
+          onJumpToResourceImage={onJumpToResourceImage ?? (() => {})}
         />
       )}
     </div>
   );
 }
 
+type AnchorKind = NonNullable<RuleCheckItem["anchor"]>;
+
+const ANCHOR_LABELS: Record<AnchorKind, string> = {
+  packages: "包体内容校验",
+  paidRatio: "作者付费/免费比例",
+  images: "资源信息图片",
+};
+
 function RuleCheckResultView({
   result,
   loading,
   onReload,
+  onJumpToResourceImage,
 }: {
   result: ResourceRuleCheckResult;
   loading: boolean;
   onReload: () => void;
+  onJumpToResourceImage: (label: string) => void;
 }) {
   const { checks, packageChecks, imageSizes, repoTruncated, paidRatioChecks } = result;
 
@@ -157,6 +179,32 @@ function RuleCheckResultView({
   }, [checks]);
 
   const hasFail = counts.fail > 0;
+
+  // 详情容器锚点：点检查项右侧的跳转按钮时滚动到对应容器并闪烁。
+  // 闪烁样式复用发布流程「前往修改」的 scrollAndFlash，两处观感一致。
+  const anchorRefs = useRef<Partial<Record<AnchorKind, HTMLDivElement | null>>>({});
+
+  const jumpToAnchor = useCallback((anchor: AnchorKind, label?: string) => {
+    // 图片不在本面板，而在「资源信息」Tab，需要跨 Tab 跳转并高亮。
+    if (anchor === "images") {
+      onJumpToResourceImage(label || "icon");
+      return;
+    }
+    scrollAndFlash(anchorRefs.current[anchor]);
+  }, [onJumpToResourceImage]);
+
+  const anchorAvailable = useCallback(
+    (anchor: AnchorKind) => {
+      if (anchor === "packages") return packageChecks.length > 0;
+      if (anchor === "paidRatio") return Boolean(paidRatioChecks?.length);
+      return imageSizes.length > 0;
+    },
+    [packageChecks.length, paidRatioChecks, imageSizes.length],
+  );
+
+  const registerAnchor = (anchor: AnchorKind) => (el: HTMLDivElement | null) => {
+    anchorRefs.current[anchor] = el;
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -196,27 +244,49 @@ function RuleCheckResultView({
       {/* 检查清单 */}
       <div className="flex flex-col gap-1.5">
         {checks.map((check, i) => (
-          <CheckRow key={i} check={check} />
+          <CheckRow
+            key={i}
+            check={check}
+            onJump={jumpToAnchor}
+            canJump={Boolean(check.anchor) && anchorAvailable(check.anchor!)}
+          />
         ))}
       </div>
 
       {/* 包体校验详情 */}
       {packageChecks.length > 0 && (
-        <PackageChecksBlock packageChecks={packageChecks} />
+        <div ref={registerAnchor("packages")}>
+          <PackageChecksBlock packageChecks={packageChecks} />
+        </div>
       )}
 
       {/* 付费/免费比例详情 */}
       {paidRatioChecks && paidRatioChecks.length > 0 && (
-        <PaidRatioBlock results={paidRatioChecks} />
+        <div ref={registerAnchor("paidRatio")}>
+          <PaidRatioBlock results={paidRatioChecks} />
+        </div>
       )}
 
       {/* 图片体积 */}
-      {imageSizes.length > 0 && <ImageSizesBlock imageSizes={imageSizes} />}
+      {imageSizes.length > 0 && (
+        <ImageSizesBlock
+          imageSizes={imageSizes}
+          onLocate={(label) => jumpToAnchor("images", label)}
+        />
+      )}
     </div>
   );
 }
 
-function CheckRow({ check }: { check: RuleCheckItem }) {
+function CheckRow({
+  check,
+  onJump,
+  canJump,
+}: {
+  check: RuleCheckItem;
+  onJump: (anchor: AnchorKind, label?: string) => void;
+  canJump: boolean;
+}) {
   const meta = STATUS_META[check.status];
   const Icon = meta.icon;
   return (
@@ -230,6 +300,18 @@ function CheckRow({ check }: { check: RuleCheckItem }) {
         <div className="text-sm text-white">{check.title}</div>
         <div className="mt-0.5 break-words text-xs text-white/55">{check.detail}</div>
       </div>
+      {check.anchor && canJump && (
+        <button
+          type="button"
+          onClick={() => onJump(check.anchor!, check.anchorLabel)}
+          title={`跳转到${ANCHOR_LABELS[check.anchor]}查看明细`}
+          aria-label={`跳转到${ANCHOR_LABELS[check.anchor]}查看明细`}
+          className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[11px] text-white/55 transition hover:bg-white/10 hover:text-white"
+        >
+          <ArrowDownIcon size={11} weight="bold" />
+          明细
+        </button>
+      )}
     </div>
   );
 }
@@ -306,8 +388,10 @@ function MatchBadge({
   return <span className="ml-1 text-white/45">未知</span>;
 }
 
+/** 逐张图片一行摘要；点击整行跳到「资源信息」Tab 并高亮对应图片。 */
 function ImageSizesBlock({
   imageSizes,
+  onLocate,
 }: {
   imageSizes: Array<{
     label: string;
@@ -320,47 +404,74 @@ function ImageSizesBlock({
     ratio?: number;
     ratioValid?: boolean;
   }>;
+  onLocate: (label: string) => void;
 }) {
+  const problemCount = imageSizes.filter(
+    (img) => img.overLimit || img.ratioValid === false,
+  ).length;
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <div className="mb-2 text-xs font-semibold text-white/55">图片体积与宽高比</div>
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 text-xs font-semibold text-white/55">
+        <span>图片体积与宽高比</span>
+        {problemCount > 0 && (
+          <span className="font-normal text-white/40">
+            {problemCount} 张有问题，点击可定位到资源信息
+          </span>
+        )}
+      </div>
       <div className="flex flex-col gap-1">
-        {imageSizes.map((img, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-            <span className="text-white/70">{img.label}</span>
-            <span className="break-all text-white/45">{img.path || img.url.split("/").pop()}</span>
-            <span
-              className={
-                img.overLimit === "fail"
-                  ? "font-semibold text-red-400"
-                  : img.overLimit === "warn"
-                    ? "font-semibold text-amber-400"
-                    : "text-white/70"
-              }
+        {imageSizes.map((img, i) => {
+          const hasProblem = Boolean(img.overLimit) || img.ratioValid === false;
+          const name = img.path || img.url.split("/").pop() || "";
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!hasProblem}
+              onClick={() => onLocate(img.label)}
+              title={hasProblem ? "跳转到资源信息并高亮该图片" : undefined}
+              className={`flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-1.5 py-1 text-left text-xs transition ${
+                hasProblem
+                  ? "cursor-pointer hover:bg-white/[0.07]"
+                  : "cursor-default"
+              }`}
             >
-              {formatBytes(img.sizeBytes)}
-            </span>
-            {img.overLimit === "fail" && <span className="text-red-400">过大</span>}
-            {img.overLimit === "warn" && <span className="text-amber-400">偏大</span>}
-            {img.sizeBytes == null && <span className="text-white/35">未取到体积</span>}
-            {(img.label === "icon" || img.label === "cover") && (
+              <span className="shrink-0 text-white/70">{img.label}</span>
+              <span className="min-w-0 max-w-full truncate text-white/45">{name}</span>
               <span
                 className={
-                  img.ratioValid === false
+                  img.overLimit === "fail"
                     ? "font-semibold text-red-400"
-                    : img.width == null
-                      ? "text-white/35"
+                    : img.overLimit === "warn"
+                      ? "font-semibold text-amber-400"
                       : "text-white/70"
                 }
               >
-                像素 {img.width ? `${img.width}×${img.height}` : "-"}
-                {img.ratio != null ? ` · 比例 ${img.ratio.toFixed(2)}` : ""}
-                {img.ratioValid === false && `（应为 ${img.label === "icon" ? "1:1" : "3:2"}）`}
-                {img.width == null && " · 未取到尺寸"}
+                {formatBytes(img.sizeBytes)}
               </span>
-            )}
-          </div>
-        ))}
+              {img.overLimit === "fail" && <span className="text-red-400">过大</span>}
+              {img.overLimit === "warn" && <span className="text-amber-400">偏大</span>}
+              {img.sizeBytes == null && <span className="text-white/35">未取到体积</span>}
+              {(img.label === "icon" || img.label === "cover") && (
+                <span
+                  className={
+                    img.ratioValid === false
+                      ? "font-semibold text-red-400"
+                      : img.width == null
+                        ? "text-white/35"
+                        : "text-white/70"
+                  }
+                >
+                  像素 {img.width ? `${img.width}×${img.height}` : "-"}
+                  {img.ratio != null ? ` · 比例 ${img.ratio.toFixed(2)}` : ""}
+                  {img.ratioValid === false && `（应为 ${img.label === "icon" ? "1:1" : "3:2"}）`}
+                  {img.width == null && " · 未取到尺寸"}
+                </span>
+              )}
+              {hasProblem && <ArrowSquareOutIcon size={11} className="ml-auto shrink-0 text-white/35" />}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

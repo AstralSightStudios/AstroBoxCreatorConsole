@@ -91,6 +91,18 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
   const accountState = useAccountState();
   const [tabValue, setTabValue] = useState("resources");
+  /**
+   * 自动检查 Tab 里点击图片问题行时跳到「资源信息」Tab 并高亮对应图片。
+   * label 形如 `icon` / `cover` / `preview 3`。
+   */
+  const [imageHighlight, setImageHighlight] = useState<string | null>(null);
+
+  const handleJumpToResourceImage = useCallback((label: string) => {
+    setImageHighlight(label);
+    setTabValue("resources");
+  }, []);
+
+  const clearImageHighlight = useCallback(() => setImageHighlight(null), []);
 
   const handleFileComment = useCallback((filePath: string) => {
     onGeneralCommentChange(`> 文件: \`${filePath}\`\n\n`);
@@ -159,7 +171,11 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               {loadingDetail && resourcePreviews.length === 0 ? (
                 <LoadingIndicator text="正在解析资源信息" />
               ) : (
-                <ResourceDetailTab resources={resourcePreviews} />
+                <ResourceDetailTab
+                  resources={resourcePreviews}
+                  imageHighlight={imageHighlight}
+                  onImageHighlightHandled={clearImageHighlight}
+                />
               )}
             </Tabs.Content>
 
@@ -167,7 +183,11 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               {loadingDetail && resourcePreviews.length === 0 ? (
                 <LoadingIndicator text="正在解析资源信息" />
               ) : (
-                <RuleCheckPanel resources={resourcePreviews} prFiles={files} />
+                <RuleCheckPanel
+                  resources={resourcePreviews}
+                  prFiles={files}
+                  onJumpToResourceImage={handleJumpToResourceImage}
+                />
               )}
             </Tabs.Content>
 

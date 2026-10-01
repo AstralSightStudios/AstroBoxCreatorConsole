@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
 import { ScrollArea } from "~/components/scroll-area";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import type { PrResourcePreview } from "../types";
@@ -122,7 +123,16 @@ function useImageMeta() {
   };
 }
 
-export function ResourceImagesSection({ resource }: { resource: PrResourcePreview }) {
+export function ResourceImagesSection({
+  resource,
+  highlightLabel,
+  onHighlightHandled,
+}: {
+  resource: PrResourcePreview;
+  /** 自动检查 Tab 传下来的待高亮标签：`icon` / `cover` / `preview N`。 */
+  highlightLabel?: string | null;
+  onHighlightHandled?: () => void;
+}) {
   const { logicalHeight } = useUiScaleViewport();
   const {
     imageMetaMap,
@@ -137,6 +147,30 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [previewEdgeWidths, setPreviewEdgeWidths] = useState({ first: 0, last: 0 });
   const [previewAvailWidth, setPreviewAvailWidth] = useState(0);
+
+  // 从「自动检查」跳过来的高亮：滚动到对应图片并闪烁。
+  // 闪烁样式复用发布流程「前往修改」的 scrollAndFlash，两处观感一致。
+  const iconRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!highlightLabel) return;
+    // 预览图 label 形如 `preview 3`，需要先把对应那张滚到可视区。
+    const previewMatch = /^preview\s+(\d+)$/.exec(highlightLabel);
+    if (previewMatch) {
+      const index = Math.max(0, Number(previewMatch[1]) - 1);
+      if (index < resource.previewUrls.length) scrollPreviewTo(index);
+      window.requestAnimationFrame(() => {
+        const slide = previewScrollRef.current
+          ?.querySelectorAll<HTMLElement>('[data-preview-slide="1"]')
+          [index];
+        scrollAndFlash(slide);
+      });
+    } else {
+      scrollAndFlash(highlightLabel === "icon" ? iconRef.current : coverRef.current);
+    }
+    onHighlightHandled?.();
+  }, [highlightLabel, resource.previewUrls.length, onHighlightHandled]);
 
   const syncPreviewScroll = useCallback(() => {
     const element = previewScrollRef.current;
@@ -218,7 +252,7 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
           {(resource.iconUrl || resource.coverUrl) && (
             <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
               {resource.iconUrl && (
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                <div ref={iconRef} className={`rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm`}>
                   <div className="text-xs text-white/55">Icon · {resource.iconUrl.split("/").pop() || "icon"}</div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.iconUrl)} ·
@@ -232,7 +266,7 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
                 </div>
               )}
               {resource.coverUrl && (
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                <div ref={coverRef} className={`rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm`}>
                   <div className="text-xs text-white/55">Cover · {resource.coverUrl.split("/").pop() || "cover"}</div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.coverUrl)} ·
@@ -269,7 +303,7 @@ export function ResourceImagesSection({ resource }: { resource: PrResourcePrevie
                     const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
                     const cap = previewAvailWidth ? `${previewAvailWidth - 32}px` : "calc(var(--ui-viewport-width) - 64px)";
                     return (
-                      <div key={url} data-preview-slide="1" className="shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2">
+                      <div key={url} data-preview-slide="1" className={`shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2`}>
                         <button type="button" onClick={() => setLightboxUrl(url)} className="inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, ${logicalHeight * 0.4 * ratio}px, ${cap})` } : undefined}>
                           <DimensionTrackedImage rawUrl={url} alt={`Preview ${index + 1}`} className="block h-auto w-full" onLoad={handlePreviewLoad(url)} />
                         </button>
