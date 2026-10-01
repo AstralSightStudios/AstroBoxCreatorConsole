@@ -1,3 +1,8 @@
+import {
+  checkCoverFileSize,
+  checkCoverRatio,
+  checkIconDimensions,
+} from "./pre-publish-checks";
 export interface ValidationUploadItem {
   id?: string;
   name?: string;
@@ -35,10 +40,12 @@ export interface PublishValidationInput {
   enableAstroBoxCreatorFeatures: boolean;
 }
 
-/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
-export const COVER_RATIO = 1.5;
-export const COVER_RATIO_TOLERANCE = 0.02;
-export const COVER_MAX_BYTES = 600 * 1024;
+// 图片规格常量与判定统一在 media-rules，这里转出以保持既有导入路径可用。
+export {
+  COVER_RATIO,
+  COVER_RATIO_TOLERANCE,
+  COVER_MAX_BYTES,
+} from "./pre-publish-checks";
 
 export interface PublishValidationResult {
   errors: string[];
@@ -136,10 +143,9 @@ export function validatePublish(
   if (!input.itemId.trim()) errors.push("请填写资源 ID。");
   if (!input.icon) {
     errors.push("请上传图标。");
-  } else if (!input.icon.width || !input.icon.height) {
-    errors.push("图标无法读取，请重新上传。");
-  } else if (input.icon.width !== input.icon.height) {
-    errors.push("图标必须为正方形。");
+  } else {
+    const iconError = checkIconDimensions(input.icon);
+    if (iconError) errors.push(iconError);
   }
   if (input.previews.length === 0) errors.push("请至少上传一张预览图。");
   const hasCover = input.usePreviewAsCover
@@ -155,18 +161,11 @@ export function validatePublish(
         input.previews[0])
       : input.cover;
     if (coverItem) {
-      if (!coverItem.width || !coverItem.height) {
-        errors.push("封面无法读取，请重新上传。");
-      } else if (
-        Math.abs(coverItem.width / coverItem.height - COVER_RATIO) >
-        COVER_RATIO_TOLERANCE
-      ) {
-        errors.push(
-          `封面必须为 3:2 宽高比，当前 ${(coverItem.width / coverItem.height).toFixed(2)}。`,
-        );
-      }
-      if (coverItem.file && coverItem.file.size > COVER_MAX_BYTES) {
-        errors.push("封面大小超过 1MB，请压缩后重新上传。");
+      const ratioError = checkCoverRatio(coverItem);
+      if (ratioError) errors.push(ratioError);
+      if (coverItem.file) {
+        const sizeError = checkCoverFileSize(coverItem.file.size);
+        if (sizeError) errors.push(sizeError);
       }
     }
   }

@@ -4,22 +4,14 @@ import {
   Callout,
   Checkbox,
   Spinner,
-  Popover,
   Text,
-  AlertDialog,
-  Dialog,
 } from "~/components/ScaleAwareThemes";
-import { ScrollArea } from "~/components/scroll-area";
 import {
   FileXIcon,
   UploadIcon,
   PencilSimpleLineIcon,
   GitBranchIcon,
   WarningOctagonIcon,
-  FloppyDiskIcon,
-  ArchiveIcon,
-  TrashIcon,
-  ClockIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -48,8 +40,6 @@ import {
   buildManifest,
   normalizeBundledResources,
   type ManifestBuildResult,
-  type ManifestDownloadInfo,
-  type ManifestExtObject,
 } from "~/logic/publish/manifest";
 import {
   upsertManifestAndAssets,
@@ -80,6 +70,12 @@ import {
 import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
 import { StepList, SectionCard, type UploadItem } from "./components/shared";
+import {
+  AutoSaveRestoreDialog,
+  DraftActions,
+  VersionCodeWarningDialog,
+  VersionIncrementWarningDialog,
+} from "./components/ComposerDialogs";
 import {
   compressImageFile,
   createExistingUploadItem,
@@ -126,13 +122,21 @@ import {
 } from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
+import { validatePublish } from "~/logic/publish/validation";
 import {
-  COVER_MAX_BYTES,
-  COVER_RATIO,
-  COVER_RATIO_TOLERANCE,
-  validatePublish,
-} from "~/logic/publish/validation";
+  COVER_COMPRESS_TARGET_BYTES,
+  ICON_COMPRESS_TARGET_BYTES,
+  checkCoverFileSize,
+  checkCoverRatio,
+  checkIconDimensions,
+} from "~/logic/publish/pre-publish-checks";
 import { flashFirstDownloadRow } from "~/logic/publish/scroll-highlight";
+import {
+  rowsMissingVersionCode,
+  rowsReusingExistingPackage,
+  rowsWithIdentityMismatch,
+  rowsWithNonIncrementedVersionCode,
+} from "~/logic/publish/pre-publish-checks";
 import {
   computePackageHash,
   readPackageVersion,
@@ -156,9 +160,22 @@ import {
   type PublishDraft,
   type PublishDraftFormData,
   type DraftMediaItem,
-  type DraftWallpaperAsset,
-  type DraftDownloadInput,
 } from "~/logic/publish/publish-drafts";
+import {
+  loadRemoteMediaItem,
+  restoreDownloadInput,
+  restoreMediaItem,
+  restoreWallpaperAsset,
+  serializeDownloadInputs,
+  serializeMediaItem,
+  serializeWallpaperAsset,
+} from "~/logic/publish/draft-codec";
+import {
+  buildDownloadInputsFromManifest,
+  extractCustomExt,
+  isManifestExtObject,
+  parseTagText,
+} from "~/logic/publish/composer-utils";
 
 async function findExistingResourceManifest(
   token: string,
@@ -220,257 +237,6 @@ const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
 const REQUIRE_ASTROBOX_LOGIN = !import.meta.env.DEV;
 
-function isManifestExtObject(value: unknown): value is ManifestExtObject {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function buildDownloadInputsFromManifest(params: {
-  downloads?: Record<string, Partial<ManifestDownloadInfo>>;
-  owner: string;
-  repo: string;
-  ref: string;
-  encryptedDeviceSet?: Set<string>;
-}): DownloadInput[] {
-  const { downloads, owner, repo, ref, encryptedDeviceSet } = params;
-  return Object.entries(downloads || {}).map(([platformId, info]) => {
-    const fileName = info?.file_name || "";
-    const rawLogs = info?.updatelogs;
-    const rawVersionCode = info?.versionCode;
-    const parsedVersionCode =
-      typeof rawVersionCode === "number" && Number.isFinite(rawVersionCode)
-        ? Math.trunc(rawVersionCode)
-        : undefined;
-    const version = info?.version || "";
-    return {
-      uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-      platformId,
-      version,
-      encryptOnUpload: encryptedDeviceSet?.has(platformId) ?? false,
-      versionCode: parsedVersionCode,
-      updatelogs: Array.isArray(rawLogs)
-        ? rawLogs
-            .map((log) => ({
-              version: String(log.version ?? "").trim(),
-              content: String(log.content ?? "").trim(),
-            }))
-            .filter((log) => log.version || log.content)
-        : undefined,
-      versionLocked: Boolean(fileName),
-      versionSource: "existing" as const,
-      previousVersion: version || undefined,
-      previousVersionCode: parsedVersionCode,
-      file: fileName
-        ? createExistingUploadItem(
-            fileName.split("/").pop() || fileName,
-            buildRawFileUrl(owner, repo, ref, fileName),
-            fileName,
-          )
-        : null,
-      existingFileName: fileName,
-    };
-  });
-}
-
-function extractCustomExt(ext: ManifestExtObject | undefined): ManifestExtObject {
-  if (!ext) return {};
-  const next: ManifestExtObject = { ...ext };
-  delete next.enableAstroBoxCreatorFeatures;
-  delete next.trialDownloads;
-  delete next.bundledResources;
-  delete next.wallpaperGenerator;
-  return next;
-}
-
-function parseTagText(raw: string): string[] {
-    return raw
-        .split(/[;；,，]/)
-        .map((token) => token.trim())
-        .filter(Boolean);
-}
-
-async function fileToDataUrl(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}`;
-}
-
-function dataUrlToFile(dataUrl: string, name: string): File {
-  const [meta, base64] = dataUrl.split(",");
-  const type = meta?.replace("data:", "").split(";")[0] || "application/octet-stream";
-  const bytes = Uint8Array.from(atob(base64 || ""), (c) => c.charCodeAt(0));
-  return new File([bytes], name, { type });
-}
-
-async function serializeMediaItem(
-  item: UploadItem | null,
-): Promise<DraftMediaItem | null> {
-  if (!item) return null;
-  if (item.skipUpload || !item.file?.size) {
-    return {
-      id: item.id,
-      name: item.name,
-      url: item.url,
-      pathOverride: item.pathOverride,
-      skipUpload: true,
-      source: "existing",
-      width: item.width,
-      height: item.height,
-    };
-  }
-  return {
-    id: item.id,
-    name: item.name,
-    dataUrl: await fileToDataUrl(item.file),
-    pathOverride: item.pathOverride,
-    skipUpload: item.skipUpload,
-    source: "upload",
-    width: item.width,
-    height: item.height,
-  };
-}
-
-function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null {
-  if (!item) return null;
-  if (item.dataUrl) {
-    const file = dataUrlToFile(item.dataUrl, item.name);
-    const restored = createUploadItem(file);
-    return {
-      ...restored,
-      pathOverride: item.pathOverride,
-      width: item.width,
-      height: item.height,
-    };
-  }
-  return {
-    id: item.id,
-    name: item.name,
-    url: item.url || "",
-    file: new File([], item.name),
-    pathOverride: item.pathOverride,
-    skipUpload: true,
-    source: "existing",
-    width: item.width,
-    height: item.height,
-  };
-}
-
-async function serializeDownloadInputs(
-  inputs: DownloadInput[],
-): Promise<DraftDownloadInput[]> {
-  return Promise.all(
-    inputs.map(async (item) => {
-      const file = item.file;
-      if (!file?.file?.size) {
-        return { ...item, file: null };
-      }
-      const bytes = await file.file.arrayBuffer();
-      return {
-        ...item,
-        file: {
-          id: file.id,
-          name: file.name,
-          type: file.file.type,
-          size: bytes.byteLength,
-          bytes,
-          pathOverride: file.pathOverride,
-          skipUpload: file.skipUpload,
-          source: file.source,
-        },
-      };
-    }),
-  );
-}
-
-function restoreDownloadInput(item: DraftDownloadInput): DownloadInput {
-  if (item.file?.bytes?.byteLength) {
-    const file = new File([item.file.bytes], item.file.name, {
-      type: item.file.type || "application/octet-stream",
-    });
-    const restored = createUploadItem(file);
-    return {
-      ...item,
-      file: {
-        ...restored,
-        id: item.file.id,
-        pathOverride: item.file.pathOverride,
-        skipUpload: item.file.skipUpload,
-        source: item.file.source,
-      },
-      existingFileName: undefined,
-    };
-  }
-  // 旧版草稿可能残留 WebKitGTK 无法回读的 File 对象：直接置空，
-  // 避免恢复后上传报 “The object can not be found here.”。
-  return { ...item, file: null };
-}
-
-async function serializeWallpaperAsset(
-  asset: WallpaperAssetFile,
-): Promise<DraftWallpaperAsset> {
-  if (asset.file?.size) {
-    return { path: asset.path, dataUrl: await fileToDataUrl(asset.file), skipUpload: false };
-  }
-  return { path: asset.path, url: asset.url, skipUpload: true };
-}
-
-function restoreWallpaperAsset(item: DraftWallpaperAsset): WallpaperAssetFile {
-  if (item.dataUrl) {
-    const name = item.path.split("/").pop() || "asset";
-    const file = dataUrlToFile(item.dataUrl, name);
-    return { path: item.path, url: URL.createObjectURL(file), file };
-  }
-  return { path: item.path, url: item.url || "", skipUpload: true };
-}
-
-function imageMimeFromPath(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const mimes: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    webp: "image/webp",
-    gif: "image/gif",
-    bmp: "image/bmp",
-    svg: "image/svg+xml",
-    avif: "image/avif",
-  };
-  return mimes[ext] || "application/octet-stream";
-}
-
-async function loadRemoteMediaItem(
-  path: string,
-  url: string,
-): Promise<UploadItem> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const blob = await response.blob();
-    const file = new File(
-      [blob],
-      path.split("/").pop() || "image",
-      { type: blob.type || imageMimeFromPath(path) },
-    );
-    const item = await createImageUploadItem(file);
-    return {
-      ...item,
-      pathOverride: path,
-      skipUpload: true,
-      source: "existing",
-    };
-  } catch (error) {
-    console.warn("[edit-media] failed to download remote image", path, error);
-    return createExistingUploadItem(
-      path.split("/").pop() || "image",
-      url,
-      path,
-    );
-  }
-}
-
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -495,6 +261,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     Map<string, string> | null
   >(null);
 
+
   const [previews, setPreviews] = useState<UploadItem[]>([]);
   const [previewUploading, setPreviewUploading] = useState(false);
   const [previewProcessingId, setPreviewProcessingId] = useState<string | null>(
@@ -504,14 +271,268 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [iconUploading, setIconUploading] = useState(false);
   const [cover, setCover] = useState<UploadItem | null>(null);
 
+  const handlePreviewUpload = async (files: File[]) => {
+    if (!files.length) return;
+    const fileList = files;
+    log.info("media/preview", `导入 ${fileList.length} 张预览图`, {
+      data: {
+        files: fileList.map((f) => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+      },
+    });
+    setPreviewUploading(true);
+    try {
+      const initialItems = fileList.map((file) => ({
+        ...createUploadItem(file),
+        processing: true,
+        progress: 0,
+      }));
+      setPreviews((prev) => [...prev, ...initialItems]);
+
+      for (let index = 0; index < fileList.length; index++) {
+        const file = fileList[index];
+        const itemId = initialItems[index].id;
+        let progressTimer: number | undefined;
+        try {
+          log.debug(
+            "media/preview",
+            `压缩预览图 ${index + 1}/${fileList.length}`,
+            { data: { name: file.name, size: file.size } },
+          );
+          setPreviewProcessingId(itemId);
+          progressTimer = window.setInterval(() => {
+            setPreviews((prev) =>
+              prev.map((item) =>
+                item.id === itemId && item.processing
+                  ? { ...item, progress: Math.min(90, (item.progress || 0) + 8 + Math.random() * 12) }
+                  : item,
+              ),
+            );
+          }, 160);
+          const processed = await compressImageFile(file, 500 * 1024);
+          log.debug("media/preview", "读取预览图尺寸", {
+            data: { name: file.name, compressedSize: processed.size },
+          });
+          const item = await createImageUploadItem(processed);
+          log.info("media/preview", "预览图就绪", {
+            data: {
+              name: item.name,
+              width: item.width,
+              height: item.height,
+              size: processed.size,
+            },
+          });
+          if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...item, processing: false, progress: 100 } : old,
+            ),
+          );
+        } catch (err) {
+          if (progressTimer != null) window.clearInterval(progressTimer);
+          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
+          log.error("media/preview", `预览图处理失败: ${file.name}`, {
+            data: { name: file.name, error: err },
+          });
+          toast.error(`图片处理失败：${file.name}`);
+          setPreviews((prev) =>
+            prev.map((old) =>
+              old.id === itemId ? { ...old, processing: false, progress: 100 } : old,
+            ),
+          );
+        }
+      }
+      log.debug("media/preview", "预览图批量处理完成");
+    } finally {
+      setPreviewProcessingId(null);
+      setPreviewUploading(false);
+    }
+  };
+
+  const handleIconUpload = async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    log.info("media/icon", "导入图标", {
+      data: { name: file.name, size: file.size, type: file.type },
+    });
+    const originalDims = await getImageDimensions(file);
+    const iconError = checkIconDimensions(originalDims);
+    if (iconError) {
+      log.warn("media/icon", "图标规格不符，已拒绝", {
+        data: {
+          name: file.name,
+          width: originalDims.width,
+          height: originalDims.height,
+          reason: iconError,
+        },
+      });
+      toast.error(iconError);
+      return;
+    }
+    setIconUploading(true);
+    try {
+      let processed = file;
+      try {
+        processed = await compressImageFile(file, ICON_COMPRESS_TARGET_BYTES);
+        log.debug("media/icon", "图标压缩完成", {
+          data: {
+            name: file.name,
+            originalSize: file.size,
+            compressedSize: processed.size,
+          },
+        });
+      } catch (err) {
+        toast.error("图标处理失败，将使用原图");
+        log.warn("media/icon", "图标压缩失败，使用原图", {
+          data: { name: file.name, error: err },
+        });
+      }
+      const next = await createImageUploadItem(processed).catch(() =>
+        createUploadItem(processed),
+      );
+      log.info("media/icon", "图标导入完成", {
+        data: {
+          name: next.name,
+          width: next.width,
+          height: next.height,
+          size: next.file.size,
+        },
+      });
+      setIcon((prev) => {
+        revokeUrl(prev);
+        return next;
+      });
+    } finally {
+      setIconUploading(false);
+    }
+  };
+
+  const handleCoverUpload = async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    log.info("media/cover", "导入封面", {
+      data: { name: file.name, size: file.size, type: file.type },
+    });
+    const originalDims = await getImageDimensions(file);
+    const coverRatioError = checkCoverRatio(originalDims);
+    if (coverRatioError) {
+      log.warn("media/cover", "封面宽高比必须为 3:2，已拒绝", {
+        data: {
+          name: file.name,
+          width: originalDims.width,
+          height: originalDims.height,
+          reason: coverRatioError,
+        },
+      });
+      toast.error(coverRatioError);
+      return;
+    }
+    let processed = file;
+    try {
+      processed = await compressImageFile(file, COVER_COMPRESS_TARGET_BYTES);
+      log.debug("media/cover", "封面压缩完成", {
+        data: {
+          name: file.name,
+          originalSize: file.size,
+          compressedSize: processed.size,
+        },
+      });
+    } catch (err) {
+      toast.error("封面处理失败，将使用原图");
+      log.warn("media/cover", "封面压缩失败，使用原图", {
+        data: { name: file.name, error: err },
+      });
+    }
+    const next = await createImageUploadItem(processed).catch(() =>
+      createUploadItem(processed),
+    );
+    const coverSizeError = checkCoverFileSize(next.file.size);
+    if (coverSizeError) {
+      log.warn("media/cover", "封面体积过大，已拒绝", {
+        data: { name: next.name, size: next.file.size },
+      });
+      toast.error(coverSizeError);
+      revokeUrl(next);
+      return;
+    }
+    log.info("media/cover", "封面导入完成", {
+      data: {
+        name: next.name,
+        width: next.width,
+        height: next.height,
+        size: next.file.size,
+      },
+    });
+    setCover((prev) => {
+      revokeUrl(prev);
+      return next;
+    });
+  };
+
+  const handleRemovePreview = (id: string) => {
+    const toRemove = previews.find((item) => item.id === id);
+    if (toRemove) {
+      log.info("media/preview", "移除预览图", {
+        data: { name: toRemove.name },
+      });
+    }
+    setPreviews((prev) => {
+      const target = prev.find((item) => item.id === id);
+      revokeUrl(target);
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const handleReorderPreview = (fromId: string, toId: string) => {
+    setPreviews((prev) => {
+      const fromIndex = prev.findIndex((item) => item.id === fromId);
+      const toIndex = prev.findIndex((item) => item.id === toId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleRemoveIcon = () => {
+    if (icon) log.info("media/icon", "移除图标", { data: { name: icon.name } });
+    revokeUrl(icon);
+    setIcon(null);
+  };
+
+  const handleRemoveCover = () => {
+    if (cover) {
+      log.info("media/cover", "移除封面", { data: { name: cover.name } });
+    }
+    revokeUrl(cover);
+    setCover(null);
+  };
+
+  const handleMediaDimensions = (
+    kind: "preview" | "icon" | "cover",
+    id: string,
+    width: number,
+    height: number,
+  ) => {
+    if (kind === "preview") {
+      setPreviews((items) => items.map((item) => item.id === id ? { ...item, width, height } : item));
+    } else if (kind === "icon") {
+      setIcon((item) => item?.id === id ? { ...item, width, height } : item);
+    } else {
+      setCover((item) => item?.id === id ? { ...item, width, height } : item);
+    }
+  };
+
+
   const [authors, setAuthors] = useState<AuthorInput[]>([
     { name: "", bindABAccount: true },
   ]);
   const [links, setLinks] = useState<LinkInput[]>([]);
-  const [downloads, setDownloads] =
-    useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
-  const [trialDownloads, setTrialDownloads] =
-    useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [tagsInput, setTagsInput] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [paidType, setPaidType] = useState("");
@@ -529,6 +550,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       ),
     [deviceOptions],
   );
+
+  const [downloads, setDownloads] =
+    useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
+  const [trialDownloads, setTrialDownloads] =
+    useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
 
   const [extRaw, setExtRaw] = useState("{}");
   const [bundledResources, setBundledResources] = useState<
@@ -1082,241 +1108,287 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
 
   /** 已上传包体但未填写 versionCode 的行。versionCode 为强制项，缺失时不允许进入后续步骤。 */
-  const rowsMissingVersionCode = useMemo(
-    () =>
-      downloads.filter(
-        (d) =>
-          (d.file !== null || Boolean(d.existingFileName)) &&
-          (d.versionCode === undefined || d.versionCode === null),
-      ),
+  const missingVersionCodeRows = useMemo(
+    () => rowsMissingVersionCode(downloads),
     [downloads],
   );
 
-  const handlePreviewUpload = async (files: File[]) => {
-    if (!files.length) return;
-    const fileList = files;
-    log.info("media/preview", `导入 ${fileList.length} 张预览图`, {
-      data: {
-        files: fileList.map((f) => ({
-          name: f.name,
-          size: f.size,
-          type: f.type,
-        })),
-      },
+  const addDownloadRow = () => {
+    const buildRow = (platformId?: string): DownloadInput => ({
+      uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+      platformId: platformId ?? "",
+      version: "",
+      file: null,
+      encryptOnUpload: false,
     });
-    setPreviewUploading(true);
-    try {
-      const initialItems = fileList.map((file) => ({
-        ...createUploadItem(file),
-        processing: true,
-        progress: 0,
-      }));
-      setPreviews((prev) => [...prev, ...initialItems]);
 
-      for (let index = 0; index < fileList.length; index++) {
-        const file = fileList[index];
-        const itemId = initialItems[index].id;
-        let progressTimer: number | undefined;
-        try {
-          log.debug(
-            "media/preview",
-            `压缩预览图 ${index + 1}/${fileList.length}`,
-            { data: { name: file.name, size: file.size } },
-          );
-          setPreviewProcessingId(itemId);
-          progressTimer = window.setInterval(() => {
-            setPreviews((prev) =>
-              prev.map((item) =>
-                item.id === itemId && item.processing
-                  ? { ...item, progress: Math.min(90, (item.progress || 0) + 8 + Math.random() * 12) }
-                  : item,
-              ),
-            );
-          }, 160);
-          const processed = await compressImageFile(file, 500 * 1024);
-          log.debug("media/preview", "读取预览图尺寸", {
-            data: { name: file.name, compressedSize: processed.size },
-          });
-          const item = await createImageUploadItem(processed);
-          log.info("media/preview", "预览图就绪", {
-            data: {
-              name: item.name,
-              width: item.width,
-              height: item.height,
-              size: processed.size,
-            },
-          });
-          if (progressTimer != null) window.clearInterval(progressTimer);
-          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
-          setPreviews((prev) =>
-            prev.map((old) =>
-              old.id === itemId ? { ...item, processing: false, progress: 100 } : old,
-            ),
-          );
-        } catch (err) {
-          if (progressTimer != null) window.clearInterval(progressTimer);
-          setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
-          log.error("media/preview", `预览图处理失败: ${file.name}`, {
-            data: { name: file.name, error: err },
-          });
-          toast.error(`图片处理失败：${file.name}`);
-          setPreviews((prev) =>
-            prev.map((old) =>
-              old.id === itemId ? { ...old, processing: false, progress: 100 } : old,
-            ),
-          );
-        }
-      }
-      log.debug("media/preview", "预览图批量处理完成");
-    } finally {
-      setPreviewProcessingId(null);
-      setPreviewUploading(false);
-    }
+    setDownloads((prev) => {
+      const used = new Set(prev.map((d) => d.platformId));
+      const next =
+        sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
+        sortedDeviceOptions[0];
+      log.info("download/row", "添加下载配置行", {
+        data: {
+          deviceId: next?.id,
+          deviceName: next?.name,
+        },
+      });
+      return [...prev, buildRow(next?.id)];
+    });
   };
 
-  const handleIconUpload = async (files: File[]) => {
-    const file = files[0];
-    if (!file) return;
-    log.info("media/icon", "导入图标", {
-      data: { name: file.name, size: file.size, type: file.type },
-    });
-    const originalDims = await getImageDimensions(file);
-    if (
-      !originalDims.width ||
-      !originalDims.height ||
-      originalDims.width !== originalDims.height
-    ) {
-      log.warn("media/icon", "图标宽高比必须为 1:1，已拒绝", {
+  const removeDownloadRow = (uid: string) => {
+    const removed = downloads.find((d) => d.uid === uid);
+    if (removed) {
+      log.info("download/row", "移除下载配置行", {
         data: {
-          name: file.name,
-          width: originalDims.width,
-          height: originalDims.height,
+          deviceId: removed.platformId,
+          fileName: removed.file?.name ?? removed.existingFileName ?? null,
         },
       });
-      toast.error("图标宽高比必须为 1:1，请重新选择。");
-      return;
     }
-    if (originalDims.width > 500 || originalDims.height > 500) {
-      log.warn("media/icon", "图标尺寸过大，已拒绝", {
-        data: {
-          name: file.name,
-          width: originalDims.width,
-          height: originalDims.height,
-        },
-      });
-      toast.error("图标尺寸过大，请重新选择。");
-      return;
-    }
-    setIconUploading(true);
-    try {
-      let processed = file;
-      try {
-        processed = await compressImageFile(file, 100 * 1024);
-        log.debug("media/icon", "图标压缩完成", {
-          data: {
-            name: file.name,
-            originalSize: file.size,
-            compressedSize: processed.size,
-          },
-        });
-      } catch (err) {
-        toast.error("图标处理失败，将使用原图");
-        log.warn("media/icon", "图标压缩失败，使用原图", {
-          data: { name: file.name, error: err },
-        });
-      }
-      const next = await createImageUploadItem(processed).catch(() =>
-        createUploadItem(processed),
-      );
-      log.info("media/icon", "图标导入完成", {
-        data: {
-          name: next.name,
-          width: next.width,
-          height: next.height,
-          size: next.file.size,
-        },
-      });
-      setIcon((prev) => {
-        revokeUrl(prev);
-        return next;
-      });
-    } finally {
-      setIconUploading(false);
-    }
+    setDownloads((prev) => prev.filter((d) => d.uid !== uid));
   };
 
-  const handleCoverUpload = async (files: File[]) => {
-    const file = files[0];
-    if (!file) return;
-    log.info("media/cover", "导入封面", {
-      data: { name: file.name, size: file.size, type: file.type },
-    });
-    const originalDims = await getImageDimensions(file);
-    const originalRatio =
-      originalDims.width && originalDims.height
-        ? originalDims.width / originalDims.height
-        : null;
-    if (
-      !originalDims.width ||
-      !originalDims.height ||
-      !originalRatio ||
-      Math.abs(originalRatio - COVER_RATIO) > COVER_RATIO_TOLERANCE
-    ) {
-      log.warn("media/cover", "封面宽高比必须为 3:2，已拒绝", {
-        data: {
-          name: file.name,
-          width: originalDims.width,
-          height: originalDims.height,
-          ratio: originalRatio,
-        },
-      });
-      toast.error(
-        `封面宽高比必须为 3:2，当前 ${
-          originalRatio ? originalRatio.toFixed(2) : "未知"
-        }。`,
-      );
-      return;
-    }
-    let processed = file;
-    try {
-      processed = await compressImageFile(file, 600 * 1024);
-      log.debug("media/cover", "封面压缩完成", {
-        data: {
-          name: file.name,
-          originalSize: file.size,
-          compressedSize: processed.size,
-        },
-      });
-    } catch (err) {
-      toast.error("封面处理失败，将使用原图");
-      log.warn("media/cover", "封面压缩失败，使用原图", {
-        data: { name: file.name, error: err },
-      });
-    }
-    const next = await createImageUploadItem(processed).catch(() =>
-      createUploadItem(processed),
+  const updateDownloadRow = (
+    uid: string,
+    updater: (row: DownloadInput) => DownloadInput,
+  ) => {
+    setDownloads((prev) =>
+      prev.map((row) => (row.uid === uid ? updater(row) : row)),
     );
-    if (next.file.size > COVER_MAX_BYTES) {
-      log.warn("media/cover", "封面体积过大，已拒绝", {
-        data: { name: next.name, size: next.file.size },
-      });
-      toast.error("封面体积过大，请压缩后重新上传。");
-      revokeUrl(next);
-      return;
-    }
-    log.info("media/cover", "封面导入完成", {
-      data: {
-        name: next.name,
-        width: next.width,
-        height: next.height,
-        size: next.file.size,
-      },
+  };
+
+  const batchSetDownloadDevices = (selectedIds: string[]) => {
+    log.info("download/row", `批量选择设备（${selectedIds.length} 台）`, {
+      data: { deviceIds: selectedIds },
     });
-    setCover((prev) => {
-      revokeUrl(prev);
-      return next;
+    setDownloads((prev) => {
+      const existingMap = new Map(
+        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
+      );
+      return selectedIds.map((id) => {
+        if (existingMap.has(id)) return existingMap.get(id)!;
+        return {
+          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+          platformId: id,
+          version: "",
+          file: null,
+          encryptOnUpload: false,
+        };
+      });
     });
   };
+
+  const fillAllDownloads = (template: {
+    version: string;
+    file: UploadItem | null;
+    encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: UpdateLogEntry[];
+    versionLocked?: boolean;
+    versionSource?: DownloadInput["versionSource"];
+    packageHash?: string;
+    packageIdentity?: string;
+    packageIdentityKind?: DownloadInput["packageIdentityKind"];
+    packageWritable?: boolean;
+  }) => {
+    log.info("download/row", "一键填充下载配置", {
+      data: {
+        version: template.version,
+        fileName: template.file?.name ?? null,
+        encryptOnUpload: template.encryptOnUpload,
+        versionCode: template.versionCode ?? null,
+        updateLogCount: template.updatelogs?.length ?? 0,
+      },
+    });
+    setDownloads((prev) =>
+      prev.map((row) => ({
+        ...row,
+        version: template.version,
+        file: template.file,
+        encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
+        versionCode: template.versionCode,
+        versionLocked: template.versionLocked,
+        versionSource: template.versionSource,
+        packageHash: template.packageHash,
+        packageIdentity: template.packageIdentity,
+        packageIdentityKind: template.packageIdentityKind,
+        packageWritable: template.packageWritable,
+        updatelogs: template.updatelogs
+          ? template.updatelogs.map((log) => ({ ...log }))
+          : undefined,
+      })),
+    );
+  };
+
+  const addTrialDownloadRow = () => {
+    setTrialDownloads((prev) => {
+      const used = new Set(prev.map((d) => d.platformId));
+      const next =
+        sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
+        sortedDeviceOptions[0];
+      log.info("download/trial/row", "添加试用下载配置行", {
+        data: {
+          deviceId: next?.id,
+          deviceName: next?.name,
+        },
+      });
+      return [
+        ...prev,
+        {
+          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+          platformId: next?.id ?? "",
+          version: "",
+          file: null,
+          encryptOnUpload: false,
+        },
+      ];
+    });
+  };
+
+  const removeTrialDownloadRow = (uid: string) => {
+    const removed = trialDownloads.find((d) => d.uid === uid);
+    if (removed) {
+      log.info("download/trial/row", "移除试用下载配置行", {
+        data: {
+          deviceId: removed.platformId,
+          fileName: removed.file?.name ?? removed.existingFileName ?? null,
+        },
+      });
+    }
+    setTrialDownloads((prev) => prev.filter((d) => d.uid !== uid));
+  };
+
+  const updateTrialDownloadRow = (
+    uid: string,
+    updater: (row: DownloadInput) => DownloadInput,
+  ) => {
+    setTrialDownloads((prev) =>
+      prev.map((row) => (row.uid === uid ? updater(row) : row)),
+    );
+  };
+
+  const batchSetTrialDownloadDevices = (selectedIds: string[]) => {
+    log.info("download/trial/row", `批量选择试用设备（${selectedIds.length} 台）`, {
+      data: { deviceIds: selectedIds },
+    });
+    setTrialDownloads((prev) => {
+      const existingMap = new Map(
+        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
+      );
+      return selectedIds.map((id) => {
+        if (existingMap.has(id)) return existingMap.get(id)!;
+        return {
+          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
+          platformId: id,
+          version: "",
+          file: null,
+          encryptOnUpload: false,
+        };
+      });
+    });
+  };
+
+  const fillAllTrialDownloads = (template: {
+    version: string;
+    file: UploadItem | null;
+    encryptOnUpload?: boolean;
+    versionCode?: number;
+    updatelogs?: UpdateLogEntry[];
+    versionLocked?: boolean;
+    versionSource?: DownloadInput["versionSource"];
+    packageHash?: string;
+    packageIdentity?: string;
+    packageIdentityKind?: DownloadInput["packageIdentityKind"];
+    packageWritable?: boolean;
+  }) => {
+    log.info("download/trial/row", "一键填充试用下载配置", {
+      data: {
+        version: template.version,
+        fileName: template.file?.name ?? null,
+        versionCode: template.versionCode ?? null,
+        updateLogCount: template.updatelogs?.length ?? 0,
+      },
+    });
+    setTrialDownloads((prev) =>
+      prev.map((row) => ({
+        ...row,
+        version: template.version,
+        file: template.file,
+        versionCode: template.versionCode,
+        versionLocked: template.versionLocked,
+        versionSource: template.versionSource,
+        packageHash: template.packageHash,
+        packageIdentity: template.packageIdentity,
+        packageIdentityKind: template.packageIdentityKind,
+        packageWritable: template.packageWritable,
+        updatelogs: template.updatelogs
+          ? template.updatelogs.map((log) => ({ ...log }))
+          : undefined,
+      })),
+    );
+  };
+
+  const goToStep = (index: number) => {
+    const target = Math.max(0, Math.min(2, index));
+    if (target > 0 && tags.length === 0) {
+      toast.error("请至少添加一个标签。");
+      setActiveStepIndex(0);
+      return;
+    }
+    // versionCode 为强制项。校验放在 goToStep 而非「下一步」按钮上，
+    // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
+    if (target > 0 && missingVersionCodeRows.length > 0) {
+      setVersionCodeWarningRows(missingVersionCodeRows);
+      setActiveStepIndex(0);
+      return;
+    }
+    if (target > 0 && publishValidation.errors.length) {
+      toast.error(publishValidation.errors[0]);
+      setActiveStepIndex(0);
+      return;
+    }
+    if (target > 1 && (repoStatus !== "success" || !repoInfo?.commitSha)) {
+      toast.error("请先完成资源仓库上传并获取提交哈希。");
+      setActiveStepIndex(1);
+      return;
+    }
+    if (target === 1) {
+      setRepoStatus("idle");
+      setRepoMessage("");
+      setUploadLogs([]);
+    }
+    setActiveStepIndex(target);
+  };
+
+  const handleNextFromDownloadConfig = () => {
+    const identityMismatch = rowsWithIdentityMismatch(
+      [...downloads, ...trialDownloads],
+      itemId,
+    );
+    if (identityMismatch.length > 0) {
+      toast.error(
+        `包体包名与资源 ID 不一致（${identityMismatch
+          .map(
+            (d) =>
+              `${sortedDeviceOptions.find((opt) => opt.id === d.platformId)?.name || d.platformId || "未选设备"}: ${d.packageIdentity}`,
+          )
+          .join("、")}），将无法自动检查更新，请先统一 ID。`,
+      );
+      return;
+    }
+    const nonIncrement = rowsWithNonIncrementedVersionCode([
+      ...downloads,
+      ...trialDownloads,
+    ]);
+    if (nonIncrement.length > 0) {
+      setVersionIncrementWarning(nonIncrement);
+      return;
+    }
+    goToStep(1);
+  };
+
 
   const handleGenerateId = useCallback(async () => {
     if (resourceType !== "watchface" || idGenerating) return;
@@ -1371,61 +1443,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       next.splice(index, 1);
       return next.join(";");
     });
-  };
-
-  const handleRemovePreview = (id: string) => {
-    const toRemove = previews.find((item) => item.id === id);
-    if (toRemove) {
-      log.info("media/preview", "移除预览图", {
-        data: { name: toRemove.name },
-      });
-    }
-    setPreviews((prev) => {
-      const target = prev.find((item) => item.id === id);
-      revokeUrl(target);
-      return prev.filter((item) => item.id !== id);
-    });
-  };
-
-  const handleReorderPreview = (fromId: string, toId: string) => {
-    setPreviews((prev) => {
-      const fromIndex = prev.findIndex((item) => item.id === fromId);
-      const toIndex = prev.findIndex((item) => item.id === toId);
-      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
-
-  const handleRemoveIcon = () => {
-    if (icon) log.info("media/icon", "移除图标", { data: { name: icon.name } });
-    revokeUrl(icon);
-    setIcon(null);
-  };
-
-  const handleRemoveCover = () => {
-    if (cover) {
-      log.info("media/cover", "移除封面", { data: { name: cover.name } });
-    }
-    revokeUrl(cover);
-    setCover(null);
-  };
-
-  const handleMediaDimensions = (
-    kind: "preview" | "icon" | "cover",
-    id: string,
-    width: number,
-    height: number,
-  ) => {
-    if (kind === "preview") {
-      setPreviews((items) => items.map((item) => item.id === id ? { ...item, width, height } : item));
-    } else if (kind === "icon") {
-      setIcon((item) => item?.id === id ? { ...item, width, height } : item);
-    } else {
-      setCover((item) => item?.id === id ? { ...item, width, height } : item);
-    }
   };
 
   const wallpaperTemplateCount = useMemo(() => {
@@ -1614,9 +1631,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         if (
           ownedId &&
           itemId.trim() !== ownedId &&
-          [...downloads, ...trialDownloads].some(
-            (download) => download.file?.skipUpload || download.existingFileName,
-          )
+          rowsReusingExistingPackage([...downloads, ...trialDownloads]).length >
+            0
         ) {
           throw new Error("表盘 ID 已变更，请重新上传所有表盘包体文件。");
         }
@@ -1985,287 +2001,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
-  const addDownloadRow = () => {
-    const buildRow = (platformId?: string): DownloadInput => ({
-      uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-      platformId: platformId ?? "",
-      version: "",
-      file: null,
-      encryptOnUpload: false,
-    });
-
-    setDownloads((prev) => {
-      const used = new Set(prev.map((d) => d.platformId));
-      const next =
-        sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
-        sortedDeviceOptions[0];
-      log.info("download/row", "添加下载配置行", {
-        data: {
-          deviceId: next?.id,
-          deviceName: next?.name,
-        },
-      });
-      return [...prev, buildRow(next?.id)];
-    });
-  };
-
-  const removeDownloadRow = (uid: string) => {
-    const removed = downloads.find((d) => d.uid === uid);
-    if (removed) {
-      log.info("download/row", "移除下载配置行", {
-        data: {
-          deviceId: removed.platformId,
-          fileName: removed.file?.name ?? removed.existingFileName ?? null,
-        },
-      });
-    }
-    setDownloads((prev) => prev.filter((d) => d.uid !== uid));
-  };
-
-  const updateDownloadRow = (
-    uid: string,
-    updater: (row: DownloadInput) => DownloadInput,
-  ) => {
-    setDownloads((prev) =>
-      prev.map((row) => (row.uid === uid ? updater(row) : row)),
-    );
-  };
-
-  const batchSetDownloadDevices = (selectedIds: string[]) => {
-    log.info("download/row", `批量选择设备（${selectedIds.length} 台）`, {
-      data: { deviceIds: selectedIds },
-    });
-    setDownloads((prev) => {
-      const existingMap = new Map(
-        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
-      );
-      return selectedIds.map((id) => {
-        if (existingMap.has(id)) return existingMap.get(id)!;
-        return {
-          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-          platformId: id,
-          version: "",
-          file: null,
-          encryptOnUpload: false,
-        };
-      });
-    });
-  };
-
-  const fillAllDownloads = (template: {
-    version: string;
-    file: UploadItem | null;
-    encryptOnUpload?: boolean;
-    versionCode?: number;
-    updatelogs?: UpdateLogEntry[];
-    versionLocked?: boolean;
-    versionSource?: DownloadInput["versionSource"];
-    packageHash?: string;
-    packageIdentity?: string;
-    packageIdentityKind?: DownloadInput["packageIdentityKind"];
-    packageWritable?: boolean;
-  }) => {
-    log.info("download/row", "一键填充下载配置", {
-      data: {
-        version: template.version,
-        fileName: template.file?.name ?? null,
-        encryptOnUpload: template.encryptOnUpload,
-        versionCode: template.versionCode ?? null,
-        updateLogCount: template.updatelogs?.length ?? 0,
-      },
-    });
-    setDownloads((prev) =>
-      prev.map((row) => ({
-        ...row,
-        version: template.version,
-        file: template.file,
-        encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
-        versionCode: template.versionCode,
-        versionLocked: template.versionLocked,
-        versionSource: template.versionSource,
-        packageHash: template.packageHash,
-        packageIdentity: template.packageIdentity,
-        packageIdentityKind: template.packageIdentityKind,
-        packageWritable: template.packageWritable,
-        updatelogs: template.updatelogs
-          ? template.updatelogs.map((log) => ({ ...log }))
-          : undefined,
-      })),
-    );
-  };
-
-  const addTrialDownloadRow = () => {
-    setTrialDownloads((prev) => {
-      const used = new Set(prev.map((d) => d.platformId));
-      const next =
-        sortedDeviceOptions.find((opt) => !used.has(opt.id)) ||
-        sortedDeviceOptions[0];
-      log.info("download/trial/row", "添加试用下载配置行", {
-        data: {
-          deviceId: next?.id,
-          deviceName: next?.name,
-        },
-      });
-      return [
-        ...prev,
-        {
-          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-          platformId: next?.id ?? "",
-          version: "",
-          file: null,
-          encryptOnUpload: false,
-        },
-      ];
-    });
-  };
-
-  const removeTrialDownloadRow = (uid: string) => {
-    const removed = trialDownloads.find((d) => d.uid === uid);
-    if (removed) {
-      log.info("download/trial/row", "移除试用下载配置行", {
-        data: {
-          deviceId: removed.platformId,
-          fileName: removed.file?.name ?? removed.existingFileName ?? null,
-        },
-      });
-    }
-    setTrialDownloads((prev) => prev.filter((d) => d.uid !== uid));
-  };
-
-  const updateTrialDownloadRow = (
-    uid: string,
-    updater: (row: DownloadInput) => DownloadInput,
-  ) => {
-    setTrialDownloads((prev) =>
-      prev.map((row) => (row.uid === uid ? updater(row) : row)),
-    );
-  };
-
-  const batchSetTrialDownloadDevices = (selectedIds: string[]) => {
-    log.info("download/trial/row", `批量选择试用设备（${selectedIds.length} 台）`, {
-      data: { deviceIds: selectedIds },
-    });
-    setTrialDownloads((prev) => {
-      const existingMap = new Map(
-        prev.filter((d) => d.platformId).map((d) => [d.platformId, d]),
-      );
-      return selectedIds.map((id) => {
-        if (existingMap.has(id)) return existingMap.get(id)!;
-        return {
-          uid: crypto.randomUUID?.() ?? Math.random().toString(36),
-          platformId: id,
-          version: "",
-          file: null,
-          encryptOnUpload: false,
-        };
-      });
-    });
-  };
-
-  const fillAllTrialDownloads = (template: {
-    version: string;
-    file: UploadItem | null;
-    encryptOnUpload?: boolean;
-    versionCode?: number;
-    updatelogs?: UpdateLogEntry[];
-    versionLocked?: boolean;
-    versionSource?: DownloadInput["versionSource"];
-    packageHash?: string;
-    packageIdentity?: string;
-    packageIdentityKind?: DownloadInput["packageIdentityKind"];
-    packageWritable?: boolean;
-  }) => {
-    log.info("download/trial/row", "一键填充试用下载配置", {
-      data: {
-        version: template.version,
-        fileName: template.file?.name ?? null,
-        versionCode: template.versionCode ?? null,
-        updateLogCount: template.updatelogs?.length ?? 0,
-      },
-    });
-    setTrialDownloads((prev) =>
-      prev.map((row) => ({
-        ...row,
-        version: template.version,
-        file: template.file,
-        versionCode: template.versionCode,
-        versionLocked: template.versionLocked,
-        versionSource: template.versionSource,
-        packageHash: template.packageHash,
-        packageIdentity: template.packageIdentity,
-        packageIdentityKind: template.packageIdentityKind,
-        packageWritable: template.packageWritable,
-        updatelogs: template.updatelogs
-          ? template.updatelogs.map((log) => ({ ...log }))
-          : undefined,
-      })),
-    );
-  };
-
-  const goToStep = (index: number) => {
-    const target = Math.max(0, Math.min(2, index));
-    if (target > 0 && tags.length === 0) {
-      toast.error("请至少添加一个标签。");
-      setActiveStepIndex(0);
-      return;
-    }
-    // versionCode 为强制项。校验放在 goToStep 而非「下一步」按钮上，
-    // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
-    if (target > 0 && rowsMissingVersionCode.length > 0) {
-      setVersionCodeWarningRows(rowsMissingVersionCode);
-      setActiveStepIndex(0);
-      return;
-    }
-    if (target > 0 && publishValidation.errors.length) {
-      toast.error(publishValidation.errors[0]);
-      setActiveStepIndex(0);
-      return;
-    }
-    if (target > 1 && (repoStatus !== "success" || !repoInfo?.commitSha)) {
-      toast.error("请先完成资源仓库上传并获取提交哈希。");
-      setActiveStepIndex(1);
-      return;
-    }
-    if (target === 1) {
-      setRepoStatus("idle");
-      setRepoMessage("");
-      setUploadLogs([]);
-    }
-    setActiveStepIndex(target);
-  };
-
-  const handleNextFromDownloadConfig = () => {
-    const identityMismatch = [...downloads, ...trialDownloads].filter(
-      (d) =>
-        d.packageIdentityKind === "package" &&
-        Boolean(d.packageIdentity) &&
-        Boolean(itemId.trim()) &&
-        d.packageIdentity !== itemId.trim(),
-    );
-    if (identityMismatch.length > 0) {
-      toast.error(
-        `包体包名与资源 ID 不一致（${identityMismatch
-          .map(
-            (d) =>
-              `${sortedDeviceOptions.find((opt) => opt.id === d.platformId)?.name || d.platformId || "未选设备"}: ${d.packageIdentity}`,
-          )
-          .join("、")}），将无法自动检查更新，请先统一 ID。`,
-      );
-      return;
-    }
-    const nonIncrement = [...downloads, ...trialDownloads].filter(
-      (d) =>
-        d.versionSource === "package" &&
-        d.versionCode !== undefined &&
-        d.previousVersionCode !== undefined &&
-        d.versionCode <= d.previousVersionCode,
-    );
-    if (nonIncrement.length > 0) {
-      setVersionIncrementWarning(nonIncrement);
-      return;
-    }
-    goToStep(1);
-  };
 
   // --- Draft system ---
   const handleAddBundledResources = useCallback(
@@ -2588,203 +2323,53 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   // Auto-save restore prompt
   const autoSaveDialog = (
-    <AlertDialog.Root open={autoSavePromptOpen}>
-      <AlertDialog.Content maxWidth="420px">
-        <AlertDialog.Title>发现未保存的草稿</AlertDialog.Title>
-        <AlertDialog.Description size="2">
-          检测到上次未保存的内容（{autoSavedData ? formatDraftTime(autoSavedData.savedAt) : ""}），是否恢复？
-        </AlertDialog.Description>
-        <div className="flex justify-end gap-3 mt-4">
-          <AlertDialog.Action>
-            <Button variant="soft" color="gray" onClick={handleDismissAutoSave}>
-              丢弃
-            </Button>
-          </AlertDialog.Action>
-          <AlertDialog.Action>
-            <Button variant="solid" onClick={handleRestoreAutoSave}>
-              恢复内容
-            </Button>
-          </AlertDialog.Action>
-        </div>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
+    <AutoSaveRestoreDialog
+      open={autoSavePromptOpen}
+      savedAtLabel={
+        autoSavedData ? formatDraftTime(autoSavedData.savedAt) : ""
+      }
+      onDismiss={handleDismissAutoSave}
+      onRestore={handleRestoreAutoSave}
+    />
   );
 
   const versionCodeWarningDialog = (
-    <Dialog.Root
-      open={versionCodeWarningRows !== null}
-      onOpenChange={(open) => {
-        if (!open) setVersionCodeWarningRows(null);
-      }}
-    >
-      <Dialog.Content maxWidth="440px">
-        <Dialog.Title>未填写 versionCode</Dialog.Title>
-        <Dialog.Description size="2">
-          以下包体未填写 versionCode。未填写 versionCode
-          将导致 AstroBox 无法为用户自动检查更新，填写后方可继续。
-        </Dialog.Description>
-        <div className="mt-3 flex flex-col gap-1.5">
-          {(versionCodeWarningRows ?? []).map((row, index) => (
-            <div
-              key={row.uid}
-              className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
-            >
-              {sortedDeviceOptions.find((opt) => opt.id === row.platformId)?.name ||
-                row.platformId ||
-                `第 ${index + 1} 行`}
-              ：未填写 versionCode
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end gap-3 mt-4">
-          <Button
-            variant="solid"
-            onClick={() => {
-              const rows = versionCodeWarningRows;
-              setVersionCodeWarningRows(null);
-              flashFirstDownloadRow(rows);
-            }}
-          >
-            返回填写
-          </Button>
-        </div>
-      </Dialog.Content>
-    </Dialog.Root>
+    <VersionCodeWarningDialog
+      rows={versionCodeWarningRows}
+      sortedDeviceOptions={sortedDeviceOptions}
+      onLocate={(rows) => flashFirstDownloadRow(rows)}
+      onClose={() => setVersionCodeWarningRows(null)}
+    />
   );
 
   const versionIncrementWarningDialog = (
-    <Dialog.Root
-      open={versionIncrementWarning !== null}
-      onOpenChange={(open) => {
-        if (!open) setVersionIncrementWarning(null);
-      }}
-    >
-      <Dialog.Content maxWidth="460px">
-        <Dialog.Title>versionCode 未递增</Dialog.Title>
-        <Dialog.Description size="2">
-          以下设备的包体已更新，但 versionCode 未大于上次发布的值，用户将无法检测到更新：
-        </Dialog.Description>
-        <div className="mt-3 flex flex-col gap-1.5">
-          {(versionIncrementWarning ?? []).map((row) => (
-            <div
-              key={row.uid}
-              className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100"
-            >
-              {sortedDeviceOptions.find((opt) => opt.id === row.platformId)?.name ||
-                row.platformId ||
-                "未选设备"}
-              ：versionCode {row.versionCode} ≤ 上次 {row.previousVersionCode}
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex justify-end gap-3">
-          <Button
-            variant="solid"
-            onClick={() => {
-              const rows = versionIncrementWarning;
-              setVersionIncrementWarning(null);
-              flashFirstDownloadRow(rows);
-            }}
-          >
-            返回修改版本
-          </Button>
-        </div>
-      </Dialog.Content>
-    </Dialog.Root>
+    <VersionIncrementWarningDialog
+      rows={versionIncrementWarning}
+      sortedDeviceOptions={sortedDeviceOptions}
+      onLocate={(rows) => flashFirstDownloadRow(rows)}
+      onClose={() => setVersionIncrementWarning(null)}
+    />
   );
 
   // Draft action buttons
   const draftActions = !isEditing ? (
-    <div className="flex flex-col gap-1.5 px-3 w-full">
-      <div className="flex gap-1.5">
-        <AlertDialog.Root open={saveDraftOpen} onOpenChange={setSaveDraftOpen}>
-          <AlertDialog.Trigger>
-            <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
-              <FloppyDiskIcon size={14} />
-              保存草稿
-            </Button>
-          </AlertDialog.Trigger>
-          <AlertDialog.Content maxWidth="380px">
-            <AlertDialog.Title>保存草稿</AlertDialog.Title>
-            <div className="mt-2">
-              <input
-                type="text"
-                placeholder={itemName || "输入草稿名称"}
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-blue-500/50"
-              />
-            </div>
-            <div className="flex justify-end gap-3 mt-4">
-              <AlertDialog.Cancel>
-                <Button variant="soft" color="gray">取消</Button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action>
-                <Button variant="solid" onClick={handleSaveDraft}>保存</Button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Root>
-
-        <Popover.Root open={draftPopoverOpen} onOpenChange={(open) => {
-          setDraftPopoverOpen(open);
-          if (open) void listDrafts().then(setDraftList);
-        }}>
-          <Popover.Trigger>
-            <Button size="1" variant="soft" color="gray" className="text-xs! flex-1">
-              <ArchiveIcon size={14} />
-              草稿箱
-            </Button>
-          </Popover.Trigger>
-          <Popover.Content width="300px">
-            <ScrollArea className="max-h-[360px]">
-              <div className="flex flex-col gap-2">
-                <Text size="2" weight="medium">已保存的草稿</Text>
-                {draftList.length === 0 ? (
-                  <Text size="1" color="gray" className="py-4 text-center">
-                    暂无草稿
-                  </Text>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    {draftList.map((draft) => (
-                      <div
-                        key={draft.id}
-                        className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5 transition group"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <Text size="2" className="truncate block">{draft.name}</Text>
-                          <Text size="1" color="gray" className="flex items-center gap-1">
-                            <ClockIcon size={10} />
-                            {formatDraftTime(draft.savedAt)}
-                          </Text>
-                        </div>
-                        <Button
-                          size="1"
-                          variant="ghost"
-                          onClick={() => handleRestoreDraft(draft)}
-                          className="opacity-0 group-hover:opacity-100 transition"
-                        >
-                          恢复
-                        </Button>
-                        <Button
-                          size="1"
-                          variant="ghost"
-                          color="red"
-                          onClick={() => handleDeleteDraft(draft.id)}
-                          className="opacity-0 group-hover:opacity-100 transition"
-                        >
-                          <TrashIcon size={12} />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </Popover.Content>
-        </Popover.Root>
-      </div>
-    </div>
+    <DraftActions
+      draftName={draftName}
+      draftNamePlaceholder={itemName || "输入草稿名称"}
+      onDraftNameChange={setDraftName}
+      saveDraftOpen={saveDraftOpen}
+      onSaveDraftOpenChange={setSaveDraftOpen}
+      onSaveDraft={() => void handleSaveDraft()}
+      popoverOpen={draftPopoverOpen}
+      onPopoverOpenChange={(open) => {
+        setDraftPopoverOpen(open);
+        if (open) void listDrafts().then(setDraftList);
+      }}
+      drafts={draftList}
+      formatDraftTime={formatDraftTime}
+      onRestoreDraft={handleRestoreDraft}
+      onDeleteDraft={(id) => void handleDeleteDraft(id)}
+    />
   ) : null;
 
   if (
