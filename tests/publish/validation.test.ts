@@ -27,6 +27,40 @@ const validInput = {
 };
 
 describe("publish validation", () => {
+  test("资源 ID 格式不合规时拦截发布（按资源类型）", () => {
+    // 资源包：只允许小写字母、数字、下划线、连字符
+    expect(
+      validatePublish({ ...validInput, resourceType: "res_pack", itemId: "My Theme" })
+        .errors.join(),
+    ).toContain("小写字母");
+    expect(
+      validatePublish({ ...validInput, resourceType: "res_pack", itemId: "奶蛙" })
+        .errors.join(),
+    ).toContain("小写字母");
+    expect(
+      validatePublish({ ...validInput, resourceType: "res_pack", itemId: "a".repeat(65) })
+        .errors.join(),
+    ).toContain("最长");
+    expect(
+      validatePublish({ ...validInput, resourceType: "res_pack", itemId: "my-theme" })
+        .errors,
+    ).toEqual([]);
+
+    // 表盘与模块沿用各自既有规则
+    expect(
+      validatePublish({ ...validInput, resourceType: "watchface", itemId: "123456789012" })
+        .errors.join(),
+    ).toContain("9798");
+    expect(
+      validatePublish({ ...validInput, resourceType: "canopus", itemId: "bluetooth" })
+        .errors.join(),
+    ).toContain("canopus_");
+  });
+
+  test("未指定资源类型时不对 ID 做格式校验", () => {
+    expect(validatePublish(validInput).errors).toEqual([]);
+  });
+
   test("accepts complete input and rejects required fields and rows", () => {
     expect(validatePublish(validInput).errors).toEqual([]);
     const result = validatePublish({

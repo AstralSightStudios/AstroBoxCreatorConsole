@@ -100,6 +100,8 @@ interface DownloadsSectionProps {
   isVip: boolean;
   resourceId?: string;
   allowEncryption?: boolean;
+  /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
+  fileAccept?: string;
   validateFile?: (file: File) => Promise<PackageVersionInfo>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
@@ -135,6 +137,7 @@ export function DownloadsSection({
   isVip,
   resourceId,
   allowEncryption = true,
+  fileAccept,
   validateFile,
   onAddRow,
   onRemoveRow,
@@ -283,7 +286,7 @@ export function DownloadsSection({
   };
 
   const pickDownloadFile = async (uid: string) => {
-    const files = await pickFiles({ title: "选择包体文件" });
+    const files = await pickFiles({ accept: fileAccept, title: "选择包体文件" });
     const file = files[0];
     if (!file) return;
     log.info("download/file", "选择包体文件", {

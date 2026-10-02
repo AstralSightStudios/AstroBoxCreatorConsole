@@ -35,12 +35,10 @@ import {
 } from "~/logic/publish/external-authorization-drafts";
 import { replaceWatchfaceIdInPackage } from "./watchface-id";
 import {
-  parseCrpack,
   readCrpackThemeId,
   rewriteCrpackCorona,
   validateCrpack,
 } from "./crpack-validate";
-import { normalizeResPackIdInput } from "./res-pack-id";
 import { readPackageVersion } from "./package-version";
 import { toast } from "sonner";
 
@@ -173,13 +171,6 @@ async function applyResPackThemeId(
     }
     asset.file = updated;
   }
-}
-
-/** CRPack 结构预检：发布前确认包体确实是资源包，不阻塞后续 themeId 改写。 */
-export async function assertResPackReady(bytes: Uint8Array, expectedThemeId?: string) {
-  parseCrpack(bytes);
-  const errors = validateCrpack(bytes, expectedThemeId);
-  if (errors.length > 0) throw new Error(errors.join("\n"));
 }
 
 async function encryptDownloadAssets(
@@ -517,7 +508,9 @@ export async function uploadManifestAndAssets({
     await applyWatchfaceId(trialDownloadAssets, itemId.trim(), onProgress);
   }
   if (parsedManifest.item?.restype === "res_pack") {
-    const themeId = normalizeResPackIdInput(itemId);
+    // 不做归一化：表单已校验过格式，这里必须原样使用，
+    // 否则 CSV id 与包内 themeId 会悄悄分叉。
+    const themeId = itemId.trim();
     // 必须早于 encryptDownloadAssets：商店侧 sha256 是从改写后的包体算的。
     await applyResPackThemeId(downloadAssets, themeId, onProgress);
     await applyResPackThemeId(trialDownloadAssets, themeId, onProgress);
@@ -668,7 +661,9 @@ export async function upsertManifestAndAssets({
     await applyWatchfaceId(trialDownloadAssets, itemId, onProgress);
   }
   if (parsedManifest.item?.restype === "res_pack") {
-    const themeId = normalizeResPackIdInput(itemId);
+    // 不做归一化：表单已校验过格式，这里必须原样使用，
+    // 否则 CSV id 与包内 themeId 会悄悄分叉。
+    const themeId = itemId.trim();
     await applyResPackThemeId(downloadAssets, themeId, onProgress);
     await applyResPackThemeId(trialDownloadAssets, themeId, onProgress);
   }

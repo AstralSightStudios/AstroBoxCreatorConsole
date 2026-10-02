@@ -3,6 +3,10 @@ import {
   checkCoverRatio,
   checkIconDimensions,
 } from "./pre-publish-checks";
+import type { ResourceType } from "./resource-type";
+import { validateCanopusIdFormat } from "./canopus-id";
+import { validateResPackIdFormat } from "./res-pack-id";
+import { validateWatchfaceIdFormat } from "./watchface-id";
 export interface ValidationUploadItem {
   id?: string;
   name?: string;
@@ -29,6 +33,8 @@ export interface ValidationLinkInput {
 export interface PublishValidationInput {
   itemId: string;
   itemName: string;
+  /** 资源类型；决定资源 ID 的格式规则。 */
+  resourceType?: ResourceType;
   previews: ValidationUploadItem[];
   icon: ValidationUploadItem | null;
   cover: ValidationUploadItem | null;
@@ -140,7 +146,22 @@ export function validatePublish(
 ): PublishValidationResult {
   const errors: string[] = [];
   if (!input.itemName.trim()) errors.push("请填写资源名称。");
-  if (!input.itemId.trim()) errors.push("请填写资源 ID。");
+  const trimmedId = input.itemId.trim();
+  if (!trimmedId) {
+    errors.push("请填写资源 ID。");
+  } else {
+    // 资源 ID 会写进包体（表盘 12 位 ID、模块前缀、资源包 themeId），
+    // 因此格式不合规必须在这里拦住，而不是发布时静默改写。
+    const idError =
+      input.resourceType === "watchface"
+        ? validateWatchfaceIdFormat(trimmedId)
+        : input.resourceType === "canopus"
+          ? validateCanopusIdFormat(trimmedId)
+          : input.resourceType === "res_pack"
+            ? validateResPackIdFormat(trimmedId)
+            : null;
+    if (idError) errors.push(idError);
+  }
   if (!input.icon) {
     errors.push("请上传图标。");
   } else {

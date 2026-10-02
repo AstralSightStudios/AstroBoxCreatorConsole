@@ -108,6 +108,11 @@ import {
   normalizeResPackIdInput,
   validateResPackIdFormat,
 } from "~/logic/publish/res-pack-id";
+import {
+  readCrpackThemeId,
+  rewriteCrpackCorona,
+  validateCrpack,
+} from "~/logic/publish/crpack-validate";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
   normalizeResourceType,
@@ -805,10 +810,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setItemId(normalizeCanopusIdInput(value));
         return;
       }
-      if (resourceType === "res_pack") {
-        setItemId(normalizeResPackIdInput(value));
-        return;
-      }
+      // 资源包 ID 不做任何自动改写：创作者填什么就存什么，不合规只提示。
+      // 自动替换非法字符会打断输入法组字（拼音中间的组字符会被替成 '-'），
+      // 也会让 CSV id 与包内 themeId 悄悄分叉。
       setItemId(value);
     },
     [resourceType, isEditing],
@@ -1104,6 +1108,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       validatePublish({
         itemId,
         itemName,
+        resourceType,
         previews,
         icon,
         cover,
@@ -1117,6 +1122,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [
       itemId,
       itemName,
+      resourceType,
       previews,
       icon,
       cover,
@@ -2125,6 +2131,35 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     };
   }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperInitial, wallpaperPayload]);
 
+  /**
+   * 资源包体上传前校验。
+   *
+   * themeId 不一致不算错——那正是发布时 applyResPackThemeId 要改写的内容，
+   * 真正的拦截点是结构合法性、legacy 清单名与 TSV 预算。但预算必须按目标
+   * themeId 复算一遍：id 变长会推高每条规则开销，可能从「不超」变成「超」。
+   */
+  const validateSelectedPackage = useCallback(
+    async (file: File) => {
+      if (resourceType !== "res_pack") return readPackageVersion(file);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const current = readCrpackThemeId(bytes);
+      // 用创作者实际填的 ID 复算，不归一化：预算必须按真正会写进 themeId 的值算。
+      const target = itemId.trim();
+      const expect = target || current;
+      const probe =
+        expect && current !== expect
+          ? rewriteCrpackCorona(bytes, { themeId: expect })
+          : bytes;
+      const errors = validateCrpack(probe, expect || undefined);
+      if (errors.length > 0) {
+        const scope = expect && current !== expect ? `按资源 ID「${expect}」复算后` : "";
+        throw new Error(`资源包 ${file.name} ${scope}校验不通过：\n${errors.join("\n")}`);
+      }
+      return readPackageVersion(file);
+    },
+    [resourceType, itemId],
+  );
+
   const refreshPackageVersions = useCallback(
     async (rows: DownloadInput[]): Promise<DownloadInput[]> =>
       Promise.all(
@@ -2619,9 +2654,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
+                fileAccept={
+                  resourceType === "res_pack"
+                    ? "crpack,zip,rpk,mwz,bin,face"
+                    : "zip,rpk,mwz,bin,face"
+                }
                 validateFile={
-                  resourceType === "quick_app" || resourceType === "watchface"
-                    ? readPackageVersion
+                  resourceType === "quick_app" ||
+                  resourceType === "watchface" ||
+                  resourceType === "res_pack"
+                    ? validateSelectedPackage
                     : undefined
                 }
                 onAddRow={addDownloadRow}
