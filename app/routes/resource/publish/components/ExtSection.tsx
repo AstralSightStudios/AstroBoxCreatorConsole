@@ -84,21 +84,6 @@ const EXT_FIELD_HELP: FieldHelpItem[] = [
     description:
       "必需：用户安装本资源时必须一并安装；推荐：安装时展示可勾选项，由用户自行决定。点击已添加捆绑项上的「必需 / 推荐」徽章即可切换。",
   },
-  {
-    label: "捆绑资源与插件",
-    description:
-      "捆绑对象可以选择「资源」（来自资源目录 index_v2.csv）或「插件」（来自 AstroBox-NG-Plugin-Repo 索引）。资源无法捆绑自身。",
-  },
-  {
-    label: "绑定项图标与存在性",
-    description:
-      "已添加的捆绑项会显示对应资源的图标与名称。若出现「目录中已不存在」的红色提示，说明该资源已被从资源目录删除，提交后 PR 审核会判定失败，请移除该捆绑项。",
-  },
-  {
-    label: "ext 自定义 JSON",
-    description:
-      "这里的 JSON 仅用于补充其他自定义字段，会与结构化字段合并后写入 manifest。ext.bundledResources 由上方的捆绑配置自动生成，不要手写。",
-  },
 ];
 
 interface CatalogContext {
