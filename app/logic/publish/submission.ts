@@ -91,21 +91,6 @@ async function prepareTextAsset(
   };
 }
 
-/**
- * 包内 ID 被改写时告知创作者。创作者可能误传了别人的包，改写一旦静默发生，
- * 包内原主就再也追不回来了。只提示、不阻断，写错包由创作者自己负责。
- */
-function notifyIdRewrite(kind: "表盘" | "资源包", fileName: string, original: string | undefined, next: string) {
-  if (original && original === next) return;
-  const scope = fileName ? `（${fileName}）` : "";
-  toast.warning(
-    original
-      ? `已将${scope}包内${kind} ID 从「${original}」改为「${next}」，请确认上传的是本资源对应的包体。`
-      : `已写入${scope}包内${kind} ID「${next}」。`,
-    { duration: 8000 },
-  );
-}
-
 async function applyWatchfaceId(
   assets: DownloadAssetDescriptor[],
   id: string,
@@ -116,10 +101,14 @@ async function applyWatchfaceId(
     if (asset.skipUpload) continue;
     let updated = files.get(asset.file);
     if (!updated) {
-      onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
       const info = await readPackageVersion(asset.file);
-      notifyIdRewrite("表盘", asset.path, info.identity, id);
-      updated = await replaceWatchfaceIdInPackage(asset.file, id);
+      if (info.identity === id) {
+        // 导入时已按资源 ID 改写过了，原样上传。
+        updated = asset.file;
+      } else {
+        onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
+        updated = await replaceWatchfaceIdInPackage(asset.file, id);
+      }
       files.set(asset.file, updated);
     }
     asset.file = updated;
@@ -129,9 +118,14 @@ async function applyWatchfaceId(
 /**
  * 改写 CRPack 包内 `corona.json` 的 themeId。
  *
- * 顺序要点：先读原值并 toast，再按包内原 themeId 做结构校验（放行「格式合法但
- * 与资源 id 不同」的情况，这正是要改写的），改写后再按目标 id 复验——themeId 变长
- * 会推高每条 TSV 规则的开销，可能从「不超」变成「超」。
+ * 顺序要点：先按包内原 themeId 做结构校验（放行「格式合法但与资源 id 不同」的
+ * 情况，这正是要改写的），改写后再按目标 id 复验——themeId 变长会推高每条 TSV
+ * 规则的开销，可能从「不超」变成「超」。
+ *
+ * 正常路径下包内 themeId 在导入时就已改成资源 ID（new.tsx
+ * validateSelectedPackage），这里只在两者仍不一致时兜底改写——例如创作者
+ * 导入包体之后才改资源 ID。兜底改写不再弹提示：那属于创作者主动改 ID，
+ * 且发布流程本身会展示包体路径。
  */
 async function applyResPackThemeId(
   assets: DownloadAssetDescriptor[],
@@ -143,11 +137,8 @@ async function applyResPackThemeId(
     if (asset.skipUpload) continue;
     let updated = files.get(asset.file);
     if (!updated) {
-      onProgress?.(`写入资源包 themeId ${themeId}：${asset.path}`);
       const bytes = new Uint8Array(await asset.file.arrayBuffer());
       const original = readCrpackThemeId(bytes);
-      notifyIdRewrite("资源包", asset.path, original, themeId);
-
       // 结构校验按包内原 themeId 判定，themeId 不一致不算错，那正是要改的。
       const gate = original && validateCrpack(bytes, original).length === 0 ? original : undefined;
       const structural = validateCrpack(bytes, gate);
@@ -155,18 +146,24 @@ async function applyResPackThemeId(
         throw new Error(`资源包 ${asset.path} 校验未通过：\n${structural.join("\n")}`);
       }
 
-      const rewritten = rewriteCrpackCorona(bytes, { themeId });
-      const after = validateCrpack(rewritten, themeId);
-      if (after.length > 0) {
-        throw new Error(
-          `资源包 ${asset.path} 写入 themeId「${themeId}」后校验未通过：\n${after.join("\n")}`,
-        );
+      if (original === themeId) {
+        // 导入时已按资源 ID 改写过了，原样上传：再压一次会产生与行内不同的
+        // 字节，商店侧算出的 sha256 与创作者本地看到的包对不上。
+        updated = asset.file;
+      } else {
+        onProgress?.(`写入资源包 themeId ${themeId}：${asset.path}`);
+        const rewritten = rewriteCrpackCorona(bytes, { themeId });
+        const after = validateCrpack(rewritten, themeId);
+        if (after.length > 0) {
+          throw new Error(
+            `资源包 ${asset.path} 写入 themeId「${themeId}」后校验未通过：\n${after.join("\n")}`,
+          );
+        }
+        updated = new File([rewritten as BlobPart], asset.file.name, {
+          type: asset.file.type || "application/octet-stream",
+          lastModified: asset.file.lastModified,
+        });
       }
-
-      updated = new File([rewritten as BlobPart], asset.file.name, {
-        type: asset.file.type || "application/octet-stream",
-        lastModified: asset.file.lastModified,
-      });
       files.set(asset.file, updated);
     }
     asset.file = updated;

@@ -34,6 +34,7 @@ import {
   type DownloadIdentityKind,
   type DownloadInput,
   type DownloadVersionSource,
+  type ValidatedPackage,
 } from "./types";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import { type UploadItem, FieldHelpButton, FieldHelpDialog, SectionCard } from "./shared";
@@ -45,7 +46,6 @@ import { logFieldChange } from "~/logic/logging/publish-flow";
 import type { UpdateLogEntry } from "./types";
 import {
   computePackageHash,
-  formatPackageVersion,
   type PackageVersionInfo,
 } from "~/logic/publish/package-version";
 
@@ -105,7 +105,7 @@ interface DownloadsSectionProps {
   allowEncryption?: boolean;
   /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
   fileAccept?: string;
-  validateFile?: (file: File) => Promise<PackageVersionInfo>;
+  validateFile?: (file: File) => Promise<ValidatedPackage>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -297,9 +297,13 @@ export function DownloadsSection({
       data: { name: file.name, size: file.size },
     });
     try {
-      const info = await validateFile?.(file);
-      const uploadItem = createUploadItem(file);
-      const packageHash = await computePackageHash(file);
+      // validateFile 可能就地改写过包内 ID，必须用它返回的那份，
+      // 否则行里存的是改写前的包体，发布时又会被改一次。
+      const validated = await validateFile?.(file);
+      const info = validated?.info;
+      const resolved = validated?.file ?? file;
+      const uploadItem = createUploadItem(resolved);
+      const packageHash = await computePackageHash(resolved);
       const readable = Boolean(info?.readable);
       onUpdateRow(uid, (row) => ({
         ...row,
@@ -352,9 +356,9 @@ export function DownloadsSection({
         });
         return;
       }
-      if (readable && info) {
-        toast.success(`已从包体读取版本 ${formatPackageVersion(info)}，已锁定`);
-      } else {
+      // 版本读取成功不提示：包内 ID 改写提示已由 validateFile 在导入时给出，
+      // 而「已锁定」是静默状态，行内版本列已经能看到读到的值。
+      if (!readable) {
         toast.warning(
           `无法从该包体解析版本${info?.reason ? `：${info.reason}` : ""}，请手动填写。`,
         );

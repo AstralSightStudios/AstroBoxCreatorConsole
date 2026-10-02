@@ -91,12 +91,14 @@ import {
   type DownloadInput,
   type LinkInput,
   type UpdateLogEntry,
+  type ValidatedPackage,
 } from "./components/types";
 import { loadDeviceOptions } from "~/logic/devices/catalog";
 import {
   generateUniqueWatchfaceId,
   validateWatchfaceIdFormat,
   fetchExistingCatalogIds,
+  replaceWatchfaceIdInPackage,
   WATCHFACE_ID_PREFIX,
 } from "~/logic/publish/watchface-id";
 import {
@@ -2151,33 +2153,65 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [itemId, itemName, description, resourceType, tagsInput, paidType, authors, links, downloads, trialDownloads, bundledResources, enableAstroBoxCreatorFeatures, extRaw, previews, icon, cover, wallpaperInitial, wallpaperPayload]);
 
   /**
-   * 资源包体上传前校验。
+   * 包体导入：校验结构，并把包内 ID 改写成资源 ID。
    *
-   * themeId 不一致不算错——那正是发布时 applyResPackThemeId 要改写的内容，
-   * 真正的拦截点是结构合法性、legacy 清单名与 TSV 预算。但预算必须按目标
-   * themeId 复算一遍：id 变长会推高每条规则开销，可能从「不超」变成「超」。
+   * 改写放在导入而不是发布有两个原因：创作者在导入那一刻还能换包，等包体
+   * 已经在上传就来不及了；行里存改写后的包体，发布时只剩上传，不会二次改写
+   * 产生与导入时不同的字节。
+   *
+   * themeId 与资源 ID 不一致不算错——那正是要改写的内容，真正的拦截点是结构
+   * 合法性、legacy 清单名与 TSV 预算。但预算必须按目标 themeId 复算一遍：
+   * id 变长会推高每条规则开销，可能从「不超」变成「超」。
    */
   const validateSelectedPackage = useCallback(
-    async (file: File) => {
-      if (resourceType !== "res_pack") return readPackageVersion(file);
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const current = readCrpackThemeId(bytes);
-      // 用创作者实际填的 ID 复算，不归一化：预算必须按真正会写进 themeId 的值算。
+    async (file: File): Promise<ValidatedPackage> => {
+      const info = await readPackageVersion(file);
       const target = itemId.trim();
-      const expect = target || current;
-      const probe =
-        expect && current !== expect
-          ? rewriteCrpackCorona(bytes, { themeId: expect })
-          : bytes;
-      const errors = validateCrpack(probe, expect || undefined);
-      if (errors.length > 0) {
-        // toast 不保留换行，且畸形包可能有几十条错误，这里只列前几条。
-        const shown = errors.slice(0, 3).join("；");
-        const rest = errors.length > 3 ? `；另有 ${errors.length - 3} 项` : "";
-        const scope = expect && current !== expect ? `按资源 ID「${expect}」复算后` : "";
-        throw new Error(`资源包 ${file.name} ${scope}校验不通过：${shown}${rest}`);
+      if (resourceType === "res_pack") {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const current = readCrpackThemeId(bytes);
+        const expect = target || current;
+        const probe =
+          expect && current !== expect
+            ? rewriteCrpackCorona(bytes, { themeId: expect })
+            : bytes;
+        const errors = validateCrpack(probe, expect || undefined);
+        if (errors.length > 0) {
+          // toast 不保留换行，且畸形包可能有几十条错误，这里只列前几条。
+          const shown = errors.slice(0, 3).join("；");
+          const rest = errors.length > 3 ? `；另有 ${errors.length - 3} 项` : "";
+          const scope = expect && current !== expect ? `按资源 ID「${expect}」复算后` : "";
+          throw new Error(`资源包 ${file.name} ${scope}校验不通过：${shown}${rest}`);
+        }
+        // 目标 ID 为空（创作者还没填资源 ID）时不改写，留给发布时兜底。
+        if (current && target && current !== target) {
+          const rewritten = rewriteCrpackCorona(bytes, { themeId: target });
+          const rewrittenFile = new File([rewritten as BlobPart], file.name, {
+            type: file.type || "application/octet-stream",
+            lastModified: file.lastModified,
+          });
+          toast.warning(
+            `包体 ${file.name} 内资源包 ID 已从「${current}」改为「${target}」，请确认上传的是本资源对应的包体。`,
+            { duration: 8000 },
+          );
+          return { info: await readPackageVersion(rewrittenFile), file: rewrittenFile };
+        }
+        return { info, file };
       }
-      return readPackageVersion(file);
+      // 表盘的包内 ID 也在导入时改写，发布时只剩上传。
+      if (resourceType === "watchface" && target) {
+        const inPackId = info.identityKind === "watchface-id" ? info.identity : undefined;
+        if (inPackId && inPackId !== target) {
+          const rewritten = await replaceWatchfaceIdInPackage(file, target);
+          const after = await readPackageVersion(rewritten);
+          toast.warning(
+            `包体 ${file.name} 内表盘 ID 已从「${inPackId}」改为「${target}」，请确认上传的是本资源对应的包体。`,
+            { duration: 8000 },
+          );
+          return { info: after, file: rewritten };
+        }
+      }
+      return { info, file };
     },
     [resourceType, itemId],
   );
@@ -2706,11 +2740,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 allowEncryption={false}
-                validateFile={
-                  resourceType === "quick_app" || resourceType === "watchface"
-                    ? readPackageVersion
-                    : undefined
-                }
+                validateFile={validateSelectedPackage}
                 onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
