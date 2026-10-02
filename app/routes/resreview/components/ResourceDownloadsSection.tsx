@@ -233,6 +233,8 @@ export function ResourceDownloadsSection({ resource }: { resource: PrResourcePre
 
   const renderGroup = (group: DownloadGroup, groupIndex: number) => {
     const foldedLogs = foldedLogsByGroup[groupIndex] ?? [];
+    const isResPack =
+      (resource.manifest?.item?.restype || resource.entry.restype || "").trim() === "res_pack";
     return (
     <div
       key={`${group.kind}-${group.raw}-${group.file}-${group.version}`}
@@ -253,6 +255,11 @@ export function ResourceDownloadsSection({ resource }: { resource: PrResourcePre
         versionCode：
         {group.versionCode !== undefined ? group.versionCode : "未填写（无法检测更新）"}
       </div>
+      {isResPack && (
+        <div className="mt-1 text-[11px] text-white/40">
+          以上为 manifest 记录的版本；资源包的包内版本（corona.json）与 themeId 见「规则检查 · 包体内容校验」。
+        </div>
+      )}
       {foldedLogs.length > 0 && (
         <div className="mt-2 flex min-w-0 flex-col gap-1.5">
           <div className="text-xs font-medium text-white/55">更新日志</div>

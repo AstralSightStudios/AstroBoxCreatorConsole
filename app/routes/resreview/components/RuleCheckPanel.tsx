@@ -407,6 +407,20 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
           ))}
         </ul>
       )}
+      {pkg.resPackErrors && pkg.resPackErrors.length > 0 && (
+        <ul className="mt-1 list-disc pl-4 text-[11px] text-red-400/85">
+          {pkg.resPackErrors.map((e) => (
+            <li key={e} className="break-all">{e}</li>
+          ))}
+        </ul>
+      )}
+      {pkg.resPackSummary && pkg.resPackSummary.length > 0 && (
+        <ul className="mt-1 list-disc pl-4 text-[11px] text-white/45">
+          {pkg.resPackSummary.map((s) => (
+            <li key={s} className="break-all">{s}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -61,6 +61,7 @@ import {
   evaluateDeviceGates,
   findUnpaidSkuDevices,
 } from "./utils/purchase-gate";
+import { inspectResPack } from "~/logic/publish/crpack-validate";
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -95,6 +96,10 @@ export interface PackageCheckResult {
   encryptedByHash?: boolean;
   /** 快应用 rpk 的 debug 调试包判定结论；非快应用包体不产出。 */
   debugVerdict?: RpkDebugVerdict;
+  /** CRPack 校验未通过的明细，逐条展示供人工核对。 */
+  resPackErrors?: string[];
+  /** CRPack 结构摘要（清单名 / 规则数 / TSV 实算字节 / 版本），仅展示不单独判不通过。 */
+  resPackSummary?: string[];
 }
 
 export interface ImageSizeInfo {
@@ -1776,6 +1781,48 @@ export async function runResourceRuleChecks(options: {
           result.idMatch = "skipped";
         }
 
+        // 资源包（CRPack）走专用解析：按内容识别，不看后缀。
+        // 审核侧只读不改写包体，包内 themeId 与 CSV id 不一致直接判不通过。
+        if (restype === "res_pack") {
+          if (result.skipped) {
+            result.typeMatch = "inconclusive";
+            result.idMatch = "skipped";
+          } else {
+            const inspection = inspectResPack(bytes, resourceId || undefined);
+            result.detectedType = inspection.ok ? "zip" : "unknown";
+            result.effectiveCategory = "other";
+            result.typeMatch = inspection.ok ? "match" : "mismatch";
+            const themeId = inspection.contents?.themeId;
+            result.detectedId = themeId;
+            result.idMatch = !resourceId
+              ? "skipped"
+              : inspection.errors.some((e) => e.includes("与资源 ID"))
+                ? "mismatch"
+                : "match";
+            if (inspection.errors.length > 0) result.resPackErrors = inspection.errors;
+
+            const summary: string[] = [];
+            if (inspection.contents) {
+              summary.push(`清单 ${inspection.contents.manifestName}`);
+              summary.push(
+                `规则 ${inspection.ruleCount} 条（mappings ${inspection.contents.mappings.length} + quickappIcons ${inspection.contents.quickappIcons.length}）`,
+              );
+              // 实算字节只展示；仅当真超 32768 / 256 条才在上面的 errors 里判不通过。
+              summary.push(`派生 mappings.tsv 约 ${inspection.tsvBytes} 字节`);
+              summary.push(
+                `包内版本 ${inspection.contents.version ?? "-"}（versionCode ${inspection.contents.versionCode ?? "-"}）`,
+              );
+              for (const mapping of inspection.contents.mappings) {
+                summary.push(`映射 ${mapping.source} → ${mapping.destination}`);
+              }
+              for (const icon of inspection.contents.quickappIcons) {
+                summary.push(`图标 @quickapp-icon/${icon.package} → ${icon.destination}`);
+              }
+            }
+            if (summary.length > 0) result.resPackSummary = summary;
+          }
+        }
+
         // 快应用 rpk 的 debug 调试包判定。
         // - result.skipped（超大包只取头部）时字节被截断，zip 中央目录与签名块
         //   都不在手上，无法判定。
@@ -1852,7 +1899,57 @@ export async function runResourceRuleChecks(options: {
       anchor: "packages",
     });
 
-    // 聚合：快应用包体是否为正式发布包。
+    // 资源包（CRPack）专项：结构合法性、预算实算与改名痕迹。
+    if (restype === "res_pack") {
+      const withSummary = packageChecks.filter((p) => p.resPackSummary?.length);
+      const broken = packageChecks.filter((p) => p.resPackErrors?.length);
+      checks.push({
+        title: "CRPack 结构合法性与清单文件名",
+        status: broken.length > 0 ? "fail" : withSummary.length > 0 ? "pass" : "manual",
+        detail:
+          broken.length > 0
+            ? `${broken.length} 个资源包未通过 CRPack 校验：${broken
+                .flatMap((p) => p.resPackErrors ?? [])
+                .slice(0, 3)
+                .join("；")}`
+            : withSummary.length > 0
+              ? `${withSummary.length} 个资源包解析通过，清单名为 corona.json`
+              : "未能解析到资源包内容，需人工确认上传的包体",
+        anchor: "packages",
+      });
+
+      // 规则数与 TSV 预算只展示实算值：仅当真超 32768 字节 / 256 条才判不通过，
+      // 接近上限不告警，也不计算跨包聚合（发布时无从得知用户装了哪些包）。
+      const overBudget = broken.filter((p) =>
+        p.resPackErrors?.some(
+          (e) => e.includes("32 KiB") || e.includes(`超过设备上限 256 条`),
+        ),
+      );
+      checks.push({
+        title: "映射规则数与派生 mappings.tsv 预算",
+        status: overBudget.length > 0 ? "fail" : "pass",
+        detail: overBudget.length > 0
+          ? `${overBudget.length} 个资源包超出设备 32 KiB / 256 条预算`
+          : withSummary.length > 0
+            ? "规则数与派生 mappings.tsv 均在设备预算内"
+            : "无可核算的资源包",
+        anchor: "packages",
+      });
+
+      // themeId 就是设备上的主题目录名，改 id 等于换目录，旧目录会残留。
+      const renamed =
+        preview.originalId &&
+        preview.originalId !== preview.entry.id &&
+        preview.originalId.trim() !== "";
+      checks.push({
+        title: "资源 ID 未改名（设备主题目录唯一）",
+        status: renamed ? "warn" : "pass",
+        detail: renamed
+          ? `本次将资源 ID 从「${preview.originalId}」改为「${preview.entry.id}」，包内 themeId 随之改写。改名等于换设备主题目录，旧目录会残留在设备上，用户会看到两个主题。`
+          : "资源 ID 未变更，设备主题目录保持稳定。",
+      });
+    }
+
     // 工具链只有 `aiot release`（PRODUCTION）才要求开发者私钥，PRODUCTION 的证书
     // 候选里没有内置证书，因此命中内置调试证书即等价于「这是调试构建产物」。
     // 明细逐包展示在下方「包体内容校验」中，这里与上面两项一致，只给结论标记。
