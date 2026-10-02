@@ -2152,8 +2152,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           : bytes;
       const errors = validateCrpack(probe, expect || undefined);
       if (errors.length > 0) {
+        // toast 不保留换行，且畸形包可能有几十条错误，这里只列前几条。
+        const shown = errors.slice(0, 3).join("；");
+        const rest = errors.length > 3 ? `；另有 ${errors.length - 3} 项` : "";
         const scope = expect && current !== expect ? `按资源 ID「${expect}」复算后` : "";
-        throw new Error(`资源包 ${file.name} ${scope}校验不通过：\n${errors.join("\n")}`);
+        throw new Error(`资源包 ${file.name} ${scope}校验不通过：${shown}${rest}`);
       }
       return readPackageVersion(file);
     },

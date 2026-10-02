@@ -409,9 +409,12 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
       )}
       {pkg.resPackErrors && pkg.resPackErrors.length > 0 && (
         <ul className="mt-1 list-disc pl-4 text-[11px] text-red-400/85">
-          {pkg.resPackErrors.map((e) => (
+          {pkg.resPackErrors.slice(0, 20).map((e) => (
             <li key={e} className="break-all">{e}</li>
           ))}
+          {pkg.resPackErrors.length > 20 && (
+            <li>另有 {pkg.resPackErrors.length - 20} 项校验未通过</li>
+          )}
         </ul>
       )}
       {pkg.resPackSummary && pkg.resPackSummary.length > 0 && (
