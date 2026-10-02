@@ -272,23 +272,25 @@ export function DraftActions({
                             {formatDraftTime(draft.savedAt)}
                           </Text>
                         </div>
-                        <Button
-                          size="1"
-                          variant="ghost"
-                          onClick={() => onRestoreDraft(draft)}
-                          className="opacity-0 group-hover:opacity-100 transition"
-                        >
-                          恢复
-                        </Button>
-                        <Button
-                          size="1"
-                          variant="ghost"
-                          color="red"
-                          onClick={() => onDeleteDraft(draft.id)}
-                          className="opacity-0 group-hover:opacity-100 transition"
-                        >
-                          <TrashIcon size={12} />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button
+                            size="1"
+                            variant="ghost"
+                            onClick={() => onRestoreDraft(draft)}
+                            className="mx-0! opacity-0 transition group-hover:opacity-100"
+                          >
+                            恢复
+                          </Button>
+                          <Button
+                            size="1"
+                            variant="ghost"
+                            color="red"
+                            onClick={() => onDeleteDraft(draft.id)}
+                            className="mx-0! opacity-0 transition group-hover:opacity-100"
+                          >
+                            <TrashIcon size={12} />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
