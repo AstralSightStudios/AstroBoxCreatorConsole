@@ -3,6 +3,8 @@
  * 用于「前往修改」类交互——弹窗告知问题后，用户点击按钮应立刻看到是哪一行出了问题。
  */
 
+import type { PublishFieldKey } from "./validation";
+
 /**
  * 一次脉冲：行背景由亮到暗淡出，不使用边框或阴影，
  * 避免覆盖行自身的告警边框色（versionCode 未递增的行是红色边框）。
@@ -80,6 +82,17 @@ export function flashDownloadRow(uid: string | null | undefined): void {
       ? CSS.escape(uid)
       : uid;
   locateAndFlash(`[data-download-row-uid="${escaped}"]`);
+}
+
+/**
+ * 滚动并闪烁到指定表单项。
+ *
+ * 表单项在切换步骤时是条件渲染的（离开第1 步就卸载），所以这里走带重试的
+ * 选择器版本：先把步骤切回去，再由重试等它重新挂载。
+ */
+export function flashPublishField(field: PublishFieldKey | null | undefined): void {
+  if (!field) return;
+  locateAndFlash(`[data-publish-field="${field}"]`);
 }
 
 /** 高亮一组行中的第一行，通常是有问题的那一行。 */

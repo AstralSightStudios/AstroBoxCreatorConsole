@@ -35,6 +35,27 @@ export const PUBLISH_TAGS_MIN = 3;
 /** 标签数量建议上限，仅用于文案提示，不做强制拦截。 */
 export const PUBLISH_TAGS_SUGGESTED_MAX = 10;
 
+/**
+ * 校验项对应的表单位置。取值必须与各 Section 上的 `data-publish-field`
+ * 一致，`flashPublishField` 靠它定位 DOM。
+ */
+export type PublishFieldKey =
+  | "itemName"
+  | "itemId"
+  | "description"
+  | "tags"
+  | "icon"
+  | "previews"
+  | "cover"
+  | "downloads"
+  | "trialDownloads"
+  | "links";
+
+export interface PublishValidationIssue {
+  field: PublishFieldKey;
+  message: string;
+}
+
 export interface PublishValidationInput {
   itemId: string;
   itemName: string;
@@ -63,6 +84,9 @@ export {
 } from "./pre-publish-checks";
 
 export interface PublishValidationResult {
+  /** 带字段归属的校验项，「下一步」时据此滚动闪烁到出问题的表单项。 */
+  issues: PublishValidationIssue[];
+  /** 只要文案的等价视图，按 issues 顺序排列。 */
   errors: string[];
   linkErrors: Array<string | null>;
 }
@@ -99,7 +123,8 @@ export function validateLink(link: ValidationLinkInput): string | null {
 function validateDownloadRows(
   rows: ValidationDownloadInput[],
   label: string,
-): string[] {
+  field: PublishFieldKey,
+): PublishValidationIssue[] {
   return rows.flatMap((row, index) => {
     const missing = [
       !row.platformId.trim() && "设备",
@@ -107,7 +132,7 @@ function validateDownloadRows(
       !row.file && !row.existingFileName?.trim() && "包体",
     ].filter(Boolean);
     return missing.length
-      ? [`${label}第 ${index + 1} 行缺少${missing.join("、")}。`]
+      ? [{ field, message: `${label}第 ${index + 1} 行缺少${missing.join("、")}。` }]
       : [];
   });
 }
@@ -138,53 +163,72 @@ export function containsUrlUnsafeFilename(name: string): boolean {
 export function validatePushQuality(
   description: string,
   tags: string[],
-): string[] {
-  const errors: string[] = [];
+): PublishValidationIssue[] {
+  const issues: PublishValidationIssue[] = [];
   if (!description.trim()) {
-    errors.push(
-      "请填写资源简介。简介内容参与算法与推流，请准确说明资源的实际功能与适用场景。",
-    );
+    issues.push({
+      field: "description",
+      message:
+        "请填写资源简介。简介内容参与算法与推流，请准确说明资源的实际功能与适用场景。",
+    });
   }
   // 调用方可能传入未清洗的原始分段，这里按有效标签计数，避免空串骗过下限。
   const effectiveCount = tags.map((tag) => tag.trim()).filter(Boolean).length;
   if (effectiveCount < PUBLISH_TAGS_MIN) {
-    errors.push(
-      `标签数量不足，请至少添加 ${PUBLISH_TAGS_MIN} 个标签。标签内容参与搜索与推流，请填写与资源功能贴合的标签。`,
-    );
+    issues.push({
+      field: "tags",
+      message: `标签数量不足，请至少添加 ${PUBLISH_TAGS_MIN} 个标签。标签内容参与搜索与推流，请填写与资源功能贴合的标签。`,
+    });
   }
-  return errors;
+  return issues;
 }
 
-function validateUrlUnsafeFilenames(input: PublishValidationInput): string[] {
-  const offenders: Array<{ label: string; name: string }> = [];
-  const collect = (label: string, name?: string) => {
+function validateUrlUnsafeFilenames(
+  input: PublishValidationInput,
+): PublishValidationIssue[] {
+  const offenders: Array<{ label: string; name: string; field: PublishFieldKey }> = [];
+  const collect = (field: PublishFieldKey, label: string, name?: string) => {
     if (name && containsUrlUnsafeFilename(name)) {
-      offenders.push({ label, name });
+      offenders.push({ field, label, name });
     }
   };
   input.previews.forEach((item, index) =>
-    collect(`预览图${input.previews.length > 1 ? ` ${index + 1}` : ""}`, item.name),
+    collect(
+      "previews",
+      `预览图${input.previews.length > 1 ? ` ${index + 1}` : ""}`,
+      item.name,
+    ),
   );
-  collect("图标", input.icon?.name);
-  collect("封面", input.cover?.name);
-  input.downloads.forEach((row) => collect("正式包", row.file?.name || row.existingFileName));
-  input.trialDownloads.forEach((row) => collect("试用包", row.file?.name || row.existingFileName));
+  collect("icon", "图标", input.icon?.name);
+  collect("cover", "封面", input.cover?.name);
+  input.downloads.forEach((row) =>
+    collect("downloads", "正式包", row.file?.name || row.existingFileName),
+  );
+  input.trialDownloads.forEach((row) =>
+    collect("trialDownloads", "试用包", row.file?.name || row.existingFileName),
+  );
+  // 汇总为一条，但字段归属取第一个出问题的文件，滚动定位到那里。
   if (offenders.length === 0) return [];
   return [
-    `以下文件名包含 # ? % 等字符，客户端拼接 URL 时会被截断导致无法加载，请重命名后重新上传：${offenders
-      .map((item) => `${item.label}「${item.name}」`)
-      .join("、")}`,
+    {
+      field: offenders[0].field,
+      message: `以下文件名包含 # ? % 等字符，客户端拼接 URL 时会被截断导致无法加载，请重命名后重新上传：${offenders
+        .map((item) => `${item.label}「${item.name}」`)
+        .join("、")}`,
+    },
   ];
 }
 
 export function validatePublish(
   input: PublishValidationInput,
 ): PublishValidationResult {
-  const errors: string[] = [];
-  if (!input.itemName.trim()) errors.push("请填写资源名称。");
+  const issues: PublishValidationIssue[] = [];
+  const push = (field: PublishFieldKey, message: string) => issues.push({ field, message });
+
+  if (!input.itemName.trim()) push("itemName", "请填写资源名称。");
   const trimmedId = input.itemId.trim();
   if (!trimmedId) {
-    errors.push("请填写资源 ID。");
+    push("itemId", "请填写资源 ID。");
   } else {
     // 资源 ID 会写进包体（表盘 12 位 ID、模块前缀、资源包 themeId），
     // 因此格式不合规必须在这里拦住，而不是发布时静默改写。
@@ -196,25 +240,25 @@ export function validatePublish(
           : input.resourceType === "res_pack"
             ? validateResPackIdFormat(trimmedId)
             : null;
-    if (idError) errors.push(idError);
+    if (idError) push("itemId", idError);
   }
   // 放在 ID 之后、媒体规格之前：这两条是推流质量问题，优先级高于配图，
-  // 且步骤流转只提示 errors[0]，让创作者先补齐推流输入。
-  errors.push(...validatePushQuality(input.description, input.tags));
+  // 且步骤流转只提示第一条，让创作者先补齐推流输入。
+  issues.push(...validatePushQuality(input.description, input.tags));
   if (!input.icon) {
-    errors.push("请上传图标。");
+    push("icon", "请上传图标。");
   } else {
     const iconError = checkIconDimensions(input.icon);
-    if (iconError) errors.push(iconError);
+    if (iconError) push("icon", iconError);
   }
-  if (input.previews.length === 0) errors.push("请至少上传一张预览图。");
+  if (input.previews.length === 0) push("previews", "请至少上传一张预览图。");
   const hasCover = input.usePreviewAsCover
     ? input.coverPreviewId
       ? input.previews.some((preview) => preview.id === input.coverPreviewId)
       : input.previews.length > 0
     : Boolean(input.cover);
   if (!hasCover) {
-    errors.push("请选择或上传封面。");
+    push("cover", "请选择或上传封面。");
   } else {
     const coverItem = input.usePreviewAsCover
       ? (input.previews.find((preview) => preview.id === input.coverPreviewId) ??
@@ -222,30 +266,31 @@ export function validatePublish(
       : input.cover;
     if (coverItem) {
       const ratioError = checkCoverRatio(coverItem);
-      if (ratioError) errors.push(ratioError);
+      if (ratioError) push("cover", ratioError);
       if (coverItem.file) {
         const sizeError = checkCoverFileSize(coverItem.file.size);
-        if (sizeError) errors.push(sizeError);
+        if (sizeError) push("cover", sizeError);
       }
     }
   }
-  if (input.downloads.length === 0) errors.push("请至少添加一个正式下载设备。");
-  errors.push(...validateDownloadRows(input.downloads, "正式下载"));
-  errors.push(...validateDownloadRows(input.trialDownloads, "试用下载"));
+  if (input.downloads.length === 0) push("downloads", "请至少添加一个正式下载设备。");
+  issues.push(...validateDownloadRows(input.downloads, "正式下载", "downloads"));
+  issues.push(...validateDownloadRows(input.trialDownloads, "试用下载", "trialDownloads"));
   // 加密上传的包体必须同时开启 ext.enableAstroBoxCreatorFeatures：
   // 客户端依据该开关决定是否请求 purchase_info 与加密文件密钥，
   // 开关关闭时密文不会被解密，类型嗅探失败后安装直接报错。
   const encryptedDevices = encryptedDownloadDevices(input.downloads);
   if (encryptedDevices.length > 0 && !input.enableAstroBoxCreatorFeatures) {
-    errors.push(
+    push(
+      "downloads",
       `以下设备启用了加密上传：${encryptedDevices.join("、")}。加密包体必须同时开启「启用购买与资源加密相关功能」，否则客户端不会请求加密密钥、不解密包体，安装时会失败。`,
     );
   }
-  errors.push(...validateUrlUnsafeFilenames(input));
+  issues.push(...validateUrlUnsafeFilenames(input));
   const linkErrors = input.links.map(validateLink);
   const linkErrorText = linkErrors.filter(Boolean).join("；");
   if (linkErrorText) {
-    errors.push(`外部链接填写不完整：${linkErrorText}`);
+    push("links", `外部链接填写不完整：${linkErrorText}`);
   }
-  return { errors, linkErrors };
+  return { issues, errors: issues.map((issue) => issue.message), linkErrors };
 }

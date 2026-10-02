@@ -214,6 +214,7 @@ export function LinksSection({ links, setLinks }: LinksSectionProps) {
     return (
         <SectionCard
             title="外部链接"
+            fieldKey="links"
             description="外链用于补充官网、文档、社区等入口。"
             headerExtra={
                 <div className="flex shrink-0 items-center gap-1.5">

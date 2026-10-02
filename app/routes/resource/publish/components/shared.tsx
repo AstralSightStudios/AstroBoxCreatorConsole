@@ -1,6 +1,7 @@
 import { Button } from "@radix-ui/themes";
 import { Dialog } from "~/components/ScaleAwareThemes";
 import { ScrollArea } from "~/components/scroll-area";
+import type { PublishFieldKey } from "~/logic/publish/validation";
 import {
     ArrowSquareOutIcon,
     QuestionIcon,
@@ -15,6 +16,7 @@ export function SectionCard({
   className,
   padding = true,
   headerExtra,
+  fieldKey,
 }: {
   title?: React.ReactNode;
   description?: React.ReactNode;
@@ -22,9 +24,12 @@ export function SectionCard({
   className?: string;
   padding?: boolean;
   headerExtra?: React.ReactNode;
+  /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
+  fieldKey?: PublishFieldKey;
 }) {
   return (
     <div
+      data-publish-field={fieldKey}
       className={`min-w-0 rounded-[14px] border border-white/10 bg-nav-item w-full ${className}`}
     >
       <div className={`flex min-w-0 flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
@@ -51,13 +56,16 @@ export function Field({
   label,
   hint,
   children,
+  fieldKey,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
+  fieldKey?: PublishFieldKey;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div data-publish-field={fieldKey} className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 px-1.5 pt-1.5">
         <p className="text-sm font-medium text-white">{label}</p>
         {hint && <p className="text-xs text-white/60">{hint}</p>}

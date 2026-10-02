@@ -11,6 +11,7 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
+import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
 
@@ -51,6 +52,7 @@ function MediaTile({
   emptyClassName,
   mediaClassName,
   imageClassName,
+  fieldKey,
   onPick,
   onRemove,
 }: {
@@ -61,11 +63,16 @@ function MediaTile({
   emptyClassName?: string;
   mediaClassName?: string;
   imageClassName?: string;
+  /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
+  fieldKey?: PublishFieldKey;
   onPick: () => void;
   onRemove: () => void;
 }) {
   return (
-    <div className="relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div
+      data-publish-field={fieldKey}
+      className="relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3"
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-white">{label}</p>
@@ -385,6 +392,7 @@ export function MediaSection({
           <MediaTile
             label="图标"
             hint="宽高比 1:1"
+            fieldKey="icon"
             media={icon}
             uploading={iconUploading}
             emptyClassName="aspect-square max-md:aspect-[3/1]"
@@ -396,6 +404,7 @@ export function MediaSection({
           <MediaTile
             label="封面"
             hint="宽高比 3:2"
+            fieldKey="cover"
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
@@ -404,7 +413,7 @@ export function MediaSection({
           />
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div data-publish-field="previews" className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-white">预览图</p>

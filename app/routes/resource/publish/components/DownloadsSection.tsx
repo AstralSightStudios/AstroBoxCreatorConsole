@@ -35,6 +35,7 @@ import {
   type DownloadInput,
   type DownloadVersionSource,
 } from "./types";
+import type { PublishFieldKey } from "~/logic/publish/validation";
 import { type UploadItem, FieldHelpButton, FieldHelpDialog, SectionCard } from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
 import { VersionEditorDialog } from "./VersionEditorDialog";
@@ -91,6 +92,8 @@ function formatVersionWithCode(version?: string, versionCode?: number): string {
 interface DownloadsSectionProps {
   title?: string;
   description?: string;
+  /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
+  fieldKey?: PublishFieldKey;
   emptyMessage?: string;
   helperText?: string;
   downloads: DownloadInput[];
@@ -128,6 +131,7 @@ interface DownloadsSectionProps {
 export function DownloadsSection({
   title = "资源下载配置",
   description = "为不同设备提供不同的资源包体",
+  fieldKey = "downloads",
   emptyMessage = "还未添加任何设备",
   helperText = "应最少添加一个设备才能发布资源。",
   downloads,
@@ -396,6 +400,7 @@ export function DownloadsSection({
     <SectionCard
       title={title}
       description={description}
+      fieldKey={fieldKey}
       headerExtra={
         <FieldHelpButton
           onClick={() => setHelpOpen(true)}

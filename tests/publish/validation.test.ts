@@ -64,10 +64,48 @@ describe("publish validation", () => {
   });
 
   test("简介与标签同时不合规时两条错误都给出", () => {
-    const errors = validatePushQuality("", ["only-one"]);
-    expect(errors).toHaveLength(2);
-    expect(errors.join()).toContain("请填写资源简介");
-    expect(errors.join()).toContain("标签数量不足");
+    const issues = validatePushQuality("", ["only-one"]);
+    expect(issues).toHaveLength(2);
+    expect(issues.map((issue) => issue.message).join()).toContain("请填写资源简介");
+    expect(issues.map((issue) => issue.message).join()).toContain("标签数量不足");
+    // 字段归属决定滚动闪烁的落点
+    expect(issues.map((issue) => issue.field)).toEqual(["description", "tags"]);
+  });
+
+  test("每条校验项都带字段归属，供滚动闪烁定位", () => {
+    expect(validatePushQuality("", []).map((issue) => issue.field)).toEqual([
+      "description",
+      "tags",
+    ]);
+    const cases: Array<[Parameters<typeof validatePublish>[0], string]> = [
+      [{ ...validInput, itemName: " " }, "itemName"],
+      [{ ...validInput, itemId: "" }, "itemId"],
+      [{ ...validInput, resourceType: "res_pack", itemId: "Bad Id" }, "itemId"],
+      [{ ...validInput, icon: null }, "icon"],
+      [{ ...validInput, previews: [] }, "previews"],
+      [{ ...validInput, cover: null, usePreviewAsCover: false }, "cover"],
+      [{ ...validInput, downloads: [] }, "downloads"],
+      [
+        {
+          ...validInput,
+          downloads: [{ platformId: "", version: "", file: null }],
+        },
+        "downloads",
+      ],
+      [
+        {
+          ...validInput,
+          trialDownloads: [{ platformId: "d", version: "", file: null }],
+        },
+        "trialDownloads",
+      ],
+      [{ ...validInput, links: [{ icon: "i", title: "t", url: "http://x" }] }, "links"],
+    ];
+    for (const [input, field] of cases) {
+      const issues = validatePublish(input).issues;
+      expect(issues.length).toBeGreaterThan(0);
+      expect(issues[0].field).toBe(field as never);
+    }
   });
 
   test("资源 ID 格式不合规时拦截发布（按资源类型）", () => {

@@ -220,7 +220,7 @@ export function BasicInfoSection({
         </div>*/}
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        <Field label="资源名称">
+        <Field label="资源名称" fieldKey="itemName">
           <TextField.Root
             placeholder="请输入资源名称"
             value={itemName}
@@ -230,6 +230,7 @@ export function BasicInfoSection({
         </Field>
         <Field
           label="资源 ID"
+          fieldKey="itemId"
           hint={
             resourceType === "quick_app"
               ? "填写快应用包名"
@@ -309,7 +310,7 @@ export function BasicInfoSection({
           </div>
         </Field>
       </div>
-      <Field label="资源简介" hint="参与算法与推流，必填">
+      <Field label="资源简介" fieldKey="description" hint="参与算法与推流，必填">
         <TextArea
           rows={3}
           placeholder="用几句话介绍你的资源，方便审核与展示"
@@ -320,6 +321,7 @@ export function BasicInfoSection({
       </Field>
       <Field
         label="标签"
+        fieldKey="tags"
         hint={`参与搜索与推流，至少 ${PUBLISH_TAGS_MIN} 个（当前 ${tags.length} 个）`}
       >
         <div className="flex flex-col gap-2">

@@ -140,7 +140,10 @@ import {
   checkCoverRatio,
   checkIconDimensions,
 } from "~/logic/publish/pre-publish-checks";
-import { flashFirstDownloadRow } from "~/logic/publish/scroll-highlight";
+import {
+  flashFirstDownloadRow,
+  flashPublishField,
+} from "~/logic/publish/scroll-highlight";
 import {
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
@@ -1368,15 +1371,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const goToStep = (index: number) => {
     const target = Math.max(0, Math.min(2, index));
-    // 简介与标签参与推荐推流，单独提示并把两条原因一起给出：
-    // 只报 errors[0] 会让创作者来回改两轮才补齐推流输入。
+    // 先切回第 1 步再定位：表单是条件渲染的，不切回去元素根本不在 DOM 里。
+    const backToForm = () => {
+      setActiveStepIndex(0);
+    };
+    // 简介与标签参与推荐推流，各自独立提示：
+    // 合并成一条会让「只有标签有问题」的创作者看到自己没填简介的误报。
     if (target > 0) {
-      const pushQualityErrors = validatePushQuality(description, tags);
-      if (pushQualityErrors.length > 0) {
-        toast.error(
-          `简介与标签内容参与社区推荐推流，请按提示修改：${pushQualityErrors.join("；")}`,
-        );
-        setActiveStepIndex(0);
+      const pushIssues = validatePushQuality(description, tags);
+      if (pushIssues.length > 0) {
+        for (const issue of pushIssues) toast.error(issue.message);
+        backToForm();
+        for (const issue of pushIssues) flashPublishField(issue.field);
         return;
       }
     }
@@ -1384,12 +1390,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
     if (target > 0 && missingVersionCodeRows.length > 0) {
       setVersionCodeWarningRows(missingVersionCodeRows);
-      setActiveStepIndex(0);
+      backToForm();
       return;
     }
-    if (target > 0 && publishValidation.errors.length) {
-      toast.error(publishValidation.errors[0]);
-      setActiveStepIndex(0);
+    const firstIssue = publishValidation.issues[0];
+    if (target > 0 && firstIssue) {
+      toast.error(firstIssue.message);
+      backToForm();
+      flashPublishField(firstIssue.field);
       return;
     }
     if (target > 1 && (repoStatus !== "success" || !repoInfo?.commitSha)) {
@@ -1810,9 +1818,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       // 用 parseTagText 而非只按分号切分：与界面上展示的标签保持一致，
       // 否则含逗号的标签进目录条目时会被拆成两个。
       const tags = parseTagText(tagsInput);
-      const pushQualityErrors = validatePushQuality(description, tags);
-      if (pushQualityErrors.length > 0) {
-        throw new Error(pushQualityErrors.join("；"));
+      const pushIssues = validatePushQuality(description, tags);
+      if (pushIssues.length > 0) {
+        throw new Error(pushIssues.map((issue) => issue.message).join("；"));
       }
 
       const deviceMap = new Map(deviceOptions.map((d) => [d.id, d]));
@@ -2688,6 +2696,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               />
               <DownloadsSection
                 title="试用版下载配置"
+                fieldKey="trialDownloads"
                 description="可选。结构与下载配置一致，但不允许加密上传。如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
                 emptyMessage="还未添加任何试用下载设备"
                 helperText=""
