@@ -30,9 +30,18 @@ export interface ValidationLinkInput {
   url: string;
 }
 
+/** 标签数量下限：简介与标签是算法推流的输入，标签太少会让检索面过窄。 */
+export const PUBLISH_TAGS_MIN = 3;
+/** 标签数量建议上限，仅用于文案提示，不做强制拦截。 */
+export const PUBLISH_TAGS_SUGGESTED_MAX = 10;
+
 export interface PublishValidationInput {
   itemId: string;
   itemName: string;
+  /** 资源简介，参与算法与推流，必填。 */
+  description: string;
+  /** 已解析的标签列表，参与搜索与推流，数量需达到 PUBLISH_TAGS_MIN。 */
+  tags: string[];
   /** 资源类型；决定资源 ID 的格式规则。 */
   resourceType?: ResourceType;
   previews: ValidationUploadItem[];
@@ -119,6 +128,33 @@ export function containsUrlUnsafeFilename(name: string): boolean {
   return /[#?%]/.test(name);
 }
 
+/**
+ * 简介与标签是算法推流的直接输入，因此强制校验：
+ * 简介不得为空，标签数量不得少于 PUBLISH_TAGS_MIN。
+ *
+ * 报错文案要说明该字段参与算法与推流——只说「请填写」创作者会当成格式要求
+ * 随便糊一句，导致推流输入失真。
+ */
+export function validatePushQuality(
+  description: string,
+  tags: string[],
+): string[] {
+  const errors: string[] = [];
+  if (!description.trim()) {
+    errors.push(
+      "请填写资源简介。简介内容参与算法与推流，请准确说明资源的实际功能与适用场景。",
+    );
+  }
+  // 调用方可能传入未清洗的原始分段，这里按有效标签计数，避免空串骗过下限。
+  const effectiveCount = tags.map((tag) => tag.trim()).filter(Boolean).length;
+  if (effectiveCount < PUBLISH_TAGS_MIN) {
+    errors.push(
+      `标签数量不足，请至少添加 ${PUBLISH_TAGS_MIN} 个标签。标签内容参与搜索与推流，请填写与资源功能贴合的标签。`,
+    );
+  }
+  return errors;
+}
+
 function validateUrlUnsafeFilenames(input: PublishValidationInput): string[] {
   const offenders: Array<{ label: string; name: string }> = [];
   const collect = (label: string, name?: string) => {
@@ -162,6 +198,9 @@ export function validatePublish(
             : null;
     if (idError) errors.push(idError);
   }
+  // 放在 ID 之后、媒体规格之前：这两条是推流质量问题，优先级高于配图，
+  // 且步骤流转只提示 errors[0]，让创作者先补齐推流输入。
+  errors.push(...validatePushQuality(input.description, input.tags));
   if (!input.icon) {
     errors.push("请上传图标。");
   } else {

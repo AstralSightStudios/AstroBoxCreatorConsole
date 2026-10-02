@@ -17,6 +17,10 @@ import {
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
 import { CANOPUS_ID_PREFIX } from "~/logic/publish/canopus-id";
 import { RES_PACK_THEME_ID_MAX_LENGTH } from "~/logic/publish/res-pack-id";
+import {
+  PUBLISH_TAGS_MIN,
+  PUBLISH_TAGS_SUGGESTED_MAX,
+} from "~/logic/publish/validation";
 import type { ResourceType } from "~/logic/publish/resource-type";
 
 function describeItemId(resourceType: ResourceType): FieldHelpItem {
@@ -70,12 +74,11 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
     {
       label: "资源简介",
       description:
-        "参与社区的推荐推流，描述不准或内容单薄会让资源难以被目标用户看到，同时也是审核参考。请准确说明实际功能，并尽量写全主要功能、适用场景和使用方法。",
+        "必填。参与算法与推流，描述不准或内容单薄会让资源难以被目标用户看到，同时也是审核参考。请准确说明实际功能与适用场景。",
     },
     {
       label: "标签",
-      description:
-        "参与社区搜索和推荐推流，是资源被用户找到的重要途径。围绕资源的真实用途准确添加，宁可多打几个覆盖面更广的 tag，建议不超过 10 个。",
+      description: `必填，至少 ${PUBLISH_TAGS_MIN} 个。参与搜索与推流，是资源被用户找到的重要途径。请填写与资源功能贴合的标签，建议不超过 ${PUBLISH_TAGS_SUGGESTED_MAX} 个。`,
     },
     {
       label: "付费类型",
@@ -306,7 +309,7 @@ export function BasicInfoSection({
           </div>
         </Field>
       </div>
-      <Field label="资源简介">
+      <Field label="资源简介" hint="参与算法与推流，必填">
         <TextArea
           rows={3}
           placeholder="用几句话介绍你的资源，方便审核与展示"
@@ -315,7 +318,10 @@ export function BasicInfoSection({
           radius="large"
         />
       </Field>
-      <Field label="标签">
+      <Field
+        label="标签"
+        hint={`参与搜索与推流，至少 ${PUBLISH_TAGS_MIN} 个（当前 ${tags.length} 个）`}
+      >
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             {tags.map((tag, index) => (

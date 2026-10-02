@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   containsUrlUnsafeFilename,
   normalizeLinkUrl,
+  PUBLISH_TAGS_MIN,
   validateLink,
   validatePublish,
+  validatePushQuality,
 } from "../../app/logic/publish/validation";
 import {
   createUploadItem,
@@ -15,6 +17,8 @@ const coverImage = { file: new Blob(), width: 150, height: 100 };
 const validInput = {
   itemId: "com.example.app",
   itemName: "Example",
+  description: "一个示例资源，用于演示各项功能。",
+  tags: ["tool", "demo", "sample"],
   previews: [{ ...coverImage, id: "preview" }],
   icon: image,
   cover: null,
@@ -27,6 +31,45 @@ const validInput = {
 };
 
 describe("publish validation", () => {
+  test("简介为空时拦截发布并说明它参与算法与推流", () => {
+    for (const description of ["", "   ", "\n\t "]) {
+      const joined = validatePublish({ ...validInput, description }).errors.join();
+      expect(joined).toContain("请填写资源简介");
+      expect(joined).toContain("参与算法与推流");
+    }
+  });
+
+  test("标签数量不足时拦截发布并说明它参与搜索与推流", () => {
+    // 下限为 3：恰好 3 个通过，2 个拦截
+    expect(PUBLISH_TAGS_MIN).toBe(3);
+    expect(
+      validatePublish({ ...validInput, tags: ["a", "b", "c"] }).errors,
+    ).toEqual([]);
+    const joined = validatePublish({ ...validInput, tags: ["a", "b"] }).errors.join();
+    expect(joined).toContain("标签数量不足");
+    expect(joined).toContain("参与搜索与推流");
+    expect(joined).toContain("与资源功能贴合");
+    expect(
+      validatePublish({ ...validInput, tags: [] }).errors.join(),
+    ).toContain("标签数量不足");
+  });
+
+  test("空白标签不计入有效数量", () => {
+    // 3 个有效标签 + 若干空白段：空白不算数也不影响通过
+    expect(
+      validatePushQuality("简介", ["a", " ", "b", "", "  ", "c"]),
+    ).toEqual([]);
+    // 去掉 c 后只剩 2 个有效标签，应拦截
+    expect(validatePushQuality("简介", ["a", " ", "b", ""])).toHaveLength(1);
+  });
+
+  test("简介与标签同时不合规时两条错误都给出", () => {
+    const errors = validatePushQuality("", ["only-one"]);
+    expect(errors).toHaveLength(2);
+    expect(errors.join()).toContain("请填写资源简介");
+    expect(errors.join()).toContain("标签数量不足");
+  });
+
   test("资源 ID 格式不合规时拦截发布（按资源类型）", () => {
     // 资源包：只允许小写字母、数字、下划线、连字符
     expect(

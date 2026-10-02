@@ -131,7 +131,7 @@ import {
 } from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
-import { validatePublish } from "~/logic/publish/validation";
+import { validatePublish, validatePushQuality } from "~/logic/publish/validation";
 import {
   COVER_COMPRESS_TARGET_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
@@ -1108,6 +1108,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       validatePublish({
         itemId,
         itemName,
+        description,
+        tags,
         resourceType,
         previews,
         icon,
@@ -1122,6 +1124,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [
       itemId,
       itemName,
+      description,
+      tags,
       resourceType,
       previews,
       icon,
@@ -1364,10 +1368,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const goToStep = (index: number) => {
     const target = Math.max(0, Math.min(2, index));
-    if (target > 0 && tags.length === 0) {
-      toast.error("请至少添加一个标签。");
-      setActiveStepIndex(0);
-      return;
+    // 简介与标签参与推荐推流，单独提示并把两条原因一起给出：
+    // 只报 errors[0] 会让创作者来回改两轮才补齐推流输入。
+    if (target > 0) {
+      const pushQualityErrors = validatePushQuality(description, tags);
+      if (pushQualityErrors.length > 0) {
+        toast.error(
+          `简介与标签内容参与社区推荐推流，请按提示修改：${pushQualityErrors.join("；")}`,
+        );
+        setActiveStepIndex(0);
+        return;
+      }
     }
     // versionCode 为强制项。校验放在 goToStep 而非「下一步」按钮上，
     // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
@@ -1796,12 +1807,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error("资源 ID 已变更，请重新上传仓库文件后再提交 PR。");
       }
 
-      const tags = tagsInput
-        .split(/[;；]/)
-        .map((t) => t.trim())
-        .filter(Boolean);
-      if (tags.length === 0) {
-        throw new Error("请至少添加一个标签。");
+      // 用 parseTagText 而非只按分号切分：与界面上展示的标签保持一致，
+      // 否则含逗号的标签进目录条目时会被拆成两个。
+      const tags = parseTagText(tagsInput);
+      const pushQualityErrors = validatePushQuality(description, tags);
+      if (pushQualityErrors.length > 0) {
+        throw new Error(pushQualityErrors.join("；"));
       }
 
       const deviceMap = new Map(deviceOptions.map((d) => [d.id, d]));
