@@ -2,22 +2,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import {
   useCallback,
-  useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type UIEvent,
 } from "react";
+import { useLocation } from "react-router";
+import { useFrozenOutlet } from "./use-frozen-outlet";
 import {
-  UNSAFE_DataRouterContext,
-  UNSAFE_DataRouterStateContext,
-  UNSAFE_LocationContext,
-  UNSAFE_NavigationContext,
-  UNSAFE_RouteContext,
-  useLocation,
-  useOutlet,
-} from "react-router";
+  ENTER_DURATION,
+  ENTER_EASE,
+  EXIT_DURATION,
+  EXIT_EASE,
+  getExitOffset,
+  getInitialOffset,
+  type TransitionAxis,
+} from "./transition-config";
 import Header from "~/components/header";
 import { useNavItemPreferences } from "~/config/nav";
 import {
@@ -27,10 +27,8 @@ import {
 } from "~/layout/header-actions";
 import { findNavIndex, getSegments, normalizePath } from "~/layout/nav-config";
 
-type Axis = "x" | "y";
-
 interface TransitionMeta {
-  axis: Axis;
+  axis: TransitionAxis;
   direction: 1 | -1;
   reason: "hierarchy" | "nav" | "fallback";
 }
@@ -41,10 +39,6 @@ const DEFAULT_TRANSITION: TransitionMeta = {
   reason: "fallback",
 };
 
-const ENTER_EASE: [number, number, number, number] = [0.22, 0.82, 0.3, 1];
-const EXIT_EASE: [number, number, number, number] = [0.65, 0, 0.35, 1];
-const ENTER_DURATION = 0.3;
-const EXIT_DURATION = 0.2;
 const HEADER_GRADIENT_REVEAL_DISTANCE = 56;
 
 function isPrefixOf(base: string[], target: string[]) {
@@ -102,16 +96,6 @@ function determineTransition(
   return DEFAULT_TRANSITION;
 }
 
-function getInitialOffset(meta: TransitionMeta) {
-  const distance = meta.axis === "x" ? "100%" : "85%";
-  return meta.direction > 0 ? distance : `-${distance}`;
-}
-
-function getExitOffset(meta: TransitionMeta) {
-  const distance = meta.axis === "x" ? "30%" : "25%";
-  return meta.direction > 0 ? `-${distance}` : distance;
-}
-
 export default function PageTransition() {
   return (
     <HeaderActionsProvider>
@@ -122,16 +106,11 @@ export default function PageTransition() {
 
 function PageTransitionContent() {
   const location = useLocation();
-  const outlet = useOutlet();
+  const frozenOutlet = useFrozenOutlet();
   const navItemPreferences = useNavItemPreferences();
   const headerIdentity = useHeaderIdentity();
   const updateHeaderScroll = useUpdateHeaderScroll();
   const [headerScrollProgress, setHeaderScrollProgress] = useState(0);
-  const dataRouterContext = useContext(UNSAFE_DataRouterContext);
-  const dataRouterState = useContext(UNSAFE_DataRouterStateContext);
-  const locationContext = useContext(UNSAFE_LocationContext);
-  const navigationContext = useContext(UNSAFE_NavigationContext);
-  const routeContext = useContext(UNSAFE_RouteContext);
 
   const normalizedPath = normalizePath(location.pathname);
   const isAfdianMessagesPage = normalizedPath === "/afdian-messages";
@@ -180,32 +159,6 @@ function PageTransitionContent() {
   useEffect(() => {
     setHeaderScrollProgress(0);
   }, [normalizedPath]);
-  const frozenOutlet = useMemo(() => {
-    if (!outlet) {
-      return outlet;
-    }
-
-    return (
-      <UNSAFE_DataRouterContext.Provider value={dataRouterContext}>
-        <UNSAFE_DataRouterStateContext.Provider value={dataRouterState}>
-          <UNSAFE_LocationContext.Provider value={locationContext}>
-            <UNSAFE_NavigationContext.Provider value={navigationContext}>
-              <UNSAFE_RouteContext.Provider value={routeContext}>
-                {outlet}
-              </UNSAFE_RouteContext.Provider>
-            </UNSAFE_NavigationContext.Provider>
-          </UNSAFE_LocationContext.Provider>
-        </UNSAFE_DataRouterStateContext.Provider>
-      </UNSAFE_DataRouterContext.Provider>
-    );
-  }, [
-    outlet,
-    dataRouterContext,
-    dataRouterState,
-    locationContext,
-    navigationContext,
-    routeContext,
-  ]);
 
   return (
     <div
@@ -228,8 +181,8 @@ function PageTransitionContent() {
               custom={transitionMeta}
               variants={{
                 initial: (meta: TransitionMeta) => ({
-                  x: meta.axis === "x" ? getInitialOffset(meta) : 0,
-                  y: meta.axis === "y" ? getInitialOffset(meta) : 0,
+                  x: meta.axis === "x" ? getInitialOffset(meta.axis, meta.direction) : 0,
+                  y: meta.axis === "y" ? getInitialOffset(meta.axis, meta.direction) : 0,
                   opacity: 0,
                 }),
                 animate: {
@@ -242,8 +195,8 @@ function PageTransitionContent() {
                   },
                 },
                 exit: (meta: TransitionMeta) => ({
-                  x: meta.axis === "x" ? getExitOffset(meta) : 0,
-                  y: meta.axis === "y" ? getExitOffset(meta) : 0,
+                  x: meta.axis === "x" ? getExitOffset(meta.axis, meta.direction) : 0,
+                  y: meta.axis === "y" ? getExitOffset(meta.axis, meta.direction) : 0,
                   opacity: 0,
                   transition: {
                     duration: EXIT_DURATION,
