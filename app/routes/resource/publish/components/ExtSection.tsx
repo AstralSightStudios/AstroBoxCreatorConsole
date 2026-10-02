@@ -397,7 +397,10 @@ export function ExtSection({
       }
     >
       <div className="flex flex-col gap-3">
-        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+        <div
+          data-publish-field="creatorFeatures"
+          className="rounded-lg border border-white/10 bg-black/20 px-3 py-3"
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium text-white">

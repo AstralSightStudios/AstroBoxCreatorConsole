@@ -100,6 +100,21 @@ describe("publish validation", () => {
         "trialDownloads",
       ],
       [{ ...validInput, links: [{ icon: "i", title: "t", url: "http://x" }] }, "links"],
+      // 加密一致性错误落在 ext 的开关上，不是下载行
+      [
+        {
+          ...validInput,
+          downloads: [
+            {
+              platformId: "device",
+              version: "1.0",
+              file: image,
+              encryptOnUpload: true,
+            },
+          ],
+        },
+        "creatorFeatures",
+      ],
     ];
     for (const [input, field] of cases) {
       const issues = validatePublish(input).issues;

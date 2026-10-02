@@ -49,6 +49,7 @@ export type PublishFieldKey =
   | "cover"
   | "downloads"
   | "trialDownloads"
+  | "creatorFeatures"
   | "links";
 
 export interface PublishValidationIssue {
@@ -281,8 +282,10 @@ export function validatePublish(
   // 开关关闭时密文不会被解密，类型嗅探失败后安装直接报错。
   const encryptedDevices = encryptedDownloadDevices(input.downloads);
   if (encryptedDevices.length > 0 && !input.enableAstroBoxCreatorFeatures) {
+    // 落点是 ext 里的开关而不是下载行：改配置要动的是开关那一侧，
+    // 滚到包体行只会让人反复检查已经填对的表格。
     push(
-      "downloads",
+      "creatorFeatures",
       `以下设备启用了加密上传：${encryptedDevices.join("、")}。加密包体必须同时开启「启用购买与资源加密相关功能」，否则客户端不会请求加密密钥、不解密包体，安装时会失败。`,
     );
   }
