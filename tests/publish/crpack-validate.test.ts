@@ -434,39 +434,41 @@ describe("TSV 预算实算", () => {
     expect(a - b).toBeGreaterThan("/资源/应用/".length - "/abc/".length);
   });
 
-  // 每行 = len("@quickapp-icon/p000") + 1 + len("themes/<themeId>/") + 35 + 1
-  // themeId 63 字符时每行恰好 128 字节，256 行 = 32768（正好触顶）。
+  // 每行 = len("@quickapp-icon/" + package) + 1 + len("themes/<themeId>/") + 35 + 1
+//   package 取 5 字符 → source 20；themeId 63 字符 → root 71；
+//   每行恰好 20+1+71+35+1 = 128 字节，256 行 = 32768（正好触顶）。
   function iconPack(themeId: string, ruleCount: number, extraPackageByte = false) {
     const icons = Array.from({ length: ruleCount }, (_, i) => ({
-      package: `p${String(i).padStart(3, "0")}${extraPackageByte && i === 0 ? "x" : ""}`,
+      package: `p${String(i).padStart(4, "0")}${extraPackageByte && i === 0 ? "x" : ""}`,
       destination: `quickapp-icons/${String(i).padStart(16, "0")}.bin`,
     }));
     const files = icons.map((icon) => ({ path: icon.destination, data: new Uint8Array([1]) }));
-    return { bytes: pack({ themeId, quickappIcons: icons }, files), ruleCount };
+    return { bytes: pack({ themeId, quickappIcons: icons }, files), icons };
   }
 
   test("恰好 32768 字节通过", () => {
-    const { bytes, ruleCount } = iconPack("a".repeat(63), 256);
-    expect(estimateTsvBytes("a".repeat(63), [], Array.from({ length: ruleCount }, (_, i) => ({
-      package: `p${String(i).padStart(3, "0")}`,
-      destination: `quickapp-icons/${String(i).padStart(16, "0")}.bin`,
-    })))).toBe(32768);
-    expect(errorsOf(bytes, "a".repeat(63))).toEqual([]);
+    const themeId = "a".repeat(63);
+    const { bytes, icons } = iconPack(themeId, 256);
+    expect(estimateTsvBytes(themeId, [], icons)).toBe(32768);
+    expect(errorsOf(bytes, themeId)).toEqual([]);
   });
 
   test("32769 字节被拒绝", () => {
-    const { bytes } = iconPack("a".repeat(63), 256, true);
-    expect(errorsOf(bytes, "a".repeat(63)).join("\n")).toContain("32 KiB");
+    const themeId = "a".repeat(63);
+    const { bytes } = iconPack(themeId, 256, true);
+    expect(errorsOf(bytes, themeId).join("\n")).toContain("32 KiB");
   });
 
   test("themeId 长度增加 1 字节即推高每行开销并触顶", () => {
-    const { bytes } = iconPack("a".repeat(64), 256);
-    expect(errorsOf(bytes, "a".repeat(64)).join("\n")).toContain("32 KiB");
+    const themeId = "a".repeat(64);
+    const { bytes } = iconPack(themeId, 256);
+    expect(errorsOf(bytes, themeId).join("\n")).toContain("32 KiB");
   });
 
   test("超限时文案说明可缩短包标识", () => {
-    const { bytes } = iconPack("a".repeat(64), 256);
-    expect(errorsOf(bytes, "a".repeat(64)).join("\n")).toContain("缩短包标识");
+    const themeId = "a".repeat(64);
+    const { bytes } = iconPack(themeId, 256);
+    expect(errorsOf(bytes, themeId).join("\n")).toContain("缩短包标识");
   });
 });
 

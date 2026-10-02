@@ -31,6 +31,13 @@ export const MAX_VERSION_CODE = 2147483647;
 /** 设备端绝对路径固定前缀的字节数。 */
 const DEVICE_PATH_PREFIX_BYTES = 48;
 const DEVICE_PATH_LIMIT = 256;
+/** st_mode 的文件类型掩码。 */
+const S_IFMT = 0o170000;
+/**
+ * 固定时间戳 1980-01-01T00:00:00Z：ZIP 时间戳的起始年，同时保证同一资源
+ * 多次发布产出逐字节一致的包体（themeId 进设备端续传指纹，包体必须可复现）。
+ */
+const DETERMINISTIC_MTIME = new Date(Date.UTC(1980, 0, 1, 0, 0, 0));
 
 const LEGACY_MANIFEST_HINT =
   "该包使用旧清单名 canora.json，请用 Corona CRPack Builder 1.0.6 或更高版本重新导出后再发布";
@@ -236,11 +243,14 @@ function dataStartOf(bytes: Uint8Array, entry: RawZipEntry): number {
   return entry.localOffset + 30 + nameLength + extraLength;
 }
 
-/** Unix 高 16 位存放文件类型；未标 Unix 时按 DOS 目录位处理。 */
+/**
+ * Unix 高 16 位存放 st_mode，低位是权限（0o100644 / 0o100755 …），
+ * 必须用 S_IFMT 掩码取出文件类型，否则普通文件会被误判成特殊文件。
+ */
 function unixFileType(entry: RawZipEntry): number {
   const hostSystem = entry.versionMadeBy >>> 8;
   if (hostSystem !== 3) return entry.externalAttrs & 0x10 ? 0o040000 : 0o100000;
-  return (entry.externalAttrs >>> 16) & 0xffff;
+  return (entry.externalAttrs >>> 16) & S_IFMT;
 }
 
 const CRC_TABLE = (() => {
@@ -276,10 +286,11 @@ function validateArchivePath(path: string): string | null {
   if (path.includes("\\")) return `包内条目路径不能含反斜杠：${path}`;
   if (path.startsWith("/")) return `包内条目不能是绝对路径：${path}`;
   if (/^[A-Za-z]:/.test(path)) return `包内条目不能是绝对路径：${path}`;
-  const isDirectory = path.endsWith("/");
-  const segments = path.split("/");
-  for (const segment of segments) {
-    if (segment === "" && !isDirectory) return `包内条目路径不能有空段：${path}`;
+  // 目录项的尾部斜杠合法，先剥掉再逐段检查，否则末尾空段会被误判为「空段」。
+  const body = path.endsWith("/") ? path.slice(0, -1) : path;
+  if (!body) return "包内存在空路径条目";
+  for (const segment of body.split("/")) {
+    if (segment === "") return `包内条目路径不能有空段：${path}`;
     if (segment === ".." || segment === ".") return `包内条目路径不能包含 . 或 ..：${path}`;
     if (!SAFE_SEGMENT.test(segment)) return `包内条目路径含非法字符：${path}`;
   }
@@ -906,7 +917,7 @@ export function rewriteCrpackCorona(
 
   const zippable: Zippable = {};
   const put = (path: string, content: Uint8Array) => {
-    zippable[path] = [content, { level: 6, mtime: new Date(0) }];
+    zippable[path] = [content, { level: 6, mtime: DETERMINISTIC_MTIME }];
   };
   for (const entry of archive.files) {
     put(entry.path, entry.path === CORONA_MANIFEST_NAME ? manifestBytes : entry.bytes);
@@ -914,7 +925,7 @@ export function rewriteCrpackCorona(
   // 目录条目原样保留（用 Stored，避免引入新的 mtime/压缩差异）。
   for (const entry of archive.entries) {
     if (entry.path.endsWith("/")) {
-      zippable[entry.path] = [new Uint8Array(0), { level: 0, mtime: new Date(0) }];
+      zippable[entry.path] = [new Uint8Array(0), { level: 0, mtime: DETERMINISTIC_MTIME }];
     }
   }
   return zipSync(zippable);
