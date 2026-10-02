@@ -31,10 +31,9 @@ function setupBrowserMocks() {
 
 setupBrowserMocks();
 
-import type { AstroboxAccount } from "../../../app/logic/account/store";
+import type { AstroboxAccount, GithubAccount } from "../../../app/logic/account/store";
 
-// Import the store module only after browser globals are mocked so that
-// isBrowser() evaluates to true and localStorage-backed helpers work.
+// 浏览器存储模拟完成后加载账号模块。
 const {
     loadAccountState,
     saveAccountState,
@@ -42,6 +41,9 @@ const {
     getAstroboxToken,
     setAstroboxTokens,
     setAstroboxAccount,
+    setGithubAccount,
+    hasRequiredAccounts,
+    logoutAccount,
 } = await import("../../../app/logic/account/store");
 
 function clearStorage() {
@@ -121,5 +123,43 @@ describe("astrobox account storage", () => {
         const raw = localStorage.getItem(STORAGE_KEY);
         const parsed = JSON.parse(raw!);
         expect(parsed.astrobox.refreshToken).toBe("persisted-rt");
+    });
+});
+
+describe("控制台必需账号", () => {
+    const github: GithubAccount = {
+        avatar: "",
+        username: "creator",
+        token: "github-token",
+        scopes: [],
+    };
+
+    beforeEach(clearStorage);
+
+    test("未登录或仅登录一个必需账号时不能进入", () => {
+        expect(hasRequiredAccounts({})).toBe(false);
+        expect(hasRequiredAccounts({ astrobox: makeAccount() })).toBe(false);
+        expect(hasRequiredAccounts({ github })).toBe(false);
+    });
+
+    test("两个必需账号均登录后即可进入，无需爱发电账号", () => {
+        setGithubAccount(github);
+        expect(hasRequiredAccounts(loadAccountState())).toBe(false);
+
+        setAstroboxAccount(makeAccount());
+        expect(hasRequiredAccounts(loadAccountState())).toBe(true);
+    });
+
+    test("空令牌不能视为已登录", () => {
+        expect(hasRequiredAccounts({ astrobox: makeAccount({ token: " " }), github })).toBe(false);
+        expect(hasRequiredAccounts({ astrobox: makeAccount(), github: { ...github, token: "" } })).toBe(false);
+    });
+
+    test.each(["astrobox", "github"] as const)("退出 %s 后需重新完成登录", (provider) => {
+        setAstroboxAccount(makeAccount());
+        setGithubAccount(github);
+        logoutAccount(provider);
+
+        expect(hasRequiredAccounts(loadAccountState())).toBe(false);
     });
 });

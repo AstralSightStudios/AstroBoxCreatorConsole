@@ -1,0 +1,71 @@
+.welcome-page {
+    position: relative;
+    min-height: 100%;
+    background-color: #101010;
+}
+
+.welcome-shell {
+    display: flex;
+    flex-direction: column;
+    /* 用 100% 而非 100vw：100vw 含竖向滚动条宽度，窄窗口下会横向溢出 */
+    width: 100%;
+    max-width: 1200px;
+    height: 100vh;
+    margin-inline: auto;
+    background-image: url("../assets/welcome/background-light.png");
+    background-position: top right;
+    background-repeat: no-repeat;
+    background-size: auto min(680px, 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+    .welcome-shell {
+        background-image: url("../assets/welcome/background-dark.png");
+    }
+}
+
+.welcome-content {
+    flex-grow: 0;
+    width: min(50vw, 620px);
+    margin-top: auto;
+    align-items: flex-start;
+}
+
+.welcome-accounts-card {
+    background-color: rgba(0, 0, 0, 0.5) !important;
+    border-color: rgba(255, 255, 255, 0.09) !important;
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+}
+
+@media (max-width: 900px) {
+    .welcome-content {
+        width: min(75vw, 620px);
+    }
+}
+
+@media (max-width: 700px) {
+    .welcome-content {
+        width: 90vw;
+    }
+}
+
+@media (max-width: 600px) {
+    .welcome-content {
+        width: 100%;
+    }
+}
+
+.welcome-titlebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--macos-titlebar-height);
+    padding-inline: var(--space-4);
+    user-select: none;
+}

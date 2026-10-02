@@ -28,6 +28,7 @@ import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
 import LoginCallback from "./pages/callback";
 import LoginPage from "./routes/login";
+import Welcome from "~/routes/welcome";
 import { isDesktopMac } from "~/config/uiScale";
 import { installFrontendLogBridge } from "~/logic/logging";
 import {
@@ -81,6 +82,7 @@ const router = createBrowserRouter([
       { path: "publish/wallpaper", element: <WallpaperEditorPage /> },
       { path: "manage/edit", element: <ResourceEditPage /> },
       { path: "login", element: <LoginPage /> },
+      { path: "welcome", element: <Welcome /> },
     ],
   },
   {

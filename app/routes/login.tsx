@@ -9,6 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getNativeAuthConfig } from "~/api/astrobox/auth";
 import { buildAccountSourceUrl } from "~/config/nativeAuth";
 import { startAstroboxLogin } from "~/logic/account/astrobox";
+import { hasRequiredAccounts, loadAccountState } from "~/logic/account/store";
 import {
     loadSavedCredentials,
     loadSavePasswordSetting,
@@ -58,7 +59,7 @@ export default function LoginPage() {
             await nativeLoginWithPassword(username, password, savePassword);
             setBusy(false);
             toast.success("登录成功");
-            navigate(-1);
+            navigate(hasRequiredAccounts(loadAccountState()) ? "/" : "/welcome", { replace: true });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             toast.error(message || "登录失败");

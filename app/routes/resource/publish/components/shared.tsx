@@ -16,8 +16,8 @@ export function SectionCard({
   padding = true,
   headerExtra,
 }: {
-  title: string;
-  description?: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
   padding?: boolean;
@@ -28,17 +28,19 @@ export function SectionCard({
       className={`min-w-0 rounded-[14px] border border-white/10 bg-nav-item w-full ${className}`}
     >
       <div className={`flex min-w-0 flex-col gap-2.5 ${padding ? "p-2" : ""} w-full`}>
-        <div
-          className={`flex min-w-0 flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
-        >
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="min-w-0 text-[18px] font-medium text-white">{title}</p>
-            {headerExtra}
+        {(title || description || headerExtra) && (
+          <div
+            className={`flex min-w-0 flex-col px-3.5 pt-3.5 ${padding ? "-mx-2 -mt-2 w-[calc(100%+16px)]" : "w-full"}`}
+          >
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              {title && <p className="min-w-0 text-[18px] font-medium text-white">{title}</p>}
+              {headerExtra}
+            </div>
+            {description && (
+              <p className="text-sm text-white/70">{description}</p>
+            )}
           </div>
-          {description && (
-            <p className="text-sm text-white/70">{description}</p>
-          )}
-        </div>
+        )}
         {children}
       </div>
     </div>

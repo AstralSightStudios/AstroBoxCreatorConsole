@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Avatar,
+  Badge,
   Callout,
   Dialog,
   Spinner,
@@ -14,6 +16,7 @@ import {
 } from "@tauri-apps/plugin-notification";
 import {
   ArrowClockwiseIcon,
+  CoinIcon,
   EyeIcon,
   EyeSlashIcon,
   KeyIcon,
@@ -37,7 +40,6 @@ import {
   refreshAfdianCaptcha,
   sendAfdianQuickLoginCode,
 } from "~/api/afdian-account";
-import { SectionCard } from "~/routes/resource/publish/components/shared";
 import {
   isAfdianMessageNotificationSupported,
   setAfdianMessageNotificationsEnabled,
@@ -292,7 +294,11 @@ function AfdianLoginDialog({
   );
 }
 
-export default function AfdianAccountSection() {
+export default function AfdianAccountSection({
+  showNotifications = true,
+}: {
+  showNotifications?: boolean;
+}) {
   const queryClient = useQueryClient();
   const nativeAvailable = isAfdianNativeAvailable();
   const notificationSupported = isAfdianMessageNotificationSupported();
@@ -403,19 +409,19 @@ export default function AfdianAccountSection() {
 
   return (
     <>
-      <SectionCard
-        title="爱发电账户"
-        description="登录后可查看收入、订单与赞助者数据"
-      >
+      <>
         {!nativeAvailable ? (
-          <Callout.Root color="amber">
-            <Callout.Icon>
-              <WarningIcon size={16} />
-            </Callout.Icon>
-            <Callout.Text>爱发电登录仅支持客户端。</Callout.Text>
-          </Callout.Root>
+          <div className="flex items-center gap-3 px-2 py-3">
+            <Avatar size="3" radius="full" color="gray" fallback={<CoinIcon size={20} />} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 text-sm font-medium text-[var(--gray-12)]">
+                爱发电<Badge color="gray">可选</Badge>
+              </p>
+              <p className="text-xs text-[var(--gray-11)]">爱发电登录仅支持客户端。</p>
+            </div>
+          </div>
         ) : sessionQuery.isLoading ? (
-          <div className="flex items-center gap-2 px-2 py-3 text-sm text-white/55">
+          <div className="flex items-center gap-2 px-2 py-3 text-sm text-[var(--gray-11)]">
             <Spinner size="1" />
             正在读取登录状态
           </div>
@@ -441,14 +447,14 @@ export default function AfdianAccountSection() {
           </Callout.Root>
         ) : sessionQuery.data?.connected ? (
           <div className="flex items-center gap-3 px-2 py-3">
-            <div className="flex size-9 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
-              <ShieldCheckIcon size={20} />
-            </div>
+            <Avatar size="3" radius="full" color="green" fallback={<ShieldCheckIcon size={20} />} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">
-                {sessionQuery.data.displayName || "爱发电用户"}
+              <p className="flex items-center gap-2 text-sm font-medium text-[var(--gray-12)]">
+                爱发电<Badge color="gray">可选</Badge>
               </p>
-              <p className="text-xs text-white/45">已连接爱发电</p>
+              <p className="truncate text-xs text-[var(--gray-11)]">
+                {sessionQuery.data.displayName || "已连接爱发电"}
+              </p>
             </div>
             <Button
               color="red"
@@ -461,10 +467,13 @@ export default function AfdianAccountSection() {
             </Button>
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-3 px-2 py-3">
-            <div>
-              <p className="text-sm font-medium text-white">尚未连接</p>
-              <p className="text-xs text-white/45">
+          <div className="flex items-center gap-3 px-2 py-3">
+            <Avatar size="3" radius="full" color="gray" fallback={<CoinIcon size={20} />} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 text-sm font-medium text-[var(--gray-12)]">
+                爱发电<Badge color="gray">可选</Badge>
+              </p>
+              <p className="text-xs text-[var(--gray-11)]">
                 支持账号密码或短信验证码登录
               </p>
             </div>
@@ -472,11 +481,11 @@ export default function AfdianAccountSection() {
           </div>
         )}
 
-        {notificationSupported && (
-          <div className="flex items-center gap-3 border-t border-white/[0.06] px-2 py-3">
+        {showNotifications && notificationSupported && (
+          <div className="flex items-center gap-3 border-t border-[var(--gray-a5)] px-2 py-3">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-white">新私信系统通知</p>
-              <p className="text-xs text-white/45">
+              <p className="text-sm font-medium text-[var(--gray-12)]">新私信系统通知</p>
+              <p className="text-xs text-[var(--gray-11)]">
                 {connected
                   ? "应用运行时收到新私信后发送系统通知"
                   : "登录爱发电后可开启"}
@@ -490,7 +499,7 @@ export default function AfdianAccountSection() {
             />
           </div>
         )}
-      </SectionCard>
+      </>
 
       <Dialog.Root open={disclaimerOpen} onOpenChange={setDisclaimerOpen}>
         <Dialog.Content maxWidth="460px">

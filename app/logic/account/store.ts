@@ -235,6 +235,10 @@ export function getAstroboxToken(): string | undefined {
     return loadAccountState().astrobox?.token || undefined;
 }
 
+export function hasRequiredAccounts(state: AccountState): boolean {
+    return Boolean(state.astrobox?.token?.trim() && state.github?.token?.trim());
+}
+
 export function getAstroboxRefreshToken(): string | undefined {
     return loadAccountState().astrobox?.refreshToken || undefined;
 }

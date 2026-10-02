@@ -1,10 +1,21 @@
 import "./app.css";
 
-import { useEffect, useRef } from "react";
-import { Outlet, useLocation } from "react-router";
-import { Theme } from "@radix-ui/themes";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Link, Navigate, Outlet, useLocation } from "react-router";
+import { Button, Flex, Heading, Theme } from "@radix-ui/themes";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import UiScaleShell from "./components/UiScaleShell";
 import PageTransition from "./components/transition/page-transition";
+import {
+    ENTER_DURATION,
+    ENTER_EASE,
+    EXIT_DURATION,
+    EXIT_EASE,
+    getExitOffset,
+    getInitialOffset,
+} from "./components/transition/transition-config";
+import { useFrozenOutlet } from "./components/transition/use-frozen-outlet";
 import Nav from "./layout/nav";
 import AutoUpdateChecker from "./components/update/AutoUpdateChecker";
 import AutoBetaUpdateChecker from "./components/update/AutoBetaUpdateChecker";
@@ -17,6 +28,7 @@ import { InboxDrawerProvider, useInboxDrawer } from "./components/inbox/drawer-c
 import InboxDrawer from "./components/inbox/InboxDrawer";
 import { Toaster } from "sonner";
 import SessionExpiredPrompt from "./components/session-expired-prompt";
+import { hasRequiredAccounts, useAccountState } from "./logic/account/store";
 
 function InboxDrawerHost() {
   const { open, closeInbox } = useInboxDrawer();
@@ -60,18 +72,106 @@ function AstroboxAccountRefresher() {
 
 export default function RootLayout() {
     const location = useLocation();
+    const frozenOutlet = useFrozenOutlet();
+    const accounts = useAccountState();
+    const canUseConsole = hasRequiredAccounts(accounts);
+    const isWelcome = location.pathname === "/welcome";
+    // 未登录时只保留欢迎页与内置登录页；设置（含退出登录后）一律回到欢迎页，
+    // 设置内容改由欢迎页的设置抽屉承载。
+    const isSetupPage = isWelcome || location.pathname === "/login";
+    const needsLogin = !canUseConsole && !isSetupPage;
     const isWallpaperEditor = location.pathname === "/publish/wallpaper";
+    const [systemAppearance, setSystemAppearance] = useState<"light" | "dark">(() =>
+        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+    );
+
+    useEffect(() => {
+        const preference = window.matchMedia("(prefers-color-scheme: dark)");
+        const handleChange = () => setSystemAppearance(preference.matches ? "dark" : "light");
+        preference.addEventListener("change", handleChange);
+        return () => preference.removeEventListener("change", handleChange);
+    }, []);
+
+    const appearance = isWelcome ? systemAppearance : "dark";
+    // 公共页面（欢迎/设置/登录）的进出方向：进入欢迎页视为「返回」，欢迎页从上方落下、
+    // 当前页向下退场；其余（进入设置/登录）视为前进，向上位移。
+    const publicTransitionDirection: 1 | -1 = isWelcome ? -1 : 1;
 
     return (
-        <UiScaleShell disabled={isWallpaperEditor}>
-            <Theme appearance="dark" panelBackground="translucent" radius="medium" accentColor="blue">
+        <UiScaleShell disabled={canUseConsole && isWallpaperEditor}>
+            <Theme appearance={appearance} panelBackground="translucent" radius="medium" accentColor="blue">
                 <AstroboxAccountRefresher />
                 <AutoUpdateChecker />
                 <AutoBetaUpdateChecker />
-                <BroadcastDialogHost />
-                <AfdianMessageNotificationHost />
-                <AfdianAiAutoReplyHost />
-                {isWallpaperEditor ? (
+                {canUseConsole && (
+                    <>
+                        <BroadcastDialogHost />
+                        <AfdianMessageNotificationHost />
+                        <AfdianAiAutoReplyHost />
+                    </>
+                )}
+                {needsLogin ? (
+                    <Navigate to="/welcome" replace />
+                ) : isWelcome || !canUseConsole ? (
+                    <div className="relative h-full min-h-0 w-full overflow-hidden">
+                        <AnimatePresence
+                            mode="sync"
+                            initial={false}
+                            custom={publicTransitionDirection}
+                        >
+                            <motion.div
+                                key={location.pathname}
+                                custom={publicTransitionDirection}
+                                className="absolute inset-0 h-full w-full"
+                                variants={{
+                                    initial: (direction: 1 | -1) => ({
+                                        y: getInitialOffset("y", direction),
+                                        opacity: 0,
+                                    }),
+                                    animate: {
+                                        y: 0,
+                                        opacity: 1,
+                                        transition: { duration: ENTER_DURATION, ease: ENTER_EASE },
+                                    },
+                                    exit: (direction: 1 | -1) => ({
+                                        y: getExitOffset("y", direction),
+                                        opacity: 0,
+                                        transition: { duration: EXIT_DURATION, ease: EXIT_EASE },
+                                    }),
+                                }}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                            >
+                                {isWelcome ? (
+                                    <div className="h-full w-full overflow-x-hidden overflow-y-auto">
+                                        {frozenOutlet}
+                                    </div>
+                                ) : (
+                                    <Flex asChild direction="column" height="100%">
+                                        <main>
+                                            <div className="mx-auto flex w-full max-w-[424px] flex-col px-4 pt-9 pb-4">
+                                                <Flex align="center" gap="2">
+                                                    <Button variant="ghost" color="gray" asChild>
+                                                        <Link to="/welcome" aria-label="返回欢迎页">
+                                                            <ArrowLeftIcon size={18} />
+                                                        </Link>
+                                                    </Button>
+                                                    <Heading as="h1" size="5">登录 AstroBox</Heading>
+                                                </Flex>
+                                            </div>
+                                            <div className="relative flex-1 min-h-0 overflow-hidden">
+                                                <div className="absolute inset-0 h-full w-full overflow-y-auto">
+                                                    {frozenOutlet}
+                                                </div>
+                                            </div>
+                                        </main>
+                                    </Flex>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
+                    </div>
+                ) : isWallpaperEditor ? (
                     <main className="h-full min-h-0 w-full overflow-hidden">
                         <Outlet />
                     </main>
@@ -96,7 +196,7 @@ export default function RootLayout() {
                 <Toaster
                     position="bottom-right"
                     richColors
-                    theme="dark"
+                    theme={appearance}
                     duration={4000}
                     offset={{
                         top: "max(16px, var(--ui-safe-area-top))",

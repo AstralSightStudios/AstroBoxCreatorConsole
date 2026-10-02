@@ -1,32 +1,17 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Drawer } from "vaul";
 import {
   ArrowLeftIcon,
-  ArrowUpRightIcon,
-  CheckCircleIcon,
-  CoinIcon,
-  GithubLogoIcon,
-  SignOutIcon,
   UserCircleDashedIcon,
 } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
 import NavItem from "~/components/nav/navitem";
 import FunctionButton from "~/components/nav/function-button";
 import {
-  useGithubLoginState,
-  startGithubLogin,
-  cancelGithubLogin,
-  type GithubLoginState,
-  type GithubDeviceSession,
-} from "~/logic/account/github-login-state";
-import {
   getDisplayAccount,
-  logoutAccount,
   useAccountState,
-  type AccountProvider,
   type AccountState,
   type DisplayAccount,
 } from "~/logic/account/store";
@@ -39,7 +24,6 @@ import {
   matchesNavPath,
 } from "./nav-config";
 import { useNavVisibility } from "./nav-visibility-context";
-import { AstroBoxLogo } from "~/components/svgs";
 import InboxBell from "~/components/inbox/InboxBell";
 import { useInboxDrawer } from "~/components/inbox/drawer-context";
 import { useInboxPolling } from "~/logic/inbox/use-inbox";
@@ -53,26 +37,9 @@ import {
 } from "~/config/nav";
 import AfdianMessagesSidebar from "~/components/afdian/messages-sidebar";
 
-import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  Button,
-  Dialog,
-  Popover,
-  Spinner,
-} from "~/components/ScaleAwareThemes";
 import { toast } from "sonner";
 import BlurEffect from "react-progressive-blur";
 import { canAccessAnalysisByPlan } from "~/logic/account/permissions";
-import {
-  AFDIAN_INCOME_QUERY_KEY,
-  AFDIAN_SESSION_QUERY_KEY,
-  getAfdianErrorMessage,
-  getAfdianSessionStatus,
-  isAfdianNativeAvailable,
-  logoutAfdian,
-  type AfdianSessionStatus,
-} from "~/api/afdian-account";
-
 const NAV_HEADER_COLLAPSE_THRESHOLD = 56;
 const NAV_HEADER_EXPANDED_HEIGHT = "clamp(218px, var(--ui-viewport-height-30pct), 342px)";
 const NAV_HEADER_MOBILE_EXPANDED_HEIGHT = "clamp(162px, var(--ui-viewport-height-30pct), 286px)";
@@ -504,229 +471,65 @@ function NavHeader({
   desktopFunctionButtonInteractive,
   title,
 }: NavHeaderProps) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showGithubLogoutConfirm, setShowGithubLogoutConfirm] = useState(false);
-  const [showAstroLogoutConfirm, setShowAstroLogoutConfirm] = useState(false);
-  const [showAfdianLogoutConfirm, setShowAfdianLogoutConfirm] = useState(false);
-  const [afdianLoggingOut, setAfdianLoggingOut] = useState(false);
   const { openInbox } = useInboxDrawer();
-  const githubLoginState = useGithubLoginState();
-  const afdianSessionQuery = useQuery({
-    queryKey: AFDIAN_SESSION_QUERY_KEY,
-    queryFn: getAfdianSessionStatus,
-    enabled: isAfdianNativeAvailable(),
-    staleTime: 30_000,
-    retry: false,
-  });
-
-  const handleMenuNavigate = (path: string) => {
-    setIsMenuOpen(false);
-    if (onNavigate) {
-      onNavigate(path);
-      return;
-    }
-    navigate(path);
-  };
-
-  const handleGithubLogin = async () => {
-    setIsMenuOpen(true);
-    await startGithubLogin();
-  };
-
-  const handleAstroLogout = () => {
-    if (!accountState.astrobox) return;
-    setIsMenuOpen(false);
-    setShowAstroLogoutConfirm(true);
-  };
-
-  const confirmAstroLogout = () => {
-    logoutAccount("astrobox");
-    window.location.reload();
-  };
-
-  const handleGithubLogout = () => {
-    if (!accountState.github) return;
-    setIsMenuOpen(false);
-    setShowGithubLogoutConfirm(true);
-  };
-
-  const confirmGithubLogout = () => {
-    cancelGithubLogin();
-    logoutAccount("github");
-    window.location.reload();
-  };
-
-  const handleAfdianLogout = () => {
-    if (!afdianSessionQuery.data?.connected) return;
-    setIsMenuOpen(false);
-    setShowAfdianLogoutConfirm(true);
-  };
-
-  const confirmAfdianLogout = async () => {
-    setAfdianLoggingOut(true);
-    try {
-      await logoutAfdian();
-      queryClient.setQueryData<AfdianSessionStatus>(AFDIAN_SESSION_QUERY_KEY, {
-        connected: false,
-        displayName: null,
-      });
-      queryClient.removeQueries({ queryKey: AFDIAN_INCOME_QUERY_KEY });
-      setShowAfdianLogoutConfirm(false);
-      toast.success("已退出爱发电账户");
-    } catch (error) {
-      toast.error(getAfdianErrorMessage(error, "退出爱发电账户失败"));
-    } finally {
-      setAfdianLoggingOut(false);
-    }
-  };
-
-  const hasAccount =
-    account.hasAstrobox ||
-    account.hasGithub ||
-    Boolean(afdianSessionQuery.data?.connected);
-  const isGithubBusy =
-    githubLoginState.status === "requesting" ||
-    githubLoginState.status === "waiting";
+  const hasAccount = account.hasAstrobox || account.hasGithub;
 
   return (
-    <>
-      <Popover.Root open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-        <div
-          className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            {!hideFunctionButton && (
-              <FunctionButton
-                desktopInteractive={desktopFunctionButtonInteractive}
-                aria-label={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
-                title={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
-                onClick={onToggleNav}
-              >
-                {desktopFunctionButtonInteractive ? (
-                  <ArrowLeftIcon
-                    className="fill-icon-primary"
-                    size={20}
-                    weight="bold"
-                    aria-hidden="true"
-                  />
-                ) : undefined}
-              </FunctionButton>
-            )}
-            {title && (
-              <h2 className="truncate font-[520] text-size-large text-white/80">
-                {title}
-              </h2>
-            )}
-          </div>
-          <div className="nav-account-actions flex items-center gap-2">
-            <InboxBell
-              onClick={() => {
-                // 与 AstroBox 端一致：未登录不打开抽屉，直接提示。
-                if (!accountState.astrobox?.token) {
-                  toast.error("请先登录 AstroBox 账号");
-                  return;
-                }
-                openInbox();
-              }}
-            />
-            <Popover.Trigger>
-              <button
-                type="button"
-                aria-label="账号菜单"
-                className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-              >
-                <AccountAvatar account={account} isActive={hasAccount} />
-              </button>
-            </Popover.Trigger>
-          </div>
-        </div>
-        <AccountMenu
-          accountState={accountState}
-          githubLoginState={githubLoginState}
-          isGithubBusy={isGithubBusy}
-          onAstroLogin={() => handleMenuNavigate("/login")}
-          onGithubLogin={handleGithubLogin}
-          onAfdianLogin={() => handleMenuNavigate("/settings")}
-          onAstroLogout={handleAstroLogout}
-          onGithubLogout={handleGithubLogout}
-          afdianSession={afdianSessionQuery.data}
-          afdianLoggingOut={afdianLoggingOut}
-          onAfdianLogout={handleAfdianLogout}
-        />
-      </Popover.Root>
-
-      <LogoutConfirmDialog
-        open={showGithubLogoutConfirm}
-        onOpenChange={setShowGithubLogoutConfirm}
-        title="退出 GitHub 账号"
-        description="确认退出 GitHub 账号？退出后需要重新登录。"
-        onConfirm={confirmGithubLogout}
-      />
-
-      <LogoutConfirmDialog
-        open={showAstroLogoutConfirm}
-        onOpenChange={setShowAstroLogoutConfirm}
-        title="退出 AstroBox 账号"
-        description="确认退出 AstroBox 账号？退出后需要重新登录。"
-        onConfirm={confirmAstroLogout}
-      />
-
-      <LogoutConfirmDialog
-        open={showAfdianLogoutConfirm}
-        onOpenChange={setShowAfdianLogoutConfirm}
-        title="退出爱发电账号"
-        description="确认退出爱发电账号？退出后需要重新登录。"
-        onConfirm={() => void confirmAfdianLogout()}
-        loading={afdianLoggingOut}
-      />
-    </>
-  );
-}
-
-interface LogoutConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: string;
-  onConfirm: () => void;
-  loading?: boolean;
-}
-
-function LogoutConfirmDialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  onConfirm,
-  loading = false,
-}: LogoutConfirmDialogProps) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content className="max-w-[520px]">
-        <Dialog.Title>{title}</Dialog.Title>
-        <Dialog.Description
-          size="2"
-          className="mt-3 whitespace-pre-line text-[14px]"
-        >
-          {description}
-        </Dialog.Description>
-        <div className="mt-4 flex justify-end gap-3">
-          <Button
-            variant="soft"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
+    <div
+      className={`flex flex-row items-center self-stretch px-1 py-1 ${hideFunctionButton ? "justify-end" : "justify-between"}`}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {!hideFunctionButton && (
+          <FunctionButton
+            desktopInteractive={desktopFunctionButtonInteractive}
+            aria-label={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
+            title={desktopFunctionButtonInteractive ? "返回一级导航" : undefined}
+            onClick={onToggleNav}
           >
-            取消
-          </Button>
-          <Button variant="solid" onClick={onConfirm} disabled={loading}>
-            {loading ? <Spinner size="1" /> : null}
-            退出
-          </Button>
-        </div>
-      </Dialog.Content>
-    </Dialog.Root>
+            {desktopFunctionButtonInteractive ? (
+              <ArrowLeftIcon
+                className="fill-icon-primary"
+                size={20}
+                weight="bold"
+                aria-hidden="true"
+              />
+            ) : undefined}
+          </FunctionButton>
+        )}
+        {title && (
+          <h2 className="truncate font-[520] text-size-large text-white/80">
+            {title}
+          </h2>
+        )}
+      </div>
+      <div className="nav-account-actions flex items-center gap-2">
+        <InboxBell
+          onClick={() => {
+            if (!accountState.astrobox?.token) {
+              toast.error("请先登录 AstroBox 账号");
+              return;
+            }
+            openInbox();
+          }}
+        />
+        <button
+          type="button"
+          aria-label="账号设置"
+          title="账号设置"
+          className="inline-flex items-center justify-center rounded-full cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+          onClick={() => {
+            if (onNavigate) {
+              onNavigate("/settings#accounts");
+            } else {
+              navigate("/settings#accounts");
+            }
+          }}
+        >
+          <AccountAvatar account={account} isActive={hasAccount} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -771,295 +574,6 @@ function AccountAvatar({ account, isActive }: AccountAvatarProps) {
       onError={handleError}
     />
   );
-}
-
-interface AccountMenuProps {
-  accountState: AccountState;
-  githubLoginState: GithubLoginState;
-  isGithubBusy: boolean;
-  afdianSession?: AfdianSessionStatus;
-  afdianLoggingOut: boolean;
-  onAstroLogin: () => void;
-  onGithubLogin: () => void;
-  onAfdianLogin: () => void;
-  onAstroLogout: () => void;
-  onGithubLogout: () => void;
-  onAfdianLogout: () => void;
-}
-
-function AccountMenu({
-  accountState,
-  githubLoginState,
-  isGithubBusy,
-  afdianSession,
-  afdianLoggingOut,
-  onAstroLogin,
-  onGithubLogin,
-  onAfdianLogin,
-  onAstroLogout,
-  onGithubLogout,
-  onAfdianLogout,
-}: AccountMenuProps) {
-  const hasAstrobox = Boolean(accountState.astrobox);
-  const hasGithub = Boolean(accountState.github);
-  const hasAfdian = Boolean(afdianSession?.connected);
-  const showDeviceCard =
-    githubLoginState.session && githubLoginState.status !== "idle";
-
-  return (
-    <Popover.Content
-      align="end"
-      side="bottom"
-      sideOffset={8}
-      collisionPadding={12}
-      // Radix 负责边界检测与翻转，并通过 CSS 变量限制菜单大小。
-      style={{
-        padding: 0,
-        background: "transparent",
-        boxShadow: "none",
-        border: "none",
-        borderRadius: 20,
-        width: "min(400px, var(--radix-popover-content-available-width))",
-        maxHeight: "var(--radix-popover-content-available-height)",
-        overflow: "visible",
-        zIndex: "999",
-      }}
-    >
-      <div className="rounded-3xl corner-rounded border border-white/10 bg-nav shadow-black backdrop-blur-xl p-1.5 space-y-1.5">
-        {(hasAstrobox || hasGithub || hasAfdian) && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
-              已登录账号
-            </p>
-            {hasAstrobox && (
-              <ConnectedAccountRow
-                provider="astrobox"
-                name={accountState.astrobox?.name || "AstroBox"}
-                detail={
-                  accountState.astrobox?.email ||
-                  accountState.astrobox?.plan ||
-                  ""
-                }
-                avatar={accountState.astrobox?.avatar}
-                onLogout={onAstroLogout}
-              />
-            )}
-            {hasGithub && (
-              <ConnectedAccountRow
-                provider="github"
-                name={
-                  accountState.github?.name ||
-                  accountState.github?.username ||
-                  "GitHub"
-                }
-                detail={
-                  accountState.github?.email ||
-                  accountState.github?.username ||
-                  ""
-                }
-                avatar={accountState.github?.avatar}
-                onLogout={onGithubLogout}
-              />
-            )}
-            {hasAfdian && (
-              <ConnectedAccountRow
-                provider="afdian"
-                name={afdianSession?.displayName || "爱发电用户"}
-                detail="已连接爱发电"
-                onLogout={onAfdianLogout}
-                loggingOut={afdianLoggingOut}
-              />
-            )}
-          </div>
-        )}
-
-        {(!hasAstrobox || !hasGithub || !hasAfdian) && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs uppercase tracking-wide text-white/60 pt-1 px-2 select-none">
-              登录新账号
-            </p>
-            {!hasAstrobox && (
-              <MenuButton
-                icon={<AstroBoxLogo size={22} />}
-                label="AstroBox登录"
-                description="登录到AstroBox账号以使用数据分析等功能"
-                onClick={onAstroLogin}
-              />
-            )}
-            {!hasGithub && (
-              <MenuButton
-                icon={<GithubLogoIcon size={24} weight="fill" />}
-                label="GitHub登录"
-                description="登录到GitHub账号以提交资源"
-                onClick={onGithubLogin}
-                loading={isGithubBusy}
-              />
-            )}
-            {!hasAfdian && (
-              <MenuButton
-                icon={<CoinIcon size={22} />}
-                label="爱发电登录"
-                description="登录爱发电账号以查看收入数据"
-                onClick={onAfdianLogin}
-              />
-            )}
-          </div>
-        )}
-
-        {showDeviceCard && (
-          <GithubDeviceCard
-            session={githubLoginState.session!}
-            status={githubLoginState.statusMessage}
-          />
-        )}
-      </div>
-    </Popover.Content>
-  );
-}
-
-interface MenuButtonProps {
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  onClick: () => void;
-  loading?: boolean;
-}
-
-function MenuButton({
-  icon,
-  label,
-  description,
-  onClick,
-  loading,
-}: MenuButtonProps) {
-  return (
-    <button
-      type="button"
-      className="corner-rounded flex items-center gap-2 rounded-[14px] border border-white/10 bg-nav-item px-2.5 py-2 text-left text-white transition hover:border-white/20 hover:bg-nav-item-hover"
-      onClick={onClick}
-      disabled={loading}
-    >
-      <span className="flex h-8 w-8 items-center justify-center">{icon}</span>
-      <span className="flex flex-col text-sm">
-        <span className="text-sm font-semibold">{label}</span>
-        {description && (
-          <span className="text-[11px] leading-tight text-white/60">
-            {loading ? "请求中…" : description}
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
-
-interface ConnectedAccountRowProps {
-  provider: AccountProvider | "afdian";
-  name: string;
-  detail?: string;
-  avatar?: string;
-  onLogout: () => void;
-  loggingOut?: boolean;
-}
-
-function ConnectedAccountRow({
-  provider,
-  name,
-  detail,
-  avatar,
-  onLogout,
-  loggingOut = false,
-}: ConnectedAccountRowProps) {
-  const [avatarError, setAvatarError] = useState(false);
-  const initials =
-    provider === "github" ? "GH" : provider === "afdian" ? "AF" : "AB";
-  const showAvatar = Boolean(avatar && !avatarError);
-
-  return (
-    <div className="corner-rounded flex items-center gap-2 rounded-[14px] border border-white/10 bg-nav-item p-1.5 px-2.5 py-2">
-      {showAvatar ? (
-        <img
-          src={avatar}
-          alt=""
-          onError={() => setAvatarError(true)}
-          className="h-8 w-8 rounded-full object-cover border border-white/10"
-        />
-      ) : (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-semibold text-white/80">
-          {initials}
-        </div>
-      )}
-      <div className="flex flex-1 flex-col">
-        <span className="text-sm font-semibold">
-          {name} ({formatProvider(provider)})
-        </span>
-        <span className="text-[11px] text-white/60">
-          {detail || formatProvider(provider)}
-        </span>
-      </div>
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-xs px-1 py-1 text-size-small text-white/80 hover:text-red-700 dark:hover:text-red-300 transition-colors"
-        onClick={onLogout}
-        disabled={loggingOut}
-      >
-        {loggingOut ? <Spinner size="1" /> : <SignOutIcon size={14} />}
-        退出
-      </button>
-    </div>
-  );
-}
-
-interface GithubDeviceCardProps {
-  session: GithubDeviceSession;
-  status?: string;
-}
-
-function GithubDeviceCard({ session, status }: GithubDeviceCardProps) {
-  const deepLink =
-    session.verificationUriComplete || session.verificationUri || "";
-
-  const handleOpen = () => {
-    if (deepLink) {
-      openUrl(deepLink);
-    }
-  };
-
-  return (
-    <div className="rounded-xl corner-rounded border border-white/10 bg-nav-item p-3 space-y-1 select-none">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[15px] font-semibold m-0">等待 GitHub 授权中</p>
-        {status === "Login Successful" ? (
-          <div className="w-4 h-4 flex items-center justify-center">
-            <CheckCircleIcon size={20} className="text-green-500 shrink-0" />
-          </div>
-        ) : (
-          <Spinner />
-        )}
-      </div>
-      <p className="text-[20px] font-mono-sarasa tracking-wide select-all leading-5">
-        {session.userCode}
-      </p>
-      <p className="text-size-small text-white/60">
-        在浏览器中打开页面并输入上方代码以登录
-      </p>
-      <button
-        type="button"
-        className="text-size-medium font-mono-sarasa rounded-lg -mx-2 -my-1 px-2 py-1.5 flex gap-0.5 items-center text-blue-500/75 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-        onClick={handleOpen}
-      >
-        {session.verificationUri}
-        <ArrowUpRightIcon size={16} />
-      </button>
-      {status && <p className="text-xs text-white/70 pt-1">{status}</p>}
-    </div>
-  );
-}
-
-function formatProvider(provider?: AccountProvider | "afdian") {
-  if (provider === "astrobox") return "AstroBox";
-  if (provider === "github") return "GitHub";
-  if (provider === "afdian") return "爱发电";
-  return undefined;
 }
 
 interface AccountInfoProps {

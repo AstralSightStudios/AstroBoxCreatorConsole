@@ -21,6 +21,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { appLogDir } from "@tauri-apps/api/path";
 import { toast } from "sonner";
+import { useLocation } from "react-router";
 import {
   getLogLevel,
   setLogLevel,
@@ -61,7 +62,7 @@ import {
 } from "~/config/nav";
 import UpdateAvailableDialog from "~/components/update/UpdateAvailableDialog";
 import BetaUpdateAvailableDialog from "~/components/update/BetaUpdateAvailableDialog";
-import AfdianAccountSection from "~/components/settings/AfdianAccountSection";
+import AccountsSection from "~/components/settings/AccountsSection";
 import AfdianAiAutoReplySection from "~/components/settings/AfdianAiAutoReplySection";
 import {
   checkForUpdate,
@@ -784,7 +785,20 @@ function NavigationItemsSettings({
   );
 }
 
-export default function Settings() {
+export type SettingsSectionId =
+  | "accounts"
+  | "aiAutoReply"
+  | "uiScale"
+  | "navigation";
+
+export default function Settings({
+  hideSections = [],
+}: {
+  /** 在复用该组件（如欢迎页的设置抽屉）时隐藏部分设置项。 */
+  hideSections?: SettingsSectionId[];
+}) {
+  const hiddenSections = new Set(hideSections);
+  const location = useLocation();
   const accountState = useAccountState();
   const currentEnv = useRepoEnvId();
   const currentReviewMode = useReviewMode();
@@ -809,6 +823,14 @@ export default function Settings() {
   const [betaUpdateDialogOpen, setBetaUpdateDialogOpen] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [checkingBetaUpdate, setCheckingBetaUpdate] = useState(false);
+
+  useEffect(() => {
+    if (location.hash !== "#accounts" && location.hash !== "#afdian-account") return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.hash]);
 
   useEffect(() => {
     let alive = true;
@@ -921,10 +943,18 @@ export default function Settings() {
   return (
     <Page>
       <div className="mx-auto max-w-6xl px-2 w-full pt-1.5 pb-6 flex flex-col gap-4">
+        {!hiddenSections.has("accounts") && (
+          <section id="accounts">
+            <AccountsSection />
+          </section>
+        )}
+        {!hiddenSections.has("aiAutoReply") && <AfdianAiAutoReplySection />}
+
         {/* 界面显示比例 */}
+        {!hiddenSections.has("uiScale") && (
         <SectionCard
           title="界面显示比例"
-          description="调整手机、平板和桌面窗口中的整体界面比例，修改立即生效"
+          description="调整手机、平板和桌面窗口中的整体界面比例，修改立即生效。放大 UI 比例可能导致不可预见的 UI 细节问题"
         >
           <div className="flex flex-col gap-2 px-2 pb-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -957,8 +987,10 @@ export default function Settings() {
             </p>
           </div>
         </SectionCard>
+        )}
 
         {/* 导航 */}
+        {!hiddenSections.has("navigation") && (
         <SectionCard
           title="导航"
           description="选择导航栏中显示的项目，拖动左侧手柄调整组内顺序"
@@ -990,6 +1022,7 @@ export default function Settings() {
             roles={navRoles}
           />
         </SectionCard>
+        )}
 
         {/* 资源仓库环境 */}
         <SectionCard
@@ -1083,10 +1116,6 @@ export default function Settings() {
             ))}
           </div>
         </SectionCard>
-
-        <AfdianAccountSection />
-
-        <AfdianAiAutoReplySection />
 
         {/* 日志与诊断 */}
         <LogsSection />
