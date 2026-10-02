@@ -3,34 +3,9 @@ import { Button, Dialog, TextArea } from "~/components/ScaleAwareThemes";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GithubPullRequest } from "~/api/github/pr-review";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
-import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
-import { CC_NOTICE_BADGES, type CcNoticeSubtype } from "~/logic/inbox/types";
 import { PrStatusBadge, StatusBadge } from "./StatusBadges";
 import { formatTime } from "../utils";
-import {
-  ArrowsClockwise,
-  EnvelopeOpen,
-  UserCircle,
-  GithubLogo,
-} from "@phosphor-icons/react";
-
-const NOTICE_SUBTYPE_ORDER: CcNoticeSubtype[] = [
-  "review-changes-requested",
-  "review-approved",
-  "review-refused",
-  "review-closed",
-];
-
-const NOTICE_STATE_TEXT: Record<
-  CcNoticeDeliveryStatus["state"],
-  { label: string; className: string }
-> = {
-  sent: { label: "已送达", className: "bg-emerald-500/15 text-emerald-100" },
-  pending: { label: "待发送", className: "bg-sky-500/15 text-sky-100" },
-  unsent: { label: "没有发送", className: "bg-red-500/15 text-red-100" },
-  unmatched: { label: "未匹配作者", className: "bg-amber-500/15 text-amber-100" },
-  unverified: { label: "未能校验", className: "bg-white/10 text-white/60" },
-};
+import { UserCircle, GithubLogo } from "@phosphor-icons/react";
 
 interface PullRequestSummaryCardProps {
   openPull: GithubPullRequest | null;
@@ -44,9 +19,6 @@ interface PullRequestSummaryCardProps {
   onMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
-  noticeStatusBySubtype?: Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>>;
-  checkingNoticeStatus?: boolean;
-  onRetrySubtypeNotice?: (subtype: CcNoticeSubtype) => void;
 }
 
 export function PullRequestSummaryCard({
@@ -61,9 +33,6 @@ export function PullRequestSummaryCard({
   onMerge,
   onClose,
   onRefuse,
-  noticeStatusBySubtype,
-  checkingNoticeStatus,
-  onRetrySubtypeNotice,
 }: PullRequestSummaryCardProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
@@ -151,48 +120,6 @@ export function PullRequestSummaryCard({
             </Button>
           )}
         </div>
-        {noticeStatusBySubtype ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3 text-xs">
-            <span className="inline-flex items-center gap-1 text-white/45">
-              <EnvelopeOpen size={13} />
-              审核通知
-            </span>
-            {NOTICE_SUBTYPE_ORDER.map((subtype) => {
-              const status = noticeStatusBySubtype[subtype];
-              const state = status?.state ?? (checkingNoticeStatus ? undefined : "unsent");
-              const text = state ? NOTICE_STATE_TEXT[state] : null;
-              return (
-                <span key={subtype} className="inline-flex items-center gap-1">
-                  <span
-                    className={`rounded-full px-2 py-0.5 font-medium ${CC_NOTICE_BADGES[subtype].className}`}
-                  >
-                    {CC_NOTICE_BADGES[subtype].label}
-                  </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 font-medium ${
-                      text ? text.className : "bg-white/10 text-white/60"
-                    }`}
-                  >
-                    {text ? text.label : "检测中"}
-                  </span>
-                  {status &&
-                  status.state !== "sent" &&
-                  status.state !== "unverified" &&
-                  onRetrySubtypeNotice ? (
-                    <button
-                      type="button"
-                      title={`重新发送「${CC_NOTICE_BADGES[subtype].label}」通知`}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-white/45 hover:bg-white/10 hover:text-white/80 active:scale-95 transition-transform"
-                      onClick={() => onRetrySubtypeNotice(subtype)}
-                    >
-                      <ArrowsClockwise size={12} />
-                    </button>
-                  ) : null}
-                </span>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
 
       <Dialog.Root

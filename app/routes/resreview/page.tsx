@@ -154,9 +154,6 @@ export default function ResourceReviewPage() {
   const [noticeStatusByCommentId, setNoticeStatusByCommentId] = useState<
     Record<number, CcNoticeDeliveryStatus>
   >({});
-  const [noticeStatusBySubtype, setNoticeStatusBySubtype] = useState<
-    Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>>
-  >({});
   const [checkingNoticeStatus, setCheckingNoticeStatus] = useState(false);
   const [noticeStatusTick, setNoticeStatusTick] = useState(0);
   const [rotate, setRotate] = useState(0);
@@ -402,19 +399,17 @@ export default function ResourceReviewPage() {
     }
   }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
 
-  // 检测当前 PR 的四类审核通知（NEEDFIX / 通过 / 关闭 / 拒绝）是否送达
-  // AstroBox 信箱：按评论回填到卡片上，同时给 PR 概览提供一份按 subtype 的汇总。
+  // 检测当前 PR 的审核通知（NEEDFIX / 关闭 / 拒绝）是否送达 AstroBox 信箱，
+  // 结果按评论回填：送达状态与重发入口都挂在对应评论上，PR 概览不再单独展示。
   useEffect(() => {
     if (!openNumber) {
       setNoticeStatusByCommentId({});
-      setNoticeStatusBySubtype({});
       return;
     }
     const comments = commentsByPr[openNumber] ?? [];
     const plan = buildCcNoticeCheckPlan(openNumber, comments);
     if (plan.targets.length === 0) {
       setNoticeStatusByCommentId({});
-      setNoticeStatusBySubtype({});
       return;
     }
 
@@ -439,18 +434,10 @@ export default function ResourceReviewPage() {
           const status = statuses.get(key);
           if (status) byComment[commentId] = status;
         }
-        const bySubtype: Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>> =
-          {};
-        for (const [subtype, key] of plan.subtypeKeys) {
-          const status = statuses.get(key);
-          if (status) bySubtype[subtype] = status;
-        }
         setNoticeStatusByCommentId(byComment);
-        setNoticeStatusBySubtype(bySubtype);
       } catch {
         if (!cancelled) {
           setNoticeStatusByCommentId({});
-          setNoticeStatusBySubtype({});
         }
       } finally {
         if (!cancelled) setCheckingNoticeStatus(false);
@@ -876,13 +863,11 @@ export default function ResourceReviewPage() {
                  onCancelEdit={() => { setEditingTarget(null); setNoticeDraft(null); }}
                  onDeleteComment={deleteComment}
                  onEditComment={editComment}
-                 onRetryNotice={retryCcNotice}
-noticeStatusByCommentId={noticeStatusByCommentId}
-                noticeStatusBySubtype={noticeStatusBySubtype}
-                checkingNoticeStatus={checkingNoticeStatus}
-                onRetrySubtypeNotice={(subtype) => { void retryCcNoticeFor({ subtype }); }}
-                 noticeDraft={noticeDraft}
-                 onNoticeDraftChange={setNoticeDraft}
+                  onRetryNotice={retryCcNotice}
+                  noticeStatusByCommentId={noticeStatusByCommentId}
+                  checkingNoticeStatus={checkingNoticeStatus}
+                  noticeDraft={noticeDraft}
+                  onNoticeDraftChange={setNoticeDraft}
                 onApprove={approve}
                 onMerge={merge}
                 onClose={closePr}

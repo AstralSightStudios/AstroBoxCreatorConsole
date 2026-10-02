@@ -17,7 +17,6 @@ import {
   buildCcNoticeCheckTarget,
   type CcNoticeCheckTarget,
 } from "~/logic/inbox/send";
-import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile } from "~/logic/publish/github-actions";
 import {
@@ -74,17 +73,21 @@ export function makeNeedFixId() {
   return Math.random().toString(36).slice(2, 8);
 }
 
-/** 一条审核通知对应的 GitHub 评论。commentId 为空表示只挂在 PR 概览上。 */
+/** 一条审核通知及其挂载的 GitHub 评论。 */
 export interface CcNoticeTargetPlan {
   target: CcNoticeCheckTarget;
-  commentId?: number;
+  commentId: number;
 }
 
 /**
- * 按 PR 时间线推导需要检测送达状态的审核通知：
+ * 按 PR 时间线推导需要检测送达状态的审核通知。
+ * 只有能落到具体评论上的通知才需要检测（状态与重发入口都挂在评论上）：
  * - 每条 NEEDFIX 评论 → 一条 review-changes-requested（按 tagId 区分）
  * - 最新一条 CLOSE / REFUSE 标签评论 → review-closed / review-refused（无 tagId）
- * - review-approved 是合入时发送的 PR 级通知，只进 subtypeKeys（PR 概览展示）
+ *
+ * review-approved 不在此列：它是合入时发出的 PR 级通知，既没有对应评论，
+ * 发送时 PR 已合入且审核者会跳离详情页，没有可挂载状态的位置。它失败时由
+ * logic/inbox/use-inbox 的 flushCcNoticeQueue 在启动/切回前台时自动补发。
  */
 export function buildCcNoticeCheckPlan(
   prNumber: number,
@@ -92,14 +95,13 @@ export function buildCcNoticeCheckPlan(
 ): {
   targets: CcNoticeCheckTarget[];
   commentIdByKey: Record<string, number>;
-  subtypeKeys: Map<CcNoticeSubtype, string>;
 } {
   const planned: CcNoticeTargetPlan[] = [];
-  const commentIdByKey: Record<string, number> = {};
-  const subtypeKeys = new Map<CcNoticeSubtype, string>();
   const latestByTagType: Record<string, GithubIssueComment> = {};
 
   for (const comment of comments) {
+    // 没有评论 ID 就无法把状态回填到评论上，这类评论不参与检测。
+    if (typeof comment.id !== "number") continue;
     const parsed = parseReviewCommentBody(comment.body || "");
     if (parsed.tagType === "NEEDFIX" && parsed.tagId) {
       const target = buildCcNoticeCheckTarget({
@@ -108,11 +110,7 @@ export function buildCcNoticeCheckPlan(
         tagId: parsed.tagId,
         content: parsed.content,
       });
-      planned.push({
-        target,
-        ...(typeof comment.id === "number" ? { commentId: comment.id } : {}),
-      });
-      if (typeof comment.id === "number") commentIdByKey[target.key] = comment.id;
+      planned.push({ target, commentId: comment.id });
       continue;
     }
     if (parsed.tagType === "CLOSE" || parsed.tagType === "REFUSE") {
@@ -132,36 +130,25 @@ export function buildCcNoticeCheckPlan(
     ["REFUSE", "review-refused"],
   ] as const) {
     const comment = latestByTagType[tagType];
-    const target = buildCcNoticeCheckTarget({
-      prNumber,
-      subtype,
-      ...(comment
-        ? { content: parseReviewCommentBody(comment.body || "").content }
-        : {}),
-    });
-    subtypeKeys.set(subtype, target.key);
+    if (typeof comment?.id !== "number") continue;
     planned.push({
-      target,
-      ...(comment && typeof comment.id === "number"
-        ? { commentId: comment.id }
-        : {}),
+      target: buildCcNoticeCheckTarget({
+        prNumber,
+        subtype,
+        content: parseReviewCommentBody(comment.body || "").content,
+      }),
+      commentId: comment.id,
     });
-    if (comment && typeof comment.id === "number") {
-      commentIdByKey[target.key] = comment.id;
-    }
   }
 
-  const approvedTarget = buildCcNoticeCheckTarget({
-    prNumber,
-    subtype: "review-approved",
-  });
-  subtypeKeys.set("review-approved", approvedTarget.key);
-  planned.push({ target: approvedTarget });
+  const commentIdByKey: Record<string, number> = {};
+  for (const { target, commentId } of planned) {
+    commentIdByKey[target.key] = commentId;
+  }
 
   return {
     targets: planned.map((item) => item.target),
     commentIdByKey,
-    subtypeKeys,
   };
 }
 

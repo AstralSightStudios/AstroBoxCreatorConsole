@@ -4,7 +4,6 @@ import { Chats, GitDiff, Info, SealCheck } from "@phosphor-icons/react";
 import type { GithubIssueComment, GithubPullRequest, GithubPullFile } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
-import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { FileEntry } from "./FileEntry";
 import { PullRequestSummaryCard } from "./PullRequestSummaryCard";
@@ -39,9 +38,7 @@ export interface PullRequestReviewViewProps {
   onEditComment: (comment: GithubIssueComment) => void;
   onRetryNotice?: (comment: GithubIssueComment) => void;
   noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
-  noticeStatusBySubtype?: Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>>;
   checkingNoticeStatus?: boolean;
-  onRetrySubtypeNotice?: (subtype: CcNoticeSubtype) => void;
   submittingComment: boolean;
   approving: boolean;
   merging: boolean;
@@ -78,9 +75,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     onEditComment,
     onRetryNotice,
     noticeStatusByCommentId,
-    noticeStatusBySubtype,
     checkingNoticeStatus,
-    onRetrySubtypeNotice,
     submittingComment,
     approving,
     merging,
@@ -135,9 +130,6 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           onMerge={onMerge}
           onClose={onClose}
           onRefuse={onRefuse}
-          noticeStatusBySubtype={noticeStatusBySubtype}
-          checkingNoticeStatus={checkingNoticeStatus}
-          onRetrySubtypeNotice={onRetrySubtypeNotice}
         />
       </div>
 

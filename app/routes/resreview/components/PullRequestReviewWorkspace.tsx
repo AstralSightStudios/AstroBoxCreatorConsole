@@ -1,6 +1,5 @@
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
 import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
-import type { CcNoticeSubtype } from "~/logic/inbox/types";
 import { deriveReviewStatus } from "~/logic/publish/review-status";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 import type { ReplyTarget, EditingTarget, NoticeDraft } from "./CommentComposer";
@@ -44,9 +43,7 @@ interface PullRequestReviewWorkspaceProps {
   onEditComment: (comment: GithubIssueComment) => void;
   onRetryNotice?: (comment: GithubIssueComment) => void;
   noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
-  noticeStatusBySubtype?: Partial<Record<CcNoticeSubtype, CcNoticeDeliveryStatus>>;
   checkingNoticeStatus?: boolean;
-  onRetrySubtypeNotice?: (subtype: CcNoticeSubtype) => void;
   onApprove: () => void;
   onMerge: () => void;
   onClose: (reason: string) => void;
@@ -98,9 +95,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             onEditComment={props.onEditComment}
             onRetryNotice={props.onRetryNotice}
             noticeStatusByCommentId={props.noticeStatusByCommentId}
-            noticeStatusBySubtype={props.noticeStatusBySubtype}
             checkingNoticeStatus={props.checkingNoticeStatus}
-            onRetrySubtypeNotice={props.onRetrySubtypeNotice}
             onApprove={props.onApprove}
             onMerge={props.onMerge}
             onClose={props.onClose}
