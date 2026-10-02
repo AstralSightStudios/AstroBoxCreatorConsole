@@ -288,7 +288,9 @@ export function CommentTimeline({
                       ) : null}
                       {onRetryNotice &&
                       noticeSubtype &&
-                      noticeStatus?.state !== "unverified" ? (
+                      noticeStatus &&
+                      noticeStatus.state !== "unverified" &&
+                      noticeStatus.state !== "unmatched" ? (
                         <>
                           <DropdownMenu.Separator />
                           <DropdownMenu.Item
@@ -298,6 +300,17 @@ export function CommentTimeline({
                             <ArrowsClockwise size={14} />
                             重试发送 AstroBox 信箱
                           </DropdownMenu.Item>
+                        </>
+                      ) : null}
+                      {onRetryNotice &&
+                      noticeSubtype &&
+                      noticeStatus?.state === "unmatched" ? (
+                        <>
+                          <DropdownMenu.Separator />
+                          <div className="max-w-[220px] px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
+                            作者尚未在 manifest 中绑定 AstroBox
+                            账号，通知无法送达。请先让作者完成账号绑定，再重试发送。
+                          </div>
                         </>
                       ) : null}
                       {comment.html_url ? (
