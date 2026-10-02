@@ -16,6 +16,7 @@ import {
 } from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
 import { CANOPUS_ID_PREFIX } from "~/logic/publish/canopus-id";
+import { RES_PACK_THEME_ID_MAX_LENGTH } from "~/logic/publish/res-pack-id";
 import type { ResourceType } from "~/logic/publish/resource-type";
 
 function describeItemId(resourceType: ResourceType): FieldHelpItem {
@@ -43,6 +44,12 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
         "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，已发布后不要改动。",
     };
   }
+  if (resourceType === "res_pack") {
+    return {
+      label: "资源 ID（资源包）",
+      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。已发布后不要改动，否则设备上会出现两个主题目录。`,
+    };
+  }
   return {
     label: "资源 ID（模块）",
     description: `由 ${CANOPUS_ID_PREFIX} 前缀加模块名组成，只需填写模块名。模块名仅支持字母、数字、下划线和中划线，且以字母或数字开头。`,
@@ -53,7 +60,7 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
   return [
     {
       label: "资源类型",
-      description: `决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块自动补 ${CANOPUS_ID_PREFIX} 前缀。已发布的资源不可修改。`,
+      description: `决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块自动补 ${CANOPUS_ID_PREFIX} 前缀、资源包要求小写标识并写入 themeId。已发布的资源不可修改。`,
     },
     {
       label: "资源名称",
@@ -177,6 +184,16 @@ export function BasicInfoSection({
           >
             模块
           </SegmentedControl.Item>
+
+          <SegmentedControl.Item
+            value="res_pack"
+            className={`
+              px-3 py-2 text-sm cursor-pointer
+              ${resourceType === "res_pack" ? "bg-white/20 font-medium" : ""}
+            `}
+          >
+            资源包
+          </SegmentedControl.Item>
         </SegmentedControl.Root>
         {/*<div className="flex flex-wrap gap-3">
           <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-white/5 px-3 py-2 transition hover:bg-white/10">
@@ -215,7 +232,9 @@ export function BasicInfoSection({
               ? "填写快应用包名"
               : resourceType === "watchface"
                 ? "12位纯数字，以9798开头"
-                : "模块名称将拼接为 canopus_模块名称"
+                : resourceType === "res_pack"
+                  ? "小写字母、数字、下划线或连字符，将写入 themeId"
+                  : "模块名称将拼接为 canopus_模块名称"
           }
         >
           <div className="flex w-full gap-2 items-start">
@@ -232,7 +251,9 @@ export function BasicInfoSection({
                       ? "com.example.quickapp"
                       : resourceType === "watchface"
                         ? "9798XXXXXXXX"
-                        : "模块名称"
+                        : resourceType === "res_pack"
+                          ? "my-theme"
+                          : "模块名称"
                   }
                   value={
                     resourceType === "canopus" &&

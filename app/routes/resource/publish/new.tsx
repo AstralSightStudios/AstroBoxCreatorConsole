@@ -104,6 +104,10 @@ import {
   normalizeCanopusIdInput,
   validateCanopusIdFormat,
 } from "~/logic/publish/canopus-id";
+import {
+  normalizeResPackIdInput,
+  validateResPackIdFormat,
+} from "~/logic/publish/res-pack-id";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
   normalizeResourceType,
@@ -782,10 +786,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       if (isEditing || next === resourceType) return;
       idsByTypeRef.current[resourceType] = itemIdRef.current;
       const cached = idsByTypeRef.current[next];
-      setItemId(cached !== undefined ? cached : next === "canopus" ? CANOPUS_ID_PREFIX : "");
+      const suggested =
+        next === "canopus"
+          ? CANOPUS_ID_PREFIX
+          : next === "res_pack"
+            ? normalizeResPackIdInput(itemName)
+            : "";
+      setItemId(cached !== undefined ? cached : suggested);
       setResourceType(next);
     },
-    [resourceType, isEditing],
+    [resourceType, isEditing, itemName],
   );
 
   const handleItemIdChange = useCallback(
@@ -793,6 +803,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       if (isEditing) return;
       if (resourceType === "canopus") {
         setItemId(normalizeCanopusIdInput(value));
+        return;
+      }
+      if (resourceType === "res_pack") {
+        setItemId(normalizeResPackIdInput(value));
         return;
       }
       setItemId(value);
@@ -815,6 +829,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       }
     } else if (resourceType === "canopus") {
       const formatError = validateCanopusIdFormat(trimmed);
+      if (formatError) {
+        setIdError(formatError);
+        return;
+      }
+    } else if (resourceType === "res_pack") {
+      const formatError = validateResPackIdFormat(trimmed);
       if (formatError) {
         setIdError(formatError);
         return;
