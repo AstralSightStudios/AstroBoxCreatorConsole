@@ -34,6 +34,15 @@ import {
   listExternalAuthorizationDrafts,
 } from "~/logic/publish/external-authorization-drafts";
 import { replaceWatchfaceIdInPackage } from "./watchface-id";
+import {
+  parseCrpack,
+  readCrpackThemeId,
+  rewriteCrpackCorona,
+  validateCrpack,
+} from "./crpack-validate";
+import { normalizeResPackIdInput } from "./res-pack-id";
+import { readPackageVersion } from "./package-version";
+import { toast } from "sonner";
 
 interface UploadManifestRequest {
   manifest: ManifestBuildResult;
@@ -84,6 +93,21 @@ async function prepareTextAsset(
   };
 }
 
+/**
+ * 包内 ID 被改写时告知创作者。创作者可能误传了别人的包，改写一旦静默发生，
+ * 包内原主就再也追不回来了。只提示、不阻断，写错包由创作者自己负责。
+ */
+function notifyIdRewrite(kind: "表盘" | "资源包", fileName: string, original: string | undefined, next: string) {
+  if (original && original === next) return;
+  const scope = fileName ? `（${fileName}）` : "";
+  toast.warning(
+    original
+      ? `已将${scope}包内${kind} ID 从「${original}」改为「${next}」，请确认上传的是本资源对应的包体。`
+      : `已写入${scope}包内${kind} ID「${next}」。`,
+    { duration: 8000 },
+  );
+}
+
 async function applyWatchfaceId(
   assets: DownloadAssetDescriptor[],
   id: string,
@@ -95,11 +119,67 @@ async function applyWatchfaceId(
     let updated = files.get(asset.file);
     if (!updated) {
       onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
+      const info = await readPackageVersion(asset.file);
+      notifyIdRewrite("表盘", asset.path, info.identity, id);
       updated = await replaceWatchfaceIdInPackage(asset.file, id);
       files.set(asset.file, updated);
     }
     asset.file = updated;
   }
+}
+
+/**
+ * 改写 CRPack 包内 `corona.json` 的 themeId。
+ *
+ * 顺序要点：先读原值并 toast，再按包内原 themeId 做结构校验（放行「格式合法但
+ * 与资源 id 不同」的情况，这正是要改写的），改写后再按目标 id 复验——themeId 变长
+ * 会推高每条 TSV 规则的开销，可能从「不超」变成「超」。
+ */
+async function applyResPackThemeId(
+  assets: DownloadAssetDescriptor[],
+  themeId: string,
+  onProgress?: (message: string) => void,
+) {
+  const files = new Map<File, File>();
+  for (const asset of assets) {
+    if (asset.skipUpload) continue;
+    let updated = files.get(asset.file);
+    if (!updated) {
+      onProgress?.(`写入资源包 themeId ${themeId}：${asset.path}`);
+      const bytes = new Uint8Array(await asset.file.arrayBuffer());
+      const original = readCrpackThemeId(bytes);
+      notifyIdRewrite("资源包", asset.path, original, themeId);
+
+      // 结构校验按包内原 themeId 判定，themeId 不一致不算错，那正是要改的。
+      const gate = original && validateCrpack(bytes, original).length === 0 ? original : undefined;
+      const structural = validateCrpack(bytes, gate);
+      if (structural.length > 0) {
+        throw new Error(`资源包 ${asset.path} 校验未通过：\n${structural.join("\n")}`);
+      }
+
+      const rewritten = rewriteCrpackCorona(bytes, { themeId });
+      const after = validateCrpack(rewritten, themeId);
+      if (after.length > 0) {
+        throw new Error(
+          `资源包 ${asset.path} 写入 themeId「${themeId}」后校验未通过：\n${after.join("\n")}`,
+        );
+      }
+
+      updated = new File([rewritten as BlobPart], asset.file.name, {
+        type: asset.file.type || "application/octet-stream",
+        lastModified: asset.file.lastModified,
+      });
+      files.set(asset.file, updated);
+    }
+    asset.file = updated;
+  }
+}
+
+/** CRPack 结构预检：发布前确认包体确实是资源包，不阻塞后续 themeId 改写。 */
+export async function assertResPackReady(bytes: Uint8Array, expectedThemeId?: string) {
+  parseCrpack(bytes);
+  const errors = validateCrpack(bytes, expectedThemeId);
+  if (errors.length > 0) throw new Error(errors.join("\n"));
 }
 
 async function encryptDownloadAssets(
@@ -436,6 +516,12 @@ export async function uploadManifestAndAssets({
     await applyWatchfaceId(downloadAssets, itemId.trim(), onProgress);
     await applyWatchfaceId(trialDownloadAssets, itemId.trim(), onProgress);
   }
+  if (parsedManifest.item?.restype === "res_pack") {
+    const themeId = normalizeResPackIdInput(itemId);
+    // 必须早于 encryptDownloadAssets：商店侧 sha256 是从改写后的包体算的。
+    await applyResPackThemeId(downloadAssets, themeId, onProgress);
+    await applyResPackThemeId(trialDownloadAssets, themeId, onProgress);
+  }
   const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
   // --- Prepare all assets as base64 ---
@@ -580,6 +666,11 @@ export async function upsertManifestAndAssets({
   if (parsedManifest.item?.restype === "watchface") {
     await applyWatchfaceId(downloadAssets, itemId, onProgress);
     await applyWatchfaceId(trialDownloadAssets, itemId, onProgress);
+  }
+  if (parsedManifest.item?.restype === "res_pack") {
+    const themeId = normalizeResPackIdInput(itemId);
+    await applyResPackThemeId(downloadAssets, themeId, onProgress);
+    await applyResPackThemeId(trialDownloadAssets, themeId, onProgress);
   }
   const encryptionInfoMap = await encryptDownloadAssets(downloadAssets, onProgress);
 
