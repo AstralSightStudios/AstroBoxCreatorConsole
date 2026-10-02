@@ -12,3 +12,4 @@
 # Tailscale dev certs
 *.ts.net.crt
 *.ts.net.key
+/.openchamber
