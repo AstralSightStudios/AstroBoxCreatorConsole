@@ -20,7 +20,7 @@ export type UpdateLogEntry = ManifestUpdateLogEntry;
 
 export type DownloadVersionSource = "package" | "existing";
 
-export type DownloadIdentityKind = "package" | "watchface-id" | "dial-id";
+export type DownloadIdentityKind = "package" | "watchface-id" | "dial-id" | "theme-id";
 
 export type DownloadInput = {
     uid: string;

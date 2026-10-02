@@ -1,13 +1,21 @@
 import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
+import {
+  CORONA_MANIFEST_NAME,
+  LEGACY_CORONA_MANIFEST_NAME,
+  parseCrpack,
+  rewriteCrpackCorona,
+} from "./crpack-validate";
 
 /**
  * 资源包体版本读取与改写。
  *
- * 覆盖三类包体（版本一律以包体内部为准）：
+ * 覆盖四类包体（版本一律以包体内部为准）：
  * - 小米表盘 `.bin` / `.face`：offset 4..6 三字节，`versionCode = major<<16|minor<<8|patch`。
  * - 小米表盘 `.mwz`：zip 工程包，内层 `.bin` 才是设备要的包体。
  * - rpk / zip（小米快应用、Vivo 快应用、Vivo 表盘）：`manifest.json` 里的
  *   `versionName` / `versionCode`（小米另有 `manifest-watch.json`）。
+ * - CRPack（资源包 `.crpack`）：`corona.json` 里的 `version` / `versionCode`，
+ *   包体标识取 `themeId`。
  */
 
 export const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
@@ -25,9 +33,10 @@ export type PackageVersionSource =
   | "zip-manifest"
   | "xiaomi-bin"
   | "xiaomi-mwz"
+  | "crpack-corona"
   | "unknown";
 
-export type PackageIdentityKind = "package" | "watchface-id" | "dial-id";
+export type PackageIdentityKind = "package" | "watchface-id" | "dial-id" | "theme-id";
 
 export interface PackageVersionInfo {
   /** 展示版本：小米表盘 major.minor.patch；rpk 用 versionName。 */
@@ -254,6 +263,43 @@ function readMwz(entries: Unzipped, binName: string): PackageVersionInfo {
   return { ...info, source: "xiaomi-mwz", entry: binName };
 }
 
+/** 读取 CRPack 内的 `corona.json` 版本信息。解析失败不抛错，返回 readable=false。 */
+function readCrpackCorona(bytes: Uint8Array): PackageVersionInfo {
+  let contents;
+  try {
+    contents = parseCrpack(bytes);
+  } catch (error) {
+    return {
+      source: "crpack-corona",
+      readable: false,
+      writable: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const readable =
+    Boolean(contents.version) || contents.versionCode !== undefined;
+  return {
+    ...(contents.version !== undefined ? { version: contents.version } : {}),
+    ...(contents.versionCode !== undefined ? { versionCode: contents.versionCode } : {}),
+    identity: contents.themeId,
+    identityKind: "theme-id",
+    source: "crpack-corona",
+    readable,
+    writable: true,
+    entry: contents.manifestName,
+    ...(readable
+      ? {}
+      : { reason: `${contents.manifestName} 中未找到 version / versionCode` }),
+  };
+}
+
+/** 包内是否带 CRPack 清单。放在 manifest.json 之前判断，避免同类包误判分支。 */
+function findCrpackManifestName(entries: Unzipped): string | undefined {
+  if (entries[CORONA_MANIFEST_NAME]) return CORONA_MANIFEST_NAME;
+  if (entries[LEGACY_CORONA_MANIFEST_NAME]) return LEGACY_CORONA_MANIFEST_NAME;
+  return undefined;
+}
+
 /** 读取包体版本、标识与可改写能力。解析失败不抛错，返回 readable=false。 */
 export async function readPackageVersion(input: Blob): Promise<PackageVersionInfo> {
   let bytes: Uint8Array;
@@ -265,19 +311,25 @@ export async function readPackageVersion(input: Blob): Promise<PackageVersionInf
   if (bytes.length === 0) return unknown("文件内容为空");
   if (startsWith(bytes, WATCHFACE_MAGIC)) return readXiaomiBin(bytes);
   if (!startsWith(bytes, ZIP_MAGIC)) {
-    return unknown("不支持的包体格式（仅支持小米表盘与 rpk/zip）");
+    return unknown("不支持的包体格式（仅支持小米表盘、rpk/zip 与 CRPack 资源包）");
   }
+  // CRPack 判定放在 unzipSync 之后、manifest.json 之前：包内不会有 manifest.json，
+  // 但放前面能保证 crpack 一定走对分支，避免未来某个包同时含两种清单时误判。
   let entries: Unzipped;
   try {
     entries = unzipSync(bytes);
   } catch {
-    return unknown("zip 解压失败");
+    // 加密或结构特殊的包 fflate 解不开，仍按原始字节尝试 CRPack 解析。
+    return readCrpackCorona(bytes);
   }
+  if (findCrpackManifestName(entries)) return readCrpackCorona(bytes);
   const manifestName = pickManifestName(entries);
   if (manifestName) return readZipManifest(entries, manifestName);
   const binName = findInnerBinName(entries);
   if (binName) return readMwz(entries, binName);
-  return unknown("zip 内未找到 manifest.json 或表盘 .bin");
+  return unknown(
+    `zip 内未找到 manifest.json、${CORONA_MANIFEST_NAME} 或表盘 .bin`,
+  );
 }
 
 function resolveXiaomiTriple(target: PackageVersionTarget): {
@@ -388,6 +440,16 @@ export async function writePackageVersion(
       entries = unzipSync(bytes);
     } catch {
       throw new Error("包体不是有效的 zip，无法写入版本");
+    }
+    if (findCrpackManifestName(entries)) {
+      // 只改 version / versionCode，绝不碰 themeId —— 那是发布链路改写阶段的事。
+      return wrapFile(
+        rewriteCrpackCorona(bytes, {
+          version: target.version,
+          versionCode: target.versionCode,
+        }),
+        file,
+      );
     }
     const manifestName = pickManifestName(entries);
     if (manifestName) {

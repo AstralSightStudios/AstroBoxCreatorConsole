@@ -89,9 +89,13 @@ export function VersionEditorDialog({
   }, [open, file]);
 
   const isZipManifest = info?.source === "zip-manifest";
+  const isCrpack = info?.source === "crpack-corona";
+  // crpack 的 corona.json 与快应用 rpk 的 manifest.json 同构，统一走
+  // 「版本名 + 数字版本号」形态，版本号上限同为 32 位。
+  const isVersioned = isZipManifest || isCrpack;
   const isWatchfaceBin = info?.source === "xiaomi-bin" || info?.source === "xiaomi-mwz";
 
-  const nextCode = isZipManifest
+  const nextCode = isVersioned
     ? Number(versionCodeInput.trim())
     : codeOf(triple);
 
@@ -100,11 +104,12 @@ export function VersionEditorDialog({
   const validationError = useMemo(() => {
     if (!info) return null;
     if (identityMismatch) return "包体包名与资源 ID 不一致，请先统一 ID 再修改版本。";
-    if (isZipManifest) {
-      if (!versionName.trim()) return "请填写 versionName。";
+    if (isVersioned) {
+      if (!versionName.trim()) return "请填写版本名。";
       if (!versionCodeInput.trim() || !Number.isFinite(nextCode) || nextCode < 0) {
         return "请填写合法的 versionCode。";
       }
+      if (!Number.isInteger(nextCode)) return "versionCode 必须是整数。";
       if (nextCode > 2147483647) {
         return "versionCode 不能超过 2147483647（客户端按 32 位整数解析）。";
       }
@@ -123,7 +128,7 @@ export function VersionEditorDialog({
   }, [
     info,
     identityMismatch,
-    isZipManifest,
+    isVersioned,
     isWatchfaceBin,
     versionName,
     versionCodeInput,
@@ -135,7 +140,7 @@ export function VersionEditorDialog({
     if (!info || validationError) return;
     setApplying(true);
     try {
-      const target = isZipManifest
+      const target = isVersioned
         ? { version: versionName.trim(), versionCode: Math.trunc(nextCode) }
         : {
             version: `${triple.major}.${triple.minor}.${triple.patch}`,
@@ -161,7 +166,7 @@ export function VersionEditorDialog({
         info.versionCode !== undefined ? `（${info.versionCode}）` : ""
       }`
     : "读取中…";
-  const nextLabel = isZipManifest
+  const nextLabel = isVersioned
     ? `${versionName.trim() || "-"}${
         Number.isFinite(nextCode) ? `（${Math.trunc(nextCode)}）` : ""
       }`
@@ -260,9 +265,11 @@ export function VersionEditorDialog({
               </div>
             )}
 
-            {!loading && isZipManifest && (
+            {!loading && isVersioned && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                <Text size="1" color="gray">包内版本</Text>
+                <Text size="1" color="gray">
+                  包内版本{isCrpack ? "（corona.json）" : ""}
+                </Text>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <TextField.Root
                     placeholder="versionName，如 2.5.0"
