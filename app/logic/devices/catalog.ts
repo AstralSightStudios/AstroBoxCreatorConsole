@@ -1,7 +1,18 @@
-import { loadRepoEnv } from "~/config/repoEnv";
+import { REPO_ENVS } from "~/config/repoEnv";
 import { getRepoFile } from "~/logic/publish/github-actions";
 import type { RepoInfo } from "~/logic/publish/github-actions";
 import { fetchDeviceJsonViaCdn } from "./device-json-cdn";
+
+/**
+ * 设备列表固定取正式环境 AstroBox-Repo，**不随发布环境开关变化**。
+ *
+ * 设备库是全站共享的规范化 id 表（表盘 12 位 ID、模块前缀、资源包 themeId
+ * 都以它为准），而 TestEnv 的 devices_v2.json 落后于正式库。若跟着环境切换，
+ * 切到 TestEnv 后正式环境已上架的设备会从下拉里凭空消失，创作者配不了包体，
+ * 审核端也会解析不出设备名。
+ */
+const DEVICE_SOURCE = REPO_ENVS.official;
+const DEVICE_CACHE_KEY = `devices:${DEVICE_SOURCE.id}`;
 
 export interface DeviceOption {
     id: string;
@@ -57,41 +68,35 @@ function decodeBase64(content?: string) {
 }
 
 export async function loadDeviceOptions() {
-    const env = loadRepoEnv();
-    const cacheKey = `devices:${env.id}`;
-    const cached = optionsCache.get(cacheKey);
+    const cached = optionsCache.get(DEVICE_CACHE_KEY);
     if (cached) return cached;
 
-    const pending = inflight.get(cacheKey);
+    const pending = inflight.get(DEVICE_CACHE_KEY);
     if (pending) return pending;
 
     const promise = (async () => {
-        const payload = await loadDevicesPayload(env.owner, env.repoName, env.defaultBranch, cacheKey);
+        const payload = await loadDevicesPayload();
         const options = parseDeviceOptions(payload);
         if (options.length === 0) {
             throw new Error("设备列表为空");
         }
-        optionsCache.set(cacheKey, options);
+        optionsCache.set(DEVICE_CACHE_KEY, options);
         return options;
     })();
 
-    inflight.set(cacheKey, promise);
+    inflight.set(DEVICE_CACHE_KEY, promise);
     try {
         return await promise;
     } finally {
-        inflight.delete(cacheKey);
+        inflight.delete(DEVICE_CACHE_KEY);
     }
 }
 
-async function loadDevicesPayload(
-    owner: string,
-    repoName: string,
-    defaultBranch: string,
-    cacheKey: string,
-): Promise<DevicesPayload> {
-    const cachedPayload = payloadCache.get(cacheKey);
+async function loadDevicesPayload(): Promise<DevicesPayload> {
+    const cachedPayload = payloadCache.get(DEVICE_CACHE_KEY);
     if (cachedPayload) return cachedPayload;
 
+    const { owner, repoName, defaultBranch } = DEVICE_SOURCE;
     const repo: RepoInfo = {
         owner,
         name: repoName,
@@ -115,7 +120,7 @@ async function loadDevicesPayload(
         });
         payload = JSON.parse(decodeBase64(response.content)) as DevicesPayload;
     }
-    payloadCache.set(cacheKey, payload);
+    payloadCache.set(DEVICE_CACHE_KEY, payload);
     return payload;
 }
 
@@ -127,9 +132,7 @@ async function loadDevicesPayload(
 export type DeviceTokenResolver = (token: string) => string | undefined;
 
 export async function loadDeviceTokenResolver(): Promise<DeviceTokenResolver> {
-    const env = loadRepoEnv();
-    const cacheKey = `devices:${env.id}`;
-    const payload = await loadDevicesPayload(env.owner, env.repoName, env.defaultBranch, cacheKey);
+    const payload = await loadDevicesPayload();
 
     const tokenToCanonical = new Map<string, string>();
     for (const devices of Object.values(payload)) {
