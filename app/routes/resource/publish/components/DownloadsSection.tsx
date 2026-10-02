@@ -113,6 +113,8 @@ interface DownloadsSectionProps {
     updater: (row: DownloadInput) => DownloadInput,
   ) => void;
   onBatchSetDevices?: (selectedIds: string[]) => void;
+  /** 转发下载行里付费平台映射弹窗的状态回报，供发布校验使用。 */
+  onPaidMappingStateChange?: (hasMapping: boolean) => void;
   onFillAll?: (template: {
     version: string;
     file: UploadItem | null;
@@ -148,6 +150,7 @@ export function DownloadsSection({
   onUpdateRow,
   onBatchSetDevices,
   onFillAll,
+  onPaidMappingStateChange,
 }: DownloadsSectionProps) {
   const [batchSelectOpen, setBatchSelectOpen] = useState(false);
   const [fillAllOpen, setFillAllOpen] = useState(false);
@@ -783,6 +786,7 @@ export function DownloadsSection({
                           )?.name || item.platformId
                         }
                         triggerDisabled={false}
+                        onMappingStateChange={onPaidMappingStateChange}
                         allDeviceIds={downloads
                           .map((d) => d.platformId)
                           .filter(Boolean)}

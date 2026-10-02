@@ -123,6 +123,73 @@ describe("publish validation", () => {
     }
   });
 
+  test("开了 ext 开关但既无加密也无付费映射时拦截", () => {
+    // 已确认下载配置里没有付费平台映射，且没有任何设备开加密 → 拦截
+    const blocked = validatePublish({
+      ...validInput,
+      enableAstroBoxCreatorFeatures: true,
+      hasPaidPlatformMapping: false,
+    }).errors.join();
+    expect(blocked).toContain("多请求一次拿不到内容的购买信息");
+    expect(
+      validatePublish({
+        ...validInput,
+        enableAstroBoxCreatorFeatures: true,
+        hasPaidPlatformMapping: false,
+      }).issues.some((issue) => issue.field === "creatorFeatures"),
+    ).toBe(true);
+
+    // 有加密包体 → 放行
+    expect(
+      validatePublish({
+        ...validInput,
+        enableAstroBoxCreatorFeatures: true,
+        hasPaidPlatformMapping: false,
+        downloads: [
+          {
+            platformId: "device",
+            version: "1.0",
+            file: image,
+            encryptOnUpload: true,
+          },
+        ],
+      }).errors,
+    ).toEqual([]);
+
+    // 有付费平台映射 → 放行
+    expect(
+      validatePublish({
+        ...validInput,
+        enableAstroBoxCreatorFeatures: true,
+        hasPaidPlatformMapping: true,
+      }).errors,
+    ).toEqual([]);
+
+    // 开关关着 → 本条不适用
+    expect(
+      validatePublish({
+        ...validInput,
+        hasPaidPlatformMapping: false,
+      }).errors,
+    ).toEqual([]);
+  });
+
+  test("付费映射尚未查出时不拦截（fail-open）", () => {
+    expect(
+      validatePublish({
+        ...validInput,
+        enableAstroBoxCreatorFeatures: true,
+      }).errors,
+    ).toEqual([]);
+    expect(
+      validatePublish({
+        ...validInput,
+        enableAstroBoxCreatorFeatures: true,
+        hasPaidPlatformMapping: undefined,
+      }).errors,
+    ).toEqual([]);
+  });
+
   test("资源 ID 格式不合规时拦截发布（按资源类型）", () => {
     // 资源包：只允许小写字母、数字、下划线、连字符
     expect(

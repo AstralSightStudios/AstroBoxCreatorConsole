@@ -75,6 +75,13 @@ export interface PublishValidationInput {
   trialDownloads: ValidationDownloadInput[];
   links: ValidationLinkInput[];
   enableAstroBoxCreatorFeatures: boolean;
+  /**
+   * 下载配置里是否已有付费平台映射（爱发电 / CDK）。
+   *
+   * 三态：true/false 为已确认；undefined 表示付费映射弹窗从未成功加载过，
+   * 此时不做拦截——服务端不可用时不该把创作者挡在发布之外。
+   */
+  hasPaidPlatformMapping?: boolean;
 }
 
 // 图片规格常量与判定统一在 media-rules，这里转出以保持既有导入路径可用。
@@ -287,6 +294,19 @@ export function validatePublish(
     push(
       "creatorFeatures",
       `以下设备启用了加密上传：${encryptedDevices.join("、")}。加密包体必须同时开启「启用购买与资源加密相关功能」，否则客户端不会请求加密密钥、不解密包体，安装时会失败。`,
+    );
+  }
+  // ext 开关会让客户端每次启动都请求 purchase_info 与加密文件密钥。
+  // 没有任何加密包体、也没配付费平台映射时，这两个请求必定拿不到东西：
+  // 白费一次网络往返，还把启动拖慢。只在「已确认没有映射」时拦截。
+  if (
+    input.enableAstroBoxCreatorFeatures &&
+    encryptedDevices.length === 0 &&
+    input.hasPaidPlatformMapping === false
+  ) {
+    push(
+      "creatorFeatures",
+      "已开启「启用购买与资源加密相关功能」，但没有任何设备启用加密上传，下载配置里也没有该资源的付费平台映射。客户端会因此多请求一次拿不到内容的购买信息，请关闭该开关，或补上加密上传 / 付费平台映射。",
     );
   }
   issues.push(...validateUrlUnsafeFilenames(input));

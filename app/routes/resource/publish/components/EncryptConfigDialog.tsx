@@ -29,6 +29,7 @@ import {
   upsertResourceSku,
   type CommercePlatform,
   type SellerPlatformConfig,
+  type SellerResourceConfigListResponse,
   type SellerResourceProduct,
   type SellerResourceSku,
 } from "~/api/astrobox/order";
@@ -54,6 +55,10 @@ function getErrorMessage(err: unknown) {
     return responseData.message as string;
   }
   return (err as Error)?.message || "请求失败";
+}
+
+function hasAnyMapping(data: SellerResourceConfigListResponse): boolean {
+  return data.products.length > 0 || data.skus.length > 0;
 }
 
 interface PlatformMappingRow {
@@ -139,6 +144,14 @@ interface EncryptConfigDialogProps {
   triggerDisabled?: boolean;
   allDeviceIds?: string[];
   onBatchSaved?: () => void;
+  /**
+   * 该资源是否存在付费平台映射（服务端数据）。
+   *
+   * 列表接口返回的是**整个资源**的 products/skus，不只当前 deviceId，
+   * 所以打开任意一个设备的弹窗就能判定资源级状态。加载失败时不回报，
+   * 由表单按「未知」处理——宁可少拦一次发布。
+   */
+  onMappingStateChange?: (hasMapping: boolean) => void;
 }
 
 export function EncryptConfigDialog({
@@ -148,6 +161,7 @@ export function EncryptConfigDialog({
   triggerDisabled,
   allDeviceIds,
   onBatchSaved,
+  onMappingStateChange,
 }: EncryptConfigDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -169,6 +183,7 @@ export function EncryptConfigDialog({
 
   const loadResourceConfigs = async () => {
     const resourceData = await listSellerResourceConfigs({ resourceId });
+    onMappingStateChange?.(hasAnyMapping(resourceData));
     setPersistedSkus(resourceData.skus);
     setFormMap({
       afd: buildPlatformRows(
@@ -199,6 +214,7 @@ export function EncryptConfigDialog({
           listSellerResourceConfigs({ resourceId }),
         ]);
         if (!active) return;
+        onMappingStateChange?.(hasAnyMapping(resourceData));
         setPlatformConfigs(platformData.filter((platform) => platform.enabled));
         setPersistedSkus(resourceData.skus);
         setFormMap({
@@ -225,7 +241,7 @@ export function EncryptConfigDialog({
     return () => {
       active = false;
     };
-  }, [open, resourceId, deviceId]);
+  }, [open, resourceId, deviceId, onMappingStateChange]);
 
   const updateRow = (
     platform: CommercePlatform,

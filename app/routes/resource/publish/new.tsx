@@ -552,6 +552,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [paidType, setPaidType] = useState("");
   const [enableAstroBoxCreatorFeatures, setEnableAstroBoxCreatorFeatures] =
     useState(false);
+  /**
+   * 该资源是否已配置付费平台映射。数据来自下载行里付费映射弹窗加载到的
+   * 服务端配置，弹窗没打开过时为 undefined，校验时不据此拦截。
+   */
+  const [hasPaidPlatformMapping, setHasPaidPlatformMapping] = useState<
+    boolean | undefined
+  >(undefined);
   const effectivePaidType = paidType;
   const tags = useMemo(() => parseTagText(tagsInput), [tagsInput]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
@@ -1125,6 +1132,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         trialDownloads,
         links,
         enableAstroBoxCreatorFeatures,
+        hasPaidPlatformMapping,
       }),
     [
       itemId,
@@ -1139,6 +1147,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       trialDownloads,
       links,
       enableAstroBoxCreatorFeatures,
+      hasPaidPlatformMapping,
     ],
   );
 
@@ -1147,6 +1156,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     () => rowsMissingVersionCode(downloads),
     [downloads],
   );
+
+  /**
+   * 付费映射弹窗回报资源级状态。列表接口返回的是整个资源的 products/skus，
+   * 所以任意一行的弹窗都能判定资源有没有映射；每次回报都是当时的真相，
+   * 直接覆盖即可（清空映射后要能重新变成「无映射」）。弹窗没打开过就保持 undefined。
+   */
+  const handlePaidMappingStateChange = useCallback((hasMapping: boolean) => {
+    setHasPaidPlatformMapping(hasMapping);
+  }, []);
 
   const addDownloadRow = () => {
     const buildRow = (platformId?: string): DownloadInput => ({
@@ -2727,6 +2745,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onUpdateRow={updateDownloadRow}
                 onBatchSetDevices={batchSetDownloadDevices}
                 onFillAll={fillAllDownloads}
+                onPaidMappingStateChange={handlePaidMappingStateChange}
               />
               <DownloadsSection
                 title="试用版下载配置"
@@ -2745,6 +2764,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onRemoveRow={removeTrialDownloadRow}
                 onUpdateRow={updateTrialDownloadRow}
                 onBatchSetDevices={batchSetTrialDownloadDevices}
+                onPaidMappingStateChange={handlePaidMappingStateChange}
                 onFillAll={fillAllTrialDownloads}
               />
               <ExtSection
