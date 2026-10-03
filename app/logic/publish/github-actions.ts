@@ -48,8 +48,22 @@ export interface PullRequestPayload {
     body?: string;
 }
 
+/** 取当前 GitHub token，未登录时返回空字符串（用于可选鉴权的只读请求）。 */
+export function getGithubToken(): string {
+    return loadAccountState().github?.token ?? "";
+}
+
+/**
+ * 只读公开数据时使用的请求头：已登录则带 Bearer token（5000 次/小时），
+ * 未登录退回匿名请求（60 次/小时，容易触发速率限制）。
+ */
+export function optionalAuthHeaders(): Record<string, string> {
+    const token = getGithubToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function getGithubTokenOrThrow(): string {
-    const token = loadAccountState().github?.token;
+    const token = getGithubToken();
     if (!token) {
         throw new Error("未登录 GitHub，无法创建仓库或提交 PR。");
     }

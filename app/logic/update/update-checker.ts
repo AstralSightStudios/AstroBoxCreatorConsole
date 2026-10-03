@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { githubFetch, isGithubStatus } from "~/logic/publish/github-actions";
+import {
+    githubFetch,
+    isGithubStatus,
+    optionalAuthHeaders,
+} from "~/logic/publish/github-actions";
 
 export const UPDATE_REPO = "AstralSightStudios/AstroBoxCreatorConsole";
 
@@ -73,6 +77,25 @@ function readString(value: unknown): string {
     return typeof value === "string" ? value : "";
 }
 
+// 后台静默检查用的请求策略：不重试、短超时，失败即放弃
+const SILENT_FETCH = { retries: 0, timeoutMs: 15_000 };
+
+/**
+ * 更新检测专用请求：优先带 GitHub token，token 失效（401）时退回匿名请求，
+ * 避免过期 token 让更新检测彻底失效。
+ */
+async function githubFetchForUpdate<T>(url: string): Promise<T> {
+    const headers = optionalAuthHeaders();
+    try {
+        return await githubFetch<T>(url, { headers }, SILENT_FETCH);
+    } catch (error) {
+        if (Object.keys(headers).length > 0 && isGithubStatus(error, 401)) {
+            return githubFetch<T>(url, { headers: {} }, SILENT_FETCH);
+        }
+        throw error;
+    }
+}
+
 /** 去掉版本号开头的 v/V 前缀。 */
 export function normalizeVersion(version: string): string {
     return (version || "").trim().replace(/^[vV]/, "");
@@ -104,14 +127,14 @@ export function compareVersions(a: string, b: string): number {
 /**
  * 拉取仓库最新正式 release（/releases/latest 天然排除 draft 与 prerelease）。
  * 仓库尚无 release 时返回 null，网络错误向上抛出。
+ *
+ * 优先带 GitHub token（限流额度 5000 次/小时）；未登录时退回匿名请求
+ * （仅 60 次/小时，且按出口 IP 计算，同一网络下多用户极易被限流）。
  */
 export async function fetchLatestRelease(): Promise<UpdateInfo | null> {
     try {
-        const raw = await githubFetch<LatestReleaseResponse>(
+        const raw = await githubFetchForUpdate<LatestReleaseResponse>(
             `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,
-            { headers: {} },
-            // 后台静默检查：不重试、短超时，失败即放弃
-            { retries: 0, timeoutMs: 15_000 },
         );
         const tagName = readString(raw?.tag_name);
         if (!tagName) return null;
@@ -149,11 +172,8 @@ let artifactInflight: Promise<BetaArtifactInfo | null> | null = null;
 async function requestLatestArtifact(): Promise<BetaArtifactInfo | null> {
     try {
         // 获取最近的工作流运行（按创建时间倒序）
-        const runs = await githubFetch<{ workflow_runs?: WorkflowRunResponse[] }>(
+        const runs = await githubFetchForUpdate<{ workflow_runs?: WorkflowRunResponse[] }>(
             `https://api.github.com/repos/${UPDATE_REPO}/actions/runs?per_page=10&status=completed`,
-            { headers: {} },
-            // 后台静默检查：不重试、短超时，失败即放弃
-            { retries: 0, timeoutMs: 15_000 },
         );
 
         const runsList = runs?.workflow_runs ?? [];
@@ -173,10 +193,8 @@ async function requestLatestArtifact(): Promise<BetaArtifactInfo | null> {
         if (!Number.isFinite(runId) || runId <= 0) return null;
 
         // 获取该运行的 artifacts
-        const artifacts = await githubFetch<ArtifactsResponse>(
+        const artifacts = await githubFetchForUpdate<ArtifactsResponse>(
             `https://api.github.com/repos/${UPDATE_REPO}/actions/runs/${runId}/artifacts`,
-            { headers: {} },
-            { retries: 0, timeoutMs: 15_000 },
         );
 
         const artifactList = artifacts?.artifacts ?? [];
