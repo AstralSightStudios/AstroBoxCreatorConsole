@@ -381,6 +381,23 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
           />
           {pkg.detectedId && <span className="ml-1 text-white/45">检测到 {pkg.detectedId}</span>}
         </span>
+        {pkg.nameMatch && (
+          <span>
+            包内名称：
+            {pkg.nameMatch === "match" && <span className="ml-1 text-emerald-400">一致</span>}
+            {pkg.nameMatch === "mismatch" && <span className="ml-1 text-amber-400">不一致</span>}
+            {pkg.nameMatch === "skipped" && <span className="ml-1 text-white/45">未读取</span>}
+            {pkg.contentName && (
+              <span className="ml-1 text-white/45">
+                检测到 {pkg.contentName}
+                {pkg.contentNameSource ? `（${pkg.contentNameSource}）` : ""}
+              </span>
+            )}
+            {pkg.nameMatch === "skipped" && pkg.nameNote && (
+              <span className="ml-1 text-white/45">{pkg.nameNote}</span>
+            )}
+          </span>
+        )}
         {pkg.debugVerdict && (
           <span>
             签名/构建：

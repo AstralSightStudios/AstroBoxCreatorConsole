@@ -62,6 +62,12 @@ import {
   findUnpaidSkuDevices,
 } from "./utils/purchase-gate";
 import { inspectResPack } from "~/logic/publish/crpack-validate";
+import {
+  judgePackageDisplayName,
+  summarizeDisplayNameCheck,
+  type DisplayNameKind,
+  type DisplayNameObservation,
+} from "~/logic/publish/package-display-name";
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -102,6 +108,14 @@ export interface PackageCheckResult {
   encryptedByHash?: boolean;
   /** 快应用 rpk 的 debug 调试包判定结论；非快应用包体不产出。 */
   debugVerdict?: RpkDebugVerdict;
+  /** 包内实际展示名（快应用 name / 表盘名 / 资源包 name）。 */
+  contentName?: string;
+  /** 展示名的读取位置，例如「表盘文件头」「manifest.json」。 */
+  contentNameSource?: string;
+  /** 包内名称与资源名是否一致。对不上只警告，不作为不通过。 */
+  nameMatch?: "match" | "mismatch" | "skipped";
+  /** 读不到包内名称时的原因。 */
+  nameNote?: string;
   /** CRPack 校验未通过的明细，逐条展示供人工核对。 */
   resPackErrors?: string[];
   /** CRPack 结构摘要（清单名 / 规则数 / TSV 实算字节 / 版本），仅展示不单独判不通过。 */
@@ -830,6 +844,55 @@ function dedupePackages(preview: PrResourcePreview): UniquePackage[] {
     }
   }
   return Array.from(map.values());
+}
+
+function isDisplayNameRestype(restype: string): restype is DisplayNameKind {
+  return restype === "watchface" || restype === "quick_app" || restype === "res_pack";
+}
+
+/** 快应用 / 表盘 / 资源包才有设备上的展示名。读不到或对不上都记在包体结果上。 */
+function attachDisplayName(
+  result: PackageCheckResult,
+  restype: string,
+  resourceName: string,
+  bytes?: Uint8Array,
+) {
+  if (!isDisplayNameRestype(restype) || result.nameMatch) return;
+  const verdict = judgePackageDisplayName({
+    bytes,
+    kind: restype,
+    resourceName,
+    skipped: result.skipped,
+    encrypted: result.encrypted,
+    error: result.error,
+  });
+  result.contentName = verdict.contentName;
+  result.contentNameSource = verdict.contentNameSource;
+  result.nameMatch = verdict.nameMatch;
+  result.nameNote = verdict.nameNote;
+}
+
+function pushDisplayNameCheck(
+  checks: RuleCheckItem[],
+  restype: string,
+  resourceName: string,
+  packageChecks: PackageCheckResult[],
+) {
+  if (!isDisplayNameRestype(restype)) return;
+  const observations: DisplayNameObservation[] = packageChecks.map((pkg) => ({
+    fileName: pkg.fileName,
+    status: pkg.nameMatch ?? "skipped",
+    contentName: pkg.contentName,
+    source: pkg.contentNameSource,
+    note: pkg.nameNote,
+  }));
+  const summary = summarizeDisplayNameCheck(resourceName, observations);
+  checks.push({
+    title: "包内名称与资源名一致",
+    status: summary.status,
+    detail: summary.detail,
+    anchor: "packages",
+  });
 }
 
 export async function runResourceRuleChecks(options: {
@@ -1733,6 +1796,7 @@ export async function runResourceRuleChecks(options: {
     });
     // 「包体内嵌 ID 与资源 ID 一致」在此分支不输出：没有包体时该结论无意义，
     // 具体明细统一交给下方「包体内容校验」区块。
+    pushDisplayNameCheck(checks, restype, manifestName || csvName, []);
   } else {
     const resourceId = manifestId || csvId;
 
@@ -1752,6 +1816,7 @@ export async function runResourceRuleChecks(options: {
         idMatch: "skipped",
       };
 
+      let fetchedBytes: Uint8Array | undefined;
       try {
         const expectedSize = result.sizeBytes;
         let bytes: Uint8Array;
@@ -1762,6 +1827,7 @@ export async function runResourceRuleChecks(options: {
         } else {
           bytes = await fetchResourceBytes(pkg.url, token);
         }
+        fetchedBytes = bytes;
 
         result.detectedType = await detectPackageType(bytes, pkg.fileName, result.sizeBytes);
 
@@ -1791,6 +1857,7 @@ export async function runResourceRuleChecks(options: {
           result.effectiveCategory = "other";
           result.typeMatch = "inconclusive";
           result.idMatch = "skipped";
+          attachDisplayName(result, restype, manifestName || csvName);
           packageChecks.push(result);
           continue;
         }
@@ -1892,6 +1959,7 @@ export async function runResourceRuleChecks(options: {
         result.idMatch = "skipped";
       }
 
+      attachDisplayName(result, restype, manifestName || csvName, fetchedBytes);
       packageChecks.push(result);
     }
 
@@ -1948,6 +2016,9 @@ export async function runResourceRuleChecks(options: {
       })(),
       anchor: "packages",
     });
+
+    // 包内展示名和资源名对不上只警告：设备上看到的名字和商店标题可以人工放行。
+    pushDisplayNameCheck(checks, restype, manifestName || csvName, packageChecks);
 
     // 资源包（CRPack）专项：结构合法性、预算实算与改名痕迹。
     if (restype === "res_pack") {
