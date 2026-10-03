@@ -46,10 +46,72 @@ interface ZipEntrySpec {
   rawPayload?: Uint8Array;
   /** 覆盖中央目录的外部属性（Unix 文件类型放在高 16 位）。 */
   externalAttrs?: number;
+  /** 写入本地头与中央目录的 DOS 时间戳，默认 FIXED_MTIME。 */
+  mtime?: Date;
 }
 
 const UNIX_FILE = 0o100644;
 const DEFAULT_VERSION_MADE_BY = 0x0314; // Unix / version 2.0
+/** 默认时间戳取一个正常的年代（2000 年之后），只有显式覆盖才会造出 1980 年的畸形包。 */
+const FIXED_MTIME = new Date(2024, 4, 17, 10, 30, 0);
+
+/** Date（本地时间）→ DOS 时间/日期字段，ffflate 写包用的是同一套本地时间字段。 */
+function toDosFields(date: Date): { time: number; date: number } {
+  return {
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1),
+    date:
+      ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+/** 读中央目录里的 DOS 时间戳（本地时间），返回 路径 → Date。 */
+function readMtimes(bytes: Uint8Array): Map<string, Date> {
+  const u16 = (offset: number) => bytes[offset] | (bytes[offset + 1] << 8);
+  const u32 = (offset: number) =>
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>>
+    0;
+
+  const decoder = new TextDecoder();
+  const out = new Map<string, Date>();
+  const min = Math.max(0, bytes.length - 0xffff - 22);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= min; i -= 1) {
+    if (u32(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("找不到 EOCD");
+
+  let offset = u32(eocd + 16);
+  for (let i = u16(eocd + 10); i > 0; i -= 1) {
+    const dosTime = u16(offset + 12);
+    const dosDate = u16(offset + 14);
+    const nameLength = u16(offset + 28);
+    const extraLength = u16(offset + 30);
+    const commentLength = u16(offset + 32);
+    const path = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    const year = 1980 + ((dosDate >> 9) & 0x7f);
+    const month = (dosDate >> 5) & 0x0f;
+    const day = dosDate & 0x1f;
+    out.set(
+      path,
+      new Date(
+        year,
+        month ? month - 1 : 0,
+        day ? day : 1,
+        (dosTime >> 11) & 0x1f,
+        (dosTime >> 5) & 0x3f,
+        (dosTime & 0x1f) * 2,
+      ),
+    );
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return out;
+}
 
 function buildZip(specs: ZipEntrySpec[]): Uint8Array {
   const locals: Uint8Array[] = [];
@@ -62,6 +124,7 @@ function buildZip(specs: ZipEntrySpec[]): Uint8Array {
     const payload = spec.rawPayload ?? (method === 8 ? deflateSync(spec.data) : spec.data);
     const declared = spec.declaredSize ?? spec.data.length;
     const crc = crc32(spec.data);
+    const dos = toDosFields(spec.mtime ?? FIXED_MTIME);
 
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
@@ -69,6 +132,8 @@ function buildZip(specs: ZipEntrySpec[]): Uint8Array {
     lv.setUint16(4, method === 8 ? 20 : 10, true);
     lv.setUint16(6, spec.flags ?? 0, true);
     lv.setUint16(8, method, true);
+    lv.setUint16(10, dos.time, true);
+    lv.setUint16(12, dos.date, true);
     lv.setUint32(14, crc, true);
     lv.setUint32(18, payload.length, true);
     lv.setUint32(22, declared, true);
@@ -82,6 +147,8 @@ function buildZip(specs: ZipEntrySpec[]): Uint8Array {
     cv.setUint16(6, method === 8 ? 20 : 10, true);
     cv.setUint16(8, spec.flags ?? 0, true);
     cv.setUint16(10, method, true);
+    cv.setUint16(12, dos.time, true);
+    cv.setUint16(14, dos.date, true);
     cv.setUint32(16, crc, true);
     cv.setUint32(20, payload.length, true);
     cv.setUint32(24, declared, true);
@@ -522,6 +589,39 @@ describe("读取与改写", () => {
     const once = rewriteCrpackCorona(bytes, { themeId: "target" });
     const twice = rewriteCrpackCorona(bytes, { themeId: "target" });
     expect(Array.from(once)).toEqual(Array.from(twice));
+  });
+
+  test("原包时间戳在 2000 年之后时逐字沿用", () => {
+    const mtime = new Date(2023, 8, 9, 8, 6, 4);
+    const bytes = buildZip([
+      { path: CORONA_MANIFEST_NAME, data: manifestJson({ themeId: "orig" }), mtime },
+      { path: "app/a.bin", data: new Uint8Array([7]), mtime },
+    ]);
+    const repacked = readMtimes(rewriteCrpackCorona(bytes, { themeId: "target" }));
+    for (const path of [CORONA_MANIFEST_NAME, "app/a.bin"]) {
+      expect(repacked.get(path)!.getTime()).toBe(mtime.getTime());
+    }
+  });
+
+  test("原包时间戳落在 2000 年之前时改用重打包时刻", () => {
+    // 确定性打包器常见的 1980-01-01（ZIP 时间戳起点）。
+    const mtime = new Date(1980, 0, 1, 0, 0, 0);
+    const bytes = buildZip([
+      { path: CORONA_MANIFEST_NAME, data: manifestJson({ themeId: "orig" }), mtime },
+      { path: "app/a.bin", data: new Uint8Array([7]), mtime },
+    ]);
+    expect(readMtimes(bytes).get("app/a.bin")!.getFullYear()).toBe(1980);
+
+    const before = Date.now();
+    const repacked = readMtimes(rewriteCrpackCorona(bytes, { themeId: "target" }));
+    const after = Date.now();
+
+    for (const path of [CORONA_MANIFEST_NAME, "app/a.bin"]) {
+      // ZIP 秒精度为 2 秒，比较时对齐到偶数秒。
+      const aligned = Math.floor(repacked.get(path)!.getTime() / 2000) * 2000;
+      expect(aligned).toBeGreaterThanOrEqual(Math.floor(before / 2000) * 2000);
+      expect(aligned).toBeLessThanOrEqual(Math.ceil(after / 2000) * 2000);
+    }
   });
 
   test("重打包保留全部资源文件", () => {

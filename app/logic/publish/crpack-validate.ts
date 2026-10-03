@@ -34,10 +34,14 @@ const DEVICE_PATH_LIMIT = 256;
 /** st_mode 的文件类型掩码。 */
 const S_IFMT = 0o170000;
 /**
- * 固定时间戳 1980-01-01T00:00:00Z：ZIP 时间戳的起始年，同时保证同一资源
- * 多次发布产出逐字节一致的包体（themeId 进设备端续传指纹，包体必须可复现）。
+ * 时间戳合理下界：2000-01-01。
+ *
+ * ZIP 时间戳的起点是 1980 年，确定性打包工具（含 Corona CRPack Builder）常直接
+ * 写 1980-01-01 或干脆留 0，这类时间戳落在 2000 年之前，属于「原包时间太离谱」，
+ * 重打包时改用重打包时刻，避免包体看起来来自上世纪。2000 年之前的包体没有
+ * 指纹价值，不值得为它保留逐字节可复现性。
  */
-const DETERMINISTIC_MTIME = new Date(Date.UTC(1980, 0, 1, 0, 0, 0));
+const PLAUSIBLE_MTIME_YEAR = 2000;
 
 const LEGACY_MANIFEST_HINT =
   "该包使用旧清单名 canora.json，请用 Corona CRPack Builder 1.0.6 或更高版本重新导出后再发布";
@@ -103,6 +107,8 @@ interface RawZipEntry {
   compressedSize: number;
   uncompressedSize: number;
   localOffset: number;
+  /** 中央目录里的 DOS 时间戳，按本地时间还原（见 dosToLocalDate）。 */
+  mtime: Date;
 }
 
 const SIG_LOCAL = 0x04034b50;
@@ -130,6 +136,29 @@ function u32(bytes: Uint8Array, offset: number): number {
 
 function u64(bytes: Uint8Array, offset: number): number {
   return u32(bytes, offset) + u32(bytes, offset + 4) * 0x100000000;
+}
+
+/**
+ * DOS 时间戳 → Date（本地时间）。
+ *
+ * ZIP 规范里 mod time/date 记的是**本地时间**且秒精度为 2 秒，ffflate 写包时
+ * 取的也正是 Date 的本地时间字段（getFullYear/getMonth/…）。这里同样按本地
+ * 时间重建，读出再交给 fflate 写回才能逐字还原原包时间戳。
+ * 字段全 0 时得到 1980-01-01，正好落在 PLAUSIBLE_MTIME_YEAR 之前，由调用方
+ * 替换成重打包时刻。
+ */
+function dosToLocalDate(dosTime: number, dosDate: number): Date {
+  const year = 1980 + ((dosDate >> 9) & 0x7f);
+  const month = (dosDate >> 5) & 0x0f;
+  const day = dosDate & 0x1f;
+  return new Date(
+    year,
+    month ? month - 1 : 0,
+    day ? day : 1,
+    (dosTime >> 11) & 0x1f,
+    (dosTime >> 5) & 0x3f,
+    (dosTime & 0x1f) * 2,
+  );
 }
 
 function findEocdOffset(bytes: Uint8Array): number {
@@ -174,6 +203,7 @@ function readCentralDirectory(bytes: Uint8Array): RawZipEntry[] {
     const versionMadeBy = u16(bytes, offset + 4);
     const flags = u16(bytes, offset + 8);
     const method = u16(bytes, offset + 10);
+    const mtime = dosToLocalDate(u16(bytes, offset + 12), u16(bytes, offset + 14));
     const crc = u32(bytes, offset + 16);
     let compressedSize = u32(bytes, offset + 20);
     let uncompressedSize = u32(bytes, offset + 24);
@@ -227,6 +257,7 @@ function readCentralDirectory(bytes: Uint8Array): RawZipEntry[] {
       compressedSize,
       uncompressedSize,
       localOffset,
+      mtime,
     });
     offset = extraStart + extraLength + commentLength;
   }
@@ -895,6 +926,10 @@ export interface CrpackCoronaPatch {
  *
  * 走「读原始 JSON 对象 → 只改目标字段 → 序列化」，绝不按白名单重建，否则
  * 作者自带的未知字段会被丢弃。重打包必须发生在加密与 sha256 计算之前。
+ *
+ * 条目时间戳沿用原包，保证时间戳正常的包仍然逐字节可复现（themeId 进设备端
+ * 续传指纹）；只有原包时间戳落到 2000 年前（ZIP 起点 1980、字段全 0 等，见
+ * PLAUSIBLE_MTIME_YEAR）才换成重打包时刻，这类包因此不再逐字节可复现。
  */
 export function rewriteCrpackCorona(
   bytes: Uint8Array,
@@ -915,9 +950,18 @@ export function rewriteCrpackCorona(
     );
   }
 
+  // 重打包时刻只取一次，保证同一次重打包里所有条目时间一致。
+  const repackTime = new Date();
+  const originalMTimes = new Map(archive.entries.map((entry) => [entry.path, entry.mtime]));
+  const resolveMtime = (path: string): Date => {
+    const original = originalMTimes.get(path);
+    if (!original || original.getFullYear() < PLAUSIBLE_MTIME_YEAR) return repackTime;
+    return original;
+  };
+
   const zippable: Zippable = {};
   const put = (path: string, content: Uint8Array) => {
-    zippable[path] = [content, { level: 6, mtime: DETERMINISTIC_MTIME }];
+    zippable[path] = [content, { level: 6, mtime: resolveMtime(path) }];
   };
   for (const entry of archive.files) {
     put(entry.path, entry.path === CORONA_MANIFEST_NAME ? manifestBytes : entry.bytes);
@@ -925,7 +969,7 @@ export function rewriteCrpackCorona(
   // 目录条目原样保留（用 Stored，避免引入新的 mtime/压缩差异）。
   for (const entry of archive.entries) {
     if (entry.path.endsWith("/")) {
-      zippable[entry.path] = [new Uint8Array(0), { level: 0, mtime: DETERMINISTIC_MTIME }];
+      zippable[entry.path] = [new Uint8Array(0), { level: 0, mtime: resolveMtime(entry.path) }];
     }
   }
   return zipSync(zippable);
