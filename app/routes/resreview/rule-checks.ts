@@ -1583,7 +1583,23 @@ export async function runResourceRuleChecks(options: {
 
   // --- check: 作者 Creator Pro 权益 ---
   // 与绑定声明分离：账户未匹配属于绑定问题，此处只报告已匹配账户的真实权益状态。
-  if (declaredBoundNames.length === 0) {
+  // 免费资源不受 Creator Pro 权益约束（Pro 只是免受 2 免费 : 1 比例限制），
+  // 因此本次提交为免费资源时直接判定通过，不再拿作者权益说事。
+  const newPaidType = entry.paid_type;
+  const newResourceId = manifestItem?.id || entry.id;
+  const originalResourceId = preview.originalId;
+  const ratioAuthorName = pickRatioAuthorName(authorsList);
+  const ratioSubjectIsPaid = isPaidEntry(newPaidType);
+  // paid_type 缺省（历史行未写）时无法确定是免费还是付费，仍按原逻辑校验权益。
+  const isFreeSubmission = newPaidType != null && !ratioSubjectIsPaid;
+
+  if (isFreeSubmission) {
+    checks.push({
+      title: "作者 Creator Pro 权益",
+      status: "pass",
+      detail: "本次提交为免费资源，不受 Creator Pro 权益与付费/免费比例限制，无需校验权益",
+    });
+  } else if (declaredBoundNames.length === 0) {
     checks.push({
       title: "作者 Creator Pro 权益",
       status: "pass",
@@ -1620,12 +1636,6 @@ export async function runResourceRuleChecks(options: {
 
   // --- check: 非 Creator Pro 作者付费/免费资源比例（2 免费 : 1 付费） ---
   // 资源只归属「第一位声明绑定 AstroBox 的作者」，只判他一个人的名下资源。
-  const newPaidType = entry.paid_type;
-  const newResourceId = manifestItem?.id || entry.id;
-  const originalResourceId = preview.originalId;
-  const ratioAuthorName = pickRatioAuthorName(authorsList);
-  const ratioSubjectIsPaid = isPaidEntry(newPaidType);
-
   if (ratioAuthorName && astroboxToken && resolvedAuthorStatuses) {
     const status = resolvedAuthorStatuses[ratioAuthorName];
     if (status) {

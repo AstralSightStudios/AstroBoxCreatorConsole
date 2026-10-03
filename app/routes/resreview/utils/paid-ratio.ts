@@ -188,15 +188,16 @@ export async function checkPaidFreeRatioForAuthor(options: {
     const user = authorStatus.user;
     const vipTier = user.vip;
 
-    if (hasCreatorPro(user.vip) && isVipActive(user.vip, user.vipExpireMap)) {
-        return { status: "pro", authorName, vipTier };
-    }
-
     const incomingIsPaid = isPaidEntry(newEntryPaidType);
-    // 免费资源的提交不会改变免费/付费比例，此时若还拿历史清单去判，就会把
+    // 免费资源的提交不受 Creator Pro 权益与 2 免费 : 1 比例约束，连权益都不用查：
+    // 一是免费资源无论作者是否为 Pro 都合规，二是若还拿历史清单去判，就会把
     // 作者早就存在的历史欠账算到这次免费提交头上。
     if (newEntryPaidType != null && !incomingIsPaid) {
         return { status: "skipped", authorName, reason: "本次提交为免费资源，不改变付费/免费比例" };
+    }
+
+    if (hasCreatorPro(user.vip) && isVipActive(user.vip, user.vipExpireMap)) {
+        return { status: "pro", authorName, vipTier };
     }
 
     if (!astroboxToken) {
