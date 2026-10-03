@@ -116,6 +116,7 @@ import {
   normalizeResourceType,
   type ResourceType,
 } from "~/logic/publish/resource-type";
+import { moveToSlot } from "~/logic/publish/update-log-draft";
 import { MediaSection } from "./components/MediaSection";
 import { AuthorsSection } from "./components/AuthorsSection";
 import { LinksSection } from "./components/LinksSection";
@@ -507,6 +508,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       next.splice(toIndex, 0, moved);
       return next;
     });
+  };
+
+  const handleMovePreviewToSlot = (fromIndex: number, slot: number) => {
+    setPreviews((prev) => moveToSlot(prev, fromIndex, slot));
   };
 
   const handleRemoveIcon = () => {
@@ -2693,6 +2698,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}
                 onReorderPreview={handleReorderPreview}
+                onMovePreviewToSlot={handleMovePreviewToSlot}
                 onIconUpload={handleIconUpload}
                 onCoverUpload={handleCoverUpload}
                  onRemoveIcon={handleRemoveIcon}
