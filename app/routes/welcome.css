@@ -12,16 +12,11 @@
     max-width: 1200px;
     height: 100vh;
     margin-inline: auto;
-    background-image: url("../assets/welcome/background-light.png");
+    /* 只提供深色底图：浅色底图是白底，会与硬编码的深色表面冲突。 */
+    background-image: url("../assets/welcome/background-dark.png");
     background-position: top right;
     background-repeat: no-repeat;
     background-size: auto min(680px, 100%);
-}
-
-@media (prefers-color-scheme: dark) {
-    .welcome-shell {
-        background-image: url("../assets/welcome/background-dark.png");
-    }
 }
 
 .welcome-content {

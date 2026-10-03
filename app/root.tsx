@@ -1,6 +1,6 @@
 import "./app.css";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, Navigate, Outlet, useLocation } from "react-router";
 import { Button, Flex, Heading, Theme } from "@radix-ui/themes";
@@ -81,18 +81,9 @@ export default function RootLayout() {
     const isSetupPage = isWelcome || location.pathname === "/login";
     const needsLogin = !canUseConsole && !isSetupPage;
     const isWallpaperEditor = location.pathname === "/publish/wallpaper";
-    const [systemAppearance, setSystemAppearance] = useState<"light" | "dark">(() =>
-        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
-    );
-
-    useEffect(() => {
-        const preference = window.matchMedia("(prefers-color-scheme: dark)");
-        const handleChange = () => setSystemAppearance(preference.matches ? "dark" : "light");
-        preference.addEventListener("change", handleChange);
-        return () => preference.removeEventListener("change", handleChange);
-    }, []);
-
-    const appearance = isWelcome ? systemAppearance : "dark";
+    // 全局固定深色：欢迎页与设置抽屉的表面色是硬编码深色，跟随系统浅色会让
+    // Radix token 翻成 light，产出白底 + 黑字压黑底的崩坏界面。
+    const appearance = "dark";
     // 公共页面（欢迎/设置/登录）的进出方向：进入欢迎页视为「返回」，欢迎页从上方落下、
     // 当前页向下退场；其余（进入设置/登录）视为前进，向上位移。
     const publicTransitionDirection: 1 | -1 = isWelcome ? -1 : 1;
