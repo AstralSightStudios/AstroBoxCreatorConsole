@@ -322,21 +322,90 @@ export function findSentCcNotice(params: {
   return loadBulkRecords()[key] ?? null;
 }
 
-/** 撤回此前发送的通知批次，并清除幂等记录，使后续可重新发送。 */
+/**
+ * 本机没有发送记录时，按业务键（kind + metadata.subtype/prNumber/tagId）从服务端
+ * 把那条消息捞回来。服务端 /admin/inbox 只能按收件人 + kind 过滤，metadata 只能
+ * 在客户端匹配，所以这里沿用 inspectCcNotices 相同的比对规则；已软删的不算。
+ */
+async function recoverCcNoticeMessage(
+  params: {
+    subtype: CcNoticeSubtype;
+    prNumber: number;
+    tagId?: string;
+  },
+  userIds: string[],
+): Promise<InboxMessage | null> {
+  if (userIds.length === 0) return null;
+  let messages: InboxMessage[];
+  try {
+    messages = await fetchCcNotices(userIds);
+  } catch {
+    // 读不到信箱（权限不足 / 断网）时不能当成"没有发过"，交给调用方报错
+    return null;
+  }
+  return (
+    messages.find(
+      (item) =>
+        typeof item.bulkId === "string" &&
+        (item.metadata as CcNoticeMetadata | null)?.subtype ===
+          params.subtype &&
+        ((item.metadata as CcNoticeMetadata | null)?.tagId ?? "") ===
+          (params.tagId ?? "") &&
+        (item.metadata as CcNoticeMetadata | null)?.prNumber ===
+          params.prNumber &&
+        !item.deletedByAdminAt &&
+        !item.deletedByUserAt &&
+        !item.deletedBySystemAt,
+    ) ?? null
+  );
+}
+
+/**
+ * 撤回此前发送的通知批次，并清除幂等记录，使后续可重新发送。
+ *
+ * 顺序要求：必须先确认撤回成功，再清本地记录与幂等键。反过来会出现
+ * "记录已清、消息还在"，之后再发送会被当成没发过，给用户重复投递。
+ *
+ * 本机没有记录时（换设备 / 清过缓存 / 旧版本发的）也不静默跳过，而是按业务键
+ * 从服务端恢复撤回句柄；仍找不到则抛错，由调用方中止重发并提示人工处理。
+ */
 export async function revokeCcNotice(params: {
   subtype: CcNoticeSubtype;
   prNumber: number;
   tagId?: string;
+  /** 传入后，本机无记录时可据此从服务端恢复撤回句柄 */
+  userIds?: string[];
 }): Promise<void> {
+  // 用 buildNoticeKey 而不是 idempotencyKey：后者要求完整 CcNoticePayload，
+  // 而这里只掌握了业务键三元组。
   const key = buildNoticeKey(params.subtype, params.prNumber, params.tagId);
-  const record = loadBulkRecords()[key];
+  let bulkId = loadBulkRecords()[key]?.bulkId;
+
+  if (!bulkId) {
+    const recovered = await recoverCcNoticeMessage(
+      params,
+      params.userIds ?? [],
+    );
+    if (!recovered?.bulkId) {
+      throw new Error(
+        "本机没有这条审核通知的发送记录，无法自动撤回。请到信箱管理页按标题或收件人手动撤回。",
+      );
+    }
+    bulkId = recovered.bulkId;
+    // 回填本机记录，后续撤回就不用再走服务端查询
+    adoptServerRecord(key, recovered, {
+      prNumber: params.prNumber,
+      userIds: params.userIds ?? [],
+    });
+  }
+
+  // 失败直接抛出：本地记录与幂等键保持原样，重发不会和撤回脱节
+  await AdminApi.inbox.bulkDelete(bulkId);
+
   dropSentRecord(key);
   const sentKeys = loadSentKeys();
   sentKeys.delete(key);
   persistSentKeys(sentKeys);
-  if (record?.bulkId) {
-    await AdminApi.inbox.bulkDelete(record.bulkId);
-  }
 }
 
 // 服务端 /admin/inbox 要求 title/body 均非空（minLength: 1）。

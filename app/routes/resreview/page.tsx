@@ -547,10 +547,18 @@ export default function ResourceReviewPage() {
         // 编辑的是 NEEDFIX 评论且此前已发送过审核通知：撤回旧通知后按草稿重发。
         const updated = parseReviewCommentBody(body);
         if (updated.tagType === "NEEDFIX" && updated.tagId) {
+          // 传 userIds：本机没有发送记录时（换设备/清过缓存）也能从服务端
+          // 恢复撤回句柄。撤回失败会抛出，外层 catch 提示并中止下面的重发，
+          // 避免出现"旧的还在、新的又来一份"。
+          const { userIds } = await resolveRecipientUserIds(
+            resourcePreviews,
+            getAstroboxToken(),
+          );
           await revokeCcNotice({
             subtype: "review-changes-requested",
             prNumber: number,
             tagId: editingTarget.ccNotice.tagId,
+            userIds,
           });
           void notifyCc({
             subtype: "review-changes-requested",
