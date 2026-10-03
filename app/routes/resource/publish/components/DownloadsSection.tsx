@@ -10,6 +10,9 @@ import {
   TrashIcon,
   LockSimpleIcon,
   PencilSimpleLineIcon,
+  DotsSixVerticalIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -25,7 +28,7 @@ import {
   AlertDialog,
   Dialog,
 } from "~/components/ScaleAwareThemes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ScrollArea } from "~/components/scroll-area";
 import { pickFiles } from "~/logic/publish/file-picker";
 import { createUploadItem } from "./uploadUtils";
@@ -44,6 +47,14 @@ import { toast } from "sonner";
 import { log } from "~/logic/logging";
 import { logFieldChange } from "~/logic/logging/publish-flow";
 import type { UpdateLogEntry } from "./types";
+import {
+  createUpdateLogDraft,
+  duplicateUpdateLogVersions,
+  moveToSlot,
+  nextUpdateLogVersion,
+  reorderById,
+  type UpdateLogDraft,
+} from "~/logic/publish/update-log-draft";
 import {
   computePackageHash,
   type PackageVersionInfo,
@@ -74,7 +85,8 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
   {
     label: "更新日志",
-    description: "按版本记录本次更新内容，用户更新资源时会看到这些说明。",
+    description:
+      "按版本记录本次更新内容，用户更新资源时会看到这些说明。同一包体里版本号不能重复；新添加的一条默认填入当前导入包的版本。可拖动或点上下箭头调整顺序，越靠上越先显示。",
   },
   {
     label: "批量选择设备 / 一键填充",
@@ -162,6 +174,7 @@ export function DownloadsSection({
   } | null>(null);
   const [updateLogEditor, setUpdateLogEditor] = useState<{
     uid: string;
+    packageVersion: string;
     entries: UpdateLogEntry[];
   } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -234,60 +247,21 @@ export function DownloadsSection({
     setFillAllOpen(false);
   };
 
-  const addUpdateLogEntry = () => {
+  const saveUpdateLogs = (entries: UpdateLogEntry[]) => {
     if (!updateLogEditor) return;
-    const row = downloads.find((d) => d.uid === updateLogEditor.uid);
-    setUpdateLogEditor({
-      ...updateLogEditor,
-      entries: [
-        { version: row?.version ?? "", content: "" },
-        ...updateLogEditor.entries,
-      ],
-    });
-  };
-
-  const updateUpdateLogEntry = (
-    index: number,
-    patch: Partial<UpdateLogEntry>,
-  ) => {
-    if (!updateLogEditor) return;
-    setUpdateLogEditor({
-      ...updateLogEditor,
-      entries: updateLogEditor.entries.map((log, i) =>
-        i === index ? { ...log, ...patch } : log,
-      ),
-    });
-  };
-
-  const removeUpdateLogEntry = (index: number) => {
-    if (!updateLogEditor) return;
-    setUpdateLogEditor({
-      ...updateLogEditor,
-      entries: updateLogEditor.entries.filter((_, i) => i !== index),
-    });
-  };
-
-  const saveUpdateLogs = () => {
-    if (!updateLogEditor) return;
-    const { uid, entries } = updateLogEditor;
-    const cleaned = entries
-      .map((log) => ({
-        version: log.version.trim(),
-        content: log.content.trim(),
-      }))
-      .filter((log) => log.version || log.content);
+    const { uid } = updateLogEditor;
     const row = downloads.find((d) => d.uid === uid);
     const device = sortedDeviceOptions.find((opt) => opt.id === row?.platformId);
     log.info("download/row", "保存更新日志", {
       data: {
         deviceId: row?.platformId ?? null,
         deviceName: device?.name ?? null,
-        count: cleaned.length,
+        count: entries.length,
       },
     });
     onUpdateRow(uid, (r) => ({
       ...r,
-      updatelogs: cleaned.length > 0 ? cleaned : undefined,
+      updatelogs: entries.length > 0 ? entries : undefined,
     }));
     setUpdateLogEditor(null);
   };
@@ -801,8 +775,10 @@ export function DownloadsSection({
                       onClick={() =>
                         setUpdateLogEditor({
                           uid: item.uid,
+                          packageVersion: item.version ?? "",
                           entries: (item.updatelogs ?? []).map((log) => ({
-                            ...log,
+                            version: log.version,
+                            content: log.content,
                           })),
                         })
                       }
@@ -849,87 +825,14 @@ export function DownloadsSection({
         />
       )}
 
-      <Dialog.Root
-        open={updateLogEditor !== null}
-        onOpenChange={(open) => {
-          if (!open) setUpdateLogEditor(null);
-        }}
-      >
-        <Dialog.Content maxWidth="620px">
-          <Dialog.Title>配置更新日志</Dialog.Title>
-          <Dialog.Description size="2">
-            越靠上的日志越先显示。新添加的一条会出现在最上方。
-          </Dialog.Description>
-          <ScrollArea className="mt-3 max-h-[var(--ui-viewport-height-52pct)]">
-            <div className="flex flex-col gap-3 pr-1">
-              {updateLogEditor?.entries.map((log, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-white/55">
-                      第 {index + 1} 条
-                    </span>
-                    <Button
-                      size="1"
-                      variant="ghost"
-                      color="red"
-                      onClick={() => removeUpdateLogEntry(index)}
-                    >
-                      <TrashIcon size={14} />
-                      删除
-                    </Button>
-                  </div>
-                  <TextField.Root
-                    placeholder="版本号，如 1.2.0"
-                    value={log.version}
-                    radius="large"
-                    className="w-full"
-                    onChange={(e) =>
-                      updateUpdateLogEntry(index, { version: e.target.value })
-                    }
-                  />
-                  <TextArea
-                    placeholder="本次更新内容，每行一条"
-                    value={log.content}
-                    radius="large"
-                    className="mt-2 w-full"
-                    rows={3}
-                    onChange={(e) =>
-                      updateUpdateLogEntry(index, { content: e.target.value })
-                    }
-                  />
-                </div>
-              ))}
-              {(!updateLogEditor || updateLogEditor.entries.length === 0) && (
-                <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
-                  还没有更新日志。可添加多条，按版本展示更新内容。
-                </p>
-              )}
-            </div>
-          </ScrollArea>
-          <div className="mt-3 flex items-center justify-between">
-            <Button size="1" variant="soft" color="gray" onClick={addUpdateLogEntry}>
-              <PlusIcon size={14} weight="bold" />
-              添加一条
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="soft"
-                color="gray"
-                onClick={() => setUpdateLogEditor(null)}
-              >
-                取消
-              </Button>
-              <Button onClick={saveUpdateLogs}>
-                <ChecksIcon size={14} weight="bold" />
-                保存
-              </Button>
-            </div>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      {updateLogEditor && (
+        <UpdateLogEditorDialog
+          packageVersion={updateLogEditor.packageVersion}
+          initialEntries={updateLogEditor.entries}
+          onClose={() => setUpdateLogEditor(null)}
+          onSave={saveUpdateLogs}
+        />
+      )}
 
       <FieldHelpDialog
         open={helpOpen}
@@ -942,6 +845,655 @@ export function DownloadsSection({
         {helperText && <p className="text-xs text-white/60">{helperText}</p>}
       </div>
     </SectionCard>
+  );
+}
+
+function UpdateLogCard({
+  log,
+  index,
+  entryCount,
+  duplicated,
+  onDragHandlePointerDown,
+  onMove,
+  onRemove,
+  onVersionChange,
+  onContentChange,
+}: {
+  log: UpdateLogDraft;
+  index: number;
+  entryCount: number;
+  duplicated: boolean;
+  onDragHandlePointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+  onVersionChange: (version: string) => void;
+  onContentChange: (content: string) => void;
+}) {
+  return (
+    <div
+      data-log-slot=""
+      data-log-id={log.id}
+      className={`rounded-lg border bg-white/[0.03] p-3 ${
+        duplicated ? "border-red-400/45" : "border-white/10"
+      }`}
+    >
+      <div className="mb-2 flex items-center gap-1">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="拖动排序"
+          className="cursor-grab touch-none rounded p-1.5 text-white/40 active:cursor-grabbing"
+          onPointerDown={onDragHandlePointerDown}
+        >
+          <DotsSixVerticalIcon size={15} weight="bold" />
+        </div>
+        <span className="min-w-0 flex-1 text-xs font-medium text-white/55">
+          第 {index + 1} 条
+        </span>
+        <button
+          type="button"
+          disabled={index === 0}
+          className="rounded p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-20"
+          onClick={() => onMove(-1)}
+          aria-label="上移"
+        >
+          <ArrowUpIcon size={14} />
+        </button>
+        <button
+          type="button"
+          disabled={index === entryCount - 1}
+          className="rounded p-1 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-20"
+          onClick={() => onMove(1)}
+          aria-label="下移"
+        >
+          <ArrowDownIcon size={14} />
+        </button>
+        <Button size="1" variant="ghost" color="red" onClick={onRemove}>
+          <TrashIcon size={14} />
+          删除
+        </Button>
+      </div>
+      <TextField.Root
+        placeholder="版本号，如 1.2.0"
+        value={log.version}
+        radius="large"
+        color={duplicated ? "red" : undefined}
+        className="w-full"
+        onChange={(event) => onVersionChange(event.target.value)}
+      />
+      {duplicated && (
+        <p className="mt-1 text-xs text-red-300">版本号与其他日志重复</p>
+      )}
+      <TextArea
+        placeholder="本次更新内容，每行一条"
+        value={log.content}
+        radius="large"
+        className="mt-2 w-full"
+        rows={3}
+        onChange={(event) => onContentChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+/** 高次幂的缓入缓出，两端很平、中间很陡。 */
+function easeInOutPow(t: number, power: number) {
+  const clamped = Math.min(1, Math.max(0, t));
+  const scale = 2 ** (power - 1);
+  if (clamped < 0.5) return scale * clamped ** power;
+  return 1 - (-2 * clamped + 2) ** power / 2;
+}
+
+function easeInOutPowInverse(amount: number, power: number) {
+  const clamped = Math.min(1, Math.max(0, amount));
+  const scale = 2 ** (power - 1);
+  if (clamped < 0.5) return (clamped / scale) ** (1 / power);
+  return 1 - ((1 - clamped) / scale) ** (1 / power);
+}
+
+function UpdateLogEditorDialog({
+  packageVersion,
+  initialEntries,
+  onClose,
+  onSave,
+}: {
+  packageVersion: string;
+  initialEntries: UpdateLogEntry[];
+  onClose: () => void;
+  onSave: (entries: UpdateLogEntry[]) => void;
+}) {
+  const [entries, setEntries] = useState<UpdateLogDraft[]>(() =>
+    initialEntries.map((log) => createUpdateLogDraft(log.version, log.content)),
+  );
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const entriesRef = useRef(entries);
+  const dragSessionRef = useRef<{
+    pointerId: number;
+    id: string;
+    fromIndex: number;
+    slot: number;
+    scroll: number;
+    visual: number;
+    animFrom: number;
+    animTo: number;
+    animStart: number;
+    cardCenterY: number;
+    lastTick: number;
+    ready: boolean;
+    dropping: boolean;
+  } | null>(null);
+  const pointerListenersRef = useRef<{
+    move: (event: PointerEvent) => void;
+    up: (event: PointerEvent) => void;
+  } | null>(null);
+  const dropTimerRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [edgePad, setEdgePad] = useState(0);
+  const [dropping, setDropping] = useState(false);
+  const [lifted, setLifted] = useState<{
+    id: string;
+    version: string;
+    content: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  entriesRef.current = entries;
+  const duplicates = useMemo(() => {
+    const persisted = entries.filter(
+      (entry) => entry.version.trim() || entry.content.trim(),
+    );
+    return duplicateUpdateLogVersions(persisted);
+  }, [entries]);
+  const detachPointerListeners = () => {
+    const listeners = pointerListenersRef.current;
+    if (!listeners) return;
+    window.removeEventListener("pointermove", listeners.move);
+    window.removeEventListener("pointerup", listeners.up);
+    window.removeEventListener("pointercancel", listeners.up);
+    pointerListenersRef.current = null;
+  };
+
+  /** 界面缩放后，把屏幕坐标换回布局像素，避免拖起的卡片被放大撑出横向滚动。 */
+  const localScale = (node: HTMLElement) => {
+    const layoutWidth = node.offsetWidth;
+    if (layoutWidth <= 0) return 1;
+    const scale = node.getBoundingClientRect().width / layoutWidth;
+    return scale > 0.01 ? scale : 1;
+  };
+
+  const getScroller = () => {
+    const list = listRef.current;
+    if (!list) return null;
+    return (
+      list.closest<HTMLElement>("[data-overlayscrollbars-viewport]") ??
+      list.parentElement
+    );
+  };
+
+  const slotCards = () => {
+    const list = listRef.current;
+    if (!list) return [];
+    return Array.from(list.querySelectorAll<HTMLElement>("[data-log-slot]"));
+  };
+
+  /** 每个缝对齐到固定线时，滚动容器应处的 scrollTop。 */
+  const measureSlotScrollTops = (scroller: HTMLElement, cards: HTMLElement[]) => {
+    const scrollerRect = scroller.getBoundingClientRect();
+    const lineY = scrollerRect.top + scrollerRect.height / 2;
+  const transform = getComputedStyle(scroller).transform;
+  const scale =
+    !transform || transform === "none" ? 1 : new DOMMatrix(transform).a || 1;
+  const toScrollTop = (anchorY: number) =>
+    scroller.scrollTop + (anchorY - lineY) / (scale > 0.01 ? scale : 1);
+    if (cards.length === 0) return [scroller.scrollTop];
+    const first = cards[0].getBoundingClientRect();
+    const targets = [toScrollTop(first.top)];
+    for (let index = 0; index < cards.length - 1; index++) {
+      const above = cards[index].getBoundingClientRect();
+      const below = cards[index + 1].getBoundingClientRect();
+      targets.push(toScrollTop((above.bottom + below.top) / 2));
+    }
+    const last = cards[cards.length - 1].getBoundingClientRect();
+    targets.push(toScrollTop(last.bottom));
+    return targets;
+  };
+
+  const endDrag = () => {
+    if (dropTimerRef.current != null) {
+      window.clearTimeout(dropTimerRef.current);
+      dropTimerRef.current = null;
+    }
+    if (scrollRafRef.current != null) {
+      window.cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+    const scroller = getScroller();
+    if (scroller) {
+      scroller.style.height = "";
+      scroller.style.maxHeight = "";
+      scroller.style.transform = "";
+      const node = scroller;
+      window.setTimeout(() => {
+        node.style.transition = "";
+        node.style.transformOrigin = "";
+      }, 170);
+    }
+    detachPointerListeners();
+    dragSessionRef.current = null;
+    setDraggingId(null);
+    setLifted(null);
+    setDropping(false);
+    setEdgePad(0);
+  };
+
+  useEffect(() => {
+    if (!draggingId) return;
+    const scroller = getScroller();
+    const session = dragSessionRef.current;
+    if (!scroller || !session) return;
+    scroller.style.transition = "transform 150ms ease";
+    scroller.style.transformOrigin = "center center";
+    scroller.style.transform = "scale(0.9)";
+    const align = (markReady: boolean) => {
+      const current = dragSessionRef.current;
+      if (!current || current.dropping || current.ready) return;
+      const targets = measureSlotScrollTops(scroller, slotCards());
+      if (targets.length === 0) return;
+      const slot = Math.min(current.fromIndex, targets.length - 1);
+      scroller.scrollTop = Math.max(0, targets[slot]);
+      current.slot = slot;
+      current.scroll = scroller.scrollTop;
+      current.visual = scroller.scrollTop;
+      current.animFrom = scroller.scrollTop;
+      current.animTo = scroller.scrollTop;
+      current.animStart = 0;
+      if (markReady) current.ready = true;
+    };
+    const frame = requestAnimationFrame(() => align(false));
+    const timer = window.setTimeout(() => align(true), 160);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [draggingId, edgePad]);
+
+  useEffect(() => {
+    return () => {
+      if (dropTimerRef.current != null) {
+        window.clearTimeout(dropTimerRef.current);
+      }
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+      const listeners = pointerListenersRef.current;
+      if (!listeners) return;
+      window.removeEventListener("pointermove", listeners.move);
+      window.removeEventListener("pointerup", listeners.up);
+      window.removeEventListener("pointercancel", listeners.up);
+    };
+  }, []);
+
+  const moveEntry = (fromId: string, toId: string) => {
+    setEntries((current) => reorderById(current, fromId, toId));
+  };
+
+  const startHandleDrag = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    id: string,
+    index: number,
+  ) => {
+    if (entriesRef.current.length < 2 || dragSessionRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const card = event.currentTarget.closest("[data-log-id]");
+    const frame = viewportRef.current;
+    const scroller = getScroller();
+    if (!(card instanceof HTMLElement) || !frame || !scroller) return;
+    const cardRect = card.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const uiScale = localScale(frame);
+    const entry = entriesRef.current.find((item) => item.id === id);
+    const lockedHeight = scroller.clientHeight;
+    scroller.style.height = `${lockedHeight}px`;
+    scroller.style.maxHeight = `${lockedHeight}px`;
+    dragSessionRef.current = {
+      pointerId: event.pointerId,
+      id,
+      fromIndex: index,
+      slot: index,
+      scroll: scroller.scrollTop,
+      visual: scroller.scrollTop,
+      animFrom: scroller.scrollTop,
+      animTo: scroller.scrollTop,
+      animStart: 0,
+      cardCenterY: cardRect.top + cardRect.height / 2,
+      lastTick: 0,
+      ready: false,
+      dropping: false,
+    };
+    setEdgePad(lockedHeight / 2);
+    setDropping(false);
+    setLifted({
+      id,
+      version: entry?.version ?? "",
+      content: entry?.content ?? "",
+      left: (cardRect.left - frameRect.left) / uiScale,
+      top: (cardRect.top - frameRect.top) / uiScale,
+      width: cardRect.width / uiScale,
+      height: cardRect.height / uiScale,
+    });
+    setDraggingId(id);
+
+    const move = (ev: PointerEvent) => {
+      const session = dragSessionRef.current;
+      const frameNode = viewportRef.current;
+      if (!session || session.dropping || ev.pointerId !== session.pointerId) return;
+      if (!frameNode) return;
+      ev.preventDefault();
+      const frameRectNow = frameNode.getBoundingClientRect();
+      const uiScale = localScale(frameNode);
+      session.cardCenterY =
+        ev.clientY - (event.clientY - cardRect.top) + cardRect.height / 2;
+      setLifted((current) =>
+        current
+          ? {
+              ...current,
+              top:
+                (ev.clientY - frameRectNow.top - (event.clientY - cardRect.top)) /
+                uiScale,
+            }
+          : current,
+      );
+    };
+    const tick = (now: number) => {
+      scrollRafRef.current = window.requestAnimationFrame(tick);
+      const session = dragSessionRef.current;
+      const scrollNode = getScroller();
+      if (!session || !scrollNode || session.dropping || !session.ready) {
+        if (session) session.lastTick = now;
+        return;
+      }
+      const dt = session.lastTick
+        ? Math.min(0.05, (now - session.lastTick) / 1000)
+        : 0;
+      session.lastTick = now;
+      if (dt <= 0) return;
+      const targets = measureSlotScrollTops(scrollNode, slotCards());
+      if (targets.length === 0) return;
+      const scrollRect = scrollNode.getBoundingClientRect();
+      const lineY = scrollRect.top + scrollRect.height / 2;
+      const offset = session.cardCenterY - lineY;
+      const distance = Math.abs(offset) - 12;
+      if (distance > 0) {
+        const direction = offset > 0 ? 1 : -1;
+        const speed = Math.min(distance / 120, 1) * 460;
+        session.scroll += direction * speed * dt;
+        const lo = Math.min(...targets);
+        const hi = Math.max(...targets);
+        session.scroll = Math.min(hi, Math.max(lo, session.scroll));
+      }
+      let nearest = 0;
+      let best = Number.POSITIVE_INFINITY;
+      for (let slot = 0; slot < targets.length; slot++) {
+        const gap = Math.abs(session.scroll - targets[slot]);
+        if (gap < best) {
+          best = gap;
+          nearest = slot;
+        }
+      }
+      session.slot = nearest;
+      const target = Math.max(0, targets[nearest]);
+      const easePower = 6;
+      const easeMs = 240;
+      if (Math.abs(target - session.animTo) > 0.5) {
+        const previousSpan = session.animTo - session.animFrom;
+        const traveled =
+          previousSpan === 0
+            ? 0
+            : (session.visual - session.animFrom) / previousSpan;
+        const sameWay =
+          Math.abs(previousSpan) > 0.5 &&
+          Math.sign(target - session.visual) === Math.sign(previousSpan) &&
+          traveled > 0 &&
+          traveled < 1;
+        if (sameWay) {
+          const nextSpan = target - session.animFrom;
+          const nextAmount =
+            nextSpan === 0 ? 1 : (session.visual - session.animFrom) / nextSpan;
+          const progress = easeInOutPowInverse(nextAmount, easePower);
+          session.animTo = target;
+          session.animStart = now - progress * easeMs;
+        } else {
+          session.animFrom = session.visual;
+          session.animTo = target;
+          session.animStart = now;
+        }
+      }
+      const progress = Math.min(1, Math.max(0, (now - session.animStart) / easeMs));
+      session.visual =
+        session.animFrom +
+        (session.animTo - session.animFrom) * easeInOutPow(progress, easePower);
+      if (Math.abs(target - session.visual) < 0.4) {
+        session.visual = target;
+        session.animFrom = target;
+        session.animTo = target;
+      }
+      scrollNode.scrollTop = Math.max(0, session.visual);
+    };
+    const up = (ev: PointerEvent) => {
+      const session = dragSessionRef.current;
+      const frameNode = viewportRef.current;
+      const scrollNode = getScroller();
+      if (!session || ev.pointerId !== session.pointerId || session.dropping) return;
+      session.dropping = true;
+      detachPointerListeners();
+      if (!frameNode || !scrollNode) {
+        endDrag();
+        return;
+      }
+      setDropping(true);
+      requestAnimationFrame(() => {
+        const frameRectNow = frameNode.getBoundingClientRect();
+        const scrollRect = scrollNode.getBoundingClientRect();
+        const lineY = scrollRect.top + scrollRect.height / 2;
+        const uiScale = localScale(frameNode);
+        setLifted((current) =>
+          current
+            ? {
+                ...current,
+                top: (lineY - frameRectNow.top) / uiScale - current.height / 2,
+              }
+            : current,
+        );
+        dropTimerRef.current = window.setTimeout(() => {
+          dropTimerRef.current = null;
+          const latest = dragSessionRef.current;
+          if (latest) {
+            setEntries((current) =>
+              moveToSlot(current, latest.fromIndex, latest.slot),
+            );
+          }
+          endDrag();
+        }, 160);
+      });
+    };
+    detachPointerListeners();
+    pointerListenersRef.current = { move, up };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    scrollRafRef.current = window.requestAnimationFrame(tick);
+  };
+
+  const addEntry = () => {
+    const version = nextUpdateLogVersion(entries, packageVersion);
+    setEntries((current) => [createUpdateLogDraft(version), ...current]);
+  };
+
+  const save = () => {
+    const cleaned = entries
+      .map((log) => ({
+        version: log.version.trim(),
+        content: log.content.trim(),
+      }))
+      .filter((log) => log.version || log.content);
+    const duplicated = duplicateUpdateLogVersions(cleaned);
+    if (duplicated.size > 0) {
+      const label = [...duplicated]
+        .map((version) => (version ? version : "（空版本号）"))
+        .join("、");
+      toast.error(`更新日志的版本号不能重复：${label}`);
+      return;
+    }
+    onSave(cleaned);
+  };
+
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Dialog.Content maxWidth="620px">
+        <Dialog.Title>配置更新日志</Dialog.Title>
+        <Dialog.Description size="2">
+          越靠上的日志越先显示。新添加的一条默认使用当前导入包的版本号；该版本已有日志时版本号留空。拖动左侧手柄或点上下箭头可调整顺序。
+        </Dialog.Description>
+        <div ref={viewportRef} className="relative mt-3 overflow-x-clip">
+        <ScrollArea
+          className={`max-h-[var(--ui-viewport-height-52pct)] ${
+            draggingId ? "log-drag-scroll" : ""
+          }`}
+        >
+          <div
+            ref={listRef}
+            className={`flex flex-col gap-3 pr-1 ${draggingId ? "touch-none select-none" : ""}`}
+            style={
+              edgePad > 0
+                ? { paddingTop: edgePad, paddingBottom: edgePad }
+                : undefined
+            }
+          >
+            {entries.map((log, index) => {
+              if (log.id === draggingId) return null;
+              const versionKey = log.version.trim();
+              const duplicated =
+                duplicates.has(versionKey) &&
+                (versionKey !== "" || log.content.trim() !== "");
+              return (
+                <UpdateLogCard
+                  key={log.id}
+                  log={log}
+                  index={index}
+                  entryCount={entries.length}
+                  duplicated={duplicated}
+                  onDragHandlePointerDown={(event) =>
+                    startHandleDrag(event, log.id, index)
+                  }
+                  onMove={(direction) => {
+                    const target = entries[index + direction];
+                    if (target) moveEntry(log.id, target.id);
+                  }}
+                  onRemove={() =>
+                    setEntries((current) =>
+                      current.filter((entry) => entry.id !== log.id),
+                    )
+                  }
+                  onVersionChange={(version) =>
+                    setEntries((current) =>
+                      current.map((entry) =>
+                        entry.id === log.id ? { ...entry, version } : entry,
+                      ),
+                    )
+                  }
+                  onContentChange={(content) =>
+                    setEntries((current) =>
+                      current.map((entry) =>
+                        entry.id === log.id ? { ...entry, content } : entry,
+                      ),
+                    )
+                  }
+                />
+              );
+            })}
+            {entries.length === 0 && (
+              <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                还没有更新日志。可添加多条，按版本展示更新内容。
+              </p>
+            )}
+          </div>
+        </ScrollArea>
+        {draggingId && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-3 top-1/2 z-10 h-0.5 -translate-y-1/2 rounded-full bg-blue-400"
+          />
+        )}
+        {lifted && (
+          <div
+            className={`pointer-events-none absolute z-20 ${
+              dropping ? "transition-[top,left] duration-150 ease-out" : ""
+            }`}
+            style={{
+              left: lifted.left,
+              top: lifted.top,
+              width: lifted.width,
+            }}
+          >
+            {entries
+              .filter((entry) => entry.id === lifted.id)
+              .map((entry) => {
+                const liftedIndex = entries.findIndex((item) => item.id === entry.id);
+                const versionKey = entry.version.trim();
+                const duplicated =
+                  duplicates.has(versionKey) &&
+                  (versionKey !== "" || entry.content.trim() !== "");
+                return (
+                  <UpdateLogCard
+                    key={entry.id}
+                    log={entry}
+                    index={liftedIndex}
+                    entryCount={entries.length}
+                    duplicated={duplicated}
+                    onDragHandlePointerDown={() => {}}
+                    onMove={() => {}}
+                    onRemove={() => {}}
+                    onVersionChange={() => {}}
+                    onContentChange={() => {}}
+                  />
+                );
+              })}
+          </div>
+        )}
+        </div>
+        {duplicates.size > 0 && (
+          <p className="mt-2 text-xs text-red-300">
+            存在重复的版本号，请修改后再保存。
+          </p>
+        )}
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Button size="1" variant="soft" color="gray" onClick={addEntry}>
+            <PlusIcon size={14} weight="bold" />
+            添加一条
+          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="soft" color="gray" onClick={onClose}>
+              取消
+            </Button>
+            <Button onClick={save}>
+              <ChecksIcon size={14} weight="bold" />
+              保存
+            </Button>
+          </div>
+        </div>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }
 

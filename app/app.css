@@ -241,6 +241,23 @@ body,
     display: none;
 }
 
+/* 拖动更新日志时只藏列表自己的滚动条，不碰到对话框。 */
+.log-drag-scroll .os-scrollbar {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+.log-drag-scroll [data-overlayscrollbars-viewport] {
+    scrollbar-width: none !important;
+}
+
+.log-drag-scroll [data-overlayscrollbars-viewport]::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
 /* ---- 页面滚动条 ---- */
 .app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: 0.5rem;
