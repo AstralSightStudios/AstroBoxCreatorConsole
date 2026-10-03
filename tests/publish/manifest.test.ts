@@ -4,6 +4,21 @@ import {
   normalizeBundledResources,
 } from "../../app/logic/publish/manifest";
 
+/** 构造与发布页一致的上传项：{ name, file }。 */
+function uploadInput(name: string, content: string) {
+  return { name, file: new File([content], name) };
+}
+
+/** 带内容哈希的下载行，用于多台设备共用同一份包体。 */
+function hashedRow(platformId: string, content: string) {
+  return {
+    platformId,
+    version: "1.0.0",
+    file: uploadInput("app.rpk", content),
+    packageHash: `hash-${content}`,
+  };
+}
+
 describe("manifest resource types", () => {
   test("keeps canopus and its ordinary resource ID", () => {
     const result = buildManifest({
@@ -239,38 +254,122 @@ describe("manifest downloads updatelogs", () => {
     });
   });
 
-  test("appends platform id before extension for default download paths", () => {
+  test("keeps the first package name and suffixes later same-named packages", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        { platformId: "xmb9", version: "1.0.0", file: uploadInput("app.rpk", "a") },
+        { platformId: "xmws4", version: "1.0.0", file: uploadInput("app.rpk", "b") },
+      ],
+      trialDownloads: [
+        { platformId: "xmb9", version: "1.0.0", file: uploadInput("app.rpk", "a") },
+        { platformId: "xmws4", version: "1.0.0", file: uploadInput("app.rpk", "b") },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app.rpk");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/app-xmws4.rpk");
+    expect(manifest.ext.trialDownloads.xmb9.file_name).toBe(
+      "downloads/trial/app.rpk",
+    );
+    expect(manifest.ext.trialDownloads.xmws4.file_name).toBe(
+      "downloads/trial/app-xmws4.rpk",
+    );
+  });
+
+  test("shares one path when devices use the same package hash", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        hashedRow("xmb9", "same"),
+        hashedRow("xmws4", "same"),
+        hashedRow("m2345b1", "same"),
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app.rpk");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/app.rpk");
+    expect(manifest.downloads.m2345b1.file_name).toBe("downloads/app.rpk");
+    // 共用路径不代表跳过：每台设备仍要各自加密并提交密钥。
+    expect(
+      result.downloadAssets.map((asset) => [asset.platformId, asset.skipUpload]),
+    ).toEqual([
+      ["xmb9", undefined],
+      ["xmws4", undefined],
+      ["m2345b1", undefined],
+    ]);
+  });
+
+  test("shares one path when devices reuse the same uploaded file object", () => {
+    // 一键填充把同一个 UploadItem 实例写进所有行，此时没有 packageHash 可用。
+    const shared = uploadInput("app.rpk", "same");
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        { platformId: "xmb9", version: "1.0.0", file: shared },
+        { platformId: "xmws4", version: "1.0.0", file: shared },
+      ],
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app.rpk");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/app.rpk");
+  });
+
+  test("never merges same-named packages that share size and type", () => {
+    // 没有哈希也没有同一对象时不得靠元数据猜内容，否则又会错误共用。
     const result = buildManifest({
       ...baseInput,
       downloads: [
         { platformId: "xmb9", version: "1.0.0", file: new File([], "app.rpk") },
         { platformId: "xmws4", version: "1.0.0", file: new File([], "app.rpk") },
       ],
-      trialDownloads: [
-        { platformId: "xmb9", version: "1.0.0", file: new File([], "app.rpk") },
+      ext: {},
+    });
+
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app.rpk");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/app-xmws4.rpk");
+  });
+
+  test("does not let a new package overwrite a path kept by another row", () => {
+    const result = buildManifest({
+      ...baseInput,
+      downloads: [
+        {
+          platformId: "xmb9",
+          version: "1.0.0",
+          pathOverride: "downloads/app.rpk",
+          file: uploadInput("app.rpk", "old"),
+        },
+        { platformId: "xmws4", version: "1.0.0", file: uploadInput("app.rpk", "new") },
       ],
       ext: {},
     });
 
     const manifest = JSON.parse(result.manifestJson);
-    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app-xmb9.rpk");
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/app.rpk");
     expect(manifest.downloads.xmws4.file_name).toBe("downloads/app-xmws4.rpk");
-    expect(manifest.ext.trialDownloads.xmb9.file_name).toBe(
-      "downloads/trial/app-xmb9.rpk",
-    );
   });
 
   test("appends platform id after whole name when file has no extension", () => {
     const result = buildManifest({
       ...baseInput,
       downloads: [
-        { platformId: "xmb9", version: "1.0.0", file: new File([], "package") },
+        { platformId: "xmb9", version: "1.0.0", file: uploadInput("package", "a") },
+        { platformId: "xmws4", version: "1.0.0", file: uploadInput("package", "b") },
       ],
       ext: {},
     });
 
     const manifest = JSON.parse(result.manifestJson);
-    expect(manifest.downloads.xmb9.file_name).toBe("downloads/package-xmb9");
+    expect(manifest.downloads.xmb9.file_name).toBe("downloads/package");
+    expect(manifest.downloads.xmws4.file_name).toBe("downloads/package-xmws4");
   });
 
   test("writes numeric versionCode including 0 and omits invalid values", () => {

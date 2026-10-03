@@ -29,6 +29,8 @@ export interface DownloadUploadInput {
     encryptOnUpload?: boolean;
     versionCode?: number;
     updatelogs?: ManifestUpdateLogEntry[];
+    /** 导入包体时算好的内容哈希，用于判定多台设备是否共用同一个包体。 */
+    packageHash?: string;
 }
 
 export interface ManifestUpdateLogEntry {
@@ -240,6 +242,100 @@ function reuseDuplicateAsset(
     return asset;
 }
 
+/** 在扩展名前追加设备 ID，避免同名包体互相覆盖。 */
+function withPlatformSuffix(fileName: string, platformId: string): string {
+    const dotIndex = fileName.lastIndexOf(".");
+    if (dotIndex <= 0) return `${fileName}-${platformId}`;
+    return `${fileName.slice(0, dotIndex)}-${platformId}${fileName.slice(dotIndex)}`;
+}
+
+/**
+ * 包体内容指纹，用来判断多台设备是否共用同一个包体。
+ *
+ * 只认两种能证明「字节完全一致」的依据：导入时算好的哈希，或同一个 File 对象。
+ * 绝不像媒体那样退回「文件名 + 大小 + 类型」——包体常常就叫 app.rpk，
+ * 不同文件夹里的同名包体大小也未必不同，按元数据猜会把两个不同的包当成同一个，
+ * 那正是追加设备 ID 想解决的问题。这里拿不到依据时退化为按行独立处理，
+ * 宁可多传一份，也不冒险共用路径。
+ */
+function createPackageFingerprinter(): (row: DownloadUploadInput) => string {
+    const identityIds = new Map<File, string>();
+    return (row) => {
+        const hash = row.packageHash?.trim();
+        if (hash) return `hash:${hash}`;
+        const file = row.file?.file;
+        if (file && typeof file === "object") {
+            let id = identityIds.get(file);
+            if (!id) {
+                id = `file:${identityIds.size}`;
+                identityIds.set(file, id);
+            }
+            return id;
+        }
+        return `row:${row.platformId}`;
+    };
+}
+
+/**
+ * 生成正式 / 试用包体的仓库路径。
+ *
+ * 追加设备 ID 后缀只为解决「不同文件夹里的同名包体互相覆盖」。多台设备共用同一个
+ * 包体时它反而有害：同一份字节会按设备名重复入库、重复上传，加密还会因为路径不同
+ * 而各生成一份密钥与密文。所以这里按内容指纹分组，组内共用一条路径；
+ * 只有内容不同的同名包体才追加设备 ID 另起一条。
+ *
+ * 显式指定路径（编辑模式沿用仓库旧路径）视为已占用，新包体不会覆盖它。
+ * 注意这里只分配路径，不置 skipUpload：共用路径的每一行仍要各自走加密与
+ * 密钥提交，上传去重放在提交阶段按路径做。
+ */
+function buildDownloadAssets(
+    rows: DownloadUploadInput[],
+    dir: string,
+    allowEncrypt: boolean,
+): DownloadAssetDescriptor[] {
+    const fingerprintOf = createPackageFingerprinter();
+    const sharedPathByFingerprint = new Map<string, string>();
+    const claimedFileNames = new Set<string>();
+    const dirPrefix = `${dir}/`;
+
+    return rows
+        .filter((row) => row.platformId.trim() && row.file)
+        .map((row) => {
+            const platformId = row.platformId.trim();
+            const override = row.file?.pathOverride || row.pathOverride;
+            let path = override;
+            if (path) {
+                if (path.startsWith(dirPrefix)) {
+                    claimedFileNames.add(path.slice(dirPrefix.length));
+                }
+            } else {
+                const fingerprint = fingerprintOf(row);
+                const shared = sharedPathByFingerprint.get(fingerprint);
+                if (shared) {
+                    path = shared;
+                } else {
+                    const fileName = claimedFileNames.has(row.file!.name)
+                        ? withPlatformSuffix(row.file!.name, platformId)
+                        : row.file!.name;
+                    path = `${dirPrefix}${fileName}`;
+                    claimedFileNames.add(fileName);
+                    sharedPathByFingerprint.set(fingerprint, path);
+                }
+            }
+
+            return {
+                platformId,
+                version: row.version.trim(),
+                path,
+                file: row.file!.file,
+                skipUpload: row.file?.skipUpload ?? row.skipUpload,
+                encryptOnUpload: allowEncrypt ? row.encryptOnUpload : false,
+                versionCode: normalizeVersionCode(row.versionCode),
+                updatelogs: normalizeUpdateLogs(row.updatelogs),
+            };
+        });
+}
+
 export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     const mediaDir = PUBLISH_CONFIG.mediaDirectory.replace(/\/+$/, "");
     const downloadsDir = PUBLISH_CONFIG.downloadsDirectory.replace(/\/+$/, "");
@@ -297,46 +393,13 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
         ? previewPathMap.get(input.coverPreviewId ?? input.previews[0]?.id) || ""
         : coverAsset?.path || "";
 
-    /** 在扩展名前追加设备 ID，保证不同设备的同名包体在仓库中路径不冲突。 */
-    function withPlatformSuffix(fileName: string, platformId: string): string {
-        const dotIndex = fileName.lastIndexOf(".");
-        if (dotIndex <= 0) return `${fileName}-${platformId}`;
-        return `${fileName.slice(0, dotIndex)}-${platformId}${fileName.slice(dotIndex)}`;
-    }
+    const downloadAssets = buildDownloadAssets(input.downloads, downloadsDir, true);
 
-    const downloadAssets: DownloadAssetDescriptor[] = input.downloads
-        .filter((d) => d.platformId.trim() && d.file)
-        .map((d) => {
-            const platformId = d.platformId.trim();
-            const defaultPath = `${downloadsDir}/${withPlatformSuffix(d.file!.name, platformId)}`;
-            return {
-                platformId,
-                version: d.version.trim(),
-                path: d.file?.pathOverride || d.pathOverride || defaultPath,
-                file: d.file!.file,
-                skipUpload: d.file?.skipUpload ?? d.skipUpload,
-                encryptOnUpload: d.encryptOnUpload,
-                versionCode: normalizeVersionCode(d.versionCode),
-                updatelogs: normalizeUpdateLogs(d.updatelogs),
-            };
-        });
-
-    const trialDownloadAssets: DownloadAssetDescriptor[] = input.trialDownloads
-        .filter((d) => d.platformId.trim() && d.file)
-        .map((d) => {
-            const platformId = d.platformId.trim();
-            const defaultPath = `${trialDownloadsDir}/${withPlatformSuffix(d.file!.name, platformId)}`;
-            return {
-                platformId,
-                version: d.version.trim(),
-                path: d.file?.pathOverride || d.pathOverride || defaultPath,
-                file: d.file!.file,
-                skipUpload: d.file?.skipUpload ?? d.skipUpload,
-                encryptOnUpload: false,
-                versionCode: normalizeVersionCode(d.versionCode),
-                updatelogs: normalizeUpdateLogs(d.updatelogs),
-            };
-        });
+    const trialDownloadAssets = buildDownloadAssets(
+        input.trialDownloads,
+        trialDownloadsDir,
+        false,
+    );
 
     const downloadsObject = buildDownloadsObject(downloadAssets);
     const trialDownloadsObject = buildDownloadsObject(trialDownloadAssets);

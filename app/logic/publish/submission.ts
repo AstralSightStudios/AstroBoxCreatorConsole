@@ -91,15 +91,39 @@ async function prepareTextAsset(
   };
 }
 
+/**
+ * 仓库里一条路径只能有一个 blob，这里按路径去重。
+ *
+ * 多台设备共用同一个包体时，manifest 会给它们同一条路径（内容相同，覆盖也无害），
+ * 但资产列表里仍是多份，逐份上传就是白建一次 blob、白白 base64 一遍大包。
+ * `taken` 由调用方在整次发布内共享，manifest 本体仍按设备逐条记录 file_name。
+ */
+async function prepareFileAssets(
+  assets: AssetDescriptor[],
+  taken: Set<string>,
+): Promise<PreparedAsset[]> {
+  const prepared: PreparedAsset[] = [];
+  for (const asset of assets) {
+    if (taken.has(asset.path)) continue;
+    const item = await prepareFileAsset(asset);
+    if (!item) continue;
+    taken.add(asset.path);
+    prepared.push(item);
+  }
+  return prepared;
+}
+
 async function applyWatchfaceId(
   assets: DownloadAssetDescriptor[],
   id: string,
   onProgress?: (message: string) => void,
 ) {
-  const files = new Map<File, File>();
+  // 按路径复用：路径就是仓库里 blob 的身份。多台设备共用同一个包体时各行路径
+  // 相同（草稿恢复后 File 对象不同，但字节一致），按 File 复用会白做一遍。
+  const files = new Map<string, File>();
   for (const asset of assets) {
     if (asset.skipUpload) continue;
-    let updated = files.get(asset.file);
+    let updated = files.get(asset.path);
     if (!updated) {
       const info = await readPackageVersion(asset.file);
       if (info.identity === id) {
@@ -109,7 +133,7 @@ async function applyWatchfaceId(
         onProgress?.(`写入表盘 ID ${id}：${asset.path}`);
         updated = await replaceWatchfaceIdInPackage(asset.file, id);
       }
-      files.set(asset.file, updated);
+      files.set(asset.path, updated);
     }
     asset.file = updated;
   }
@@ -132,10 +156,11 @@ async function applyResPackThemeId(
   themeId: string,
   onProgress?: (message: string) => void,
 ) {
-  const files = new Map<File, File>();
+  // 同 applyWatchfaceId：按路径复用，避免共用包体被重复改写校验。
+  const files = new Map<string, File>();
   for (const asset of assets) {
     if (asset.skipUpload) continue;
-    let updated = files.get(asset.file);
+    let updated = files.get(asset.path);
     if (!updated) {
       const bytes = new Uint8Array(await asset.file.arrayBuffer());
       const original = readCrpackThemeId(bytes);
@@ -164,7 +189,7 @@ async function applyResPackThemeId(
           lastModified: asset.file.lastModified,
         });
       }
-      files.set(asset.file, updated);
+      files.set(asset.path, updated);
     }
     asset.file = updated;
   }
@@ -517,20 +542,22 @@ export async function uploadManifestAndAssets({
   // --- Prepare all assets as base64 ---
   onProgress?.("准备文件...");
   const allAssets: PreparedAsset[] = [];
+  const takenPaths = new Set<string>();
 
-  for (const asset of manifest.previewAssets) {
-    const prepared = await prepareFileAsset(asset);
-    if (prepared) allAssets.push(prepared);
+  allAssets.push(
+    ...(await prepareFileAssets(manifest.previewAssets, takenPaths)),
+  );
+
+  if (manifest.iconAsset) {
+    allAssets.push(
+      ...(await prepareFileAssets([manifest.iconAsset], takenPaths)),
+    );
   }
 
-  if (manifest.iconAsset && !manifest.iconAsset.skipUpload) {
-    const prepared = await prepareFileAsset(manifest.iconAsset);
-    if (prepared) allAssets.push(prepared);
-  }
-
-  if (manifest.coverAsset && !manifest.coverAsset.skipUpload) {
-    const prepared = await prepareFileAsset(manifest.coverAsset);
-    if (prepared) allAssets.push(prepared);
+  if (manifest.coverAsset) {
+    allAssets.push(
+      ...(await prepareFileAssets([manifest.coverAsset], takenPaths)),
+    );
   }
 
   allAssets.push(
@@ -540,17 +567,8 @@ export async function uploadManifestAndAssets({
     ),
   );
 
-  for (const asset of downloadAssets) {
-    if (asset.skipUpload) continue;
-    const prepared = await prepareFileAsset(asset);
-    if (prepared) allAssets.push(prepared);
-  }
-
-  for (const asset of trialDownloadAssets) {
-    if (asset.skipUpload) continue;
-    const prepared = await prepareFileAsset(asset);
-    if (prepared) allAssets.push(prepared);
-  }
+  allAssets.push(...(await prepareFileAssets(downloadAssets, takenPaths)));
+  allAssets.push(...(await prepareFileAssets(trialDownloadAssets, takenPaths)));
 
   await appendWallpaperAssets(allAssets, manifest, onProgress);
 
