@@ -238,7 +238,7 @@ export function validatePublish(
   if (!trimmedId) {
     push("itemId", "请填写资源 ID。");
   } else {
-    // 资源 ID 会写进包体（表盘 12 位 ID、模块前缀、资源包 themeId），
+    // 资源 ID 会写进包体（表盘 12 位 ID、模块名称、资源包 themeId），
     // 因此格式不合规必须在这里拦住，而不是发布时静默改写。
     const idError =
       input.resourceType === "watchface"

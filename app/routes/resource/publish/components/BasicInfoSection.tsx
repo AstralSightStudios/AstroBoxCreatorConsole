@@ -15,7 +15,6 @@ import {
   SectionCard,
 } from "./shared";
 import { normalizeWatchfaceIdInput } from "~/logic/publish/watchface-id";
-import { CANOPUS_ID_PREFIX } from "~/logic/publish/canopus-id";
 import { RES_PACK_THEME_ID_MAX_LENGTH } from "~/logic/publish/res-pack-id";
 import {
   PUBLISH_TAGS_MIN,
@@ -56,7 +55,8 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
   }
   return {
     label: "资源 ID（模块）",
-    description: `由 ${CANOPUS_ID_PREFIX} 前缀加模块名组成，只需填写模块名。模块名仅支持字母、数字、下划线和中划线，且以字母或数字开头。`,
+    description:
+      "模块的唯一标识，直接填写模块名称即可。仅支持字母、数字、下划线和中划线，且以字母或数字开头，已发布后不要改动。",
   };
 }
 
@@ -64,7 +64,8 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
   return [
     {
       label: "资源类型",
-      description: `决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块自动补 ${CANOPUS_ID_PREFIX} 前缀、资源包要求小写标识并写入 themeId。已发布的资源不可修改。`,
+      description:
+        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。已发布的资源不可修改。",
     },
     {
       label: "资源名称",
@@ -238,17 +239,12 @@ export function BasicInfoSection({
                 ? "12位纯数字，以9798开头"
                 : resourceType === "res_pack"
                   ? "小写字母、数字、下划线或连字符，将写入 themeId"
-                  : "模块名称将拼接为 canopus_模块名称"
+                  : "仅支持字母、数字、下划线和中划线"
           }
         >
           <div className="flex w-full gap-2 items-start">
             <div className="flex-1 min-w-0 w-full">
               <div className="flex w-full items-stretch">
-                {resourceType === "canopus" && (
-                  <span className="flex shrink-0 select-none items-center whitespace-nowrap rounded-l-(--radius-5) border border-r-0 border-white/15 bg-white/10 px-3 text-sm text-white/50">
-                    {CANOPUS_ID_PREFIX}
-                  </span>
-                )}
                 <TextField.Root
                   placeholder={
                     resourceType === "quick_app"
@@ -259,19 +255,10 @@ export function BasicInfoSection({
                           ? "my-theme"
                           : "模块名称"
                   }
-                  value={
-                    resourceType === "canopus" &&
-                    itemId.startsWith(CANOPUS_ID_PREFIX)
-                      ? itemId.slice(CANOPUS_ID_PREFIX.length)
-                      : itemId
-                  }
+                  value={itemId}
                   onChange={(e) => {
                     if (resourceType === "watchface") {
                       onItemIdChange(normalizeWatchfaceIdInput(e.target.value));
-                    } else if (resourceType === "canopus") {
-                      onItemIdChange(
-                        CANOPUS_ID_PREFIX + e.target.value.trim(),
-                      );
                     } else {
                       onItemIdChange(e.target.value);
                     }
@@ -282,14 +269,10 @@ export function BasicInfoSection({
                   }
                   disabled={idReadOnly}
                   radius="large"
-                  className={`w-full ${
-                    idError && resourceType !== "canopus"
-                      ? "!border-red-400/60"
-                      : ""
-                  } ${resourceType === "canopus" ? "!rounded-l-none" : ""}`}
+                  className={`w-full ${idError ? "!border-red-400/60" : ""}`}
                 />
               </div>
-              {idError && resourceType !== "canopus" && (
+              {idError && (
                 <p className="text-xs text-red-400 mt-1">{idError}</p>
               )}
             </div>

@@ -214,10 +214,15 @@ describe("publish validation", () => {
       validatePublish({ ...validInput, resourceType: "watchface", itemId: "123456789012" })
         .errors.join(),
     ).toContain("9798");
+    // 模块不再强制 canopus_ 前缀，仅校验模块名字符集
     expect(
       validatePublish({ ...validInput, resourceType: "canopus", itemId: "bluetooth" })
+        .errors,
+    ).toEqual([]);
+    expect(
+      validatePublish({ ...validInput, resourceType: "canopus", itemId: "蓝牙.音频" })
         .errors.join(),
-    ).toContain("canopus_");
+    ).toContain("仅支持");
   });
 
   test("未指定资源类型时不对 ID 做格式校验", () => {

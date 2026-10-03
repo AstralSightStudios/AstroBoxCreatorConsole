@@ -6,7 +6,7 @@ import { fetchDeviceJsonViaCdn } from "./device-json-cdn";
 /**
  * 设备列表固定取正式环境 AstroBox-Repo，**不随发布环境开关变化**。
  *
- * 设备库是全站共享的规范化 id 表（表盘 12 位 ID、模块前缀、资源包 themeId
+ * 设备库是全站共享的规范化 id 表（表盘 12 位 ID、模块名称、资源包 themeId
  * 都以它为准），而 TestEnv 的 devices_v2.json 落后于正式库。若跟着环境切换，
  * 切到 TestEnv 后正式环境已上架的设备会从下拉里凭空消失，创作者配不了包体，
  * 审核端也会解析不出设备名。

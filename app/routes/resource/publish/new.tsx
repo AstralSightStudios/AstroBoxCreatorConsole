@@ -101,11 +101,7 @@ import {
   replaceWatchfaceIdInPackage,
   WATCHFACE_ID_PREFIX,
 } from "~/logic/publish/watchface-id";
-import {
-  CANOPUS_ID_PREFIX,
-  normalizeCanopusIdInput,
-  validateCanopusIdFormat,
-} from "~/logic/publish/canopus-id";
+import { validateCanopusIdFormat } from "~/logic/publish/canopus-id";
 import {
   normalizeResPackIdInput,
   validateResPackIdFormat,
@@ -804,11 +800,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       idsByTypeRef.current[resourceType] = itemIdRef.current;
       const cached = idsByTypeRef.current[next];
       const suggested =
-        next === "canopus"
-          ? CANOPUS_ID_PREFIX
-          : next === "res_pack"
-            ? normalizeResPackIdInput(itemName)
-            : "";
+        next === "res_pack" ? normalizeResPackIdInput(itemName) : "";
       setItemId(cached !== undefined ? cached : suggested);
       setResourceType(next);
     },
@@ -818,16 +810,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleItemIdChange = useCallback(
     (value: string) => {
       if (isEditing) return;
-      if (resourceType === "canopus") {
-        setItemId(normalizeCanopusIdInput(value));
-        return;
-      }
-      // 资源包 ID 不做任何自动改写：创作者填什么就存什么，不合规只提示。
+      // 资源 ID 不做任何自动改写：创作者填什么就存什么，不合规只提示。
       // 自动替换非法字符会打断输入法组字（拼音中间的组字符会被替成 '-'），
       // 也会让 CSV id 与包内 themeId 悄悄分叉。
       setItemId(value);
     },
-    [resourceType, isEditing],
+    [isEditing],
   );
 
   useEffect(() => {
