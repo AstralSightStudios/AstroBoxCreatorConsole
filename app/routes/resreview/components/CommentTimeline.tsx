@@ -211,25 +211,27 @@ export function CommentTimeline({
                     ) : null}
                     <span className="truncate font-medium text-white">{comment.user?.login || "unknown"}</span>
                     <span className="hidden shrink-0 sm:inline">{formatRelativeTime(comment.created_at)}</span>
+                    {/* 桌面端：送达状态跟在时间后面 */}
+                    {noticeStatus && noticeStatus.state !== "sent" ? (
+                      <span
+                        className={`hidden shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline-flex ${
+                          NOTICE_STATE_CLASS[noticeStatus.state]
+                        }`}
+                        title={NOTICE_STATE_TITLE[noticeStatus.state]}
+                      >
+                        {NOTICE_STATE_LABEL[noticeStatus.state]}
+                      </span>
+                    ) : null}
+                    {noticeSubtype && checkingNoticeStatus && !noticeStatus ? (
+                      <span className="hidden shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60 sm:inline-flex">
+                        检测中
+                      </span>
+                    ) : null}
                   </span>
-                  {comment.review_state && (
-                    <span
-                      className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        comment.review_state === "APPROVE"
-                          ? "bg-emerald-500/15 text-emerald-100"
-                          : comment.review_state === "REQUEST_CHANGES"
-                          ? "bg-amber-500/15 text-amber-100"
-                          : "bg-white/10 text-white/70"
-                      }`}
-                    >
-                      {comment.review_state === "APPROVE" && "✓ 已批准"}
-                      {comment.review_state === "REQUEST_CHANGES" && "⚠ 请求变更"}
-                      {comment.review_state === "COMMENTED" && "💬 已评论"}
-                    </span>
-                  )}
+                  {/* 手机端：送达状态靠右排在「详情」按钮前 */}
                   {noticeStatus && noticeStatus.state !== "sent" ? (
                     <span
-                      className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium sm:hidden ${
                         NOTICE_STATE_CLASS[noticeStatus.state]
                       }`}
                       title={NOTICE_STATE_TITLE[noticeStatus.state]}
@@ -238,7 +240,7 @@ export function CommentTimeline({
                     </span>
                   ) : null}
                   {noticeSubtype && checkingNoticeStatus && !noticeStatus ? (
-                    <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60 sm:hidden">
                       检测中
                     </span>
                   ) : null}
@@ -286,31 +288,22 @@ export function CommentTimeline({
                           删除
                         </DropdownMenu.Item>
                       ) : null}
-                      {onRetryNotice &&
-                      noticeSubtype &&
-                      noticeStatus &&
-                      noticeStatus.state !== "unverified" &&
-                      noticeStatus.state !== "unmatched" ? (
+                      {onRetryNotice && noticeSubtype && noticeStatus ? (
                         <>
                           <DropdownMenu.Separator />
                           <DropdownMenu.Item
                             onSelect={() => onRetryNotice(comment)}
+                            disabled={noticeStatus.state === "unmatched"}
                             className="gap-2"
+                            title={
+                              noticeStatus.state === "unmatched"
+                                ? NOTICE_STATE_TITLE.unmatched
+                                : undefined
+                            }
                           >
                             <ArrowsClockwise size={14} />
                             重试发送 AstroBox 信箱
                           </DropdownMenu.Item>
-                        </>
-                      ) : null}
-                      {onRetryNotice &&
-                      noticeSubtype &&
-                      noticeStatus?.state === "unmatched" ? (
-                        <>
-                          <DropdownMenu.Separator />
-                          <div className="max-w-[220px] px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
-                            作者尚未在 manifest 中绑定 AstroBox
-                            账号，通知无法送达。请先让作者完成账号绑定，再重试发送。
-                          </div>
                         </>
                       ) : null}
                       {comment.html_url ? (
