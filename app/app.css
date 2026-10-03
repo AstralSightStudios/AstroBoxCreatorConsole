@@ -79,6 +79,31 @@
     corner-shape: superellipse(1.5);
 }
 
+/*
+ * 信箱消息列表必须锁在面板宽度内。
+ *
+ * Radix Themes 的 ScrollArea 会把 viewport 的直接子元素（Radix ScrollArea
+ * 内部包的那层 `min-width:100%` + `display:table`）强制覆盖成
+ * `display:block !important` + `width:fit-content`，即"收缩到内容宽度"。
+ * 收缩宽度由内容的 min-content 决定，而 flex 子项的 min-content 贡献不受
+ * `min-w-0` 影响（`min-w-0` 只解除 flex 收缩下限，不改变内在尺寸）。
+ *
+ * 未读卡片是直接排在列表里的 flex 子项，已读卡片则全部包在 InboxReadStack
+ * 的绝对定位层里（min-content 贡献为 0）。因此只要存在一条未读消息、且它的
+ * 标题或正文出现一行不换行的长文本，min-content 就会超过 387px 面板宽度，
+ * 这层被撑宽后 Radix 检测到内容宽于视口，便把 viewport 的 overflow-x 由
+ * hidden 切成 scroll —— 表现为信箱内出现 x 轴滑动、内容超出右侧被裁掉。
+ *
+ * 这里把该层改回确定宽度（= 面板宽度），让信箱列表永远不可能横向溢出。
+ * 只覆盖 width：min-width 保持 Radix 内联的 100%，与面板等宽，同样不会溢出。
+ * 不在此处写 overflow-x：hidden 会把另一轴的 visible 提升为 auto，凭空多出
+ * 一层纵向滚动容器；横向裁切交给 viewport（InboxDrawer 传 scrollbars="vertical"
+ * 后其 overflow-x 恒为 hidden）。
+ */
+.inbox-scroll-area .rt-ScrollAreaViewport>* {
+    width: 100%;
+}
+
 /* ---- 信箱 / 浮层面板 ---- */
 :root {
     --app-background: #111113;

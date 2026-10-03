@@ -287,8 +287,14 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
         </div>
       </header>
 
-      <ScrollArea className="min-h-0 flex-1 overscroll-y-contain touch-pan-y">
-        <div className="flex flex-col gap-2 px-3.5 pb-3.5">
+      {/* scrollbars="vertical"：不挂载 Radix 的横向滚动条，viewport 的
+          overflow-x 会恒为 hidden，即使内容意外超宽也不会出现 x 轴滑动。
+          宽度锁定靠 app.css 的 .inbox-scroll-area 规则（见那里的说明）。 */}
+      <ScrollArea
+        scrollbars="vertical"
+        className="inbox-scroll-area min-h-0 flex-1 overscroll-y-contain touch-pan-y"
+      >
+        <div className="flex w-full min-w-0 flex-col gap-2 px-3.5 pb-3.5">
           {isLoading && items.length === 0 ? (
             <div
               className="flex flex-col gap-2"
@@ -405,7 +411,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
           />
           {isDesktop ? (
             <motion.aside
-              className="fixed z-[120] flex w-[min(387px,calc(var(--ui-viewport-width)-1rem))] flex-col overflow-hidden rounded-[18px] text-[color:var(--text-color)] shadow-[var(--nav-panel-shadow)]"
+              className="fixed z-[120] flex w-[387px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] text-[color:var(--text-color)] shadow-[var(--nav-panel-shadow)]"
               style={{
                 top: "max(0.5rem, var(--ui-safe-area-top))",
                 bottom: "max(0.5rem, var(--ui-safe-area-bottom))",

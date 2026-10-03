@@ -70,7 +70,7 @@ markdown.renderer.rules.code_inline = (tokens, idx) =>
   )}</code>`;
 
 markdown.renderer.rules.fence = (tokens, idx) =>
-  `<pre class="my-2 overflow-x-auto rounded-lg bg-black/16 p-3"><code>${markdown.utils.escapeHtml(
+  `<pre class="my-2 max-w-full overflow-x-auto rounded-lg bg-black/16 p-3"><code>${markdown.utils.escapeHtml(
     tokens[idx].content,
   )}</code></pre>`;
 
