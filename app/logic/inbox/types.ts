@@ -1,3 +1,25 @@
+/**
+ * 服务端信箱消息类型枚举，需与 AstroBoxServer 的
+ * `src/community/inbox/schemas.ts` 中 `INBOX_KINDS` 保持一致。
+ * 服务端 `POST /admin/inbox` 已用该枚举校验 kind，写错会被 422 拒绝。
+ */
+export const INBOX_KINDS = [
+  "system",
+  "admin-notice",
+  "ban-notice",
+  "unban-notice",
+  "report-resolved",
+  "account-deletion-ticket-resolved",
+  "vip-granted",
+  "vip-revoked",
+  "cc-notice",
+  "comment-reply",
+  "comment-like",
+  "custom",
+] as const;
+
+export type InboxKind = (typeof INBOX_KINDS)[number];
+
 export type CcNoticeSubtype =
   | "review-changes-requested"
   | "review-approved"

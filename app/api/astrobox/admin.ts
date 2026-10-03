@@ -1,5 +1,6 @@
 import { sendApiRequest } from "./request";
 import type { CommentView } from "./community";
+import type { InboxKind } from "~/logic/inbox/types";
 
 export interface AdminCommentView extends CommentView {
   senderIpRaw?: string | null;
@@ -553,7 +554,7 @@ export const AdminApi = {
         | { type: "all" };
       title: string;
       body: string;
-      kind?: string;
+      kind?: InboxKind;
       metadata?: unknown;
     }) =>
       sendApiRequest<{ bulkId: string; count: number }>(

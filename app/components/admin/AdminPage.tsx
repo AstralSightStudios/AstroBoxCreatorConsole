@@ -108,14 +108,19 @@ export function Panel({
 
 export function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <label className="flex flex-col gap-1.5 text-sm text-white/70">
-      <span>{label}</span>
+      <span className="flex items-baseline gap-2">
+        <span>{label}</span>
+        {hint && <span className="text-xs text-white/45">{hint}</span>}
+      </span>
       {children}
     </label>
   );
