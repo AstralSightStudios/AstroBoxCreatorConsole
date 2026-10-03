@@ -4,12 +4,15 @@
  * 背景：服务端对「某个设备是否需要付费」与「用户能否拿到解密密钥」是两套独立判定，
  * 审核侧必须与它们保持逐字一致，否则会出现「检查放行但用户被锁死」或反之。
  *
- * 判定链（均以 AstroBoxServer origin/elysia 为准）：
+ * 判定链（均以 AstroBoxServer 的 origin/elysia 为准；本地若停在 feat/cc-notice-kind
+ * 会看不到外部网站授权，付费判定不完整，不要拿本地工作树当基准）：
  *
- * 1. isPaid —— public-logic.ts buildPurchaseDevices
- *      `allConfigs.some(item => item.isPaid) || Boolean(external)`
- *    ·只看 SKU 的 isPaid 字段，不看 enabled。
- *    · 外部授权配置只要存在即视为受保护，含已停用的（fail-closed）。
+ * 1. isPaid —— community/resource/service.ts QueryCryptoInfo
+ *      `const isPaid = skuPaid || Boolean(externalConfig)`
+ *    · skuPaid 来自 isPaidDevice，只看 SKU 的 isPaid 字段，不看 enabled。
+ *    · 外部授权配置只要存在即视为受保护，含已停用的
+ *      （external-authorization/service.ts findProtection 不按 enabled 过滤），
+ *      属于刻意的 fail-closed：关掉授权不该把资源放成免费。
  *    · 两条来源是「或」关系，任意一条成立即构成付费门槛。
  *
  * 2. 自助购买可用 —— public-logic.ts buildPurchaseDevices 的 matchedConfigs
@@ -20,9 +23,15 @@
  *    配置需 enabled、卖家为资源作者、且与该设备加密密钥的归属一致。
  *
  * 4. validationStatus —— public-logic.ts resolveSkuConfigValidationStatus
- *    `pending_resource_review` 是审核期的正常态（资源尚未合入官方仓库），
+ *    `pending_*` 是审核期的正常态（详见 isConfigEffectiveAfterMerge），
  *    不能据此判定配置无效；`rejected_resource_owner` 表示配置卖家不是资源作者，
  *    服务端已永久忽略，属于需要清理的脏数据。
+ *
+ * 注意服务端所有付费判定都只统计 active 配置（过滤条件
+ * `activeResourceConfigValidationFilter = { $in: [null, "active"] }`，
+ * 见 public-service.ts 的 getResourcePurchaseInfo / isPaidDevice / 爱发电 webhook）。
+ * 本模块不复刻「当前状态」，而是复刻「合入官方仓库之后的状态」——
+ * 审核期读到的 validationStatus 只是创作者保存那一刻的快照。
  */
 
 /** 服务端把配置标记为当前生效所需的状态。审核期资源未上架，统一按「合入后生效」处理。 */
@@ -32,15 +41,41 @@ export const PENDING_MANIFEST_DEVICE_STATUS = "pending_manifest_device";
 
 /**
  * 该配置在资源合入官方仓库后是否生效。
- * 审核期所有配置都是 pending_resource_review，若按字面判「未生效」会让整套检查失效，
- * 因此这里把它当作生效，只排除服务端已明确拒绝的两类脏数据。
+ *
+ * 本函数是「合入后模拟器」，不是服务端当前状态的镜像：服务端的
+ * validationStatus 是存量字段，只在 reconcile（public-service.ts
+ * reconcileSellerResourceSkuConfigs）时重算，而 reconcile 由按需路径驱动——
+ * 创作者保存 SKU、卖家打开配置页、用户请求 purchase_info、用户请求解密密钥
+ * （community/resource/service.ts QueryCryptoInfo，客户端安装加密包的必经路径）、
+ * 爱发电回调。审核期读到的只是快照，10 分钟的定时全量同步和管理端查询都是纯读，
+ * 不会刷新它。
+ *
+ * 因此两类 pending 都必须按「合入后生效」处理：
+ *
+ *   · pending_resource_review：资源尚未进入官方索引，合入后所有权成立即转 active。
+ *   · pending_manifest_device：服务端判设备存在性时读的是**已合入**的官方索引
+ *     （sync.ts 的 fetchResourceIndexEntry 拉 main 分支 index_v2.csv）。
+ *     edit 型 PR 恰恰是「创作者先为新设备配 SKU，本 PR 再把设备写进 manifest」，
+ *     审核期必然被判为设备不存在。合入后索引含该设备，reconcile 必然转 active。
+ *     服务端自己的测试用例即 keeps sku config pending until device appears in
+ *     manifest（test/public-logic.test.ts），可见这是过渡态而非永久失效。
+ *
+ * 把 pending_manifest_device 当成永久失效会让审核端把「付费设备」判成「仅加密、
+ * 不售卖」，从而漏判真正的锁死配置（SKU 缺购买链接 / 未登记商品时合并后用户付费
+ * 却买不到），这是本函数此前排除它的直接后果。
+ *
+ * 放宽是安全的：devices 取自待合入 manifest 的 downloads，不在其中（既不在
+ * downloads 也不在 trialDownloads）的设备其 SKU 不会参与任何 verdict，
+ * 因此不会出现「按设备收钱却无对应设备」的死锁。
  */
 export function isConfigEffectiveAfterMerge(validationStatus: string | undefined): boolean {
   const normalized = (validationStatus ?? "").trim();
+  // 缺字段视为生效：Mongo 的 { $in: [null, "active"] } 会匹配缺失字段，
+  // schema 默认值同样是 "active"，历史无该字段的 SKU 服务端按生效处理。
   if (!normalized || normalized === "active" || normalized === PENDING_REVIEW_STATUS) {
     return true;
   }
-  return normalized !== REJECTED_OWNER_STATUS && normalized !== PENDING_MANIFEST_DEVICE_STATUS;
+  return normalized !== REJECTED_OWNER_STATUS;
 }
 
 export interface CommerceSku {
@@ -91,9 +126,21 @@ export interface DeviceGateReason {
   hasFileKey: boolean;
 }
 
+export interface PendingManifestSku {
+  deviceId: string;
+  /** 「deviceId → platform:productId/skuId」，用于审核提示定位到具体配置。 */
+  label: string;
+  /**
+   * 该设备是否已写入**待合入**的 manifest。
+   * true —— 服务端只是还没看到本 PR 的索引行，合入后必然生效，无需处理；
+   * false —— manifest 确实没有这台设备，SKU 指向的是不存在的设备，合入后也不会生效。
+   */
+  declaredInManifest: boolean;
+}
+
 export interface StaleConfigReport {
   rejectedOwnerDevices: string[];
-  pendingManifestDeviceSkus: string[];
+  pendingManifestDeviceSkus: PendingManifestSku[];
 }
 
 function skuLabel(sku: CommerceSku): string {
@@ -103,10 +150,33 @@ function skuLabel(sku: CommerceSku): string {
 }
 
 /**
+ * 把 pending_manifest_device 分成两档。
+ *
+ * `declared` —— 设备已写入待合入 manifest，只是服务端还没看到本 PR 的索引行，
+ * 合入后必然生效，不需要审核人做任何事，不该报警告。
+ * `missing` —— manifest 确实没有这台设备，SKU 指向的是不存在的设备，
+ * 合入后依然不会生效（收不到钱也锁不住人），属于创作者配置与包体不一致。
+ */
+export function partitionPendingManifestSkus(stale: StaleConfigReport): {
+  declared: PendingManifestSku[];
+  missing: PendingManifestSku[];
+} {
+  const declared: PendingManifestSku[] = [];
+  const missing: PendingManifestSku[] = [];
+  for (const item of stale.pendingManifestDeviceSkus) {
+    (item.declaredInManifest ? declared : missing).push(item);
+  }
+  return { declared, missing };
+}
+
+/**
  * 逐设备复刻服务端的付费门槛与解锁路径判定。
  *
  * @param devices manifest.downloads 的正式下载设备标识
  * @param sellerUserId 资源作者在 AstroBox 的账户 id，用于校验配置归属
+ * @param manifestDeviceIds 待合入 manifest（downloads + trialDownloads）声明的
+ *   **规范化**设备 id 集合。只用于给 pending_manifest_device 分级，不参与门槛判定：
+ *   devices 之外的设备本就不会产生 verdict，分级只影响提示级别与文案。
  */
 export function evaluateDeviceGates(input: {
   devices: string[];
@@ -115,6 +185,7 @@ export function evaluateDeviceGates(input: {
   externalAuthorizations: CommerceExternalAuthorization[];
   fileKeys: CommerceFileKey[];
   sellerUserId?: string;
+  manifestDeviceIds?: Iterable<string>;
 }): { reasons: DeviceGateReason[]; stale: StaleConfigReport } {
   const { devices, skus, products, externalAuthorizations, fileKeys, sellerUserId } = input;
 
@@ -126,6 +197,11 @@ export function evaluateDeviceGates(input: {
   const fileKeyOwnerByDevice = new Map(
     fileKeys.map((k) => [k.deviceId, (k.firstOwnerId ?? "").trim()] as const),
   );
+  const declaredDeviceIds = new Set(
+    Array.from(input.manifestDeviceIds ?? [])
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   const stale: StaleConfigReport = { rejectedOwnerDevices: [], pendingManifestDeviceSkus: [] };
   const staleDevices = new Set<string>();
@@ -134,7 +210,11 @@ export function evaluateDeviceGates(input: {
       staleDevices.add(sku.deviceId);
     }
     if ((sku.validationStatus ?? "").trim() === PENDING_MANIFEST_DEVICE_STATUS) {
-      stale.pendingManifestDeviceSkus.push(`${sku.deviceId} → ${skuLabel(sku)}`);
+      stale.pendingManifestDeviceSkus.push({
+        deviceId: sku.deviceId,
+        label: `${sku.deviceId} → ${skuLabel(sku)}`,
+        declaredInManifest: declaredDeviceIds.has(sku.deviceId.trim().toLowerCase()),
+      });
     }
   }
   for (const ext of externalAuthorizations) {

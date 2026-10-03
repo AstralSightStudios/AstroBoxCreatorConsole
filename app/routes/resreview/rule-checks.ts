@@ -60,6 +60,7 @@ import {
   describeLockedDevice,
   evaluateDeviceGates,
   findUnpaidSkuDevices,
+  partitionPendingManifestSkus,
 } from "./utils/purchase-gate";
 import { inspectResPack } from "~/logic/publish/crpack-validate";
 import {
@@ -1207,6 +1208,20 @@ export async function runResourceRuleChecks(options: {
   const fullDownloadDevices = Array.from(
     new Set(Object.keys(manifest?.downloads ?? {}).map((d) => d.trim())),
   ).filter(Boolean);
+  // 待合入 manifest 声明的设备（规范化 id）。提前算好，供下面两处使用：
+  //   1) 给服务端的 pending_manifest_device 分级——设备已在本 PR 声明时，
+  //      那只是服务端还没看到本 PR 的索引行，合入后必然生效；
+  //   2) 下方「manifest downloads 设备标识有效」「支持设备与 CSV 一致」两项检查。
+  // resolver 在上方已就绪，getManifestDownloadKeys / resolveCanonicalSet 均为纯同步函数，
+  // 上移无副作用。下载行判定仍用 manifest 原始 key（fullDownloadDevices），
+  // 规范化只用于设备存在性比对，避免与 SKU / fileKey 的规范化 id 空间混淆。
+  const { full: fullDeviceKeys, trial: trialDeviceKeys } = getManifestDownloadKeys(manifest);
+  const fullResolved = resolveCanonicalSet(fullDeviceKeys, resolver);
+  const trialResolved = resolveCanonicalSet(trialDeviceKeys, resolver);
+  const declaredDeviceIds = new Set([
+    ...fullResolved.canonicals,
+    ...trialResolved.canonicals,
+  ]);
 
   if (astroboxToken && cryptoResourceId) {
     try {
@@ -1244,6 +1259,7 @@ export async function runResourceRuleChecks(options: {
           externalAuthorizations: configs.externalAuthorizations ?? [],
           fileKeys: configs.fileKeys,
           sellerUserId,
+          manifestDeviceIds: declaredDeviceIds,
         });
 
         const locked = reasons.filter((r) => r.verdict === "locked");
@@ -1252,6 +1268,9 @@ export async function runResourceRuleChecks(options: {
         const missingEncryption = encryptedDeviceSet
           ? fullDownloadDevices.filter((d) => !encryptedDeviceSet!.has(d))
           : [];
+        // pending_manifest_device 分两档：manifest 已声明的只是服务端快照滞后，
+        // 合入后必然生效，不报警告；manifest 未声明的才是真的指向不存在的设备。
+        const pendingSkus = partitionPendingManifestSkus(stale);
 
         // 只有「付费却无任何解锁路径」会让用户既不能下载也不能购买，是唯一的硬错误。
         checks.push({
@@ -1260,7 +1279,7 @@ export async function runResourceRuleChecks(options: {
             if (locked.length > 0) return "fail";
             if (missingEncryption.length > 0) return "fail";
             if (stale.rejectedOwnerDevices.length > 0) return "warn";
-            if (stale.pendingManifestDeviceSkus.length > 0) return "warn";
+            if (pendingSkus.missing.length > 0) return "warn";
             return "pass";
           })(),
           detail: (() => {
@@ -1272,9 +1291,13 @@ export async function runResourceRuleChecks(options: {
               parts.push(
                 `以下设备的配置卖家不是资源作者，服务端已永久忽略，不影响用户下载，建议联系作者清理：${stale.rejectedOwnerDevices.join(", ")}`,
               );
-            if (stale.pendingManifestDeviceSkus.length > 0)
+            for (const item of pendingSkus.declared)
               parts.push(
-                `以下 SKU 指向 manifest 中不存在的设备，合入后不会生效：${stale.pendingManifestDeviceSkus.join(", ")}`,
+                `${item.label}：设备已写入本次 manifest，合入后自动生效（服务端尚未看到本 PR 的索引行，无需处理）`,
+              );
+            if (pendingSkus.missing.length > 0)
+              parts.push(
+                `以下 SKU 指向本次 manifest 未声明的设备，合入后不会生效，请让创作者补包体或删除该配置：${pendingSkus.missing.map((item) => item.label).join("，")}`,
               );
             if (parts.length > 0) return parts.join("；");
             if (freeDevices.length > 0 && paidDevices.length === 0)
@@ -1341,10 +1364,8 @@ export async function runResourceRuleChecks(options: {
   }
 
   // --- check: manifest downloads 设备标识有效性 ---
-  const { full: fullDeviceKeys, trial: trialDeviceKeys } = getManifestDownloadKeys(manifest);
+  // fullDeviceKeys / fullResolved / trialResolved 已在付费检查之前算好，此处直接复用。
   const allDeviceTokens = [...fullDeviceKeys, ...trialDeviceKeys];
-  const fullResolved = resolveCanonicalSet(fullDeviceKeys, resolver);
-  const trialResolved = resolveCanonicalSet(trialDeviceKeys, resolver);
   const unknownTokens = Array.from(
     new Set([...fullResolved.unknowns, ...trialResolved.unknowns]),
   );

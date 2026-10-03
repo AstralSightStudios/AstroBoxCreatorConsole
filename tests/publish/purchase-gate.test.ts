@@ -4,6 +4,7 @@ import {
   evaluateDeviceGates,
   findUnpaidSkuDevices,
   isConfigEffectiveAfterMerge,
+  partitionPendingManifestSkus,
   type CommerceExternalAuthorization,
   type CommerceFileKey,
   type CommerceProduct,
@@ -55,6 +56,7 @@ function evaluate(overrides: {
   externalAuthorizations?: CommerceExternalAuthorization[];
   fileKeys?: CommerceFileKey[];
   sellerUserId?: string;
+  manifestDeviceIds?: string[];
 } = {}) {
   return evaluateDeviceGates({
     devices: overrides.devices ?? ["device_a"],
@@ -63,6 +65,7 @@ function evaluate(overrides: {
     externalAuthorizations: overrides.externalAuthorizations ?? [],
     fileKeys: overrides.fileKeys ?? [],
     sellerUserId: overrides.sellerUserId,
+    manifestDeviceIds: overrides.manifestDeviceIds,
   });
 }
 
@@ -74,9 +77,14 @@ describe("isConfigEffectiveAfterMerge", () => {
     expect(isConfigEffectiveAfterMerge("")).toBe(true);
   });
 
-  test("服务端已拒绝的两类脏配置视为不生效", () => {
+  test("pending_manifest_device 也视为生效：它是等设备上架的过渡态", () => {
+    // 服务端判设备存在性时读的是已合入的官方索引，edit 型 PR 新增的设备在审核期
+    // 必然被判为不存在；合入后索引含该设备，reconcile 会转 active。
+    expect(isConfigEffectiveAfterMerge("pending_manifest_device")).toBe(true);
+  });
+
+  test("卖家不是资源作者的脏配置视为不生效", () => {
     expect(isConfigEffectiveAfterMerge("rejected_resource_owner")).toBe(false);
-    expect(isConfigEffectiveAfterMerge("pending_manifest_device")).toBe(false);
   });
 });
 
@@ -226,7 +234,52 @@ describe("evaluateDeviceGates", () => {
     });
     expect(stale.rejectedOwnerDevices.sort()).toEqual(["device_a", "device_c"]);
     expect(stale.pendingManifestDeviceSkus).toHaveLength(1);
-    expect(stale.pendingManifestDeviceSkus[0]).toContain("plan_gone");
+    expect(stale.pendingManifestDeviceSkus[0].label).toContain("plan_gone");
+  });
+
+  test("pending_manifest_device 的 SKU 仍参与付费判定，不被当成免费设备", () => {
+    // edit 型 PR 新增设备 + 创作者已配 SKU：合入后该设备是付费的，
+    // 若把 pending 判成不生效，这里会退化成 free，从而漏判真正的锁死配置。
+    const { reasons } = evaluate({
+      skus: [sku({ validationStatus: "pending_manifest_device" })],
+      products: [product()],
+      fileKeys: [fileKey()],
+      sellerUserId: SELLER,
+      manifestDeviceIds: ["device_a"],
+    });
+    expect(reasons[0].verdict).toBe("unlocked");
+    expect(reasons[0].paidBy).toBe("sku");
+  });
+
+  test("pending_manifest_device 的 SKU 缺购买链接时判为锁死", () => {
+    const { reasons } = evaluate({
+      skus: [sku({ validationStatus: "pending_manifest_device", buyUrl: "" })],
+      products: [product()],
+      fileKeys: [fileKey()],
+      sellerUserId: SELLER,
+      manifestDeviceIds: ["device_a"],
+    });
+    expect(reasons[0].verdict).toBe("locked");
+    expect(reasons[0].missingPurchase).toContain("buyUrl");
+  });
+
+  test("manifest 未声明的 pending SKU 按 manifest 缺设备分级", () => {
+    const { stale } = evaluate({
+      skus: [sku({ validationStatus: "pending_manifest_device" })],
+    });
+    expect(stale.pendingManifestDeviceSkus[0].declaredInManifest).toBe(false);
+  });
+
+  test("不在下载设备列表里的 pending SKU 不产生任何设备判定", () => {
+    // devices 取自待合入 manifest，不在其中就没有付费门槛可言；
+    // 这也是把 pending 视为生效不会造成「按设备收钱却无设备」死锁的原因。
+    const { reasons } = evaluate({
+      devices: [],
+      skus: [sku({ validationStatus: "pending_manifest_device" })],
+      products: [product()],
+      manifestDeviceIds: [],
+    });
+    expect(reasons).toHaveLength(0);
   });
 
   test("同一设备多条 SKU 时，任一入口完整即 unlocked", () => {
@@ -291,5 +344,53 @@ describe("findUnpaidSkuDevices", () => {
 
   test("无 SKU 的免费设备不报", () => {
     expect(findUnpaidSkuDevices({ devices: ["device_a"], skus: [] })).toEqual([]);
+  });
+
+  test("pending_manifest_device 且未标记付费的设备也会被报出", () => {
+    expect(
+      findUnpaidSkuDevices({
+        devices: ["device_a"],
+        skus: [sku({ isPaid: false, validationStatus: "pending_manifest_device" })],
+      }),
+    ).toEqual(["device_a"]);
+  });
+
+  test("pending_manifest_device 且已标记付费的设备不报", () => {
+    expect(
+      findUnpaidSkuDevices({
+        devices: ["device_a"],
+        skus: [sku({ validationStatus: "pending_manifest_device" })],
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("partitionPendingManifestSkus", () => {
+  const pending = (deviceId: string, declaredInManifest: boolean) => ({
+    deviceId,
+    label: `${deviceId} → afd:plan_1/sku_1`,
+    declaredInManifest,
+  });
+
+  test("按 manifest 是否声明拆成两档", () => {
+    const { declared, missing } = partitionPendingManifestSkus({
+      rejectedOwnerDevices: ["device_x"],
+      pendingManifestDeviceSkus: [
+        pending("device_a", true),
+        pending("device_b", false),
+        pending("device_c", true),
+      ],
+    });
+    expect(declared.map((i) => i.deviceId)).toEqual(["device_a", "device_c"]);
+    expect(missing.map((i) => i.deviceId)).toEqual(["device_b"]);
+  });
+
+  test("无 pending 配置时两档都为空", () => {
+    const { declared, missing } = partitionPendingManifestSkus({
+      rejectedOwnerDevices: [],
+      pendingManifestDeviceSkus: [],
+    });
+    expect(declared).toEqual([]);
+    expect(missing).toEqual([]);
   });
 });
