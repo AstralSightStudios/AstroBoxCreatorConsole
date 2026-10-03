@@ -1036,6 +1036,50 @@ export async function runResourceRuleChecks(options: {
     detail: manifestRestype && csvRestype ? `manifest: ${manifestRestype} / csv: ${csvRestype}` : "缺少可比对字段",
   });
 
+  // --- check: ext.bundledResources 采用 AstroBox-NG 规范字段 ---
+  // NG 只读 id 与 recommended：历史提交若把插件标识写进 name、或用 recommend 键，
+  // 前置资源在 NG 端会被静默丢弃，这里在合入前拦下。
+  const rawBundles = manifest?.ext?.bundledResources as
+    | { required?: unknown; recommended?: unknown; recommend?: unknown }
+    | undefined;
+  if (rawBundles && typeof rawBundles === "object" && !Array.isArray(rawBundles)) {
+    const formatProblems: string[] = [];
+    if (rawBundles.recommend !== undefined) {
+      formatProblems.push(
+        "推荐组键名应为 recommended，当前为 recommend（AstroBox-NG 会忽略）",
+      );
+    }
+    const inspectGroup = (value: unknown, label: string) => {
+      if (!Array.isArray(value)) return;
+      value.forEach((item, index) => {
+        if (!item || typeof item !== "object") return;
+        const raw = item as { id?: unknown; name?: unknown };
+        if (String(raw.id ?? "").trim()) return;
+        const name = String(raw.name ?? "").trim();
+        formatProblems.push(
+          name
+            ? `${label}[${index}] 的标识写在 name，应为 id: "${name}"`
+            : `${label}[${index}] 缺少 id`,
+        );
+      });
+    };
+    inspectGroup(rawBundles.required, "required");
+    inspectGroup(rawBundles.recommended, "recommended");
+    inspectGroup(rawBundles.recommend, "recommend");
+    const shown = formatProblems.slice(0, 3);
+    if (formatProblems.length > shown.length) {
+      shown.push(`等共 ${formatProblems.length} 处`);
+    }
+    checks.push({
+      title: "资源绑定字段符合规范",
+      status: formatProblems.length > 0 ? "fail" : "pass",
+      detail:
+        formatProblems.length > 0
+          ? `错误：${shown.join("；")}；AstroBox-NG 仅读取 id 与 recommended`
+          : "分组键名与 id 字段均符合规范",
+    });
+  }
+
   // --- check: ext.bundledResources 捆绑配置有效性 ---
   const bundledEntries = normalizeBundledResources(manifest?.ext?.bundledResources);
   if (bundledEntries.length > 0) {
