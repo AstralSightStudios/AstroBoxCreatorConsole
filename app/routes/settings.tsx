@@ -75,13 +75,14 @@ import {
 import { useBetaUpdateEnabled } from "~/config/betaUpdate";
 import Page from "~/layout/page";
 import {
-  hasRequiredNavRole,
+  isNavItemPermitted,
   NAV_PRIMARY_ACTION,
   NAV_SECTIONS,
   sortNavItems,
   type NavLinkConfig,
   type NavSectionConfig,
 } from "~/layout/nav-config";
+import { useCommunityRepoManageAccess } from "~/logic/account/repo-permission";
 import { useAccountState } from "~/logic/account/store";
 import { SectionCard } from "./resource/publish/components/shared";
 
@@ -616,10 +617,11 @@ function NavigationItemsSettings({
 }) {
   const [dragState, setDragState] = useState<NavDragState | null>(null);
   const dragStateRef = useRef<NavDragState | null>(null);
+  const repoAccess = useCommunityRepoManageAccess();
   const availableSections = NAV_PREFERENCE_SECTIONS.map((section) => ({
     section,
     items: sortNavItems(section.items, preferences.itemOrder).filter((item) =>
-      hasRequiredNavRole(item, roles),
+      isNavItemPermitted(item, roles, repoAccess.allowed),
     ),
   })).filter(({ items }) => items.length > 0);
 

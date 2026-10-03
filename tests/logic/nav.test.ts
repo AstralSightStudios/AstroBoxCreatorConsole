@@ -6,6 +6,7 @@ import {
 import {
   findNavIndex,
   hasRequiredNavRole,
+  isNavItemPermitted,
   NAV_PRIMARY_ACTION,
   NAV_SECTIONS,
   sortNavItems,
@@ -81,5 +82,21 @@ describe("导航项偏好", () => {
     expect(adminItem).toBeDefined();
     expect(hasRequiredNavRole(adminItem!, [])).toBe(false);
     expect(hasRequiredNavRole(adminItem!, ["admin"])).toBe(true);
+  });
+
+  test("资源管理入口要求仓库权限，PR审核保持原样", () => {
+    const items = NAV_SECTIONS.flatMap((section) => section.items);
+    const review = items.find((item) => item.id === "resreview");
+    const resources = items.find((item) => item.id === "cloudcontrol");
+
+    expect(resources).toMatchObject({
+      label: "资源管理",
+      path: "/cloudcontrol",
+      requireRepoPermission: true,
+    });
+    expect(review?.requireRepoPermission).toBeUndefined();
+    expect(isNavItemPermitted(resources!, [], false)).toBe(false);
+    expect(isNavItemPermitted(resources!, [], true)).toBe(true);
+    expect(isNavItemPermitted(review!, [], false)).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ import {
 } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
+  hasCommunityRepoManagePermission,
   getPullRequest,
   listReviewPullRequests,
   listPullRequestTimeline,
@@ -168,7 +169,7 @@ export default function ResourceReviewPage() {
   const [refusing, setRefusing] = useState(false);
   const loadDetailRef = useRef<number>(0);
 
-  const canReview = ["admin", "maintain", "write"].includes(permission);
+  const canReview = hasCommunityRepoManagePermission(permission);
   const isInitialLoading = checkingPermission || (loadingPulls && pulls.length === 0);
   const openPull = pulls.find((pull) => pull.number === openNumber) || null;
   const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];

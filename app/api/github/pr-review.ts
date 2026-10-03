@@ -101,6 +101,13 @@ function repoPath(path: string) {
   return `https://api.github.com/repos/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}${path}`;
 }
 
+/** 与 PR 审核相同：具备仓库写入能力才算有管理权限。 */
+const COMMUNITY_REPO_MANAGE_PERMISSIONS = new Set(["admin", "maintain", "write"]);
+
+export function hasCommunityRepoManagePermission(permission: string) {
+  return COMMUNITY_REPO_MANAGE_PERMISSIONS.has(permission);
+}
+
 export async function getCurrentGithubPermission() {
   const account = getGithubAuth();
   if (!account.username) {

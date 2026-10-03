@@ -16,13 +16,14 @@ import {
   type DisplayAccount,
 } from "~/logic/account/store";
 import {
-  hasRequiredNavRole,
+  isNavItemPermitted,
   NAV_PRIMARY_ACTION,
   NAV_SECTIONS,
   sortNavItems,
   type NavSectionConfig,
   matchesNavPath,
 } from "./nav-config";
+import { useCommunityRepoManageAccess } from "~/logic/account/repo-permission";
 import { useNavVisibility } from "./nav-visibility-context";
 import InboxBell from "~/components/inbox/InboxBell";
 import { useInboxDrawer } from "~/components/inbox/drawer-context";
@@ -236,6 +237,7 @@ function NavContent({
   hideFunctionButton,
   hideHeader,
 }: NavContentProps) {
+  const repoAccess = useCommunityRepoManageAccess();
   const navMaskImage = `linear-gradient(to bottom, ${
     navScrollState.canScrollUp
       ? "transparent 0, #000 56px, "
@@ -281,6 +283,7 @@ function NavContent({
                   navItemPreferences={navItemPreferences}
                   pathname={pathname}
                   onNavigate={onNavigate}
+                  hasRepoPermission={repoAccess.allowed}
                 />
               ))}
               <div className="h-px w-[calc(100%-1rem)] bg-white/10 mt-2 mb-1 mx-2"></div>
@@ -599,6 +602,7 @@ interface NavSectionProps extends NavSectionConfig {
   navItemPreferences: NavItemPreferences;
   pathname: string;
   onNavigate: (path: string) => void;
+  hasRepoPermission: boolean;
 }
 
 function NavSection({
@@ -608,6 +612,7 @@ function NavSection({
   navItemPreferences,
   pathname,
   onNavigate,
+  hasRepoPermission,
 }: NavSectionProps) {
   const hasAnalysisAccess = canAccessAnalysisByPlan(accountState.astrobox?.plan);
   const roles = accountState.astrobox?.roles ?? [];
@@ -616,7 +621,7 @@ function NavSection({
     navItemPreferences.itemOrder,
   ).filter(
     (item) =>
-      hasRequiredNavRole(item, roles) &&
+      isNavItemPermitted(item, roles, hasRepoPermission) &&
       (item.alwaysVisible || isNavItemVisible(item.id, navItemPreferences)),
   );
 
@@ -637,6 +642,7 @@ function NavSection({
           path,
           alwaysVisible: _alwaysVisible,
           requireRoles: _requireRoles,
+          requireRepoPermission: _requireRepoPermission,
           ...item
         }) => {
           const disabled = path === "/analysis" && !hasAnalysisAccess;

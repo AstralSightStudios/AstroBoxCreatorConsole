@@ -1,7 +1,7 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
   ArchiveIcon,
-  BinocularsIcon,
+  PackageIcon,
   ChartBarIcon,
   ChartPieSliceIcon,
   ChatsCircleIcon,
@@ -30,6 +30,8 @@ export interface NavLinkConfig {
   alwaysVisible?: boolean;
   fixedPosition?: boolean;
   requireRoles?: string[];
+  /** 需要当前 GitHub 账号对社区仓库具备写入权限后才显示。 */
+  requireRepoPermission?: boolean;
 }
 
 export interface NavSectionConfig {
@@ -130,9 +132,10 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
       },
       {
         id: "cloudcontrol",
-        icon: BinocularsIcon,
-        label: "云控与资源推流",
+        icon: PackageIcon,
+        label: "资源管理",
         path: "/cloudcontrol",
+        requireRepoPermission: true,
       },
       {
         id: "explorepage",
@@ -217,6 +220,16 @@ export function hasRequiredNavRole(
 ) {
   if (!item.requireRoles?.length) return true;
   return item.requireRoles.some((role) => roles.includes(role));
+}
+
+export function isNavItemPermitted(
+  item: NavLinkConfig,
+  roles: readonly string[],
+  hasRepoPermission: boolean,
+) {
+  if (!hasRequiredNavRole(item, roles)) return false;
+  if (item.requireRepoPermission && !hasRepoPermission) return false;
+  return true;
 }
 
 export function sortNavItems<T extends { id: string }>(
