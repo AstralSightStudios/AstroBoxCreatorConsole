@@ -47,9 +47,9 @@ export interface ManifestDownloadInfo {
 
 export interface ManifestBundledResource {
     type: string;
-    /** resource 类型：目录资源 ID；plugin 类型：不使用 */
+    /** resource 类型：目录资源 ID；plugin 类型：插件仓库 index.json 中的 manifest.name */
     id?: string;
-    /** plugin 类型：插件仓库 index.json 中的 manifest.name；resource 类型：展示名（可选） */
+    /** 兼容旧 manifest：历史版本曾把插件名写进 name，现统一读取 id */
     name?: string;
 }
 
@@ -68,7 +68,7 @@ export interface ManifestExtObject extends Record<string, unknown> {
     trialDownloads?: Record<string, ManifestDownloadInfo>;
     bundledResources?: {
         required?: ManifestBundledResource[];
-        recommend?: ManifestBundledResource[];
+        recommended?: ManifestBundledResource[];
     };
     wallpaperGenerator?: {
         configUrl: string;
@@ -113,12 +113,17 @@ export function normalizeBundledResources(
     value: unknown,
 ): BundledResourceEntry[] {
     const container = value as
-        | { required?: unknown; recommend?: unknown }
+        | { required?: unknown; recommended?: unknown; recommend?: unknown }
         | undefined
         | null;
     const seen = new Set<string>();
     const required = normalizeBundledList(container?.required, "required", seen);
-    const recommend = normalizeBundledList(container?.recommend, "recommend", seen);
+    // 规范字段是 recommended；recommend 为 AstroBox-NG 不接受的历史拼写，仅作读取兼容。
+    const recommend = normalizeBundledList(
+        container?.recommended ?? container?.recommend,
+        "recommend",
+        seen,
+    );
     return [...required, ...recommend];
 }
 
@@ -437,14 +442,12 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     delete ext.bundledResources;
     if (bundledEntries.length > 0) {
         ext.bundledResources = {};
-        const toManifestEntry = ({
+        // AstroBox-NG 的 ManifestBundledResourceV2 只有 type/id/provider：
+        // 插件名与资源 ID 一律写入 id，写 name 会被 NG 直接丢弃。
+        const toManifestEntry = ({ type, id }: BundledResourceEntry) => ({
             type,
             id,
-            name,
-        }: BundledResourceEntry) =>
-            type === "plugin"
-                ? { type, name: name ?? id }
-                : { type, id };
+        });
         const required = bundledEntries
             .filter((item) => item.mode === "required")
             .map(toManifestEntry);
@@ -455,7 +458,7 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
             ext.bundledResources.required = required;
         }
         if (recommend.length > 0) {
-            ext.bundledResources.recommend = recommend;
+            ext.bundledResources.recommended = recommend;
         }
     }
 

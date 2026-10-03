@@ -65,7 +65,7 @@ describe("manifest ext.bundledResources", () => {
     enableAstroBoxCreatorFeatures: false,
   };
 
-  test("writes required and recommend bundled entries into ext", () => {
+  test("writes required and recommended bundled entries into ext", () => {
     const result = buildManifest({
       ...baseInput,
       bundledResources: [
@@ -77,12 +77,13 @@ describe("manifest ext.bundledResources", () => {
     });
 
     const manifest = JSON.parse(result.manifestJson);
+    // AstroBox-NG 只认 id（插件名同样写在 id）与 recommended 键。
     expect(manifest.ext.bundledResources).toEqual({
       required: [
         { type: "resource", id: "com.canopus.lyraimport" },
-        { type: "plugin", name: "Lyra音乐导入器" },
+        { type: "plugin", id: "Lyra音乐导入器" },
       ],
-      recommend: [{ type: "resource", id: "com.example.player" }],
+      recommended: [{ type: "resource", id: "com.example.player" }],
     });
   });
 
@@ -116,7 +117,7 @@ describe("manifest ext.bundledResources", () => {
 
     const manifest = JSON.parse(result.manifestJson);
     expect(manifest.ext.bundledResources).toEqual({
-      recommend: [{ type: "resource", id: "fresh.id" }],
+      recommended: [{ type: "resource", id: "fresh.id" }],
     });
   });
 
@@ -140,7 +141,7 @@ describe("manifest ext.bundledResources", () => {
       xmb10p: { version: "1.0.0", file_name: "downloads/trial/demo.bin" },
     });
     expect(manifest.ext.bundledResources).toEqual({
-      required: [{ type: "plugin", name: "dep" }],
+      required: [{ type: "plugin", id: "dep" }],
     });
   });
 });
@@ -420,7 +421,7 @@ describe("manifest downloads updatelogs", () => {
 });
 
 describe("normalizeBundledResources", () => {
-  test("parses required and recommend arrays with modes", () => {
+  test("parses required and recommended arrays with modes", () => {
     expect(
       normalizeBundledResources({
         required: [
@@ -428,13 +429,32 @@ describe("normalizeBundledResources", () => {
           { id: "b.id" },
           { type: "", id: "" },
         ],
-        recommend: [{ type: "plugin", name: "Lyra音乐导入器" }],
+        recommended: [{ type: "plugin", id: "Lyra音乐导入器" }],
       }),
     ).toEqual([
       { mode: "required", type: "resource", id: "a.id" },
       { mode: "required", type: "resource", id: "b.id" },
       { mode: "recommend", type: "plugin", id: "Lyra音乐导入器", name: "Lyra音乐导入器" },
     ]);
+  });
+
+  test("falls back to the legacy recommend key and plugin name field", () => {
+    expect(
+      normalizeBundledResources({
+        recommend: [{ type: "plugin", name: "Lyra音乐导入器" }],
+      }),
+    ).toEqual([
+      { mode: "recommend", type: "plugin", id: "Lyra音乐导入器", name: "Lyra音乐导入器" },
+    ]);
+  });
+
+  test("prefers recommended over the legacy recommend key", () => {
+    expect(
+      normalizeBundledResources({
+        recommended: [{ type: "resource", id: "new.id" }],
+        recommend: [{ type: "resource", id: "old.id" }],
+      }),
+    ).toEqual([{ mode: "recommend", type: "resource", id: "new.id" }]);
   });
 
   test("rejects bare arrays and dedupes ids across groups", () => {
@@ -444,14 +464,14 @@ describe("normalizeBundledResources", () => {
     expect(
       normalizeBundledResources({
         required: [{ id: "dup" }],
-        recommend: [{ id: "dup" }],
+        recommended: [{ id: "dup" }],
       }),
     ).toEqual([{ mode: "required", type: "resource", id: "dup" }]);
   });
 
   test("coerces unknown types to resource", () => {
     expect(
-      normalizeBundledResources({ recommend: [{ type: "whatever", id: "x" }] }),
+      normalizeBundledResources({ recommended: [{ type: "whatever", id: "x" }] }),
     ).toEqual([{ mode: "recommend", type: "resource", id: "x" }]);
   });
 
