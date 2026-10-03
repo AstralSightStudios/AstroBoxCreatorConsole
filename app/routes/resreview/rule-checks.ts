@@ -83,6 +83,12 @@ export interface PackageCheckResult {
   kind: "正式包" | "试用包";
   url: string;
   sizeBytes?: number;
+  /** manifest downloads 声明的版本号，多设备不一致时以「、」并列。 */
+  version?: string;
+  /** manifest downloads 声明的 versionCode，多设备不一致时以「、」并列。 */
+  versionCode?: string;
+  /** 「更新包体 versionCode 已递增」检查按设备给出的问题清单，逐条展示供人工核对。 */
+  versionCodeNotes?: string[];
   detectedType: DetectedPackageType;
   effectiveCategory: "watchface" | "quick_app" | "other";
   typeMatch: "match" | "mismatch" | "inconclusive";
@@ -787,6 +793,10 @@ interface UniquePackage {
   devices: string[];
   kind: "正式包" | "试用包";
   url: string;
+  /** manifest downloads 里声明的版本号，同一文件被多设备共用时可能并列多个。 */
+  versions: string[];
+  /** manifest downloads 里声明的 versionCode，同一文件被多设备共用时可能并列多个。 */
+  versionCodes: number[];
 }
 
 function dedupePackages(preview: PrResourcePreview): UniquePackage[] {
@@ -804,7 +814,19 @@ function dedupePackages(preview: PrResourcePreview): UniquePackage[] {
         devices: pkg.deviceId ? [pkg.deviceId] : [],
         kind: pkg.kind,
         url: pkg.url,
+        versions: [],
+        versionCodes: [],
       });
+    }
+    const target = map.get(key)!;
+    const version = (pkg.version ?? "").trim();
+    if (version && !target.versions.includes(version)) target.versions.push(version);
+    if (
+      typeof pkg.versionCode === "number" &&
+      Number.isFinite(pkg.versionCode) &&
+      !target.versionCodes.includes(pkg.versionCode)
+    ) {
+      target.versionCodes.push(pkg.versionCode);
     }
   }
   return Array.from(map.values());
@@ -1253,6 +1275,12 @@ export async function runResourceRuleChecks(options: {
   });
 
   // --- check: versionCode 随包体更新（warn，非强制） ---
+  // 逐设备的结论不塞进 detail：设备一多 detail 会长到没法看，只给「几个包体有问题
+  // + 首条」，完整清单挂到「包体内容校验」容器里由右侧明细按钮跳转查看。
+  const versionCodeIssuesByDevice = new Map<string, string[]>();
+  /** 检查项 detail 只放得下一条原因，过长的报错（如 GitHub API 原文）截断展示。 */
+  const truncateForDetail = (text: string, max = 60) =>
+    text.length > max ? `${text.slice(0, max)}…` : text;
   {
     const nextDownloads = manifest?.downloads ?? {};
     const nextDeviceIds = Object.keys(nextDownloads);
@@ -1280,10 +1308,16 @@ export async function runResourceRuleChecks(options: {
       if (baseEntry && baseError && Object.keys(baseDownloads).length === 0) {
         checkStatus = "manual";
         checkDetail = `无法读取旧版本 manifest，跳过 versionCode 比对${
-          baseError ? `：${baseError}` : ""
+          baseError ? `：${truncateForDetail(baseError)}` : ""
         }`;
       } else {
-        const issues: string[] = [];
+        // 结论带上设备前缀：包体明细按文件聚合，一行可能对应多个设备。
+        const addIssue = (deviceId: string, text: string) => {
+          const note = `${deviceId}：${text}`;
+          const list = versionCodeIssuesByDevice.get(deviceId);
+          if (list) list.push(note);
+          else versionCodeIssuesByDevice.set(deviceId, [note]);
+        };
         for (const deviceId of nextDeviceIds) {
           const next = nextDownloads[deviceId] ?? {};
           const hasPackage = Boolean((next.file_name ?? "").trim());
@@ -1296,17 +1330,14 @@ export async function runResourceRuleChecks(options: {
                 (base.file_name ?? "") !== (next.file_name ?? "") ||
                 (base.version ?? "") !== (next.version ?? "");
               if (packageChanged) {
-                issues.push(
-                  `${deviceId}：包体已更新但未填写 versionCode（旧 ${
-                    base.versionCode ?? "无"
-                  } → 新 无）`,
+                addIssue(
+                  deviceId,
+                  `versionCode 缺失：包体已更新但未填写（旧 ${base.versionCode ?? "无"}）`,
                 );
                 continue;
               }
             }
-            issues.push(
-              `${deviceId}：未填写 versionCode，用户将无法自动检测更新`,
-            );
+            addIssue(deviceId, "versionCode 缺失：用户将无法自动检测更新");
             continue;
           }
           if (
@@ -1315,16 +1346,21 @@ export async function runResourceRuleChecks(options: {
               (base.version ?? "") !== (next.version ?? "")) &&
             nextCode === base.versionCode
           ) {
-            issues.push(
-              `${deviceId}：包体已更新但 versionCode 未变化（${
-                base.versionCode ?? "无"
-              } → ${nextCode}）`,
+            addIssue(
+              deviceId,
+              `versionCode 未递增：包体已更新但仍是 ${base.versionCode ?? "无"}`,
             );
           }
         }
-        if (issues.length > 0) {
+        const issueCount = Array.from(versionCodeIssuesByDevice.values()).reduce(
+          (n, list) => n + list.length,
+          0,
+        );
+        if (issueCount > 0) {
           checkStatus = "warn";
-          checkDetail = issues.join("；");
+          checkDetail = `${issueCount} 个包体的 versionCode 有问题：${
+            versionCodeIssuesByDevice.values().next().value?.[0] ?? ""
+          }${issueCount > 1 ? "（完整清单见右侧明细）" : ""}`;
         } else if (!baseEntry) {
           checkStatus = "pass";
           checkDetail = "所有正式包体均已填写 versionCode";
@@ -1338,6 +1374,7 @@ export async function runResourceRuleChecks(options: {
       title: "更新包体 versionCode 已递增",
       status: checkStatus,
       detail: checkDetail,
+      anchor: "packages",
     });
   }
 
@@ -1706,6 +1743,9 @@ export async function runResourceRuleChecks(options: {
         kind: pkg.kind,
         url: pkg.url,
         sizeBytes: lookupSize(sizeMap, pkg.fileName),
+        version: pkg.versions.length > 0 ? pkg.versions.join("、") : undefined,
+        versionCode: pkg.versionCodes.length > 0 ? pkg.versionCodes.join("、") : undefined,
+        versionCodeNotes: pkg.devices.flatMap((d) => versionCodeIssuesByDevice.get(d) ?? []),
         detectedType: "unknown",
         effectiveCategory: "other",
         typeMatch: "inconclusive",

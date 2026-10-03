@@ -351,6 +351,12 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
         <span className="text-white/45">
           {pkg.kind} · 设备：{pkg.devices.join(" / ") || "-"}
         </span>
+        {(pkg.version || pkg.versionCode) && (
+          <span className="text-white/45">
+            版本：{pkg.version || "-"}
+            {pkg.versionCode ? `（${pkg.versionCode}）` : ""}
+          </span>
+        )}
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-white/60">
         <span>
@@ -400,6 +406,13 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
         ) : null}
         {pkg.error && <span className="text-red-400">[错误：{pkg.error}]</span>}
       </div>
+      {pkg.versionCodeNotes && pkg.versionCodeNotes.length > 0 && (
+        <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-300/90">
+          {pkg.versionCodeNotes.map((n) => (
+            <li key={n} className="break-all">{n}</li>
+          ))}
+        </ul>
+      )}
       {pkg.debugVerdict && pkg.debugVerdict.details.length > 0 && (
         <ul className="mt-1 list-disc pl-4 text-[11px] text-white/45">
           {pkg.debugVerdict.details.map((d) => (
