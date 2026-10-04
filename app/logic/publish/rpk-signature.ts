@@ -31,6 +31,19 @@
  * `manifest.config.debug`、以及文件名里的 `debug`/`release`
  * （可被 `defineOptions.PACKAGE_TYPE` 覆盖，也可直接改名；线上同时存在
  * 「名字带 .debug. 却是正式私钥签名」与「名字干净却是内置 debug 证书」双向样本）。
+ *
+ * 已知覆盖边界（写在这里是为了别把「没报」当成「查过了」）：
+ *
+ * - **`.jsc` 入口无法判定压缩/混淆。** 线上绝大多数包（抽样 14 个里 13 个）
+ *   的入口是 `app.jsc` / `pages/**\/*.jsc`，内容是 bundler 字节码
+ *   （rspack 等，非合法 UTF-8），没有行概念，长行统计对它没有意义。
+ *   这类包的压缩/混淆只能靠 `.map` 与签名证书兜底：DEVELOPMENT 构建若
+ *   剥掉 `.map`，内容层就是彻底失效的。检测器会显式回报这一点，而不是
+ *   静默当作「没发现问题」。
+ * - **`.jsc` 可以判内联 source map。** 字节码字符串池里的 ASCII 子串在
+ *   非致命 UTF-8 解码后完好（实测替换字符仅约 6%），所以子串查找照常适用。
+ * - 真实样本回归依赖 `.opencode/problem/debugreleaseexamplerpk`，该目录不在
+ *   版本库里，因此 `pass` 路径在 CI 中零覆盖。
  */
 
 // ---------------------------------------------------------------------------
@@ -53,13 +66,36 @@ const TOOLKIT_DEBUG_CERT_CNS = new Set(["localhost", "rpkdebug"]);
 /**
  * 入口 JS 平均行长低于此值视为「未压缩未格式化」。
  *
- * 实测 367 个官方源真实 rpk：被判 beautify 的入口平均行长落在 31.7 ~ 147.8，
- * 而 298 个 pass 包中最低的一例也有 492.5，阈值两侧有 3.3 倍间隔。保持 soft。
+ * 该阈值只在入口是**文本**（`.js`）且行数达到 `BEAUTIFY_MIN_LINES` 时才生效。
+ * 原始依据：实测 367 个官方源真实 rpk，被判 beautify 的入口平均行长落在
+ * 31.7 ~ 147.8，pass 包最低 492.5，两侧有 3.3 倍间隔。
  */
 const BEAUTIFY_LINE_THRESHOLD = 400;
 
+/**
+ * 低于此行数直接放弃「未压缩」判定。
+ *
+ * 压缩产物通常被压成**单行**，`length / (lines + 1)` 于是退化成
+ * `length / 2`：一个 55 字节的合法压缩 `app.js` 就会被算成 avg≈27 而误报
+ * 「入口未压缩」。而真正的未压缩源码动辄数百上千行，行数不足本身就说明不了
+ * 问题，因此这里宁可不判也不误报。
+ */
+const BEAUTIFY_MIN_LINES = 20;
+
 /** rpk 签名块尾的固定 16 字节 ASCII 魔数（SignUtil.SigMagic）。 */
 const SIG_MAGIC = "RPK Sig Block 42";
+
+/**
+ * 最多尝试解析多少个魔数出现位置。
+ *
+ * 魔数是普通 ASCII，游戏剧情/说明文本里完全可能出现同一串文本。上限用来
+ * 兜住「包里塞了一堆该字符串」的病态输入，避免每个魔数都触发一次线性兜底
+ * 扫描把审核面板拖死。
+ */
+const SIG_MAGIC_MAX_PROBES = 32;
+
+/** 兜底扫描块头时的最大回溯窗口（字节）。 */
+const SIG_BLOCK_SCAN_WINDOW = 1 << 20;
 
 function emptyVerdict(reason: string): RpkDebugVerdict {
   return {
@@ -107,22 +143,22 @@ const i32le = (b: Uint8Array, o: number): number =>
   b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
 
 /**
- * 在字节流中查找 ASCII 子串。
+ * 在字节流中查找 ASCII 子串的**全部**出现位置。
  *
  * 注意：不能直接用 `Uint8Array.prototype.indexOf` —— 它不接受 string/Buffer
  * 作为 needle，会把参数强制转成数字（NaN）后恒返回 -1。必须手写字节比较。
  */
-function indexOfAscii(bytes: Uint8Array, ascii: string): number {
+function indexOfAllAscii(bytes: Uint8Array, ascii: string): number[] {
   const first = ascii.charCodeAt(0);
-  const limit = bytes.length - ascii.length;
-  outer: for (let i = 0; i <= limit; i += 1) {
+  const hits: number[] = [];
+  outer: for (let i = 0; i + ascii.length <= bytes.length; i += 1) {
     if (bytes[i] !== first) continue;
     for (let k = 1; k < ascii.length; k += 1) {
       if (bytes[i + k] !== ascii.charCodeAt(k)) continue outer;
     }
-    return i;
+    hits.push(i);
   }
-  return -1;
+  return hits;
 }
 
 /** 读取 DER TLV 头；返回 {tag, content, next}，格式非法时返回 null。 */
@@ -289,15 +325,18 @@ async function parseCertificate(der: Uint8Array): Promise<RpkCertificateInfo> {
  *
  * 不能用「魔数前最后一个 00 00 00 00」当锚点：那个位置是块尾 `[size][0]` 里的
  * `0`，据此回推必然错位。
+ *
+ * 魔数是普通 ASCII，包体里别处（剧情文本、说明文件、存档）出现同一串文本完全
+ * 可能，而且通常排在签名块**之前**。因此必须遍历每一个出现位置逐个尝试解析，
+ * 只认第一个会让一段无辜的文本把整包带成「无签名」。
  */
 function findSignatureCertificates(bytes: Uint8Array): Uint8Array[] | null {
-  const magicIndex = indexOfAscii(bytes, SIG_MAGIC);
-  if (magicIndex < 8) return null;
-
-  const tailSize = i32le(bytes, magicIndex - 8);
-  const blockEnd = magicIndex - 8; // 条目区结束位置（不含块尾 [size][0]）
-
-  const parseFrom = (blockStart: number): Uint8Array[] | null => {
+  /** 从候选块头开始顺解，块结构自洽才返回证书列表。 */
+  const parseFrom = (
+    blockStart: number,
+    tailSize: number,
+    blockEnd: number,
+  ): Uint8Array[] | null => {
     if (blockStart < 0 || blockStart + 8 > bytes.length) return null;
     if (i32le(bytes, blockStart) !== tailSize) return null;
     if (i32le(bytes, blockStart + 4) !== 0) return null;
@@ -377,14 +416,34 @@ function findSignatureCertificates(bytes: Uint8Array): Uint8Array[] | null {
     return certs;
   };
 
-  const primary = parseFrom(magicIndex - (tailSize + 8) + 16);
-  if (primary) return primary;
+  const attempt = (magicIndex: number): Uint8Array[] | null => {
+    if (magicIndex < 8) return null;
+    const tailSize = i32le(bytes, magicIndex - 8);
+    if (tailSize <= 0) return null;
+    const blockEnd = magicIndex - 8; // 条目区结束位置（不含块尾 [size][0]）
 
-  // 兜底：在魔数附近扫描能顺解到块尾的候选块头。
-  const lo = Math.max(0, magicIndex - tailSize - 256);
-  for (let s = lo; s <= magicIndex - 16; s += 4) {
-    const r = parseFrom(s);
-    if (r) return r;
+    const primary = parseFrom(magicIndex - (tailSize + 8) + 16, tailSize, blockEnd);
+    if (primary) return primary;
+
+    // 兜底：在魔数附近扫描能顺解到块尾的候选块头。回溯窗口要有上限，
+    // 免得伪造的 tailSize 把扫描范围撑到整包。
+    const lo = Math.max(
+      0,
+      magicIndex - Math.min(tailSize, SIG_BLOCK_SCAN_WINDOW) - 256,
+    );
+    for (let s = lo; s <= magicIndex - 16; s += 4) {
+      const r = parseFrom(s, tailSize, blockEnd);
+      if (r) return r;
+    }
+    return null;
+  };
+
+  let probes = 0;
+  for (const magicIndex of indexOfAllAscii(bytes, SIG_MAGIC)) {
+    if (probes >= SIG_MAGIC_MAX_PROBES) break;
+    probes += 1;
+    const found = attempt(magicIndex);
+    if (found) return found;
   }
   return null;
 }
@@ -405,11 +464,26 @@ function isToolkitDebugCertificate(cert: RpkCertificateInfo): boolean {
   return Boolean(cert.issuerCn) && cert.issuerCn === cert.subjectCn;
 }
 
-/** 快应用入口脚本：只认 app.js 与 pages/ 下的 js，不扫全包。 */
-function isEntryScript(name: string): boolean {
+/**
+ * 入口脚本分类。
+ *
+ * 只认 `app.*` 与 `pages/**` 下的产物，不扫全包 —— `common/` 里预编译的
+ * vendor 脚本自带 source map，扫全包会误报。
+ *
+ * `text` 与 `bytecode` 必须分开：`.jsc` 是 bundler 字节码（rspack 等），
+ * 不是合法 UTF-8、没有行概念，长行统计对它毫无意义；但它的字符串池里
+ * ASCII 子串完好，内联 source map 那种子串查找照常可用。
+ */
+type EntryScriptKind = "text" | "bytecode";
+
+function entryScriptKind(name: string): EntryScriptKind | null {
   const base = name.split("/").pop() ?? name;
-  if (base === "app.js") return true;
-  return base.endsWith(".js") && name.startsWith("pages/");
+  if (base === "app.js") return "text";
+  if (base === "app.jsc") return "bytecode";
+  if (!name.startsWith("pages/")) return null;
+  if (base.endsWith(".js")) return "text";
+  if (base.endsWith(".jsc")) return "bytecode";
+  return null;
 }
 
 export async function detectRpkDebug(
@@ -493,11 +567,26 @@ export async function detectRpkDebug(
   const decoder = new TextDecoder("utf-8", { fatal: false });
   let inlineSourcemap = 0;
   let beautified = 0;
+  let textEntries = 0;
+  let bytecodeEntries = 0;
   for (const name of names) {
-    if (!isEntryScript(name)) continue;
+    const kind = entryScriptKind(name);
+    if (kind === null) continue;
+    // 非致命解码：字节码里的非法字节会变成 U+FFFD，但字符串池的 ASCII
+    // 子串完好，子串查找依然有效。
     const text = decoder.decode(entries[name]);
     if (text.includes("sourceMappingURL=data:")) inlineSourcemap += 1;
-    const avgLineLength = text.length / (text.split("\n").length + 1);
+    if (kind === "bytecode") {
+      // 字节码没有行概念，长行统计不适用，只记个数用于覆盖率提示。
+      bytecodeEntries += 1;
+      continue;
+    }
+    textEntries += 1;
+    const lines = text.split("\n").length;
+    // 行数不足时不判「未压缩」：压缩产物常被压成单行，
+    // length/(lines+1) 会退化成 length/2，小体积合法压缩入口必被误报。
+    if (lines < BEAUTIFY_MIN_LINES) continue;
+    const avgLineLength = text.length / (lines + 1);
     if (avgLineLength < BEAUTIFY_LINE_THRESHOLD) beautified += 1;
   }
   if (inlineSourcemap > 0) {
@@ -507,6 +596,14 @@ export async function detectRpkDebug(
   if (beautified > 0) {
     soft.push("entry-js-unminified");
     details.push(`${beautified} 个入口脚本未压缩`);
+  }
+  // 明确回报内容层的覆盖边界，别让「没报」被读成「查过了」。
+  if (textEntries === 0 && bytecodeEntries === 0) {
+    details.push("未识别到入口脚本，压缩/混淆情况未校验（仅校验了 .map 与 debug 目录）");
+  } else if (textEntries === 0) {
+    details.push(
+      `入口全部为 .jsc 字节码（${bytecodeEntries} 个），无法判定是否未压缩/未混淆`,
+    );
   }
 
   const level: RpkDebugLevel =
