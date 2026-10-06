@@ -36,6 +36,7 @@ export interface SellerResourceSku {
     buyUrl: string;
     isPaid: boolean;
     enabled: boolean;
+    sortOrder?: number;
     validationStatus?: string;
 }
 
@@ -63,6 +64,7 @@ export interface UpsertResourceSkuBody {
     buyUrl?: string;
     isPaid?: boolean;
     enabled?: boolean;
+    sortOrder?: number;
 }
 
 export interface SellerOverviewCounts {

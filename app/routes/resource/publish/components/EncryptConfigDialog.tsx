@@ -11,6 +11,7 @@ import {
 import { ScrollArea } from "~/components/scroll-area";
 import {
   CaretDownIcon,
+  CaretUpIcon,
   LinkSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -70,6 +71,7 @@ interface PlatformMappingRow {
   isPaid: boolean;
   enabled: boolean;
   productType?: number;
+  sortOrder?: number;
 }
 
 type PlatformRows = Record<CommercePlatform, PlatformMappingRow[]>;
@@ -101,6 +103,7 @@ function buildMappingRow(
     isPaid: sku?.isPaid ?? platform === "afd",
     enabled: sku?.enabled ?? product?.enabled ?? true,
     productType: buyUrl ? parseAfdUrl(buyUrl).productType : undefined,
+    sortOrder: sku?.sortOrder,
   };
 }
 
@@ -110,19 +113,52 @@ function buildPlatformRows(
   products: SellerResourceProduct[],
   skus: SellerResourceSku[],
 ) {
-  const rows = skus
-    .filter((sku) => sku.platform === platform && sku.deviceId === deviceId)
-    .map((sku) =>
-      buildMappingRow(
-        platform,
-        products.find(
-          (product) =>
-            product.platform === platform &&
-            product.externalProductId === sku.externalProductId,
-        ),
-        sku,
+  const filteredSkus = skus.filter(
+    (sku) => sku.platform === platform && sku.deviceId === deviceId,
+  );
+
+  const sortedSkus = [...filteredSkus].sort((left, right) => {
+    const leftOrder = left.sortOrder ?? 0;
+    const rightOrder = right.sortOrder ?? 0;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+
+    const leftBuyUrl =
+      left.buyUrl ||
+      products.find(
+        (product) =>
+          product.platform === platform &&
+          product.externalProductId === left.externalProductId,
+      )?.buyUrl ||
+      "";
+    const rightBuyUrl =
+      right.buyUrl ||
+      products.find(
+        (product) =>
+          product.platform === platform &&
+          product.externalProductId === right.externalProductId,
+      )?.buyUrl ||
+      "";
+    const leftType = parseAfdUrl(leftBuyUrl).productType;
+    const rightType = parseAfdUrl(rightBuyUrl).productType;
+    if (leftType !== undefined || rightType !== undefined) {
+      const leftPri = leftType === 1 ? 1 : leftType === 2 ? 2 : 3;
+      const rightPri = rightType === 1 ? 1 : rightType === 2 ? 2 : 3;
+      if (leftPri !== rightPri) return leftPri - rightPri;
+    }
+    return left.externalSkuId.localeCompare(right.externalSkuId);
+  });
+
+  const rows = sortedSkus.map((sku) =>
+    buildMappingRow(
+      platform,
+      products.find(
+        (product) =>
+          product.platform === platform &&
+          product.externalProductId === sku.externalProductId,
       ),
-    );
+      sku,
+    ),
+  );
 
   return rows.length > 0 ? rows : [createEmptyRow(platform)];
 }
@@ -270,6 +306,24 @@ export function EncryptConfigDialog({
     }));
   };
 
+  const moveRow = (
+    platform: CommercePlatform,
+    index: number,
+    direction: "up" | "down",
+  ) => {
+    setFormMap((previous) => {
+      const list = [...previous[platform]];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= list.length) return previous;
+      const [item] = list.splice(index, 1);
+      list.splice(targetIndex, 0, item);
+      return {
+        ...previous,
+        [platform]: list,
+      };
+    });
+  };
+
   const handleAfdPaste = () => {
     const value = afdPasteUrl.trim();
     const parsed = parseAfdUrl(value);
@@ -361,7 +415,8 @@ export function EncryptConfigDialog({
       });
     }
 
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
       await upsertResourceSku({
         resourceId,
         platform,
@@ -372,6 +427,7 @@ export function EncryptConfigDialog({
         buyUrl: row.buyUrl.trim() || undefined,
         isPaid: row.isPaid,
         enabled: row.enabled,
+        sortOrder: index,
       });
     }
 
@@ -492,7 +548,7 @@ export function EncryptConfigDialog({
       <Dialog.Content maxWidth="720px">
         <Dialog.Title>配置付费商品映射</Dialog.Title>
         <Dialog.Description size="2" className="mb-3">
-          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包。
+          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包。第 1 位映射将作为客户端默认购买入口，可通过上下箭头调整顺序。
         </Dialog.Description>
 
         {loading && (
@@ -585,17 +641,46 @@ export function EncryptConfigDialog({
                               >
                                 {getMappingTypeLabel(row)}
                               </Badge>
+                              {index === 0 && rows.length > 1 && (
+                                <Badge color="green" variant="soft" className="text-xs">
+                                  默认下发
+                                </Badge>
+                              )}
                             </div>
-                            <Button
-                              size="1"
-                              variant="ghost"
-                              color="red"
-                              onClick={() => removeRow(platform, row.rowId)}
-                              aria-label={`删除第 ${index + 1} 条映射`}
-                            >
-                              <TrashIcon size={15} />
-                              删除
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="gray"
+                                disabled={index === 0}
+                                onClick={() => moveRow(platform, index, "up")}
+                                aria-label="上移映射顺序"
+                                title="上移（优先下发）"
+                              >
+                                <CaretUpIcon size={14} />
+                              </Button>
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="gray"
+                                disabled={index === rows.length - 1}
+                                onClick={() => moveRow(platform, index, "down")}
+                                aria-label="下移映射顺序"
+                                title="下移"
+                              >
+                                <CaretDownIcon size={14} />
+                              </Button>
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="red"
+                                onClick={() => removeRow(platform, row.rowId)}
+                                aria-label={`删除第 ${index + 1} 条映射`}
+                              >
+                                <TrashIcon size={15} />
+                                删除
+                              </Button>
+                            </div>
                           </div>
 
                           <div className="grid gap-2 sm:grid-cols-2">
