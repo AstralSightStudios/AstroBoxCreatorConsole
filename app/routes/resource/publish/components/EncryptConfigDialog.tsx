@@ -71,7 +71,6 @@ interface PlatformMappingRow {
   isPaid: boolean;
   enabled: boolean;
   productType?: number;
-  sortOrder?: number;
 }
 
 type PlatformRows = Record<CommercePlatform, PlatformMappingRow[]>;
@@ -103,7 +102,6 @@ function buildMappingRow(
     isPaid: sku?.isPaid ?? platform === "afd",
     enabled: sku?.enabled ?? product?.enabled ?? true,
     productType: buyUrl ? parseAfdUrl(buyUrl).productType : undefined,
-    sortOrder: sku?.sortOrder,
   };
 }
 
@@ -113,52 +111,20 @@ function buildPlatformRows(
   products: SellerResourceProduct[],
   skus: SellerResourceSku[],
 ) {
-  const filteredSkus = skus.filter(
-    (sku) => sku.platform === platform && sku.deviceId === deviceId,
-  );
-
-  const sortedSkus = [...filteredSkus].sort((left, right) => {
-    const leftOrder = left.sortOrder ?? 0;
-    const rightOrder = right.sortOrder ?? 0;
-    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-
-    const leftBuyUrl =
-      left.buyUrl ||
-      products.find(
-        (product) =>
-          product.platform === platform &&
-          product.externalProductId === left.externalProductId,
-      )?.buyUrl ||
-      "";
-    const rightBuyUrl =
-      right.buyUrl ||
-      products.find(
-        (product) =>
-          product.platform === platform &&
-          product.externalProductId === right.externalProductId,
-      )?.buyUrl ||
-      "";
-    const leftType = parseAfdUrl(leftBuyUrl).productType;
-    const rightType = parseAfdUrl(rightBuyUrl).productType;
-    if (leftType !== undefined || rightType !== undefined) {
-      const leftPri = leftType === 1 ? 1 : leftType === 2 ? 2 : 3;
-      const rightPri = rightType === 1 ? 1 : rightType === 2 ? 2 : 3;
-      if (leftPri !== rightPri) return leftPri - rightPri;
-    }
-    return left.externalSkuId.localeCompare(right.externalSkuId);
-  });
-
-  const rows = sortedSkus.map((sku) =>
-    buildMappingRow(
-      platform,
-      products.find(
-        (product) =>
-          product.platform === platform &&
-          product.externalProductId === sku.externalProductId,
+  // 服务端列表已按客户端下发顺序排好，这里不能再自行排序，否则会和客户端对不上
+  const rows = skus
+    .filter((sku) => sku.platform === platform && sku.deviceId === deviceId)
+    .map((sku) =>
+      buildMappingRow(
+        platform,
+        products.find(
+          (product) =>
+            product.platform === platform &&
+            product.externalProductId === sku.externalProductId,
+        ),
+        sku,
       ),
-      sku,
-    ),
-  );
+    );
 
   return rows.length > 0 ? rows : [createEmptyRow(platform)];
 }
@@ -548,7 +514,7 @@ export function EncryptConfigDialog({
       <Dialog.Content maxWidth="720px">
         <Dialog.Title>配置付费商品映射</Dialog.Title>
         <Dialog.Description size="2" className="mb-3">
-          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包。第 1 位映射将作为客户端默认购买入口，可通过上下箭头调整顺序。
+          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包，对应的爱发电订单都会解锁资源；排在最前的已启用映射是客户端里唯一的购买入口，可通过上下箭头调整顺序。
         </Dialog.Description>
 
         {loading && (
@@ -581,6 +547,8 @@ export function EncryptConfigDialog({
             .map((platformConfig) => {
               const platform = platformConfig.platform;
               const rows = formMap[platform];
+              // 与服务端 buildPurchaseDevices 一致：停用的映射不下发，第一个启用的才是购买入口
+              const primaryRowId = rows.find((row) => row.enabled)?.rowId;
               return (
                 <div key={platform} className="space-y-3">
                   <div className="rounded-xl border border-blue-400/20 bg-blue-400/[0.06] p-3">
@@ -641,9 +609,9 @@ export function EncryptConfigDialog({
                               >
                                 {getMappingTypeLabel(row)}
                               </Badge>
-                              {index === 0 && rows.length > 1 && (
+                              {row.rowId === primaryRowId && rows.length > 1 && (
                                 <Badge color="green" variant="soft" className="text-xs">
-                                  默认下发
+                                  客户端购买入口
                                 </Badge>
                               )}
                             </div>
