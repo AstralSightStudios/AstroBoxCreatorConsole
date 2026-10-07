@@ -11,6 +11,7 @@ import {
 import { ScrollArea } from "~/components/scroll-area";
 import {
   CaretDownIcon,
+  CaretUpIcon,
   LinkSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -110,6 +111,7 @@ function buildPlatformRows(
   products: SellerResourceProduct[],
   skus: SellerResourceSku[],
 ) {
+  // 服务端列表已按客户端下发顺序排好，这里不能再自行排序，否则会和客户端对不上
   const rows = skus
     .filter((sku) => sku.platform === platform && sku.deviceId === deviceId)
     .map((sku) =>
@@ -270,6 +272,24 @@ export function EncryptConfigDialog({
     }));
   };
 
+  const moveRow = (
+    platform: CommercePlatform,
+    index: number,
+    direction: "up" | "down",
+  ) => {
+    setFormMap((previous) => {
+      const list = [...previous[platform]];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= list.length) return previous;
+      const [item] = list.splice(index, 1);
+      list.splice(targetIndex, 0, item);
+      return {
+        ...previous,
+        [platform]: list,
+      };
+    });
+  };
+
   const handleAfdPaste = () => {
     const value = afdPasteUrl.trim();
     const parsed = parseAfdUrl(value);
@@ -361,7 +381,8 @@ export function EncryptConfigDialog({
       });
     }
 
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
       await upsertResourceSku({
         resourceId,
         platform,
@@ -372,6 +393,7 @@ export function EncryptConfigDialog({
         buyUrl: row.buyUrl.trim() || undefined,
         isPaid: row.isPaid,
         enabled: row.enabled,
+        sortOrder: index,
       });
     }
 
@@ -492,7 +514,7 @@ export function EncryptConfigDialog({
       <Dialog.Content maxWidth="720px">
         <Dialog.Title>配置付费商品映射</Dialog.Title>
         <Dialog.Description size="2" className="mb-3">
-          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包。
+          设备：{deviceName || deviceId}。一个设备可以关联多个普通商品或捆绑包，对应的爱发电订单都会解锁资源；排在最前的已启用映射是客户端里唯一的购买入口，可通过上下箭头调整顺序。
         </Dialog.Description>
 
         {loading && (
@@ -525,6 +547,8 @@ export function EncryptConfigDialog({
             .map((platformConfig) => {
               const platform = platformConfig.platform;
               const rows = formMap[platform];
+              // 与服务端 buildPurchaseDevices 一致：停用的映射不下发，第一个启用的才是购买入口
+              const primaryRowId = rows.find((row) => row.enabled)?.rowId;
               return (
                 <div key={platform} className="space-y-3">
                   <div className="rounded-xl border border-blue-400/20 bg-blue-400/[0.06] p-3">
@@ -585,17 +609,46 @@ export function EncryptConfigDialog({
                               >
                                 {getMappingTypeLabel(row)}
                               </Badge>
+                              {row.rowId === primaryRowId && rows.length > 1 && (
+                                <Badge color="green" variant="soft" className="text-xs">
+                                  客户端购买入口
+                                </Badge>
+                              )}
                             </div>
-                            <Button
-                              size="1"
-                              variant="ghost"
-                              color="red"
-                              onClick={() => removeRow(platform, row.rowId)}
-                              aria-label={`删除第 ${index + 1} 条映射`}
-                            >
-                              <TrashIcon size={15} />
-                              删除
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="gray"
+                                disabled={index === 0}
+                                onClick={() => moveRow(platform, index, "up")}
+                                aria-label="上移映射顺序"
+                                title="上移（优先下发）"
+                              >
+                                <CaretUpIcon size={14} />
+                              </Button>
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="gray"
+                                disabled={index === rows.length - 1}
+                                onClick={() => moveRow(platform, index, "down")}
+                                aria-label="下移映射顺序"
+                                title="下移"
+                              >
+                                <CaretDownIcon size={14} />
+                              </Button>
+                              <Button
+                                size="1"
+                                variant="ghost"
+                                color="red"
+                                onClick={() => removeRow(platform, row.rowId)}
+                                aria-label={`删除第 ${index + 1} 条映射`}
+                              >
+                                <TrashIcon size={15} />
+                                删除
+                              </Button>
+                            </div>
                           </div>
 
                           <div className="grid gap-2 sm:grid-cols-2">

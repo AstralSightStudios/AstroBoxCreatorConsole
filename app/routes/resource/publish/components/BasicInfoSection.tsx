@@ -6,7 +6,7 @@ import {
   SegmentedControl,
 } from "~/components/ScaleAwareThemes";
 import { DiceFiveIcon } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Field,
   FieldHelpButton,
@@ -136,6 +136,13 @@ export function BasicInfoSection({
 }: BasicInfoSectionProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const fieldHelp = useMemo(() => buildFieldHelp(resourceType), [resourceType]);
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = descriptionRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [description]);
   return (
     <SectionCard
       title="基本信息"
@@ -295,6 +302,7 @@ export function BasicInfoSection({
       </div>
       <Field label="资源简介" fieldKey="description" hint="参与算法与推流，必填">
         <TextArea
+          ref={descriptionRef}
           rows={3}
           placeholder="用几句话介绍你的资源，方便审核与展示"
           value={description}
