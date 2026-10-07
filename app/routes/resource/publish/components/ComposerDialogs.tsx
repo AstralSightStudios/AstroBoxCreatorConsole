@@ -19,6 +19,7 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react";
 import type { PublishDraft } from "~/logic/publish/publish-drafts";
+import type { UnpaidEncryptionCheck } from "~/logic/publish/unpaid-encryption";
 import type { DeviceOption, DownloadInput } from "./types";
 
 function deviceLabel(
@@ -172,6 +173,66 @@ export function VersionIncrementWarningDialog({
         </div>
       </Dialog.Content>
     </Dialog.Root>
+  );
+}
+
+/**
+ * 「更新仓库」前的提醒：启用了加密上传，但同一资源 ID 下没有付费 SKU。
+ * 不拦截（「仅加密不售卖」也是合法配置），由创作者确认后继续。
+ */
+export function UnpaidEncryptionWarningDialog({
+  warning,
+  sortedDeviceOptions,
+  onContinue,
+  onClose,
+}: {
+  warning: Exclude<UnpaidEncryptionCheck, { status: "ok" }> | null;
+  sortedDeviceOptions: DeviceOption[];
+  onContinue: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AlertDialog.Root
+      open={warning !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>加密包体未配置 SKU</AlertDialog.Title>
+        <AlertDialog.Description size="2">
+          {warning?.status === "unknown"
+            ? `无法确认资源 ID「${warning.resourceId}」的付费配置（${warning.error}）。以下设备启用了加密上传：`
+            : `以下设备启用了加密上传，但资源 ID「${warning?.resourceId ?? ""}」下没有配置付费 SKU：`}
+        </AlertDialog.Description>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {(warning?.deviceIds ?? []).map((deviceId) => (
+            <div
+              key={deviceId}
+              className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+            >
+              {deviceLabel(sortedDeviceOptions, deviceId)}
+            </div>
+          ))}
+        </div>
+        <Text as="p" size="2" className="mt-3">
+          如果不配置 SKU，文件仍会加密，但任何用户无需购买即可下载资源。SKU
+          必须配置在与加密密钥相同的资源 ID 下，配置在其他 ID 上不会生效。是否继续？
+        </Text>
+        <div className="mt-4 flex justify-end gap-3">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              返回配置
+            </Button>
+          </AlertDialog.Cancel>
+          <AlertDialog.Action>
+            <Button variant="solid" color="red" onClick={onContinue}>
+              继续
+            </Button>
+          </AlertDialog.Action>
+        </div>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   );
 }
 

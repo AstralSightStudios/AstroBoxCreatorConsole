@@ -146,7 +146,7 @@ function validateDownloadRows(
 }
 
 /** 列出启用了加密上传的正式下载设备标识。试用包体不支持加密上传，不参与判断。 */
-function encryptedDownloadDevices(rows: ValidationDownloadInput[]): string[] {
+export function encryptedDownloadDevices(rows: ValidationDownloadInput[]): string[] {
   return Array.from(
     new Set(
       rows

@@ -73,6 +73,7 @@ import { StepList, SectionCard, type UploadItem } from "./components/shared";
 import {
   AutoSaveRestoreDialog,
   DraftActions,
+  UnpaidEncryptionWarningDialog,
   VersionCodeWarningDialog,
   VersionIncrementWarningDialog,
 } from "./components/ComposerDialogs";
@@ -137,7 +138,15 @@ import {
   hasVersionResetSelection,
   type VersionResetOptions,
 } from "~/logic/publish/version-reset";
-import { validatePublish, validatePushQuality } from "~/logic/publish/validation";
+import {
+  encryptedDownloadDevices,
+  validatePublish,
+  validatePushQuality,
+} from "~/logic/publish/validation";
+import {
+  checkUnpaidEncryption,
+  type UnpaidEncryptionCheck,
+} from "~/logic/publish/unpaid-encryption";
 import {
   COVER_COMPRESS_TARGET_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
@@ -609,6 +618,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [versionIncrementWarning, setVersionIncrementWarning] = useState<
     DownloadInput[] | null
   >(null);
+  const [unpaidEncryptionWarning, setUnpaidEncryptionWarning] = useState<Exclude<
+    UnpaidEncryptionCheck,
+    { status: "ok" }
+  > | null>(null);
   const [repoNameInput, setRepoNameInput] = useState("");
   const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
   const [userReposLoading, setUserReposLoading] = useState(false);
@@ -1658,7 +1671,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("upload/progress", message);
   };
 
-  const handleUploadToRepo = async () => {
+  const handleUploadToRepo = async (
+    options: { skipUnpaidEncryptionCheck?: boolean } = {},
+  ) => {
     if (missingEditContext) {
       setRepoStatus("error");
       setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
@@ -1688,6 +1703,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       const token = loadAccountState().github?.token;
       if (!token) {
         throw new Error("GitHub 未登录，无法上传文件。");
+      }
+
+      // 加密了却没在同一资源 ID 下配 SKU，服务端会当成免费资源发放密钥，先让创作者确认。
+      if (!options.skipUnpaidEncryptionCheck) {
+        setRepoMessage("正在检查加密包体的付费配置...");
+        const unpaid = await checkUnpaidEncryption(
+          itemId,
+          encryptedDownloadDevices(downloads),
+        );
+        if (unpaid.status !== "ok") {
+          log.warn("upload/repo", "加密包体未配置 SKU，等待确认", {
+            data: {
+              itemId,
+              status: unpaid.status,
+              deviceIds: unpaid.deviceIds,
+            },
+          });
+          setUnpaidEncryptionWarning(unpaid);
+          setRepoStatus("idle");
+          setRepoMessage("");
+          return;
+        }
       }
 
       if (resourceType === "watchface") {
@@ -2505,6 +2542,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     />
   );
 
+  const unpaidEncryptionWarningDialog = (
+    <UnpaidEncryptionWarningDialog
+      warning={unpaidEncryptionWarning}
+      sortedDeviceOptions={sortedDeviceOptions}
+      onContinue={() => {
+        log.info("upload/repo", "确认在未配置 SKU 的情况下继续上传", {
+          data: { itemId, deviceIds: unpaidEncryptionWarning?.deviceIds },
+        });
+        void handleUploadToRepo({ skipUnpaidEncryptionCheck: true });
+      }}
+      onClose={() => setUnpaidEncryptionWarning(null)}
+    />
+  );
   const versionIncrementWarningDialog = (
     <VersionIncrementWarningDialog
       rows={versionIncrementWarning}
@@ -2561,6 +2611,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       {autoSaveDialog}
       {versionCodeWarningDialog}
       {versionIncrementWarningDialog}
+      {unpaidEncryptionWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
