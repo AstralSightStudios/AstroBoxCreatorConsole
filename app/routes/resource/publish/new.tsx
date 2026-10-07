@@ -130,6 +130,13 @@ import {
 } from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
 import { type ResourceEditContext } from "~/logic/publish/resources";
+import { registerVersionResetIntent } from "~/api/astrobox/resource";
+import {
+  DEFAULT_VERSION_RESET_OPTIONS,
+  canOfferVersionReset,
+  hasVersionResetSelection,
+  type VersionResetOptions,
+} from "~/logic/publish/version-reset";
 import { validatePublish, validatePushQuality } from "~/logic/publish/validation";
 import {
   COVER_COMPRESS_TARGET_BYTES,
@@ -592,6 +599,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   >("idle");
   const [prMessage, setPrMessage] = useState("");
   const [prBody, setPrBody] = useState("");
+  const [versionReset, setVersionReset] = useState<VersionResetOptions>(
+    DEFAULT_VERSION_RESET_OPTIONS,
+  );
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [versionCodeWarningRows, setVersionCodeWarningRows] = useState<
     DownloadInput[] | null
@@ -1772,6 +1782,37 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
+  const offerVersionReset = canOfferVersionReset(editContext);
+
+  // PR 创建 / 更新成功后登记本次推送的新版本选项，绑定这次会上线的 commit。
+  // 每次推送都同步一次（两项都不选即撤销之前登记的）；登记失败不影响已提交的 PR。
+  const registerVersionResetForPush = async (commitSha: string) => {
+    if (!offerVersionReset) return;
+    const selected = hasVersionResetSelection(versionReset);
+    try {
+      await flowSpan("pr/version-reset", "登记新版本选项", () =>
+        registerVersionResetIntent({
+          id: itemId.trim(),
+          commitSha,
+          resetRatings: versionReset.resetRatings,
+          foldComments: versionReset.foldComments,
+        }),
+      );
+      if (selected) {
+        toast.success("已登记新版本选项，审核通过、新版本上线后执行。");
+      }
+    } catch (error) {
+      log.warn("pr/version-reset", `登记新版本选项失败：${(error as Error).message}`, {
+        data: { itemId, commitSha, ...versionReset },
+      });
+      if (selected) {
+        toast.error(
+          `新版本选项登记失败：${(error as Error).message}。PR 已提交，可重新进入编辑并更新 PR 以重试。`,
+        );
+      }
+    }
+  };
+
   const handleCreatePR = async () => {
     if (missingEditContext) {
       setPrStatus("error");
@@ -1951,6 +1992,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           }
         }
 
+        await registerVersionResetForPush(repoInfo.commitSha);
         setPrStatus("success");
         setPrMessage("已更新现有 PR。");
         toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
@@ -2039,6 +2081,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         });
       }
 
+      await registerVersionResetForPush(repoInfo.commitSha);
       setPrStatus("success");
       setPrMessage("PR 已创建，请在 GitHub 查看。");
       toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
@@ -2857,6 +2900,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               onFixedNoteChange={(id, value) =>
                 setFixedNotes((prev) => ({ ...prev, [id]: value }))
               }
+              versionReset={offerVersionReset ? versionReset : undefined}
+              onVersionResetChange={setVersionReset}
             />
           )}
         </div>
