@@ -11,6 +11,7 @@ import {
   createUploadItem,
   sanitizeFileName,
 } from "../../app/routes/resource/publish/components/uploadUtils";
+import { COVER_MAX_BYTES } from "../../app/logic/publish/pre-publish-checks";
 
 const image = { file: new Blob(), width: 100, height: 100 };
 const coverImage = { file: new Blob(), width: 150, height: 100 };
@@ -248,7 +249,7 @@ describe("publish validation", () => {
     expect(result.errors.join(" ")).toContain("试用下载第 1 行");
   });
 
-  test("rejects cover with wrong aspect ratio or over 1MB", () => {
+  test("rejects cover with wrong aspect ratio or over the size limit", () => {
     const wrongRatioPreview = validatePublish({
       ...validInput,
       previews: [{ ...image, id: "preview" }],
@@ -267,9 +268,18 @@ describe("publish validation", () => {
       ...validInput,
       usePreviewAsCover: false,
       coverPreviewId: null,
-      cover: { ...coverImage, file: new Blob([new Uint8Array(1024 * 1024 + 1)]) },
+      cover: { ...coverImage, file: new Blob([new Uint8Array(COVER_MAX_BYTES + 1)]) },
     });
-    expect(oversized.errors.join(" ")).toContain("1MB");
+    expect(oversized.errors.join(" ")).toContain("600 KB");
+    expect(oversized.errors.join(" ")).toContain("601 KB");
+
+    const hugeCover = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { ...coverImage, file: new Blob([new Uint8Array(2 * 1024 * 1024)]) },
+    });
+    expect(hugeCover.errors.join(" ")).toContain("2.00 MB");
 
     const unreadable = validatePublish({
       ...validInput,

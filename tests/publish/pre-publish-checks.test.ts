@@ -75,7 +75,19 @@ describe("pre-publish checks: checkCoverFileSize", () => {
   });
 
   test("rejects files above the limit", () => {
-    expect(checkCoverFileSize(COVER_MAX_BYTES + 1)).toContain("1MB");
+    const message = checkCoverFileSize(COVER_MAX_BYTES + 1);
+    expect(message).toContain("600 KB");
+    // 文案里的门槛与当前体积都实算：刚超 1 字节也要能看出比上限大，
+    // 不能因为四舍五入把两项显示成同一个数。
+    expect(message).toContain("601 KB");
+    expect(message).not.toContain("1MB");
+  });
+
+  test("reports the real limit and size for oversized covers", () => {
+    // 2MB 的封面：门槛仍显示 600KB，当前体积按 MB 显示，不再自称「1MB 以内都行」。
+    const message = checkCoverFileSize(2 * 1024 * 1024);
+    expect(message).toContain("600 KB");
+    expect(message).toContain("2.00 MB");
   });
 });
 

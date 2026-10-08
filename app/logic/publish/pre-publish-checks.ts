@@ -9,8 +9,7 @@
  */
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
 
-/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
-/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 1MB。 */
+/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 COVER_MAX_BYTES。 */
 export const COVER_RATIO = 1.5;
 export const COVER_RATIO_TOLERANCE = 0.02;
 export const COVER_MAX_BYTES = 600 * 1024;
@@ -48,9 +47,23 @@ export function checkCoverRatio(dims: ImageDimensions): string | null {
   return null;
 }
 
-/** 封面体积检查，单位为字节。 */
+/**
+ * 字节体积格式化，本模块自用（阈值文案要给人读）。
+ *
+ * KB 一档刻意向上取整：文案同时印「上限」和「当前」，四舍五入会让刚超限的
+ * 文件两项显示成同一个数（如 600.0 KB / 600.0 KB），读起来自相矛盾。
+ */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/** 封面体积检查，单位为字节。文案里的门槛与当前体积都实算，不与常量脱钩。 */
 export function checkCoverFileSize(bytes: number): string | null {
-  if (bytes > COVER_MAX_BYTES) return "封面大小超过 1MB，请压缩后重新上传。";
+  if (bytes > COVER_MAX_BYTES)
+    return `封面大小超过 ${formatBytes(COVER_MAX_BYTES)}（当前 ${formatBytes(bytes)}），请压缩后重新上传。`;
   return null;
 }
 
