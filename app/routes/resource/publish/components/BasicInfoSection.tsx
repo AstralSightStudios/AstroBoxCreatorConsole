@@ -304,7 +304,7 @@ export function BasicInfoSection({
         <TextArea
           ref={descriptionRef}
           rows={3}
-          placeholder="用几句话介绍你的资源，方便审核与展示"
+          placeholder="用几句话介绍你的资源，方便审核与展示。支持 Markdown。"
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value)}
           radius="large"
