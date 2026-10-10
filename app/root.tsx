@@ -1,6 +1,7 @@
 import "./app.css";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, Navigate, Outlet, useLocation } from "react-router";
 import { Button, Flex, Heading, Theme } from "@radix-ui/themes";
@@ -33,12 +34,48 @@ import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { InboxDrawerProvider, useInboxDrawer } from "./components/inbox/drawer-context";
 import InboxDrawer from "./components/inbox/InboxDrawer";
 import { Toaster } from "sonner";
+import { useUiScaleViewport } from "./components/UiScaleContext";
 import SessionExpiredPrompt from "./components/session-expired-prompt";
 import { hasRequiredAccounts, useAccountState } from "./logic/account/store";
 
 function InboxDrawerHost() {
   const { open, closeInbox } = useInboxDrawer();
   return <InboxDrawer open={open} onClose={closeInbox} />;
+}
+
+/**
+ * Toast 宿主。必须挂进缩放视口的浮层宿主（.ui-scale-portal-host），
+ * 不能留在 <Theme> 内部：
+ *
+ * Radix Themes 给根主题节点写了 `position: relative; z-index: 0`
+ * （@radix-ui/themes/styles.css 的 `.radix-themes:where([data-is-root-theme='true'])`），
+ * 这会让 <Theme> 的整棵子树变成一个独立层叠上下文。sonner 的
+ * `[data-sonner-toaster]` 虽然声明了 z-index: 999999999，但它落在该上下文内部，
+ * 对外只等价于 z-index: 0；而抽屉（SettingsDrawer / InboxDrawer 的 z-110/z-120、
+ * 窄屏 vaul 侧栏的 z-40/z-50）都挂在 .ui-scale-portal-host 里，处在同一层叠
+ * 上下文内且排在 <Theme> 之后，于是反过来把 toast 压住了。
+ *
+ * 宿主未就绪时（首帧 ref 回调之前）先内联渲染兜底：sonner 的 Toaster 是
+ * useState([]) + 订阅外部 ToastState，晚挂载不会回放已发出的 toast，
+ * 不兜底会静默吞掉首帧的提示。
+ */
+function ToastHost({ appearance }: { appearance: "light" | "dark" }) {
+  const { portalContainer } = useUiScaleViewport();
+  const toaster = (
+    <Toaster
+      position="bottom-right"
+      richColors
+      theme={appearance}
+      duration={4000}
+      offset={{
+        top: "max(16px, var(--ui-safe-area-top))",
+        right: "max(16px, var(--ui-safe-area-right))",
+        bottom: "max(16px, var(--ui-safe-area-bottom))",
+        left: "max(16px, var(--ui-safe-area-left))",
+      }}
+    />
+  );
+  return portalContainer ? createPortal(toaster, portalContainer) : toaster;
 }
 
 function AstroboxAccountRefresher() {
@@ -212,18 +249,7 @@ export default function RootLayout() {
                     </NavVisibilityProvider>
                 )}
                 <SessionExpiredPrompt />
-                <Toaster
-                    position="bottom-right"
-                    richColors
-                    theme={appearance}
-                    duration={4000}
-                    offset={{
-                        top: "max(16px, var(--ui-safe-area-top))",
-                        right: "max(16px, var(--ui-safe-area-right))",
-                        bottom: "max(16px, var(--ui-safe-area-bottom))",
-                        left: "max(16px, var(--ui-safe-area-left))",
-                    }}
-                />
+                <ToastHost appearance={appearance} />
             </Theme>
         </UiScaleShell>
     );
