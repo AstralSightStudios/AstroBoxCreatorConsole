@@ -1,5 +1,37 @@
 import imageCompression from "browser-image-compression";
+import { SVG_SNIFF_BYTES, isBannedImageName, isSvgContent } from "~/logic/publish/pre-publish-checks";
 import type { UploadItem } from "./shared";
+
+/**
+ * 剔除禁用格式（SVG）的图片文件，返回保留与被拒两组。
+ *
+ * 判定同时看文件名与文件内容：只看后缀挡不住把 `logo.svg` 改名成
+ * `logo.png`，那种文件 `<img>` 能正常解码出尺寸，会一路通过宽高比校验，
+ * 最终以 png 之名把 SVG 存进仓库。内容嗅探只读文件头 256 字节，
+ * 不受文件大小影响。
+ */
+export async function partitionAllowedImages(
+    files: File[],
+): Promise<{ allowed: File[]; rejected: File[] }> {
+    const allowed: File[] = [];
+    const rejected: File[] = [];
+    for (const file of files) {
+        if (isBannedImageName(file.name)) {
+            rejected.push(file);
+            continue;
+        }
+        try {
+            const head = new Uint8Array(await file.slice(0, SVG_SNIFF_BYTES).arrayBuffer());
+            if (isSvgContent(head)) rejected.push(file);
+            else allowed.push(file);
+        } catch {
+            // 读不到头部字节时不武断拒绝：这类文件在后续尺寸读取阶段
+            // 仍会被 getImageDimensions 拦下。
+            allowed.push(file);
+        }
+    }
+    return { allowed, rejected };
+}
 
 export function getImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
     return new Promise((resolve, reject) => {

@@ -1,7 +1,9 @@
 import {
+  BANNED_IMAGE_NOTICE,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  isBannedImageName,
 } from "./pre-publish-checks";
 import type { ResourceType } from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
@@ -226,6 +228,40 @@ function validateUrlUnsafeFilenames(
   ];
 }
 
+/**
+ * 资源图片禁用 SVG。
+ *
+ * 上传入口已经拦过一次，这里是提交前的兜底：草稿恢复、编辑模式从仓库回填
+ * 已有文件都可能把 SVG 带进来，而这两条路径都不经过 pickFiles。只看文件名
+ * 即可——仓库里的路径与本地文件名同为 `<名字>.svg`，不必读内容。
+ */
+function validateBannedImageFormats(
+  input: PublishValidationInput,
+): PublishValidationIssue[] {
+  const offenders: Array<{ label: string; name: string; field: PublishFieldKey }> = [];
+  const collect = (field: PublishFieldKey, label: string, name?: string) => {
+    if (isBannedImageName(name)) offenders.push({ field, label, name: name || "" });
+  };
+  input.previews.forEach((item, index) =>
+    collect(
+      "previews",
+      `预览图${input.previews.length > 1 ? ` ${index + 1}` : ""}`,
+      item.name,
+    ),
+  );
+  collect("icon", "图标", input.icon?.name);
+  collect("cover", "封面", input.cover?.name);
+  if (offenders.length === 0) return [];
+  return [
+    {
+      field: offenders[0].field,
+      message: `${BANNED_IMAGE_NOTICE}以下文件需换成 PNG / JPEG 后重新上传：${offenders
+        .map((item) => `${item.label}「${item.name}」`)
+        .join("、")}`,
+    },
+  ];
+}
+
 export function validatePublish(
   input: PublishValidationInput,
 ): PublishValidationResult {
@@ -258,6 +294,9 @@ export function validatePublish(
     const iconError = checkIconDimensions(input.icon);
     if (iconError) push("icon", iconError);
   }
+  // 格式硬拦截放在尺寸/体积之前：SVG 无论规格是否合规都不能提交，
+  // 让创作者先换格式，再去调宽高比。
+  issues.push(...validateBannedImageFormats(input));
   if (input.previews.length === 0) push("previews", "请至少上传一张预览图。");
   const hasCover = input.usePreviewAsCover
     ? input.coverPreviewId

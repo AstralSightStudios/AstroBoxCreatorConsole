@@ -36,6 +36,98 @@ export interface ImageDimensions {
   height?: number;
 }
 
+/**
+ * 资源图片禁用的矢量格式。
+ *
+ * AstroBox 宿主并不统一：Apple 系走 WebKit，Android 走 Chromium 或厂商自研
+ * WebView，WebView 版本还随系统碎片化。SVG 在这些引擎里的字体度量、渐变/滤镜
+ * 与外链引用支持差异很大——同一份 SVG 在手环上可能正常、在手机上渐变丢失或
+ * 整张不显示。资源图片是要随包下发到所有宿主端的公共素材，一份渲染不一致的
+ * 图会直接影响商店页与设备内观感，因此这里只收位图。
+ */
+export const BANNED_IMAGE_EXTENSIONS: readonly string[] = ["svg"];
+
+/** 媒体选择器的 accept 值：位图白名单，SVG 不进候选。 */
+export const PUBLISH_IMAGE_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif";
+
+/** 禁用格式的说明，命中时的提示与审核结论共用同一句，避免两处各写一份。 */
+export const BANNED_IMAGE_NOTICE =
+  "SVG 矢量图在 WebKit、Chromium 与各家 WebView 上渲染差异很大，跨设备显示不一致，资源图片不支持 SVG。";
+
+/** 取文件名的小写扩展名；传入仓库路径时只取末段，无有效扩展名返回空串。 */
+function extensionOf(name?: string | null): string {
+  const base = (name ?? "").trim().toLowerCase().split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  // dot < 0：整段就是文件名；dot 在末尾：形如 `v1.2/icon` 的隐藏文件/无后缀名。
+  if (dot <= 0 || dot === base.length - 1) return "";
+  return base.slice(dot + 1);
+}
+
+/** 文件名（或仓库路径）是否命中禁用的矢量格式。 */
+export function isBannedImageName(name?: string | null): boolean {
+  return BANNED_IMAGE_EXTENSIONS.includes(extensionOf(name));
+}
+
+/** 图片格式检查：命中禁用格式返回文案，通过返回 null。 */
+export function checkImageFormat(name?: string | null): string | null {
+  const ext = extensionOf(name);
+  if (!BANNED_IMAGE_EXTENSIONS.includes(ext)) return null;
+  return `${BANNED_IMAGE_NOTICE}请改用 PNG / JPEG 后重新上传。`;
+}
+
+/**
+ * 内容嗅探所需的头部字节数。
+ *
+ * SVG 是文本，没有二进制魔数，但开头特征极强且必然出现在最前面：跳过
+ * UTF-8 BOM 与前导空白后只能是 `<svg` 或 `<?xml`。256 字节足以覆盖
+ * 带一段 XML 声明与注释的写法。
+ */
+export const SVG_SNIFF_BYTES = 256;
+
+function bytesStartWith(bytes: Uint8Array, magic: number[], offset = 0): boolean {
+  if (bytes.length < offset + magic.length) return false;
+  for (let i = 0; i < magic.length; i += 1) {
+    if (bytes[offset + i] !== magic[i]) return false;
+  }
+  return true;
+}
+
+function asciiAt(bytes: Uint8Array, offset: number, text: string): boolean {
+  if (bytes.length < offset + text.length) return false;
+  for (let i = 0; i < text.length; i += 1) {
+    if (bytes[offset + i] !== text.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+/**
+ * 按文件内容判断是否为 SVG，用于识破「改扩展名伪装」。
+ *
+ * 只看后缀挡不住把 `logo.svg` 改名成 `logo.png` 再上传：后缀是 png，
+ * 但 `<img>` 照样能解码出尺寸，规格校验也会通过，最终仓库里存的是
+ * 一份名为 png 的 SVG。
+ */
+export function isSvgContent(bytes: Uint8Array): boolean {
+  let start = 0;
+  if (bytesStartWith(bytes, [0xef, 0xbb, 0xbf])) start = 3;
+  while (
+    start < bytes.length &&
+    (bytes[start] === 0x20 ||
+      bytes[start] === 0x09 ||
+      bytes[start] === 0x0a ||
+      bytes[start] === 0x0d)
+  ) {
+    start += 1;
+  }
+  if (asciiAt(bytes, start, "<svg")) return true;
+  if (!asciiAt(bytes, start, "<?xml")) return false;
+  const head = new TextDecoder().decode(
+    bytes.subarray(start, Math.min(bytes.length, start + SVG_SNIFF_BYTES)),
+  );
+  return /<svg[\s>]/i.test(head);
+}
+
 /** 图标规格检查。返回错误文案，通过则返回 null。 */
 export function checkIconDimensions(dims: ImageDimensions): string | null {
   if (!dims.width || !dims.height) return "图标无法读取，请重新上传。";

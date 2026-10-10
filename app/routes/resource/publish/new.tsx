@@ -83,6 +83,7 @@ import {
   createImageUploadItem,
   createUploadItem,
   getImageDimensions,
+  partitionAllowedImages,
   revokeUrl,
 } from "./components/uploadUtils";
 import {
@@ -148,12 +149,14 @@ import {
   type UnpaidEncryptionCheck,
 } from "~/logic/publish/unpaid-encryption";
 import {
+  BANNED_IMAGE_NOTICE,
   COVER_COMPRESS_TARGET_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   PREVIEW_COMPRESS_TARGET_BYTES,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  checkImageFormat,
 } from "~/logic/publish/pre-publish-checks";
 import {
   flashFirstDownloadRow,
@@ -299,8 +302,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [cover, setCover] = useState<UploadItem | null>(null);
 
   const handlePreviewUpload = async (files: File[]) => {
-    if (!files.length) return;
-    const fileList = files;
+    // SVG 在各宿主（WebKit / Chromium / WebView）渲染差异大，按后缀与文件内容
+    // 双重判定后剔除：批量选择时只提示被剔除的文件，其余照常导入，不整批作废。
+    const { allowed: fileList, rejected } = await partitionAllowedImages(files);
+    if (rejected.length > 0) {
+      log.warn("media/preview", `已跳过 ${rejected.length} 个 SVG 文件`, {
+        data: { files: rejected.map((f) => f.name) },
+      });
+      toast.error(`${BANNED_IMAGE_NOTICE}本次选择的 ${rejected.length} 个 SVG 文件已被跳过。`);
+    }
+    if (!fileList.length) return;
     log.info("media/preview", `导入 ${fileList.length} 张预览图`, {
       data: {
         files: fileList.map((f) => ({
@@ -383,6 +394,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleIconUpload = async (files: File[]) => {
     const file = files[0];
     if (!file) return;
+    const { rejected } = await partitionAllowedImages([file]);
+    if (rejected.length > 0) {
+      // 后缀没露馅但内容是 SVG 时，checkImageFormat 返回 null，
+      // 这时退回通用文案，两种命中都说清原因与替代格式。
+      const reason =
+        checkImageFormat(file.name) ??
+        `${BANNED_IMAGE_NOTICE}请改用 PNG / JPEG 后重新上传。`;
+      log.warn("media/icon", "SVG 图标，已拒绝", {
+        data: { name: file.name, reason },
+      });
+      toast.error(reason);
+      return;
+    }
     log.info("media/icon", "导入图标", {
       data: { name: file.name, size: file.size, type: file.type },
     });
@@ -441,6 +465,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const handleCoverUpload = async (files: File[]) => {
     const file = files[0];
     if (!file) return;
+    const { rejected } = await partitionAllowedImages([file]);
+    if (rejected.length > 0) {
+      const reason =
+        checkImageFormat(file.name) ??
+        `${BANNED_IMAGE_NOTICE}请改用 PNG / JPEG 后重新上传。`;
+      log.warn("media/cover", "SVG 封面，已拒绝", {
+        data: { name: file.name, reason },
+      });
+      toast.error(reason);
+      return;
+    }
     log.info("media/cover", "导入封面", {
       data: { name: file.name, size: file.size, type: file.type },
     });

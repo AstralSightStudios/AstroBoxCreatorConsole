@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  BANNED_IMAGE_EXTENSIONS,
   COVER_COMPRESS_TARGET_BYTES,
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
@@ -7,7 +8,10 @@ import {
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  checkImageFormat,
   hasExactCoverRatio,
+  isBannedImageName,
+  isSvgContent,
   rowHasPackage,
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
@@ -141,6 +145,70 @@ describe("pre-publish checks: constants stay consistent", () => {
 });
 
 import type { DownloadInput } from "../../app/routes/resource/publish/components/types";
+
+describe("pre-publish checks: SVG 禁用", () => {
+  test("SVG 后缀一律命中，大小写与仓库路径都覆盖", () => {
+    expect(BANNED_IMAGE_EXTENSIONS).toContain("svg");
+    expect(isBannedImageName("icon.svg")).toBe(true);
+    expect(isBannedImageName("ICON.SVG")).toBe(true);
+    expect(isBannedImageName(" 封面.Svg  ")).toBe(true);
+    // 审核侧传进来的是仓库路径，不是裸文件名
+    expect(isBannedImageName("media/icon.svg")).toBe(true);
+    expect(isBannedImageName("wallpaper/assets\\bg.svg")).toBe(true);
+  });
+
+  test("位图与其他资源文件不受影响", () => {
+    for (const name of [
+      "icon.png",
+      "cover.JPEG",
+      "preview 1.webp",
+      "app.rpk",
+      "wallpaper.json",
+      "icon",
+      "index_v2.csv",
+      // 目录带点的路径不能被误判成 .svg
+      "v1.2/icon",
+      // 隐藏文件/无后缀名不参与判定
+      ".svg",
+    ]) {
+      expect(isBannedImageName(name)).toBe(false);
+      expect(checkImageFormat(name)).toBeNull();
+    }
+  });
+
+  test("checkImageFormat 说明原因并给出替代格式", () => {
+    const message = checkImageFormat("media/icon.svg");
+    expect(message).toContain("SVG");
+    expect(message).toContain("WebKit");
+    expect(message).toContain("Chromium");
+    expect(message).toContain("PNG");
+    expect(message).toContain("JPEG");
+  });
+
+  test("内容嗅探识破改扩展名伪装的 SVG", () => {
+    const encode = (text: string) => new TextEncoder().encode(text);
+    // 改名成 .png 的 SVG：后缀判定挡不住，只有内容嗅探能认出来
+    const disguised = encode('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+    expect(isBannedImageName("logo.png")).toBe(false);
+    expect(isSvgContent(disguised)).toBe(true);
+
+    // 带 BOM、前导空白、XML 声明的真实变体
+    expect(isSvgContent(encode('﻿  \n<svg width="10"/>'))).toBe(true);
+    expect(
+      isSvgContent(encode('<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="..."/>')),
+    ).toBe(true);
+
+    // 位图不得被误判
+    const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    expect(isSvgContent(PNG)).toBe(false);
+    expect(isSvgContent(JPG)).toBe(false);
+    // 其他 XML（不是 SVG）不误伤
+    expect(isSvgContent(encode('<?xml version="1.0"?><rss><item/></rss>'))).toBe(false);
+    // 头部被截断到半个标签时不应判定为 SVG
+    expect(isSvgContent(new Uint8Array([0x3c, 0x73]))).toBe(false);
+  });
+});
 
 function row(partial: Partial<DownloadInput> & { uid: string }): DownloadInput {
   return {

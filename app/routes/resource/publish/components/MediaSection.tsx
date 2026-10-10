@@ -11,6 +11,7 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
+import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
@@ -309,19 +310,19 @@ export function MediaSection({
   const pickPreview = async () => {
     const files = await pickFiles({
       multiple: true,
-      accept: "image/*",
+      accept: PUBLISH_IMAGE_ACCEPT,
       title: "选择预览图",
     });
     if (files.length > 0) onPreviewUpload(files);
   };
 
   const pickIcon = async () => {
-    const files = await pickFiles({ accept: "image/*", title: "选择图标" });
+    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择图标" });
     if (files.length > 0) onIconUpload(files);
   };
 
   const pickCover = async () => {
-    const files = await pickFiles({ accept: "image/*", title: "选择封面" });
+    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择封面" });
     if (files.length > 0) onCoverUpload(files);
   };
 

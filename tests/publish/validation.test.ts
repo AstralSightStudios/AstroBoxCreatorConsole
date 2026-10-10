@@ -316,6 +316,36 @@ describe("publish validation", () => {
     expect(result.linkErrors[0]).toContain("HTTPS");
   });
 
+  test("rejects SVG images regardless of where they entered the form", () => {
+    // 上传入口已拦过一道，这里覆盖草稿恢复 / 编辑模式从仓库回填的存量 SVG
+    const svgIcon = validatePublish({ ...validInput, icon: { ...image, name: "icon.svg" } });
+    expect(svgIcon.errors.join(" ")).toContain("SVG");
+    expect(svgIcon.errors.join(" ")).toContain("图标「icon.svg」");
+    expect(svgIcon.issues.some((issue) => issue.field === "icon")).toBe(true);
+
+    const svgPreview = validatePublish({
+      ...validInput,
+      previews: [
+        { ...coverImage, id: "p1", name: "media/shot-1.png" },
+        { ...coverImage, id: "p2", name: "media/shot-2.svg" },
+      ],
+    });
+    expect(svgPreview.errors.join(" ")).toContain("预览图 2「media/shot-2.svg」");
+    expect(svgPreview.errors.join(" ")).not.toContain("shot-1.png");
+    // 字段归属决定滚动闪烁的落点，指向第一张出问题的图
+    expect(svgPreview.issues.some((issue) => issue.field === "previews")).toBe(true);
+
+    // 位图不受影响（coverPreviewId 要跟着指向新的 preview id）
+    expect(
+      validatePublish({
+        ...validInput,
+        icon: { ...image, name: "media/icon.png" },
+        previews: [{ ...coverImage, id: "p1", name: "media/shot-1.png" }],
+        coverPreviewId: "p1",
+      }).errors,
+    ).toEqual([]);
+  });
+
   test("rejects referenced filenames containing URL-unsafe characters", () => {
     const result = validatePublish({
       ...validInput,

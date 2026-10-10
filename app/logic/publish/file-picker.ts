@@ -2,6 +2,7 @@ import { basename as tauriBasename } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { isTauriRuntime } from "~/logic/update/update-checker";
+import { isSvgContent } from "./pre-publish-checks";
 
 /** 从 content:// 或绝对路径中提取文件名（兼容带查询参数与 URL 编码）。 */
 export function basenameFromPath(path: string): string {
@@ -53,24 +54,10 @@ function asciiAt(bytes: Uint8Array, offset: number, text: string): boolean {
   return true;
 }
 
+// SVG 内容嗅探与资源图片禁用规则同源，实现在 pre-publish-checks：
+// 这里只负责在原生选择器丢掉后缀时按内容补全扩展名。
 function sniffSvg(bytes: Uint8Array): boolean {
-  let start = 0;
-  if (startsWithBytes(bytes, [0xef, 0xbb, 0xbf])) start = 3;
-  while (
-    start < bytes.length &&
-    (bytes[start] === 0x20 ||
-      bytes[start] === 0x09 ||
-      bytes[start] === 0x0a ||
-      bytes[start] === 0x0d)
-  ) {
-    start += 1;
-  }
-  if (asciiAt(bytes, start, "<svg")) return true;
-  if (!asciiAt(bytes, start, "<?xml")) return false;
-  const head = new TextDecoder().decode(
-    bytes.subarray(start, Math.min(bytes.length, start + 256)),
-  );
-  return /<svg[\s>]/i.test(head);
+  return isSvgContent(bytes);
 }
 
 /**
@@ -147,13 +134,14 @@ async function pathToFile(path: string): Promise<File> {
 
 /** MIME 通配符/具体类型到原生对话框扩展名的映射。 */
 const MIME_EXTENSIONS: Record<string, string[]> = {
-  "image/*": ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "avif"],
+  // 不含 svg：资源图片禁用矢量格式，理由见 pre-publish-checks 的 BANNED_IMAGE_EXTENSIONS。
+  // 这里只影响原生对话框的候选列表，真正的拦截在上传与提交校验两处。
+  "image/*": ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
   "image/png": ["png"],
   "image/jpeg": ["jpg", "jpeg"],
   "image/webp": ["webp"],
   "image/gif": ["gif"],
   "image/bmp": ["bmp"],
-  "image/svg+xml": ["svg"],
   "image/avif": ["avif"],
   "video/*": ["mp4", "webm", "mov"],
   "audio/*": ["mp3", "wav", "ogg", "m4a", "flac"],
