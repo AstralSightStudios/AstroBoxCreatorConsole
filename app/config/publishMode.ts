@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { loadRepoEnvId } from "./repoEnv";
 
 export type PublishMode = "legacy" | "staging";
 
@@ -21,6 +20,9 @@ export const PUBLISH_MODES: Record<
 
 const REVIEW_MODE_KEY = "ABCC_REVIEW_MODE_V1";
 const LEGACY_MODE_KEY = "ABCC_PUBLISH_MODE_V1";
+// 新流程已成为默认：无论仓库环境如何，未显式选择过的账号都走 staging。
+// 已写入 localStorage 的账号仍沿用自己的选择，不受该默认值影响。
+const DEFAULT_REVIEW_MODE: PublishMode = "staging";
 
 type Subscriber = () => void;
 const subscribers = new Set<Subscriber>();
@@ -58,7 +60,7 @@ export function loadReviewMode(): PublishMode {
         cachedReviewMode =
             readModeFromStorage(REVIEW_MODE_KEY) ??
             readModeFromStorage(LEGACY_MODE_KEY) ??
-            (loadRepoEnvId() === "testenv" ? "staging" : "legacy");
+            DEFAULT_REVIEW_MODE;
     }
     return cachedReviewMode;
 }
@@ -77,6 +79,6 @@ export function useReviewMode(): PublishMode {
             return () => subscribers.delete(listener);
         },
         loadReviewMode,
-        () => (loadRepoEnvId() === "testenv" ? "staging" : "legacy"),
+        () => DEFAULT_REVIEW_MODE,
     );
 }
