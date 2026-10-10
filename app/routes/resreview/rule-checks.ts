@@ -29,10 +29,14 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import {
+  BANNED_IMAGE_NOTICE,
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   PREVIEW_COMPRESS_TARGET_BYTES,
+  SVG_SNIFF_BYTES,
   hasExactCoverRatio,
+  isBannedImageName,
+  isSvgContent,
 } from "~/logic/publish/pre-publish-checks";
 import {
   WATCHFACE_MAGIC,
@@ -135,6 +139,8 @@ export interface ImageSizeInfo {
   ratio?: number;
   /** icon 应为 1:1，cover 应为 3:2（1.5）；preview 无固定要求故为 undefined。 */
   ratioValid?: boolean;
+  /** 命中禁用格式（SVG）。审核明细行据此标红，跳转按钮也会亮起。 */
+  bannedFormat?: boolean;
 }
 
 export interface ResourceRuleCheckResult {
@@ -766,7 +772,9 @@ export function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function imageSizeOverLimit(label: "icon" | "cover" | "preview", size: number): "warn" | "fail" | undefined {
+// 传入的是带序号的展示 label（如 `preview 3`），因此这里按 icon / cover
+// 前缀判定，不再依赖「剩下的就是 preview」这种隐式兜底。
+function imageSizeOverLimit(label: string, size: number): "warn" | "fail" | undefined {
   if (label === "icon") {
     if (size > ICON_FAIL) return "fail";
     if (size > ICON_WARN) return "warn";
@@ -1597,11 +1605,25 @@ export async function runResourceRuleChecks(options: {
   const imageSizes: ImageSizeInfo[] = [];
   const imageOverLimits: Array<{ label: string; over: "warn" | "fail" }> = [];
 
-  const collectImage = (label: "icon" | "cover" | "preview", path: string, url: string) => {
+  // label 同时是「明细」跳转的高亮锚点：ResourceImagesSection 用
+  // /^preview\s+(\d+)$/ 解析预览图序号，缺序号会落进 else 分支被当成 cover。
+  // 因此预览图从第 1 张起就带序号，与发布页「预览图 N」的叫法一致。
+  const collectImage = (
+    label: "icon" | "cover" | `preview ${number}`,
+    path: string,
+    url: string,
+  ) => {
     if (!path && !url) return;
     const size = lookupSize(sizeMap, path || url);
     const over = size != null ? imageSizeOverLimit(label, size) : undefined;
-    imageSizes.push({ label, path, url, sizeBytes: size, overLimit: over });
+    imageSizes.push({
+      label,
+      path,
+      url,
+      sizeBytes: size,
+      overLimit: over,
+      bannedFormat: isBannedImageName(path),
+    });
     if (over) imageOverLimits.push({ label, over });
   };
 
@@ -1609,7 +1631,7 @@ export async function runResourceRuleChecks(options: {
   collectImage("cover", manifestItem?.cover || entry.cover, preview.coverUrl);
   preview.previewUrls.forEach((url, i) => {
     const path = manifestItem?.preview?.[i] ?? "";
-    collectImage("preview", path, url);
+    collectImage(`preview ${i + 1}`, path, url);
   });
 
   const hasFailImage = imageOverLimits.some((i) => i.over === "fail");
@@ -1687,6 +1709,57 @@ export async function runResourceRuleChecks(options: {
     })(),
     anchor: ratioInvalid[0]?.label ? "images" : undefined,
     anchorLabel: ratioInvalid[0]?.label,
+  });
+
+  // --- check: 图片未使用 SVG ---
+  // 宿主横跨 WebKit / Chromium / 各家 WebView，SVG 渲染差异很大，资源图片禁用
+  // SVG（与发布页 pre-publish-checks 的 BANNED_IMAGE_EXTENSIONS 同一份规则）。
+  // 这里独立于发布流程再拦一次：绕过 ABCC 直接改仓库、或历史资源里遗留的 SVG，
+  // 都要在合并前被发现。
+  //
+  // 后缀之外还要读内容：把 logo.svg 改名成 logo.png 能骗过后缀判定与宽高比
+  // 校验（<img> 照样解码得出尺寸），只有嗅探文件头才认得出。每张只取前
+  // SVG_SNIFF_BYTES 字节，与 loadImageDimensions 走同一条鉴权取字节通道。
+  const svgImages = imageSizes.filter((img) => img.bannedFormat);
+  const sniffTargets = imageSizes.filter(
+    (img) => !img.bannedFormat && Boolean(img.url),
+  );
+  const sniffedSvg = (
+    await Promise.all(
+      sniffTargets.map(async (img) => {
+        try {
+          const bytes = await fetchResourceBytes(
+            img.url,
+            token,
+            SVG_SNIFF_BYTES,
+          );
+          return isSvgContent(bytes) ? img : null;
+        } catch {
+          // 取不到字节不误判：该图尺寸/体积检查会各自给出「未取到」的提示。
+          return null;
+        }
+      }),
+    )
+  ).filter((img): img is ImageSizeInfo => img !== null);
+  for (const img of sniffedSvg) {
+    // 回填到 imageSizes，明细面板里也会标红并可点击定位。
+    const target = imageSizes.find((item) => item.label === img.label);
+    if (target) target.bannedFormat = true;
+  }
+  const allSvgImages = [...svgImages, ...sniffedSvg];
+  checks.push({
+    title: "图片未使用 SVG 矢量图",
+    status: allSvgImages.length > 0 ? "fail" : "pass",
+    detail:
+      allSvgImages.length > 0
+        ? `${allSvgImages.length} 张为 SVG：${allSvgImages
+            .map((img) => `${img.label}（${img.path || img.url}）`)
+            .join("、")}。${BANNED_IMAGE_NOTICE}请要求创作者换成 PNG / JPEG 后重新提交。`
+        : sniffTargets.length > 0
+          ? `icon、cover 与 ${sniffTargets.length} 张预览图均已按后缀与文件内容确认非 SVG`
+          : "icon、cover 与预览图均为位图格式",
+    anchor: allSvgImages[0]?.label ? "images" : undefined,
+    anchorLabel: allSvgImages[0]?.label,
   });
 
   // --- check: 外部链接 links 完整且 icon 合法 ---
