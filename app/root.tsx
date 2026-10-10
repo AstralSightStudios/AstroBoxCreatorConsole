@@ -23,6 +23,12 @@ import BroadcastDialogHost from "./components/announcement/BroadcastDialogHost";
 import AfdianMessageNotificationHost from "./components/afdian/AfdianMessageNotificationHost";
 import AfdianAiAutoReplyHost from "./components/afdian/AfdianAiAutoReplyHost";
 import { refreshAstroboxAccount } from "./logic/account/astrobox";
+import { loadStartupPage } from "./config/startupPage";
+import {
+    markStartupRedirectApplied,
+    resetStartupRedirect,
+    resolveStartupRedirectPath,
+} from "./logic/startup-page";
 import { NavVisibilityProvider } from "./layout/nav-visibility-context";
 import { InboxDrawerProvider, useInboxDrawer } from "./components/inbox/drawer-context";
 import InboxDrawer from "./components/inbox/InboxDrawer";
@@ -80,6 +86,25 @@ export default function RootLayout() {
     // 设置内容改由欢迎页的设置抽屉承载。
     const isSetupPage = isWelcome || location.pathname === "/login";
     const needsLogin = !canUseConsole && !isSetupPage;
+    // 启动页：仅在本次启动首次落到概览页时跳转一次（登录完成后落地也走这里）。
+    const startupRedirectPath = resolveStartupRedirectPath({
+        pathname: location.pathname,
+        canUseConsole,
+        startupPage: loadStartupPage(),
+    });
+
+    useEffect(() => {
+        if (startupRedirectPath) markStartupRedirectApplied();
+    }, [startupRedirectPath]);
+
+    // 账号被清空（退出登录）时归还启动页机会：本次会话里重新登录后仍落到启动页。
+    const hadConsoleAccessRef = useRef(canUseConsole);
+    useEffect(() => {
+        if (hadConsoleAccessRef.current && !canUseConsole) {
+            resetStartupRedirect();
+        }
+        hadConsoleAccessRef.current = canUseConsole;
+    }, [canUseConsole]);
     const isWallpaperEditor = location.pathname === "/publish/wallpaper";
     // 全局固定深色：欢迎页与设置抽屉的表面色是硬编码深色，跟随系统浅色会让
     // Radix token 翻成 light，产出白底 + 黑字压黑底的崩坏界面。
@@ -103,6 +128,9 @@ export default function RootLayout() {
                 )}
                 {needsLogin ? (
                     <Navigate to="/welcome" replace />
+                ) : startupRedirectPath ? (
+                    // 先于常规内容渲染跳转，避免概览页闪一帧再跳走。
+                    <Navigate to={startupRedirectPath} replace />
                 ) : isWelcome || !canUseConsole ? (
                     <div className="relative h-full min-h-0 w-full overflow-hidden">
                         <AnimatePresence

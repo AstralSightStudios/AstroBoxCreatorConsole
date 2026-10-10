@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Button, Callout, Spinner, Switch } from "@radix-ui/themes";
+import { Select } from "~/components/ScaleAwareThemes";
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
@@ -51,6 +52,12 @@ import {
   UI_SCALE_OPTIONS,
   useUiScale,
 } from "~/config/uiScale";
+import {
+  saveStartupPage,
+  STARTUP_PAGE_OPTIONS,
+  useStartupPage,
+  type StartupPageOption,
+} from "~/config/startupPage";
 import {
   resetNavItemPreferences,
   saveNavAccountCollapse,
@@ -787,6 +794,35 @@ function NavigationItemsSettings({
   );
 }
 
+/** 与 ToggleRow 同形制的设置行，右侧控件是下拉而非开关 */
+function SelectRow({
+  title,
+  subtitle,
+  children,
+  last,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className={`flex w-full items-center gap-3 px-2 py-3 ${
+        last ? "" : "border-b border-white/[0.06]"
+      }`}
+    >
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[13.5px] font-medium text-white">{title}</span>
+        {subtitle && (
+          <span className="truncate text-[12px] text-white/45">{subtitle}</span>
+        )}
+      </div>
+      <div className="ml-auto flex shrink-0 justify-end">{children}</div>
+    </div>
+  );
+}
+
 export type SettingsSectionId =
   | "accounts"
   | "aiAutoReply"
@@ -825,6 +861,28 @@ export default function Settings({
   const [betaUpdateDialogOpen, setBetaUpdateDialogOpen] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [checkingBetaUpdate, setCheckingBetaUpdate] = useState(false);
+
+  // 启动页候选与导航项同源，按当前账号权限过滤后再按导航分组合并，
+  // 保证「选得到的启动页」永远等于「导航里存在的页面」。
+  const currentStartupPage = useStartupPage();
+  const startupRepoAccess = useCommunityRepoManageAccess();
+  const startupPageOptions = STARTUP_PAGE_OPTIONS.filter((option) =>
+    isNavItemPermitted(option, navRoles, startupRepoAccess.allowed),
+  );
+  const startupPageGroups = [...startupPageOptions.reduce<
+    Map<string, StartupPageOption[]>
+  >((accumulator, option) => {
+    const bucket = accumulator.get(option.group) ?? [];
+    bucket.push(option);
+    accumulator.set(option.group, bucket);
+    return accumulator;
+  }, new Map())];
+  const currentStartupOption = startupPageOptions.find(
+    (option) => option.path === currentStartupPage,
+  );
+  const startupPageHint = currentStartupOption
+    ? `打开软件后直接进入「${currentStartupOption.label}」`
+    : "打开软件后直接进入概览页";
 
   useEffect(() => {
     if (location.hash !== "#accounts" && location.hash !== "#afdian-account") return;
@@ -1013,6 +1071,35 @@ export default function Settings({
             </Button>
           }
         >
+          <SelectRow
+            title="默认打开页面"
+            subtitle={startupPageHint}
+          >
+            <Select.Root
+              value={currentStartupPage}
+              onValueChange={(path: string) => {
+                saveStartupPage(path);
+                const target = STARTUP_PAGE_OPTIONS.find(
+                  (option) => option.path === path,
+                );
+                toast.success(`启动页面已设为${target?.label ?? "概览"}`);
+              }}
+            >
+              <Select.Trigger aria-label="默认打开页面" />
+              <Select.Content>
+                {startupPageGroups.map(([group, groupOptions]) => (
+                  <Select.Group key={group}>
+                    <Select.Label>{group}</Select.Label>
+                    {groupOptions.map((option) => (
+                      <Select.Item key={option.id} value={option.path}>
+                        {option.label}
+                      </Select.Item>
+                    ))}
+                  </Select.Group>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </SelectRow>
           <ToggleRow
             title="账号区域随滚动收缩"
             subtitle="滚动导航内容时收起顶部账号信息，方便浏览更多功能"
