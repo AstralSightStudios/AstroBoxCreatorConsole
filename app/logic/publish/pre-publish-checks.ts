@@ -9,9 +9,16 @@
  */
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
 
-/** 封面必须为 3:2 宽高比（容差 0.02），且文件大小不得超过 COVER_MAX_BYTES。 */
-export const COVER_RATIO = 1.5;
-export const COVER_RATIO_TOLERANCE = 0.02;
+/**
+ * 封面必须严格为 3:2 宽高比，且文件大小不得超过 COVER_MAX_BYTES。
+ *
+ * 判定只认整数比值（宽 × 2 === 高 × 3），不设任何浮点容差：3:2 的整数倍
+ * （1500×1000、1200×800）能精确命中，而 2560×1707 这类「相机导出凑整」的
+ * 尺寸会被明确拒绝，不再靠 0.02 容差蒙混过关。
+ */
+const COVER_RATIO_NUM = 3;
+const COVER_RATIO_DEN = 2;
+export const COVER_RATIO = COVER_RATIO_NUM / COVER_RATIO_DEN; // 1.5，仅供文案展示
 export const COVER_MAX_BYTES = 600 * 1024;
 
 /** 图标必须为正方形，边长上限 500px。 */
@@ -38,13 +45,22 @@ export function checkIconDimensions(dims: ImageDimensions): string | null {
   return null;
 }
 
-/** 封面宽高比检查。 */
+/**
+ * 尺寸是否严格等于 3:2。整数乘法判定，不引入容差。
+ *
+ * 发布页实时红框（shared.tsx 的 UploadSlot）与审核页（rule-checks）都复用它，
+ * 三处曾各自写死 0.02 / 0.01 容差，同一张图在发布页能过、审核页判不过。
+ */
+export function hasExactCoverRatio(width: number, height: number): boolean {
+  return width * COVER_RATIO_DEN === height * COVER_RATIO_NUM;
+}
+
+/** 封面宽高比检查：严格 3:2，不容差。 */
 export function checkCoverRatio(dims: ImageDimensions): string | null {
   if (!dims.width || !dims.height) return "封面无法读取，请重新上传。";
+  if (hasExactCoverRatio(dims.width, dims.height)) return null;
   const ratio = dims.width / dims.height;
-  if (Math.abs(ratio - COVER_RATIO) > COVER_RATIO_TOLERANCE)
-    return `封面必须为 3:2 宽高比，当前 ${ratio.toFixed(2)}。`;
-  return null;
+  return `封面必须严格为 3:2 宽高比（宽 = 高 × ${COVER_RATIO}），当前 ${dims.width}×${dims.height}（${ratio.toFixed(2)}）。`;
 }
 
 /**

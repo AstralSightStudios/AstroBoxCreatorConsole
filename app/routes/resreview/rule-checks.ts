@@ -32,6 +32,7 @@ import {
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   PREVIEW_COMPRESS_TARGET_BYTES,
+  hasExactCoverRatio,
 } from "~/logic/publish/pre-publish-checks";
 import {
   WATCHFACE_MAGIC,
@@ -1658,7 +1659,9 @@ export async function runResourceRuleChecks(options: {
         if (img.label === "icon") {
           img.ratioValid = Math.abs(img.ratio - 1) <= 0.01;
         } else if (img.label === "cover") {
-          img.ratioValid = Math.abs(img.ratio - 1.5) <= 0.01;
+          // 与发布页共用同一判定（严格 3:2，零容差）：此处原为 0.01 容差，
+          // 会把发布页已经拒绝的 2560×1707 判成合格。
+          img.ratioValid = hasExactCoverRatio(img.width, img.height);
         }
       }),
   );

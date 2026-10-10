@@ -734,7 +734,7 @@ export function MediaSection({
           />
           <MediaTile
             label="封面"
-            hint="宽高比 3:2"
+            hint="宽高比严格 3:2"
             fieldKey="cover"
             media={cover}
             emptyClassName="aspect-[3/2]"

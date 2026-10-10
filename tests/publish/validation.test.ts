@@ -264,6 +264,16 @@ describe("publish validation", () => {
     });
     expect(wrongRatioUpload.errors.join(" ")).toContain("3:2");
 
+    // 3:2 零容差：差一个像素也要拦下，旧的 ±0.02 容差会让这张图通过。
+    const nearMiss = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { ...coverImage, width: 151 },
+    });
+    expect(nearMiss.errors.join(" ")).toContain("3:2");
+    expect(nearMiss.errors.join(" ")).toContain("151×100");
+
     const oversized = validatePublish({
       ...validInput,
       usePreviewAsCover: false,

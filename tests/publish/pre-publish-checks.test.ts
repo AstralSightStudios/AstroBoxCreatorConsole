@@ -7,6 +7,7 @@ import {
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  hasExactCoverRatio,
   rowHasPackage,
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
@@ -46,18 +47,32 @@ describe("pre-publish checks: checkIconDimensions", () => {
 });
 
 describe("pre-publish checks: checkCoverRatio", () => {
-  test("accepts 3:2 within tolerance", () => {
+  test("accepts only exact 3:2", () => {
     expect(checkCoverRatio({ width: 150, height: 100 })).toBeNull();
-    // 容差 ±0.02，即比值需落在 [1.48, 1.52] 附近。
-    // 不测 1.52/1.48 这两个端点：浮点除法会让差值略大于 0.02，边界不稳定。
-    expect(checkCoverRatio({ width: 151, height: 100 })).toBeNull();
-    expect(checkCoverRatio({ width: 149, height: 100 })).toBeNull();
+    expect(checkCoverRatio({ width: 1200, height: 800 })).toBeNull();
+    expect(checkCoverRatio({ width: 3000, height: 2000 })).toBeNull();
+    // 最小整数解也要成立：判定只看比值，不看绝对尺寸。
+    expect(checkCoverRatio({ width: 3, height: 2 })).toBeNull();
   });
 
-  test("rejects ratios outside tolerance and reports the actual value", () => {
+  test("rejects off-by-one pixels: the rule has zero tolerance", () => {
+    // 这三组在旧的 ±0.02 容差下全部通过，收紧容差后必须被拒。
+    expect(checkCoverRatio({ width: 151, height: 100 })).toContain("3:2");
+    expect(checkCoverRatio({ width: 149, height: 100 })).toContain("3:2");
+    expect(checkCoverRatio({ width: 150, height: 101 })).toContain("3:2");
+  });
+
+  test("rejects camera-rounded sizes that merely approximate 3:2", () => {
+    // 2560×1707 比值 1.4997，落在旧容差内；相机/导出工具凑整的尺寸一律拒绝。
+    expect(checkCoverRatio({ width: 2560, height: 1707 })).toContain("3:2");
+    expect(checkCoverRatio({ width: 2048, height: 1365 })).toContain("3:2");
+  });
+
+  test("rejects ratios outside 3:2 and reports the actual pixels", () => {
     const err = checkCoverRatio({ width: 100, height: 100 });
     expect(err).toContain("3:2");
     expect(err).toContain("1.00");
+    expect(err).toContain("100×100");
     expect(checkCoverRatio({ width: 200, height: 100 })).toContain("2.00");
   });
 
@@ -95,6 +110,28 @@ describe("pre-publish checks: constants stay consistent", () => {
   test("cover compression target equals the cover size limit", () => {
     // 封面压缩目标与体积上限必须是同一个值，否则「压缩后仍超标」分支永远不成立
     expect(COVER_COMPRESS_TARGET_BYTES).toBe(COVER_MAX_BYTES);
+  });
+
+  test("hasExactCoverRatio never contradicts checkCoverRatio", () => {
+    // 发布页实时红框与审核页都走 hasExactCoverRatio；它一旦与提交校验分叉，
+    // 就会出现「红框没亮却被拦住」或反之。逐组尺寸钉死这份一致性。
+    const samples: Array<[number, number]> = [
+      [150, 100],
+      [151, 100],
+      [149, 100],
+      [150, 101],
+      [1200, 800],
+      [3000, 2000],
+      [2560, 1707],
+      [2048, 1365],
+      [100, 100],
+      [200, 100],
+    ];
+    for (const [width, height] of samples) {
+      expect(hasExactCoverRatio(width, height)).toBe(
+        checkCoverRatio({ width, height }) === null,
+      );
+    }
   });
 
   test("icon compression target is well below the icon dimension budget", () => {

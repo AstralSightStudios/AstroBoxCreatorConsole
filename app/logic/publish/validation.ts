@@ -87,7 +87,6 @@ export interface PublishValidationInput {
 // 图片规格常量与判定统一在 media-rules，这里转出以保持既有导入路径可用。
 export {
   COVER_RATIO,
-  COVER_RATIO_TOLERANCE,
   COVER_MAX_BYTES,
 } from "./pre-publish-checks";
 
