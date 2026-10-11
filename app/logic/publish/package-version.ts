@@ -1,4 +1,4 @@
-import { unzipSync, zipSync, type Unzipped, type Zippable } from "fflate";
+import { unzipSync, zipSync, type Unzipped } from "fflate";
 import {
   CORONA_MANIFEST_NAME,
   LEGACY_CORONA_MANIFEST_NAME,
@@ -12,10 +12,32 @@ import {
  * 覆盖四类包体（版本一律以包体内部为准）：
  * - 小米表盘 `.bin` / `.face`：offset 4..6 三字节，`versionCode = major<<16|minor<<8|patch`。
  * - 小米表盘 `.mwz`：zip 工程包，内层 `.bin` 才是设备要的包体。
- * - rpk / zip（小米快应用、Vivo 快应用、Vivo 表盘）：`manifest.json` 里的
- *   `versionName` / `versionCode`（小米另有 `manifest-watch.json`）。
+ * - rpk（小米快应用、Vivo 快应用、Vivo 表盘）：**只读，禁止改写**。版本取
+ *   `manifest.json` 里的 `versionName` / `versionCode`（小米另有
+ *   `manifest-watch.json`），原因见下方「为什么 rpk 不能改版本」。
  * - CRPack（资源包 `.crpack`）：`corona.json` 里的 `version` / `versionCode`，
  *   包体标识取 `themeId`。
+ *
+ * ## 为什么 rpk 不能改版本
+ *
+ * rpk 表面是 zip，但工具链在「最后一个 local file header」与「中央目录」之间
+ * 插了一段**签名块**（尾魔数 `RPK Sig Block 42`，布局见 rpk-signature.ts）。
+ * 这段字节不在中央目录里，任何 zip 库都看不到它。
+ *
+ * 关键在于签名块里的 `0x01000201` 条目——**文件摘要列表**：实测 14 个真实官方
+ * 包（小到 7 个文件、大到 435 个文件），该列表的记录数与包内非目录条目数
+ * **逐一相等**，即包内每一个文件（含 `manifest.json` /
+ * `manifest-watch.json`）都有一条摘要。
+ *
+ * 于是改 versionCode 必然同时做两件互相矛盾的事：改了 manifest 的字节，签名块
+ * 里的摘要却仍然描述改之前的 manifest。手环侧验签时重算出的摘要与签名块对不上，
+ * 直接判签名失败拒装——表现为「CC 里改完版本就装不上」。
+ *
+ * 搬回签名块救不了这一点：块是原样搬回的，正因原样，它记的还是旧摘要。而且摘要
+ * 算法在工具链内部（不是裸 MD5/SHA），没有开发者私钥就无法重签。
+ *
+ * 结论：rpk 只能整体重新导出后重新导入，不能在控制台里就地改版本。
+ * 要涨版本号，请回到 rpk 构建工具链改 `manifest.json` 后重新打包。
  */
 
 export const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
@@ -28,6 +50,14 @@ export const XIAOMI_WATCHFACE_ID_LENGTH = 12;
 /** 小米表盘文件内版本三字节的位置。 */
 export const XIAOMI_VERSION_OFFSET = 4;
 export const XIAOMI_VERSION_LENGTH = 3;
+
+/**
+ * rpk 不可改写的原因文案。读路径当 `reason` 展示，写路径当异常抛出，共用一份，
+ * 免得两处说法不一致让创作者以为是两个问题。
+ */
+const RPK_UNWRITABLE_REASON =
+  "快应用 rpk 带签名，改动包内任一字节都会导致手环验签失败、无法安装。" +
+  "请在 rpk 构建工具链中改好 manifest.json 的 versionName / versionCode，用 aiot release 重新打包后再重新导入包体。";
 
 export type PackageVersionSource =
   | "zip-manifest"
@@ -49,7 +79,7 @@ export interface PackageVersionInfo {
   source: PackageVersionSource;
   readable: boolean;
   writable: boolean;
-  /** 解析失败原因，用于 toast / 行内提示。 */
+  /** 解析失败原因，或 `writable === false` 的原因，用于 toast / 行内提示。 */
   reason?: string;
   /** 包内承载版本的条目路径（zip 型用于诊断）。 */
   entry?: string;
@@ -250,11 +280,12 @@ function readZipManifest(
     ...identity,
     source: "zip-manifest",
     readable,
-    writable: true,
+    // rpk 带签名块且块内含全包文件摘要，改任何一个字节都会让手环验签失败。
+    // 见文件头「为什么 rpk 不能改版本」。reason 无论是否读出版本都要给，
+    // 否则 readable=true 时调用方拿不到任何「为什么不能改」的线索。
+    writable: false,
     entry: watchVersion && watchVersion.version ? (watchName ?? manifestName) : manifestName,
-    ...(readable
-      ? {}
-      : { reason: "manifest.json 中未找到 versionName / versionCode" }),
+    reason: readable ? RPK_UNWRITABLE_REASON : "manifest.json 中未找到 versionName / versionCode",
   };
 }
 
@@ -377,47 +408,6 @@ function writeXiaomiBin(
   return out;
 }
 
-/**
- * 改写 rpk/zip 内所有顶层含 versionName/versionCode 的 JSON（manifest.json、
- * manifest-watch.json 等），保证包内版本统一。
- */
-function writeZipManifest(
-  entries: Unzipped,
-  target: PackageVersionTarget,
-): Uint8Array {
-  const out: Zippable = {};
-  for (const [name, data] of Object.entries(entries)) {
-    if (!name.toLowerCase().endsWith(".json")) {
-      out[name] = data;
-      continue;
-    }
-    const manifest = parseJsonObject(data);
-    if (!manifest) {
-      out[name] = data;
-      continue;
-    }
-    let changed = false;
-    if (typeof manifest.versionName === "string") {
-      manifest.versionName = target.version;
-      changed = true;
-    } else if (typeof manifest.version_name === "string") {
-      manifest.version_name = target.version;
-      changed = true;
-    }
-    if (manifest.versionCode !== undefined) {
-      manifest.versionCode = target.versionCode;
-      changed = true;
-    } else if (manifest.version_code !== undefined) {
-      manifest.version_code = target.versionCode;
-      changed = true;
-    }
-    out[name] = changed
-      ? new TextEncoder().encode(JSON.stringify(manifest, null, 2))
-      : data;
-  }
-  return zipSync(out);
-}
-
 function wrapFile(bytes: Uint8Array, source: File): File {
   return new File([bytes as BlobPart], source.name, {
     type: source.type || "application/octet-stream",
@@ -425,7 +415,13 @@ function wrapFile(bytes: Uint8Array, source: File): File {
   });
 }
 
-/** 改写包体版本，返回新的 File（不改动原文件）。不支持改写的格式抛错。 */
+/**
+ * 改写包体版本，返回新的 File（不改动原文件）。不支持改写的格式抛错。
+ *
+ * rpk（`source === "zip-manifest"`）**故意不支持**，而且必须显式拦下，不能靠
+ * 「后面没分支了」兜底：调用方只认抛错与否，一旦漏写分支就会静默产出一个
+ * 装不上的包，而装不上要到用户手环上才暴露。理由见文件头「为什么 rpk 不能改版本」。
+ */
 export async function writePackageVersion(
   file: File,
   target: PackageVersionTarget,
@@ -451,10 +447,7 @@ export async function writePackageVersion(
         file,
       );
     }
-    const manifestName = pickManifestName(entries);
-    if (manifestName) {
-      return wrapFile(writeZipManifest(entries, target), file);
-    }
+    if (pickManifestName(entries)) throw new Error(RPK_UNWRITABLE_REASON);
     const binName = findInnerBinName(entries);
     if (binName) {
       entries[binName] = writeXiaomiBin(entries[binName], target);

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import {
@@ -6,6 +8,7 @@ import {
   writePackageVersion,
   xiaomiVersionCodeFromVersion,
 } from "../../app/logic/publish/package-version";
+import { detectRpkDebug } from "../../app/logic/publish/rpk-signature";
 
 /** 真实小米表盘（SekaiUI 9pro v1.1.2）的前 64 字节：magic + offset4 版本 02 01 01 + offset40 ID。 */
 const REAL_XIAOMI_HEADER = new Uint8Array([
@@ -149,7 +152,7 @@ describe("readPackageVersion / writePackageVersion - rpk manifest", () => {
     expect(info.versionCode).toBe(10002);
   });
 
-  test("写入时统一更新包内所有 versionName / versionCode", async () => {
+  test("rpk 一律只读：读得到版本但 writable=false 且给出原因", async () => {
     const rpk = zipSync({
       "manifest.json": jsonBytes({
         package: "com.example.app",
@@ -166,22 +169,252 @@ describe("readPackageVersion / writePackageVersion - rpk manifest", () => {
       "config-watch.json": strToU8("{}"),
       "META-INF/CERT": new Uint8Array([9, 8, 7]),
     });
-    const updated = await writePackageVersion(new File([rpk], "app.rpk"), {
-      version: "2.5.0",
-      versionCode: 250,
-    });
-    const entries = unzipSync(new Uint8Array(await updated.arrayBuffer()));
-    expect(readJson(entries, "manifest.json").versionName).toBe("2.5.0");
-    expect(readJson(entries, "manifest.json").versionCode).toBe(250);
-    expect(readJson(entries, "manifest-watch.json").versionName).toBe("2.5.0");
-    expect(readJson(entries, "manifest-watch.json").versionCode).toBe(250);
-    expect(readJson(entries, "config-watch.json")).toEqual({});
-    expect(Array.from(entries["META-INF/CERT"])).toEqual([9, 8, 7]);
-
-    const info = await readPackageVersion(updated);
-    expect(info.version).toBe("2.5.0");
-    expect(info.versionCode).toBe(250);
+    const info = await readPackageVersion(new File([rpk], "app.rpk"));
+    expect(info.source).toBe("zip-manifest");
+    expect(info.readable).toBe(true);
+    expect(info.version).toBe("1.0.0");
+    expect(info.versionCode).toBe(1);
+    expect(info.writable).toBe(false);
+    expect(info.reason).toContain("rpk");
   });
+
+  /**
+   * 禁掉的只是「写」，「读」必须完好——versionName / versionCode 仍是发布流程
+   * 锁定版本、判断递增的唯一数据源。哪天这里挂了，rpk 会退化成「版本未知」
+   * 而创作者看不到任何提示。
+   */
+  test("禁写后仍要完整读出版本、包名与来源条目", async () => {
+    const rpk = zipSync({
+      "manifest.json": jsonBytes({
+        package: "com.example.app",
+        versionName: "1.0.0",
+        versionCode: 1,
+      }),
+      "manifest-watch.json": jsonBytes({
+        package: "com.example.app",
+        versionName: "2.3.4",
+        versionCode: 234,
+      }),
+    });
+    const info = await readPackageVersion(new File([rpk], "app.rpk"));
+    // manifest-watch.json 优先，与真包一致
+    expect(info.version).toBe("2.3.4");
+    expect(info.versionCode).toBe(234);
+    expect(info.identity).toBe("com.example.app");
+    expect(info.identityKind).toBe("package");
+    expect(info.entry).toBe("manifest-watch.json");
+    expect(info.readable).toBe(true);
+    expect(info.writable).toBe(false);
+  });
+
+  test("reason 必须同时说明「为什么」和「怎么办」", async () => {
+    const rpk = zipSync({
+      "manifest.json": jsonBytes({
+        package: "com.example.app",
+        versionName: "1.0.0",
+        versionCode: 1,
+      }),
+    });
+    const { reason } = await readPackageVersion(new File([rpk], "app.rpk"));
+    // 只说「不能改」等于把创作者推到死路，必须给出唯一出路。
+    expect(reason).toContain("aiot release");
+    expect(reason).toContain("manifest.json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rpk 禁止改写
+// ---------------------------------------------------------------------------
+
+/** rpk 签名块尾魔数（SignUtil.SigMagic）。 */
+const SIG_MAGIC = "RPK Sig Block 42";
+
+const EOCD_SIG = 0x06054b50;
+
+const u32le = (bytes: Uint8Array, offset: number): number =>
+  (bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)) >>>
+  0;
+
+function indexOfAscii(bytes: Uint8Array, ascii: string): number {
+  const first = ascii.charCodeAt(0);
+  outer: for (let i = 0; i + ascii.length <= bytes.length; i += 1) {
+    if (bytes[i] !== first) continue;
+    for (let k = 1; k < ascii.length; k += 1) {
+      if (bytes[i + k] !== ascii.charCodeAt(k)) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+function eocdOf(bytes: Uint8Array): number {
+  for (let i = bytes.length - 22; i >= 0; i -= 1) {
+    if (u32le(bytes, i) === EOCD_SIG) return i;
+  }
+  return -1;
+}
+
+/** 文件摘要列表里单条记录的字节步长（实测 `[int16 0x0020][int16 len][摘要]`）。 */
+const SIG_DIGEST_STRIDE = 38;
+
+/**
+ * 造一个带签名块的 rpk。
+ *
+ * 签名块按 SignUtil.saveChunk 的布局插在条目区与中央目录之间，尾部带
+ * `RPK Sig Block 42` 魔数，并按真实布局带上 `0x01000201` 全包文件摘要列表
+ * （每个文件一条记录）。
+ *
+ * 这里刻意造得「结构上完全正常」：如果实现仍试图改写并搬运签名块，测试就会
+ * 产出一个签名块与内容互相矛盾的包——正是线上装不上的那种包。
+ */
+function signedRpk(
+  entries: Record<string, Uint8Array>,
+  fileDigestCount: number,
+): Uint8Array {
+  const zip = zipSync(entries);
+  const eocd = eocdOf(zip);
+  const cdOffset = u32le(zip, eocd + 16);
+
+  // 块布局：[int32 摘要条目数][int32 0][摘要记录 × n][int32 size][int32 0][魔数]
+  const headerLen = 8;
+  const digestRows = fileDigestCount * SIG_DIGEST_STRIDE;
+  const block = new Uint8Array(headerLen + digestRows + 8 + SIG_MAGIC.length);
+  block.set(
+    [fileDigestCount & 0xff, (fileDigestCount >>> 8) & 0xff, 0, 0],
+    0,
+  );
+  for (let i = 0; i < fileDigestCount; i += 1) {
+    block.set([0x20, 0x00], headerLen + i * SIG_DIGEST_STRIDE);
+  }
+  // 块尾 [int32 size][int32 0]：size = 摘要记录区 + 魔数，与块头声明自洽。
+  const tailSize = digestRows + SIG_MAGIC.length;
+  block.set(
+    [tailSize & 0xff, (tailSize >>> 8) & 0xff, 0, 0],
+    headerLen + digestRows,
+  );
+  block.set([0, 0, 0, 0], headerLen + digestRows + 4);
+  block.set(strToU8(SIG_MAGIC), headerLen + digestRows + 8);
+
+  const out = new Uint8Array(zip.length + block.length);
+  out.set(zip.subarray(0, cdOffset), 0);
+  out.set(block, cdOffset);
+  out.set(zip.subarray(cdOffset), cdOffset + block.length);
+  const shifted = cdOffset + block.length;
+  out[eocd + block.length + 16] = shifted & 0xff;
+  out[eocd + block.length + 17] = (shifted >>> 8) & 0xff;
+  return out;
+}
+
+describe("writePackageVersion - rpk 一律拒绝改写", () => {
+  test("带签名块的 rpk 抛错，且不产出被改动的包体", async () => {
+    const signed = signedRpk(
+      {
+        "manifest.json": jsonBytes({
+          package: "com.example.app",
+          versionName: "1.0.0",
+          versionCode: 1,
+          router: { pages: {} },
+        }),
+        "pages/index.js": strToU8("console.log(1)"),
+      },
+      2,
+    );
+    const before = new Uint8Array(signed);
+
+    await expect(
+      writePackageVersion(new File([signed], "app.rpk"), {
+        version: "2.0.0",
+        versionCode: 200,
+      }),
+    ).rejects.toThrow("rpk");
+
+    // 抛错即不得有任何字节落到包里：签名块与 manifest 必须原封不动。
+    // 真去改了 manifest 却把旧签名块搬回去，产出的包看着正常、装上去必被拒。
+    const entries = unzipSync(before);
+    expect(readJson(entries, "manifest.json").versionCode).toBe(1);
+    expect(indexOfAscii(before, SIG_MAGIC)).toBeGreaterThan(0);
+  });
+
+  test("无签名块的 rpk 同样拒绝（签名缺失不代表可以改）", async () => {
+    // 曾按「有没有签名块」分流：无块的走改写路径。这正是漏洞本身——
+    // 工具链没签的包不代表手环会放行，而有块的包才是被签名保护的那批。
+    const plain = zipSync({
+      "manifest.json": jsonBytes({
+        package: "com.example.app",
+        versionName: "1.0.0",
+        versionCode: 1,
+      }),
+    });
+    const info = await readPackageVersion(new File([plain], "app.rpk"));
+    expect(info.writable).toBe(false);
+    await expect(
+      writePackageVersion(new File([plain], "app.rpk"), {
+        version: "2.0.0",
+        versionCode: 200,
+      }),
+    ).rejects.toThrow("rpk");
+  });
+
+  test("Vivo 表盘 rpk（router.watchfaces）同样不可改写", async () => {
+    const rpk = zipSync({
+      "manifest.json": jsonBytes({
+        package: "com.vivo.dial",
+        versionName: "1.0.0.2",
+        versionCode: 10002,
+        router: { watchfaces: { main: { id: "778899" } } },
+      }),
+    });
+    const info = await readPackageVersion(new File([rpk], "dial.rpk"));
+    expect(info.source).toBe("zip-manifest");
+    expect(info.identityKind).toBe("dial-id");
+    expect(info.writable).toBe(false);
+  });
+});
+
+/** 真实样本目录不在版本库，用 existsSync 守卫，缺失即跳过。 */
+const SAMPLE_DIR = ".opencode/problem/debugreleaseexamplerpk";
+const RELEASE_RPK = join(
+  SAMPLE_DIR,
+  "com.arknights.gpoor.gacha.release.1.1.2.rpk",
+);
+const DEBUG_RPK = join(SAMPLE_DIR, "com.arknights.gpoor.gacha.debug.1.0.4.rpk");
+
+describe("真实 rpk 样本回归", () => {
+  const samples = [
+    { path: RELEASE_RPK, label: "release 样本" },
+    { path: DEBUG_RPK, label: "debug 样本" },
+  ].filter((s) => existsSync(s.path));
+
+  if (samples.length === 0) {
+    test.skip(`${SAMPLE_DIR} 不存在，跳过真实样本回归`, () => {});
+  }
+
+  for (const { path, label } of samples) {
+    test(`${label}：能读出版本但拒绝改写`, async () => {
+      const original = new Uint8Array(await Bun.file(path).arrayBuffer());
+      expect(indexOfAscii(original, SIG_MAGIC)).toBeGreaterThan(0);
+
+      const info = await readPackageVersion(new File([original], "a.rpk"));
+      expect(info.source).toBe("zip-manifest");
+      expect(info.readable).toBe(true);
+      expect(info.version).toBeTruthy();
+      expect(info.writable).toBe(false);
+
+      await expect(
+        writePackageVersion(new File([original], "a.rpk"), {
+          version: "9.9.9",
+          versionCode: 999999,
+        }),
+      ).rejects.toThrow("rpk");
+
+      // 再次确认原始字节未被这次尝试改动
+      const after = new Uint8Array(await Bun.file(path).arrayBuffer());
+      expect(after.length).toBe(original.length);
+    });
+  }
 });
 
 describe("readPackageVersion / writePackageVersion - .mwz", () => {

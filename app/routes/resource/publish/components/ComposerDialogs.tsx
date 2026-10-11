@@ -147,7 +147,7 @@ export function VersionIncrementWarningDialog({
       <Dialog.Content maxWidth="460px">
         <Dialog.Title>versionCode 未递增</Dialog.Title>
         <Dialog.Description size="2">
-          以下设备的包体已更新，但 versionCode 未大于上次发布的值，用户将无法检测到更新：
+          以下设备的包体已更新，但 versionCode 未大于上次发布的值，用户将无法检测到更新。
         </Dialog.Description>
         <div className="mt-3 flex flex-col gap-1.5">
           {(rows ?? []).map((row) => (
@@ -157,6 +157,17 @@ export function VersionIncrementWarningDialog({
             >
               {deviceLabel(sortedDeviceOptions, row.platformId)}
               ：versionCode {row.versionCode} ≤ 上次 {row.previousVersionCode}
+              {/*
+                逐行标注能否就地改。rpk 行的处理方式完全不同，混在一句
+                「请修改版本」里，创作者会点开编辑框才发现改不了。
+              */}
+              {row.packageWritable === false && (
+                <p className="mt-1 text-xs leading-relaxed text-amber-200/85">
+                  这是已签名的 rpk，无法在控制台内改版本。请在 rpk 构建工具链中改好{" "}
+                  <code>manifest.json</code> 的 <code>versionName</code> /{" "}
+                  <code>versionCode</code>，用 <code>aiot release</code> 重新打包，再回这里重新导入包体。
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -168,7 +179,7 @@ export function VersionIncrementWarningDialog({
               onClose();
             }}
           >
-            返回修改版本
+            返回修改
           </Button>
         </div>
       </Dialog.Content>

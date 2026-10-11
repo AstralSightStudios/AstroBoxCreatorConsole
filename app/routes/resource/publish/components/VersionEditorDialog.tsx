@@ -103,6 +103,11 @@ export function VersionEditorDialog({
 
   const validationError = useMemo(() => {
     if (!info) return null;
+    // writable 先行：rpk 读得到版本但不可改写，若先按 isVersioned 走，
+    // 会渲染出一个填了也提交不了的表单，用户只会以为是 bug。
+    if (!info.writable) {
+      return info.reason || "该包体暂不支持内置改写版本。";
+    }
     if (identityMismatch) return "包体包名与资源 ID 不一致，请先统一 ID 再修改版本。";
     if (isVersioned) {
       if (!versionName.trim()) return "请填写版本名。";
@@ -194,7 +199,7 @@ export function VersionEditorDialog({
               </Callout.Root>
             )}
 
-            {!loading && isWatchfaceBin && (
+            {!loading && isWatchfaceBin && info.writable && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                 <Text size="1" color="gray">更新程度</Text>
                 <div className="mt-2 flex items-end gap-2">
@@ -265,7 +270,7 @@ export function VersionEditorDialog({
               </div>
             )}
 
-            {!loading && isVersioned && (
+            {!loading && isVersioned && info.writable && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                 <Text size="1" color="gray">
                   包内版本{isCrpack ? "（corona.json）" : ""}

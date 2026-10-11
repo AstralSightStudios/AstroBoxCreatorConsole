@@ -68,12 +68,12 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   {
     label: "版本号",
     description:
-      "展示用版本名称，导入包体后自动读取并锁定；如需修改请点「修改版本」改写包体。",
+      "展示用版本名称，导入包体后自动读取并锁定。普通包体可点「修改版本」改写；已签名的 rpk 无法在控制台内改写，需在构建工具链改好 manifest.json 后重新打包导入。",
   },
   {
     label: "versionCode",
     description:
-      "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定。",
+      "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定。同样地，rpk 需要在构建工具链里改 manifest.json 的 versionCode 后重新打包导入。",
   },
   {
     label: "包体文件",
@@ -322,15 +322,29 @@ export function DownloadsSection({
         info.versionCode <= previousVersionCode &&
         !mismatch
       ) {
+        // 这是 rpk 创作者最常撞的一次：包体读得出来、版本也确实没涨，
+        // 但只有一条出路——回工具链改 versionCode 后重新打包。
+        // 不说清楚，他们会以为点两下就能解决，然后一轮轮卡在这里。
         toast.warning(
-          `包体版本未递增（versionCode ${info.versionCode} ≤ 上次 ${previousVersionCode}），请修改版本后再提交。`,
+          `包体版本未递增（versionCode ${info.versionCode} ≤ 上次 ${previousVersionCode}）。` +
+            (info.writable
+              ? "请修改版本后再提交。"
+              : "该包体是已签名的 rpk，无法在控制台内改版本：" +
+                "请在 rpk 构建工具链中改好 manifest.json 的 versionName / versionCode，" +
+                "用 aiot release 重新打包后，再回这里重新导入包体。"),
+          // 比默认稍长，够读完三行指引；再长就变成噪音了。
+          { duration: info.writable ? undefined : 8000 },
         );
-        setVersionEditor({
-          uid,
-          file,
-          previousVersionCode,
-          mismatch: false,
-        });
+        // 只有可改写的包体才弹编辑器。rpk 弹出来也提交不了（签名块逐文件
+        // 校验），弹了只是让创作者对着一个必然失败的表单发呆。
+        if (info.writable) {
+          setVersionEditor({
+            uid,
+            file,
+            previousVersionCode,
+            mismatch: false,
+          });
+        }
         return;
       }
       // 版本读取成功不提示：包内 ID 改写提示已由 validateFile 在导入时给出，
@@ -571,7 +585,16 @@ export function DownloadsSection({
                                 versionCode {item.versionCode}
                               </span>
                             )}
-                            <span title="由包体自动读取，请勿手动修改">
+                            <span
+                              title={
+                                // 只在明确不可改写时才说「不支持」。老草稿里
+                                // packageWritable 可能是 undefined（该字段是后加的），
+                                // 用真值判断会把这些行误标成 rpk。
+                                item.packageWritable === false
+                                  ? "由包体自动读取；已签名的 rpk 无法在控制台内改写版本，需在构建工具链重新打包"
+                                  : "由包体自动读取，可点击右侧「修改版本」调整"
+                              }
+                            >
                               <LockSimpleIcon
                                 size={13}
                                 weight="bold"
@@ -604,6 +627,22 @@ export function DownloadsSection({
                                 <PencilSimpleLineIcon size={13} weight="bold" />
                                 修改版本
                               </Button>
+                            )}
+                          {/*
+                            rpk 只读时给一条常驻说明。不能只藏掉「修改版本」按钮
+                            ——那会让创作者以为版本被锁死是 Bug，或去别处找绕开的
+                            办法。必须把「去工具链改 manifest.json 后重新打包再导入」
+                            这条唯一出路直接写在这里。
+                          */}
+                          {item.file &&
+                            !item.file.skipUpload &&
+                            item.packageWritable === false && (
+                              <span className="w-full basis-full text-xs leading-relaxed text-amber-200/80">
+                                已签名的 rpk 无法在控制台内改版本：改动包内任一字节都会让手环验签失败、装不上。
+                                请在 rpk 构建工具链里改好 <code>manifest.json</code> 的{" "}
+                                <code>versionName</code> / <code>versionCode</code>，用{" "}
+                                <code>aiot release</code> 重新打包，再回这里重新导入包体。
+                              </span>
                             )}
                           {item.previousVersion !== undefined ||
                           item.previousVersionCode !== undefined ? (
