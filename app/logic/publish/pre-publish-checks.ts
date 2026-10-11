@@ -225,3 +225,49 @@ export function rowsWithNonIncrementedVersionCode(
       row.versionCode <= row.previousVersionCode,
   );
 }
+
+/** 已合入索引的 manifest 中某设备的版本信息，递增判定唯一的合法基线。 */
+export interface PublishedDownloadBaseline {
+  version?: string;
+  versionCode?: number;
+}
+
+/**
+ * 用「已合入索引的包体版本」重写各行的 previousVersion / previousVersionCode。
+ *
+ * 编辑一个尚未合入的 PR 时，`buildDownloadInputsFromManifest` 读到的是 PR 分支上的
+ * manifest —— 那是还没发布的状态，把它当基线会让创作者每替换一次包体就再涨一次
+ * versionCode：明明是同一个尚未合入的提交，版本号却被一路抬高。
+ *
+ * 递增要求唯一合法的基准是**索引指向的那个已合入版本**。因此这里用已发布 manifest
+ * 覆盖基线，PR 内无论替换多少次包体，比的始终是线上那一版。
+ *
+ * 索引里没有该设备（首次发布、该设备从未发布、编辑的是新增设备）时清空基线：
+ * 没有可对齐的版本，递增检查自然不参与——这正是「没进索引就可以随意改」。
+ */
+export function applyPublishedBaseline(
+  rows: DownloadInput[],
+  publishedDownloads:
+    | Record<string, PublishedDownloadBaseline>
+    | undefined,
+): DownloadInput[] {
+  return rows.map((row) => {
+    const published = publishedDownloads?.[row.platformId];
+    if (!published) {
+      return {
+        ...row,
+        previousVersion: undefined,
+        previousVersionCode: undefined,
+      };
+    }
+    const versionCode = published.versionCode;
+    return {
+      ...row,
+      previousVersion: published.version?.trim() || undefined,
+      previousVersionCode:
+        typeof versionCode === "number" && Number.isFinite(versionCode)
+          ? Math.trunc(versionCode)
+          : undefined,
+    };
+  });
+}

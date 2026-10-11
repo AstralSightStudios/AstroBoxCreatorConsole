@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  findCatalogEntryById,
   updateCatalogEntryOnBranch,
   type CatalogEntry,
 } from "../../app/logic/publish/catalog";
@@ -142,5 +143,24 @@ describe("catalog csv validation", () => {
     const updatedCsv = decodePutCatalogContent(calls);
     expect(updatedCsv).toContain("renamed,Demo Resource");
     expect(updatedCsv).not.toContain("\ndemo,Demo Resource");
+  });
+});
+
+describe("catalog entry lookup", () => {
+  const entries: CatalogEntry[] = [
+    { ...BASE_ENTRY, id: "Demo" },
+    { ...BASE_ENTRY, id: "other" },
+  ];
+
+  test("按 ID 匹配目录条目，大小写不敏感并去除首尾空白", () => {
+    expect(findCatalogEntryById(entries, "demo")?.id).toBe("Demo");
+    expect(findCatalogEntryById(entries, "  DEMO  ")?.id).toBe("Demo");
+    expect(findCatalogEntryById(entries, "other")?.id).toBe("other");
+  });
+
+  test("查不到或 ID 为空时返回 undefined", () => {
+    expect(findCatalogEntryById(entries, "missing")).toBeUndefined();
+    expect(findCatalogEntryById(entries, "   ")).toBeUndefined();
+    expect(findCatalogEntryById([], "demo")).toBeUndefined();
   });
 });

@@ -265,6 +265,22 @@ export async function fetchCatalogEntries(options?: {
     };
 }
 
+/**
+ * 按资源 ID 在目录条目里查找已合入条目。
+ *
+ * ID 比较大小写不敏感，与提交协议（staging-submission）里的冲突检测保持一致：
+ * 同一个资源在索引里只有一行，大小写漂移不应导致漏匹配，否则基线会被误判成
+ * 「索引里不存在」而放行一个本该递增的版本。
+ */
+export function findCatalogEntryById(
+    entries: CatalogEntry[],
+    resourceId: string,
+): CatalogEntry | undefined {
+    const target = resourceId.trim().toLowerCase();
+    if (!target) return undefined;
+    return entries.find((entry) => entry.id.trim().toLowerCase() === target);
+}
+
 async function updateFile(
     token: string,
     owner: string,

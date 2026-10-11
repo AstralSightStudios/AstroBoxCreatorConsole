@@ -168,10 +168,12 @@ import {
   flashPublishField,
 } from "~/logic/publish/scroll-highlight";
 import {
+  applyPublishedBaseline,
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
 } from "~/logic/publish/pre-publish-checks";
+import { fetchPublishedBaselinesForResourceId } from "~/logic/publish/published-baseline";
 import {
   computePackageHash,
   readPackageVersion,
@@ -1028,23 +1030,63 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         );
 
         const ext = isManifestExtObject(manifest.ext) ? manifest.ext : {};
-        setDownloads(
-          buildDownloadInputsFromManifest({
-            downloads: manifest.downloads,
-            owner: repo.owner,
-            repo: repo.name,
-            ref,
-            encryptedDeviceSet,
-          }),
-        );
-        setTrialDownloads(
-          buildDownloadInputsFromManifest({
-            downloads: ext.trialDownloads,
-            owner: repo.owner,
-            repo: repo.name,
-            ref,
-          }),
-        );
+        let downloadRows = buildDownloadInputsFromManifest({
+          downloads: manifest.downloads,
+          owner: repo.owner,
+          repo: repo.name,
+          ref,
+          encryptedDeviceSet,
+        });
+        let trialDownloadRows = buildDownloadInputsFromManifest({
+          downloads: ext.trialDownloads,
+          owner: repo.owner,
+          repo: repo.name,
+          ref,
+        });
+        // 编辑未合入的 PR 时，上面读到的 manifest 属于 PR 分支上尚未发布的状态，
+        // previousVersionCode 是「上次提交进这个 PR 的值」。拿它当基线的后果是：
+        // 每替换一次包体就被要求再涨一次版本号，而这次提交根本还没上线。
+        // 递增要求的唯一合法基准是索引指向的已合入版本，因此这里用已发布 manifest
+        // 覆盖基线；索引里没有该资源（首次发布）则清空基线，递增检查不参与。
+        if (editContext.mode === "in_progress") {
+          const baselineResourceId =
+            editContext.submission?.request.original_id?.trim() ||
+            catalogEntry.id;
+          try {
+            const baselines = await fetchPublishedBaselinesForResourceId({
+              token,
+              resourceId: baselineResourceId,
+            });
+            downloadRows = applyPublishedBaseline(
+              downloadRows,
+              baselines?.downloads,
+            );
+            trialDownloadRows = applyPublishedBaseline(
+              trialDownloadRows,
+              baselines?.trialDownloads,
+            );
+            log.info("publish/baseline", "按已合入索引重算 versionCode 基线", {
+              data: {
+                resourceId: baselineResourceId,
+                prNumber: editContext.prNumber ?? null,
+                found: Boolean(baselines),
+              },
+            });
+          } catch (error) {
+            // 读不到索引时不回退到 PR 内基线：那正是本次要修掉的误拦来源。
+            // 宁可不判（放过一个未合入版本，审核侧仍会把关），也不误拦。
+            downloadRows = applyPublishedBaseline(downloadRows, undefined);
+            trialDownloadRows = applyPublishedBaseline(trialDownloadRows, undefined);
+            log.warn("publish/baseline", "读取已合入基线失败，本次不参与递增判定", {
+              data: {
+                resourceId: baselineResourceId,
+                error: (error as Error)?.message ?? String(error),
+              },
+            });
+          }
+        }
+        setDownloads(downloadRows);
+        setTrialDownloads(trialDownloadRows);
         setEnableAstroBoxCreatorFeatures(
           Boolean(ext.enableAstroBoxCreatorFeatures),
         );

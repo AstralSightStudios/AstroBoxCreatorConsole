@@ -5,6 +5,7 @@ import {
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   ICON_MAX_DIMENSION,
+  applyPublishedBaseline,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
@@ -308,5 +309,90 @@ describe("pre-publish checks: rowsWithNonIncrementedVersionCode", () => {
       withPackage({ uid: "c", versionSource: "package", previousVersionCode: 9 }),
     ];
     expect(rowsWithNonIncrementedVersionCode(rows)).toEqual([]);
+  });
+});
+
+describe("pre-publish checks: applyPublishedBaseline", () => {
+  test("以已合入索引的值覆盖 PR 内未合入的基线，重复替换包体不再要求递增", () => {
+    // PR 内已经提交过一次 versionCode 100（PR 分支上的值），
+    // 但索引里线上仍是 90。这次换包体版本保持 100，必须放行——
+    // 这正是修复前被误拦的场景（旧代码会拿 100 当基线，要求 >100）。
+    const rows = [
+      withPackage({
+        uid: "a",
+        versionSource: "package",
+        versionCode: 100,
+        previousVersion: "1.0.100",
+        previousVersionCode: 100,
+      }),
+    ];
+    const result = applyPublishedBaseline(rows, {
+      watch: { version: "1.0.90", versionCode: 90 },
+    });
+    expect(result[0].previousVersionCode).toBe(90);
+    expect(result[0].previousVersion).toBe("1.0.90");
+    expect(rowsWithNonIncrementedVersionCode(result)).toEqual([]);
+  });
+
+  test("相对已合入版本回退仍会被拦下", () => {
+    const rows = [
+      withPackage({
+        uid: "a",
+        versionSource: "package",
+        versionCode: 89,
+        previousVersionCode: 100,
+      }),
+    ];
+    const result = applyPublishedBaseline(rows, {
+      watch: { version: "1.0.90", versionCode: 90 },
+    });
+    expect(rowsWithNonIncrementedVersionCode(result).map((r) => r.uid)).toEqual(["a"]);
+  });
+
+  test("索引里没有该设备时清空基线，不参与递增判定", () => {
+    const rows = [
+      withPackage({
+        uid: "a",
+        versionSource: "package",
+        versionCode: 1,
+        previousVersion: "1.0.100",
+        previousVersionCode: 100,
+      }),
+    ];
+    const result = applyPublishedBaseline(rows, { band: { versionCode: 90 } });
+    expect(result[0].previousVersionCode).toBeUndefined();
+    expect(result[0].previousVersion).toBeUndefined();
+    expect(rowsWithNonIncrementedVersionCode(result)).toEqual([]);
+  });
+
+  test("首次发布（无任何已合入数据）时全部清空基线", () => {
+    const rows = [
+      withPackage({ uid: "a", versionSource: "package", versionCode: 1, previousVersionCode: 5 }),
+    ];
+    const result = applyPublishedBaseline(rows, undefined);
+    expect(result[0].previousVersionCode).toBeUndefined();
+    expect(rowsWithNonIncrementedVersionCode(result)).toEqual([]);
+  });
+
+  test("已发布条目缺 versionCode 时该行基线一并清空", () => {
+    const rows = [
+      withPackage({ uid: "a", versionSource: "package", versionCode: 1, previousVersionCode: 5 }),
+    ];
+    const result = applyPublishedBaseline(rows, { watch: { version: "1.0" } });
+    expect(result[0].previousVersion).toBe("1.0");
+    expect(result[0].previousVersionCode).toBeUndefined();
+  });
+
+  test("归一化小数 versionCode 且不触碰版本码本身与其余字段", () => {
+    const rows = [
+      withPackage({ uid: "a", versionSource: "package", versionCode: 100 }),
+    ];
+    const result = applyPublishedBaseline(rows, {
+      watch: { version: "1.0.90", versionCode: 90.9 },
+    });
+    expect(result[0].previousVersionCode).toBe(90);
+    expect(result[0].versionCode).toBe(100);
+    expect(result[0].versionSource).toBe("package");
+    expect(result[0].file).not.toBeNull();
   });
 });
