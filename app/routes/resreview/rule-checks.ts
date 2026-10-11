@@ -24,6 +24,10 @@ import {
   vipTierLabel,
   type AuthorProStatus,
 } from "./owner-pro";
+import {
+  collectBoundAuthorNames,
+  collectUnboundAuthorNames,
+} from "~/logic/publish/author-match";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
@@ -1774,15 +1778,34 @@ export async function runResourceRuleChecks(options: {
   // 只校验「声明已绑定 AstroBox」的作者能否匹配到真实账户，与 Creator Pro 权益分开。
   const rawAuthors = manifestItem?.author;
   const authorsList = Array.isArray(rawAuthors) ? rawAuthors : [];
-  const declaredBoundNames = authorsList
-    .filter((a) => a && a.bindABAccount && typeof a.name === "string" && a.name.trim())
-    .map((a) => (a as { name: string }).name.trim());
-  const declaredUnboundNames = authorsList
-    .filter((a) => a && !a.bindABAccount && typeof a.name === "string" && a.name.trim())
-    .map((a) => (a as { name: string }).name.trim());
+  // 口径与发布端共用（~/logic/publish/author-match），避免两边漂移。
+  const declaredBoundNames = collectBoundAuthorNames(authorsList);
+  const declaredUnboundNames = collectUnboundAuthorNames(authorsList);
 
   let paidRatioResults: PaidRatioResult[] = [];
   let resolvedAuthorStatuses: Record<string, AuthorProStatus> | null = null;
+
+  // --- check: 至少一个作者关联 AstroBox 账号 ---
+  // 纯结构检查，不做任何账号反查：署名能不能对上真实账号只有 AstroBox 管理员查得了，
+  // 那是下面「作者绑定 AstroBox 声明有效」那条的职责。这里只保证 manifest 里至少
+  // 有一条 author 声明了关联——一个都没有的话资源归属不到任何人，Creator Pro 权益、
+  // 2 免费 : 1 付费比例、加密与付费门槛、审核通知收件人全部无从谈起。
+  if (declaredBoundNames.length > 0) {
+    checks.push({
+      title: "至少一个作者关联 AstroBox 账号",
+      status: "pass",
+      detail: `已关联 AstroBox 账号的作者：${declaredBoundNames.join("、")}`,
+    });
+  } else {
+    checks.push({
+      title: "至少一个作者关联 AstroBox 账号",
+      status: "fail",
+      detail:
+        declaredUnboundNames.length > 0
+          ? `manifest 中没有任何作者关联 AstroBox 账号（${declaredUnboundNames.join("、")}），资源将归属不到任何账号。请让作者保持第一个作者的「关联账号」开启，并填回其 AstroBox 用户名。`
+          : "manifest 中没有作者信息，资源将归属不到任何账号。请让作者补齐作者字段，并至少让一个作者关联 AstroBox 账号。",
+    });
+  }
 
   if (declaredBoundNames.length === 0) {
     checks.push({

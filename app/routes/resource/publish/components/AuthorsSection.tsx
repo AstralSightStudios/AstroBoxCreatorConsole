@@ -23,6 +23,7 @@ import {
     FieldHelpDialog,
     SectionCard,
 } from "./shared";
+import { withBoundFirstAuthor } from "~/logic/publish/author-match";
 import { log } from "~/logic/logging";
 import { logFieldChange } from "~/logic/logging/publish-flow";
 
@@ -39,7 +40,7 @@ const AUTHOR_FIELD_HELP: FieldHelpItem[] = [
     {
         label: "第一个作者",
         description:
-            "代表你自己，固定关联当前 AstroBox 账号。改名或移除都会让资源失去与你的关联，因此需要二次确认。至少需要保留一个作者。",
+            "代表你自己，固定关联当前 AstroBox 账号。尽量不要改名或移除：资源归属、Creator Pro 权益与免费 / 付费比例全靠这条关联，一旦断开资源就归属不到任何账号，PR 审核也会被退回。至少需要保留一个作者。",
     },
 ];
 
@@ -70,7 +71,8 @@ export function AuthorsSection({
     return (
         <SectionCard
             title="作者"
-            description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，修改需二次确认。"
+            description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，尽量不要改名或移除。"
+            fieldKey="authors"
             headerExtra={
                 <div className="flex shrink-0 items-center gap-1.5">
                     <Button
@@ -135,9 +137,16 @@ export function AuthorsSection({
                                                         `#${index + 1}`,
                                                 },
                                             });
+                                            // 删掉的若是第一个作者，原本的第二个
+                                            // 会升到第一位：它的绑定开关同样是
+                                            // 禁用的，这里按不变量补齐，否则开关会
+                                            // 停在「禁用 + 关闭」而没人能改回来。
                                             setAuthors((prev) =>
-                                                prev.filter(
-                                                    (_, idx) => idx !== index,
+                                                withBoundFirstAuthor(
+                                                    prev.filter(
+                                                        (_, idx) =>
+                                                            idx !== index,
+                                                    ),
                                                 ),
                                             );
                                         }}
@@ -304,10 +313,10 @@ export function AuthorsSection({
                             <WarningDiamondIcon size={16} weight="fill" />
                         </Callout.Icon>
                         <Callout.Text>
-                            第一个作者代表你自己，固定关联当前 AstroBox
-                            账号。改名为「
+                            尽量不要修改第一个作者。它代表你自己，改名为「
                             {pendingFirstAuthorName.trim() || "空"}
-                            」后，资源将不再随你的账号自动关联，且无法一键恢复。
+                            」后，资源将不再随你的账号关联，Creator Pro
+                            权益与免费 / 付费比例都会随之失效，且无法一键恢复。
                         </Callout.Text>
                     </Callout.Root>
                     <div className="mt-4 flex justify-end gap-3">
@@ -364,8 +373,10 @@ export function AuthorsSection({
                             <WarningDiamondIcon size={16} weight="fill" />
                         </Callout.Icon>
                         <Callout.Text>
-                            第一个作者代表你自己，移除后资源将不再与你的 AstroBox
-                            账号关联。若只是不想署名，建议改名而不是移除。
+                            尽量不要移除第一个作者。它代表你自己且固定关联你的
+                            AstroBox 账号，移除后资源将归属不到任何账号，
+                            Creator Pro
+                            权益与免费 / 付费比例都会失效。若只是不想署名，建议改名而不是移除。
                         </Callout.Text>
                     </Callout.Root>
                     <div className="mt-4 flex justify-end gap-3">
@@ -381,7 +392,11 @@ export function AuthorsSection({
                                 onClick={() => {
                                     log.info("form/authors", "移除第一个作者");
                                     setAuthors((prev) =>
-                                        prev.filter((_, idx) => idx !== 0),
+                                        withBoundFirstAuthor(
+                                            prev.filter(
+                                                (_, idx) => idx !== 0,
+                                            ),
+                                        ),
                                     );
                                 }}
                             >

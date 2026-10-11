@@ -73,6 +73,7 @@ import { StepList, SectionCard, type UploadItem } from "./components/shared";
 import {
   AutoSaveRestoreDialog,
   DraftActions,
+  UnboundAuthorNoticeDialog,
   UnpaidEncryptionWarningDialog,
   VersionCodeWarningDialog,
   VersionIncrementWarningDialog,
@@ -121,6 +122,10 @@ import {
 import { moveToSlot } from "~/logic/publish/update-log-draft";
 import { MediaSection } from "./components/MediaSection";
 import { AuthorsSection } from "./components/AuthorsSection";
+import {
+  unboundAuthorNotice,
+  withBoundFirstAuthor,
+} from "~/logic/publish/author-match";
 import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
@@ -653,6 +658,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [versionIncrementWarning, setVersionIncrementWarning] = useState<
     DownloadInput[] | null
   >(null);
+  /** 作者一个都没关联 AstroBox 账号时的提醒；记下原本要去的步骤以便「仍要继续」后补跳。 */
+  const [unboundAuthorNoticeDialog, setUnboundAuthorNoticeDialog] = useState<{
+    detail: string;
+    target: number;
+  } | null>(null);
+  // 「仍要继续」时跳过一次提醒，避免确认后立刻又弹回来。只在一次跳转内有效。
+  const skipAuthorNoticeOnceRef = useRef(false);
   const [unpaidEncryptionWarning, setUnpaidEncryptionWarning] = useState<Exclude<
     UnpaidEncryptionCheck,
     { status: "ok" }
@@ -746,7 +758,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setResourceType(form.resourceType);
       setTagsInput(form.tagsInput);
       setPaidType(form.paidType);
-      setAuthors(form.authors);
+      setAuthors(withBoundFirstAuthor(form.authors));
       setLinks(form.links);
       setPreviews(form.previews);
       setIcon(form.icon);
@@ -964,10 +976,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setTagsInput(catalogEntry.tags || "");
         setPaidType(catalogEntry.paid_type || "");
         setAuthors(
-          manifest.item.author?.map((a) => ({
-            name: a.name || "",
-            bindABAccount: Boolean(a.bindABAccount),
-          })) || [{ name: "", bindABAccount: true }],
+          withBoundFirstAuthor(
+            manifest.item.author?.map((a) => ({
+              name: a.name || "",
+              bindABAccount: Boolean(a.bindABAccount),
+            })) || [{ name: "", bindABAccount: true }],
+          ),
         );
         setLinks(
           manifest.links?.map((link) => ({
@@ -1446,6 +1460,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     const backToForm = () => {
       setActiveStepIndex(0);
     };
+    // 一个作者都没关联 AstroBox 账号时只提醒、不阻拦。
+    // 放在这里（而不是提交 PR 时）是因为到那一步仓库文件已经传完，回退成本高。
+    // 正常情况下第一个作者恒为绑定状态，只在历史 manifest 缺字段、
+    // 或创作者删掉第一个作者后剩下的人都没绑定时才会触发。
+    const authorNotice = unboundAuthorNotice(authors);
     // 简介与标签参与推荐推流，各自独立提示：
     // 合并成一条会让「只有标签有问题」的创作者看到自己没填简介的误报。
     if (target > 0) {
@@ -1464,6 +1483,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       backToForm();
       return;
     }
+    if (target > 0 && authorNotice && !skipAuthorNoticeOnceRef.current) {
+      skipAuthorNoticeOnceRef.current = true;
+      setUnboundAuthorNoticeDialog({ detail: authorNotice, target });
+      backToForm();
+      return;
+    }
+    // 走到这里说明本次跳转要么没有提醒，要么用户已确认过；消费掉这个跳过标记。
+    skipAuthorNoticeOnceRef.current = false;
     const firstIssue = publishValidation.issues[0];
     if (target > 0 && firstIssue) {
       toast.error(firstIssue.message);
@@ -2374,7 +2401,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setResourceType(data.resourceType);
     setTagsInput(data.tagsInput);
     setPaidType(data.paidType);
-    setAuthors(data.authors);
+    setAuthors(withBoundFirstAuthor(data.authors));
     setLinks(data.links);
     setPreviews(
       (data.previews ?? [])
@@ -2577,6 +2604,30 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     />
   );
 
+  const unboundAuthorNoticeDialogEl = (
+    <UnboundAuthorNoticeDialog
+      open={unboundAuthorNoticeDialog !== null}
+      detail={unboundAuthorNoticeDialog?.detail ?? ""}
+      onLocate={() => {
+        skipAuthorNoticeOnceRef.current = false;
+        setUnboundAuthorNoticeDialog(null);
+        flashPublishField("authors");
+      }}
+      onContinue={() => {
+        const target = unboundAuthorNoticeDialog?.target;
+        setUnboundAuthorNoticeDialog(null);
+        log.warn("form/authors", "确认在没有作者关联 AstroBox 账号的情况下继续", {
+          data: { itemId, target },
+        });
+        if (target != null) goToStep(target);
+      }}
+      onClose={() => {
+        skipAuthorNoticeOnceRef.current = false;
+        setUnboundAuthorNoticeDialog(null);
+      }}
+    />
+  );
+
   const unpaidEncryptionWarningDialog = (
     <UnpaidEncryptionWarningDialog
       warning={unpaidEncryptionWarning}
@@ -2645,6 +2696,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     <Page>
       {autoSaveDialog}
       {versionCodeWarningDialog}
+      {unboundAuthorNoticeDialogEl}
       {versionIncrementWarningDialog}
       {unpaidEncryptionWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
@@ -2834,14 +2886,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                  onRemoveCover={handleRemoveCover}
                  onMediaDimensions={handleMediaDimensions}
                />
+              {/* defaultAuthorName 在编辑模式同样下发：manifest 里回填的署名可能是
+                  改过名的旧值，改名弹窗只提醒不阻拦，得留一条一键改回去的路。 */}
               <AuthorsSection
                 authors={authors}
                 setAuthors={setAuthors}
-                defaultAuthorName={
-                  mode === "new"
-                    ? accountState.astrobox?.username?.trim() ?? ""
-                    : ""
-                }
+                defaultAuthorName={accountState.astrobox?.username?.trim() ?? ""}
               />
               <LinksSection links={links} setLinks={setLinks} />
               <DownloadsSection

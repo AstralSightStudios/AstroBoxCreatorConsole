@@ -7,6 +7,7 @@
 import {
   AlertDialog,
   Button,
+  Callout,
   Dialog,
   Popover,
   Text,
@@ -17,6 +18,7 @@ import {
   ClockIcon,
   FloppyDiskIcon,
   TrashIcon,
+  WarningDiamondIcon,
 } from "@phosphor-icons/react";
 import type { PublishDraft } from "~/logic/publish/publish-drafts";
 import type { UnpaidEncryptionCheck } from "~/logic/publish/unpaid-encryption";
@@ -122,6 +124,62 @@ export function VersionCodeWarningDialog({
         </div>
       </Dialog.Content>
     </Dialog.Root>
+  );
+}
+
+/**
+ * 作者一个都没关联 AstroBox 账号时的提醒框。
+ *
+ * 只是提醒，不阻拦：绑定与否是创作者的自由，「仍要继续」始终可达。之所以在
+ * 「下一步」时弹而不是提交时，是因为到提交那一步资源文件已经传完，回退成本高。
+ */
+export function UnboundAuthorNoticeDialog({
+  open,
+  detail,
+  onLocate,
+  onContinue,
+  onClose,
+}: {
+  open: boolean;
+  /** 由 unboundAuthorNotice 生成的提醒正文。 */
+  detail: string;
+  /** 回到表单并高亮作者区块。 */
+  onLocate: () => void;
+  onContinue: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AlertDialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <AlertDialog.Content maxWidth="440px">
+        <AlertDialog.Title className="flex items-center gap-2 text-amber-100">
+          <WarningDiamondIcon size={20} weight="fill" />
+          没有作者关联 AstroBox 账号
+        </AlertDialog.Title>
+        <Callout.Root color="amber" size="1" className="mt-3">
+          <Callout.Icon>
+            <WarningDiamondIcon size={16} weight="fill" />
+          </Callout.Icon>
+          <Callout.Text>{detail}</Callout.Text>
+        </Callout.Root>
+        <div className="mt-4 flex justify-end gap-3">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              返回作者设置
+            </Button>
+          </AlertDialog.Cancel>
+          <AlertDialog.Action>
+            <Button variant="solid" onClick={onContinue}>
+              仍要继续
+            </Button>
+          </AlertDialog.Action>
+        </div>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
   );
 }
 

@@ -44,6 +44,7 @@ export const PUBLISH_TAGS_SUGGESTED_MAX = 10;
 export type PublishFieldKey =
   | "itemName"
   | "itemId"
+  | "authors"
   | "description"
   | "tags"
   | "icon"
