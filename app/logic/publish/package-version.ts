@@ -198,6 +198,24 @@ export function pickManifestName(entries: Unzipped): string | undefined {
   );
 }
 
+/**
+ * 包内是否带快应用清单——`manifest.json` **或** `manifest-watch.json` 任一存在即为。
+ *
+ * 写路径拦截 rpk 必须用它，不能只用 `pickManifestName`：后者只认 `manifest.json`，
+ * 于是「只有 manifest-watch.json、且带 .bin」的签名 zip 会被漏过，被当成 .mwz
+ * 表盘工程包走进 `writeXiaomiBin` + `zipSync` 分支——照样改写成功，签名块照样丢。
+ * 读路径本来也优先看 manifest-watch.json（`readZipManifest`），说明这种布局是
+ * 预期存在的，用只认一半的口径去守写路径是漏洞。
+ *
+ * 语料（504 个真实 rpk）里没有这种实例，属防御性加固而非修现网 bug。
+ */
+export function hasQuickAppManifest(entries: Unzipped): boolean {
+  return Object.keys(entries).some((name) => {
+    const base = name.split(/[\\/]/).pop();
+    return base === "manifest.json" || base === "manifest-watch.json";
+  });
+}
+
 export function findInnerBinName(entries: Unzipped): string | undefined {
   const bins = Object.keys(entries).filter((name) =>
     name.toLowerCase().endsWith(".bin"),
@@ -447,7 +465,7 @@ export async function writePackageVersion(
         file,
       );
     }
-    if (pickManifestName(entries)) throw new Error(RPK_UNWRITABLE_REASON);
+    if (hasQuickAppManifest(entries)) throw new Error(RPK_UNWRITABLE_REASON);
     const binName = findInnerBinName(entries);
     if (binName) {
       entries[binName] = writeXiaomiBin(entries[binName], target);

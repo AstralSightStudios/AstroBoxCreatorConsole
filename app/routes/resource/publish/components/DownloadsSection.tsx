@@ -760,7 +760,14 @@ export function DownloadsSection({
                 {isNonIncrementRow(item) && (
                   <p className="text-xs text-red-300">
                     versionCode 未递增（{item.versionCode} ≤ 上次{" "}
-                    {item.previousVersionCode}），请点「修改版本」。
+                    {item.previousVersionCode}）
+                    {/*
+                      rpk 行没有「修改版本」按钮（被 packageWritable 隐藏了），
+                      说「请点修改版本」是让人去找一个不存在的入口。
+                    */}
+                    {item.packageWritable === false
+                      ? "，请在 rpk 构建工具链改好 manifest.json 后重新打包导入。"
+                      : "，请点「修改版本」。"}
                   </p>
                 )}
 

@@ -9,6 +9,7 @@ import {
   xiaomiVersionCodeFromVersion,
 } from "../../app/logic/publish/package-version";
 import { detectRpkDebug } from "../../app/logic/publish/rpk-signature";
+import { replaceWatchfaceIdInPackage } from "../../app/logic/publish/watchface-id";
 
 /** 真实小米表盘（SekaiUI 9pro v1.1.2）的前 64 字节：magic + offset4 版本 02 01 01 + offset40 ID。 */
 const REAL_XIAOMI_HEADER = new Uint8Array([
@@ -371,6 +372,63 @@ describe("writePackageVersion - rpk 一律拒绝改写", () => {
     expect(info.source).toBe("zip-manifest");
     expect(info.identityKind).toBe("dial-id");
     expect(info.writable).toBe(false);
+  });
+});
+
+/**
+ * 拦截口径必须认 manifest-watch.json，不能只认 manifest.json。
+ *
+ * 曾经的漏洞：只含 manifest-watch.json 且带 .bin 的签名 zip 会被 pickManifestName
+ * 判成「不是 rpk」，落进 .mwz 表盘工程包分支，被 zipSync 重压——版本改成功，
+ * 签名块静默丢失，产出一个装不上的包。读路径本就优先读 manifest-watch.json，
+ * 说明这种布局是预期存在的。
+ */
+describe("rpk 拦截口径：manifest-watch.json 也要认", () => {
+  function watchOnlyRpk(): Uint8Array {
+    return zipSync({
+      "manifest-watch.json": jsonBytes({
+        package: "com.example.app",
+        versionName: "1.0.0",
+        versionCode: 1,
+      }),
+      // .bin 是关键：没有它就不会落进 .mwz 分支，测不出这个洞
+      "resource.bin": REAL_XIAOMI_HEADER,
+    });
+  }
+
+  test("只有 manifest-watch.json 的带 bin 包：写路径必须拒绝", async () => {
+    const rpk = watchOnlyRpk();
+    await expect(
+      writePackageVersion(new File([rpk], "a.rpk"), {
+        version: "2.0.0",
+        versionCode: 2 << 16,
+      }),
+    ).rejects.toThrow("rpk");
+  });
+
+  test("只有 manifest-watch.json 的带 bin 包：表盘 ID 改写必须原样返回", async () => {
+    const rpk = watchOnlyRpk();
+    const before = new Uint8Array(rpk);
+    const after = await replaceWatchfaceIdInPackage(
+      new File([rpk], "a.rpk"),
+      "979812345678",
+    );
+    const bytes = new Uint8Array(await after.arrayBuffer());
+    expect(Array.from(bytes)).toEqual(Array.from(before));
+  });
+
+  test("真 .mwz（无任何快应用清单）仍要能改，别把表盘工程包一起堵死", async () => {
+    const mwz = zipSync({
+      "description.xml": strToU8("<x/>"),
+      "resource.bin": REAL_XIAOMI_HEADER,
+    });
+    const updated = await writePackageVersion(new File([mwz], "t.mwz"), {
+      version: "9.9.9",
+      versionCode: (9 << 16) | (9 << 8) | 9,
+    });
+    const info = await readPackageVersion(updated);
+    expect(info.source).toBe("xiaomi-mwz");
+    expect(info.versionCode).toBe(592137);
   });
 });
 

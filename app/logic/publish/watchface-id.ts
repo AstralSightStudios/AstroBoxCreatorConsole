@@ -5,7 +5,7 @@ import {
   WATCHFACE_MAGIC,
   ZIP_MAGIC,
   findInnerBinName,
-  pickManifestName,
+  hasQuickAppManifest,
 } from "./package-version";
 
 export const WATCHFACE_ID_LENGTH = 12;
@@ -60,6 +60,11 @@ export async function replaceWatchfaceIdInFile(
 /**
  * 按包体类型改写表盘 ID：`.bin/.face` 写 offset 40；`.mwz` 解压内层 bin 后重压；
  * rpk 与未知格式原样返回。禁止对 `.mwz` 容器本身写字节。
+ *
+ * 判定 rpk 必须用 `hasQuickAppManifest`（manifest.json **或** manifest-watch.json），
+ * 不能只用 `pickManifestName`：后者只认前者，会让「只有 manifest-watch.json 且带
+ * .bin」的签名 zip 被当成 .mwz 重压，签名块静默丢失——与 package-version.ts 的
+ * 写路径同一个洞。
  */
 export async function replaceWatchfaceIdInPackage(
   file: File,
@@ -108,7 +113,7 @@ async function writeWatchfaceId(file: File, id: string): Promise<File> {
     } catch {
       return file;
     }
-    if (pickManifestName(entries)) return file;
+    if (hasQuickAppManifest(entries)) return file;
     const binName = findInnerBinName(entries);
     if (!binName) return file;
     entries[binName] = writeIdToBinBytes(entries[binName], id);
