@@ -22,6 +22,7 @@ export interface CommentView {
   senderLocation?: string;
   parentId: string | null;
   replyTo?: string;
+  isDeveloperReply?: boolean;
   childrenTotal?: number;
   childrenPage?: number;
   childrenPageSize?: number;

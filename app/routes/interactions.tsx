@@ -1,26 +1,63 @@
 import {
+    ArrowBendUpLeftIcon,
     ArrowClockwiseIcon,
     CaretDownIcon,
     CaretUpIcon,
     ChatCircleTextIcon,
     HeartIcon,
+    PaperPlaneRightIcon,
 } from "@phosphor-icons/react";
-import { Button, Select, Spinner } from "~/components/ScaleAwareThemes";
-import { useEffect, useMemo, useState } from "react";
+import {
+    Button,
+    Select,
+    Spinner,
+    TextArea,
+} from "~/components/ScaleAwareThemes";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { CommunityApi, type CommentView } from "~/api/astrobox/community";
 import {
     getCreatorCommentsSummary,
     listCreatorComments,
+    replyCreatorComment,
     type CreatorCommentItem,
     type CreatorCommentsResponse,
     type CreatorCommentsSummary,
 } from "~/api/astrobox/interactions";
+import { ApiError, isUserBannedError } from "~/api/astrobox/request";
 import DataCard from "~/components/cards/datacard";
 import Page from "~/layout/page";
 import { SectionCard } from "./resource/publish/components/shared";
 
 const PAGE_SIZE = 20;
 const CARD_CLASS = "!border-0 bg-nav-item";
+/** 非 Pro 账号的评论长度上限（服务端 send.ts 同值）。 */
+const REPLY_SOFT_LIMIT = 1000;
+/** 回复走异步内容审核，发出后稍等再刷新对话，大多数情况下就能看到。 */
+const THREAD_REFRESH_DELAY_MS = 1500;
+
+interface ReplyTarget {
+    id: string;
+    name: string;
+}
+
+function describeReplyError(err: unknown) {
+    if (err instanceof ApiError) {
+        if (isUserBannedError(err.data)) return "账号已被限制社交功能，暂时无法回复";
+        switch (err.status) {
+            case 400:
+                return `回复内容不合法或超过 ${REPLY_SOFT_LIMIT} 字`;
+            case 403:
+                return "只有资源作者可以在这里回复";
+            case 404:
+                return "这条评论已被删除";
+            case 429:
+                return "发送太频繁了，请稍后再试";
+        }
+        return err.message;
+    }
+    return err instanceof Error ? err.message : "回复失败";
+}
 
 function formatDateTime(value?: string | Date | null) {
     if (!value) return "--";
@@ -49,11 +86,14 @@ function normalizeThreadContent(content: string) {
 function ThreadBubble({
     comment,
     highlightedId,
+    onReply,
 }: {
     comment: CommentView;
     highlightedId: string;
+    onReply: (target: ReplyTarget) => void;
 }) {
     const highlighted = comment.id === highlightedId;
+    const name = comment.senderDisplayName || comment.senderId;
     return (
         <div
             className={`rounded-lg border px-3 py-2 ${
@@ -70,24 +110,45 @@ function ThreadBubble({
                         className="h-5 w-5 rounded-full object-cover"
                     />
                 )}
-                <span className="text-white/80">
-                    {comment.senderDisplayName || comment.senderId}
-                </span>
+                <span className="text-white/80">{name}</span>
+                {comment.isDeveloperReply && (
+                    <span className="rounded-full bg-amber-400/15 px-1.5 py-px text-[10px] text-amber-200">
+                        作者
+                    </span>
+                )}
                 <span>{formatDateTime(comment.timestamp)}</span>
                 {comment.senderLocation && <span>{comment.senderLocation}</span>}
             </div>
             <p className="mt-1 whitespace-pre-wrap text-sm text-white/85">
                 {normalizeThreadContent(comment.content)}
             </p>
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-white/45">
-                <HeartIcon size={12} />
-                {comment.likes}
+            <div className="mt-1 flex items-center gap-3 text-[11px] text-white/45">
+                <span className="flex items-center gap-1">
+                    <HeartIcon size={12} />
+                    {comment.likes}
+                </span>
+                <button
+                    type="button"
+                    className="flex items-center gap-1 text-blue-200/80 hover:underline"
+                    onClick={() => onReply({ id: comment.id, name })}
+                >
+                    <ArrowBendUpLeftIcon size={12} />
+                    回复
+                </button>
             </div>
         </div>
     );
 }
 
-function ThreadView({ comment }: { comment: CreatorCommentItem }) {
+function ThreadView({
+    comment,
+    refreshKey,
+    onReply,
+}: {
+    comment: CreatorCommentItem;
+    refreshKey: number;
+    onReply: (target: ReplyTarget) => void;
+}) {
     const [thread, setThread] = useState<CommentView | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -117,9 +178,10 @@ function ThreadView({ comment }: { comment: CreatorCommentItem }) {
         return () => {
             active = false;
         };
-    }, [comment.id, comment.parentId]);
+    }, [comment.id, comment.parentId, refreshKey]);
 
-    if (loading) {
+    // 刷新（发出回复后）时保留旧对话，只有首次加载才显示加载态，免得整块闪一下。
+    if (loading && !thread) {
         return (
             <div className="flex items-center gap-2 py-2 text-sm text-white/60">
                 <Spinner size="1" />
@@ -138,20 +200,152 @@ function ThreadView({ comment }: { comment: CreatorCommentItem }) {
 
     return (
         <div className="flex flex-col gap-2 border-l-2 border-white/10 pl-3">
-            <ThreadBubble comment={thread} highlightedId={comment.id} />
+            <ThreadBubble
+                comment={thread}
+                highlightedId={comment.id}
+                onReply={onReply}
+            />
             {thread.children.map((child) => (
                 <ThreadBubble
                     key={child.id}
                     comment={child}
                     highlightedId={comment.id}
+                    onReply={onReply}
                 />
             ))}
         </div>
     );
 }
 
+function ReplyComposer({
+    resourceId,
+    target,
+    onCancel,
+    onSent,
+}: {
+    resourceId: string;
+    target: ReplyTarget;
+    onCancel: () => void;
+    onSent: () => void;
+}) {
+    const [content, setContent] = useState("");
+    const [sending, setSending] = useState(false);
+    const textAreaRef = useRef<HTMLTextAreaElement>(null);
+    const trimmed = content.trim();
+
+    useEffect(() => {
+        textAreaRef.current?.focus();
+    }, [target.id]);
+
+    const send = async () => {
+        if (!trimmed || sending) return;
+        setSending(true);
+        try {
+            await replyCreatorComment({
+                resourceId,
+                parentId: target.id,
+                content: trimmed,
+            });
+            toast.success("回复已发送", {
+                description: "以作者身份回复，内容审核通过后会出现在对话里",
+            });
+            setContent("");
+            onSent();
+        } catch (err) {
+            toast.error(`回复失败：${describeReplyError(err)}`);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    return (
+        <div className="mt-2.5 flex flex-col gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+            <div className="flex items-center gap-2 text-xs text-white/55">
+                <ArrowBendUpLeftIcon size={13} />
+                <span className="min-w-0 truncate">
+                    以作者身份回复 @{target.name}
+                </span>
+            </div>
+            <TextArea
+                ref={textAreaRef}
+                value={content}
+                placeholder="写下你的回复…"
+                resize="vertical"
+                rows={3}
+                disabled={sending}
+                onChange={(event) => setContent(event.target.value)}
+                onKeyDown={(event) => {
+                    if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey) &&
+                        !event.nativeEvent.isComposing
+                    ) {
+                        event.preventDefault();
+                        void send();
+                    }
+                }}
+            />
+            <div className="flex items-center gap-2">
+                <span
+                    className={`text-[11px] ${
+                        trimmed.length > REPLY_SOFT_LIMIT
+                            ? "text-amber-300"
+                            : "text-white/40"
+                    }`}
+                >
+                    {trimmed.length} / {REPLY_SOFT_LIMIT}
+                </span>
+                <span className="ml-auto" />
+                <Button
+                    variant="soft"
+                    color="gray"
+                    size="1"
+                    disabled={sending}
+                    onClick={onCancel}
+                >
+                    取消
+                </Button>
+                <Button
+                    size="1"
+                    disabled={!trimmed || sending}
+                    onClick={() => void send()}
+                >
+                    {sending ? <Spinner size="1" /> : <PaperPlaneRightIcon size={13} />}
+                    发送
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 function CommentCard({ comment }: { comment: CreatorCommentItem }) {
     const [expanded, setExpanded] = useState(false);
+    const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+    const [threadRefreshKey, setThreadRefreshKey] = useState(0);
+    const refreshTimerRef = useRef<number | null>(null);
+    const senderName = comment.senderDisplayName || comment.senderId;
+
+    useEffect(
+        () => () => {
+            if (refreshTimerRef.current !== null) {
+                window.clearTimeout(refreshTimerRef.current);
+            }
+        },
+        [],
+    );
+
+    const handleSent = () => {
+        setReplyTarget(null);
+        // 发出后直接展开对话，等审核落库再刷新一次，让作者看到自己的回复。
+        setExpanded(true);
+        if (refreshTimerRef.current !== null) {
+            window.clearTimeout(refreshTimerRef.current);
+        }
+        refreshTimerRef.current = window.setTimeout(() => {
+            refreshTimerRef.current = null;
+            setThreadRefreshKey((value) => value + 1);
+        }, THREAD_REFRESH_DELAY_MS);
+    };
 
     return (
         <div className="rounded-xl bg-black/20 px-3.5 py-3">
@@ -167,9 +361,7 @@ function CommentCard({ comment }: { comment: CreatorCommentItem }) {
                         {(comment.senderDisplayName || "?").slice(0, 1)}
                     </div>
                 )}
-                <span className="text-sm text-white/85">
-                    {comment.senderDisplayName || comment.senderId}
-                </span>
+                <span className="text-sm text-white/85">{senderName}</span>
                 <span>{formatDateTime(comment.timestamp)}</span>
                 {comment.senderLocation && <span>{comment.senderLocation}</span>}
                 <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
@@ -196,6 +388,20 @@ function CommentCard({ comment }: { comment: CreatorCommentItem }) {
                 <button
                     type="button"
                     className="flex items-center gap-1 text-blue-200 hover:underline"
+                    onClick={() =>
+                        setReplyTarget((current) =>
+                            current?.id === comment.id
+                                ? null
+                                : { id: comment.id, name: senderName },
+                        )
+                    }
+                >
+                    <ArrowBendUpLeftIcon size={13} />
+                    回复
+                </button>
+                <button
+                    type="button"
+                    className="flex items-center gap-1 text-blue-200 hover:underline"
                     onClick={() => setExpanded((value) => !value)}
                 >
                     {expanded ? (
@@ -212,9 +418,22 @@ function CommentCard({ comment }: { comment: CreatorCommentItem }) {
                 </button>
             </div>
 
+            {replyTarget && (
+                <ReplyComposer
+                    resourceId={comment.resourceId}
+                    target={replyTarget}
+                    onCancel={() => setReplyTarget(null)}
+                    onSent={handleSent}
+                />
+            )}
+
             {expanded && (
                 <div className="mt-2.5">
-                    <ThreadView comment={comment} />
+                    <ThreadView
+                        comment={comment}
+                        refreshKey={threadRefreshKey}
+                        onReply={setReplyTarget}
+                    />
                 </div>
             )}
         </div>

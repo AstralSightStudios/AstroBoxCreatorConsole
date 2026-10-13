@@ -66,3 +66,21 @@ export function getCreatorCommentsSummary() {
         {},
     );
 }
+
+/**
+ * 以作者身份回复评论（复用 App 端的 /comment/send，带 isDeveloperReply）。
+ * 服务端会校验当前账号是资源主作者或管理员；内容审核是异步的，接口返回 200
+ * 只代表已受理，回复要等审核通过才会出现在对话里。
+ */
+export function replyCreatorComment(params: {
+    resourceId: string;
+    parentId: string;
+    content: string;
+}) {
+    return sendApiRequest<unknown>("/comment/send", "POST", undefined, {
+        resourceId: params.resourceId,
+        parentId: params.parentId,
+        content: params.content,
+        isDeveloperReply: true,
+    });
+}
