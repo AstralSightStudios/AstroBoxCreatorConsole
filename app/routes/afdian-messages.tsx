@@ -23,6 +23,7 @@ import {
   PackageIcon,
   PlusIcon,
   RobotIcon,
+  TicketIcon,
   TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -49,6 +50,7 @@ import {
   getAfdianMessageUserDetails,
   getAfdianMessages,
   sendAfdianMessage,
+  type AfdianDialogUser,
   type AfdianMessage,
   type AfdianMessagePage,
 } from "~/api/afdian-messages";
@@ -76,6 +78,10 @@ import {
   IMessageTypingIndicator,
 } from "~/components/s11a/bubble";
 import { AfdianDialogList } from "~/components/afdian/messages-sidebar";
+import { ActivationCodeDialog } from "~/components/afdian/ActivationCodeDialog";
+import type { ActivationCodeDraft } from "~/logic/afdian/activation-code";
+import { useDisplayAccount } from "~/logic/account/store";
+import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
 import {
   clearAfdianVisibleConversation,
   setAfdianVisibleConversation,
@@ -875,6 +881,8 @@ function MessageComposer({
   onHeightChange,
   onChange,
   onSend,
+  canSendActivationCode,
+  onSendActivationCode,
 }: {
   value: string;
   error: string;
@@ -885,6 +893,8 @@ function MessageComposer({
   onHeightChange: (height: number) => void;
   onChange: (value: string) => void;
   onSend: () => void;
+  canSendActivationCode: boolean;
+  onSendActivationCode: () => void;
 }) {
   const sendOnEnter = sendShortcut === "enter";
   const navigate = useNavigate();
@@ -1028,6 +1038,24 @@ function MessageComposer({
                     私信工具
                   </Text>
                 </div>
+
+                {canSendActivationCode && (
+                  <Flex px="3" py="3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      color="gray"
+                      disabled={sending}
+                      onClick={() => {
+                        setToolsOpen(false);
+                        onSendActivationCode();
+                      }}
+                    >
+                      <TicketIcon size={17} />
+                      发送激活码
+                    </Button>
+                  </Flex>
+                )}
 
                 <div className="flex items-center gap-3 border-t border-white/10 px-3 py-3">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/70">
@@ -1255,6 +1283,8 @@ function MessageComposer({
 
 export default function AfdianMessagesPage() {
   const nativeAvailable = isAfdianNativeAvailable();
+  const displayAccount = useDisplayAccount();
+  const canSendActivationCode = hasCreatorPlusOrAbove(displayAccount.plan);
   const { isDesktop, isNarrow } = useUiScaleViewport();
   const setHeaderIdentity = useSetHeaderIdentity();
   const queryClient = useQueryClient();
@@ -1567,6 +1597,12 @@ export default function AfdianMessagesPage() {
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const sendingRef = useRef(false);
+  const selectedUserIdRef = useRef(selectedUserId);
+  const [activationCodeRecipient, setActivationCodeRecipient] =
+    useState<AfdianDialogUser | null>(null);
+  const [activationCodeDraft, setActivationCodeDraft] =
+    useState<ActivationCodeDraft | null>(null);
   const [composerHeight, setComposerHeight] = useState(76);
   const [sendShortcut, setSendShortcut] = useState<SendShortcut>(
     getStoredSendShortcut,
@@ -1597,6 +1633,7 @@ export default function AfdianMessagesPage() {
   }, [sendShortcut]);
 
   useEffect(() => {
+    selectedUserIdRef.current = selectedUserId;
     setDraft("");
     setSendError("");
     shouldScrollToBottomRef.current = true;
@@ -1655,21 +1692,19 @@ export default function AfdianMessagesPage() {
     return () => cancelAnimationFrame(frame);
   }, [isAiReplyGenerating, selectedUserId]);
 
-  const handleSend = async () => {
-    const content = draft.trim();
-    if (!content || !selectedUserId || isSending) return;
-
+  const sendMessageToUser = async (userId: string, content: string) => {
+    if (sendingRef.current) throw new Error("消息正在发送，请稍后再试");
+    sendingRef.current = true;
     setIsSending(true);
-    setSendError("");
     try {
       const sentMessage = await sendAfdianMessage({
-        userId: selectedUserId,
+        userId,
         content,
       });
       queryClient.setQueryData<{
         pages: AfdianMessagePage[];
         pageParams: unknown[];
-      }>(["afdian", "messages", selectedUserId], (current) => {
+      }>(["afdian", "messages", userId], (current) => {
         if (!current || current.pages.length === 0) return current;
         const firstPage = current.pages[0];
         const items = firstPage.items.some((item) => item.id === sentMessage.id)
@@ -1682,31 +1717,51 @@ export default function AfdianMessagesPage() {
           pages: [{ ...firstPage, items }, ...current.pages.slice(1)],
         };
       });
-      setDraft("");
-      shouldScrollToBottomRef.current = true;
       void queryClient.invalidateQueries({
         queryKey: AFDIAN_DIALOGS_QUERY_KEY,
       });
-      requestAnimationFrame(() => {
-        const viewport = messagesViewportRef.current
-          ?.osInstance()
-          ?.elements().scrollOffsetElement;
-        if (viewport) viewport.scrollTop = viewport.scrollHeight;
+      void queryClient.invalidateQueries({
+        queryKey: ["afdian", "messages", userId],
       });
+      if (selectedUserIdRef.current === userId) {
+        shouldScrollToBottomRef.current = true;
+        requestAnimationFrame(() => {
+          if (selectedUserIdRef.current !== userId) return;
+          const viewport = messagesViewportRef.current
+            ?.osInstance()
+            ?.elements().scrollOffsetElement;
+          if (viewport) viewport.scrollTop = viewport.scrollHeight;
+        });
+      }
     } catch (error) {
       if (isAfdianLoginRequiredError(error)) {
-        notifyAfdianSessionDropped(queryClient);
+        void notifyAfdianSessionDropped(queryClient);
       }
-      setSendError(
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "消息发送失败",
-      );
+      throw error;
     } finally {
+      sendingRef.current = false;
       setIsSending(false);
     }
+  };
+
+  const handleSend = async () => {
+    const content = draft.trim();
+    const userId = selectedUserId;
+    if (!content || !userId || sendingRef.current) return;
+    setSendError("");
+    try {
+      await sendMessageToUser(userId, content);
+      if (selectedUserIdRef.current === userId) setDraft("");
+    } catch (error) {
+      if (selectedUserIdRef.current === userId) {
+        setSendError(getAfdianErrorMessage(error, "消息发送失败"));
+      }
+    }
+  };
+
+  const closeActivationCodeDialog = () => {
+    setActivationCodeRecipient(null);
+    setActivationCodeDraft(null);
   };
 
   const handleResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -1985,6 +2040,12 @@ export default function AfdianMessagesPage() {
                       if (sendError) setSendError("");
                     }}
                     onSend={() => void handleSend()}
+                    canSendActivationCode={canSendActivationCode}
+                    onSendActivationCode={() => {
+                      if (!canSendActivationCode || sendingRef.current) return;
+                      setActivationCodeRecipient({ ...selectedDialog.user });
+                      setActivationCodeDraft(null);
+                    }}
                   />
                 )}
               </div>
@@ -1992,6 +2053,17 @@ export default function AfdianMessagesPage() {
           </div>
         )}
       </div>
+      {activationCodeRecipient && (
+        <ActivationCodeDialog
+          recipient={activationCodeRecipient}
+          draft={activationCodeDraft}
+          sending={isSending}
+          connected={connected}
+          onDraftChange={setActivationCodeDraft}
+          onClose={closeActivationCodeDialog}
+          onSend={sendMessageToUser}
+        />
+      )}
     </div>
   );
 }
