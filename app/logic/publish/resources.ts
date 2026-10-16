@@ -75,6 +75,32 @@ export interface ResourceEditContext {
 }
 
 /**
+ * 「资源 ID / 资源类型」是否允许修改：以编辑会话开始时的资源 ID 是否已进入
+ * 已合入的上游目录文件（仓库根目录的 index_v2.csv）为准。
+ * - 全新发布（无编辑上下文）：必然未合入，允许修改；
+ * - 进行中的首次提交 PR / 审核中的首次提交：ID 尚未合入目录，允许修改，
+ *   修改后重跑步骤 2 重传包体与 manifest 即可；
+ * - 已合入目录的资源（已发布更新，或审核中 PR 的原 ID 已被合入）：改 ID
+ *   会让服务端无法按下线资源的 ID 键联评分、购买等数据，必须锁定。
+ * 目录 ID 列表尚未加载（网络失败等）时保守视为已合入，避免误放。
+ */
+export function canEditResourceIdentity(options: {
+    editContext: Pick<ResourceEditContext, "catalog"> | null | undefined;
+    /** 已合入目录 index_v2.csv 的全部资源 ID → 名称映射；null 表示尚未加载。 */
+    catalogIds: ReadonlyMap<string, unknown> | null | undefined;
+}): boolean {
+    const originalId = options.editContext?.catalog.entry.id.trim() ?? "";
+    if (!originalId) return true;
+    const { catalogIds } = options;
+    if (!catalogIds) return false;
+    const target = originalId.toLowerCase();
+    for (const id of catalogIds.keys()) {
+        if (id.trim().toLowerCase() === target) return false;
+    }
+    return true;
+}
+
+/**
  * 依据旧 PR 标题推导出更新后的标题：保留原来的
  * 「[ABCC] Add new resource / Update resource」动作前缀，仅刷新资源名称部分。
  * 旧标题缺失或不是 ABCC 生成格式时，退回标准的「Update resource」格式。

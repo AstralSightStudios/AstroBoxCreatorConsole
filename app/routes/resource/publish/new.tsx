@@ -137,7 +137,11 @@ import {
   listCurrentUserRepos,
 } from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
-import { type ResourceEditContext, buildResourcePrTitle } from "~/logic/publish/resources";
+import {
+  type ResourceEditContext,
+  buildResourcePrTitle,
+  canEditResourceIdentity,
+} from "~/logic/publish/resources";
 import { registerVersionResetIntent } from "~/api/astrobox/resource";
 import {
   DEFAULT_VERSION_RESET_OPTIONS,
@@ -776,6 +780,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [location.state, isEditMode]);
 
   const isEditing = isEditMode || Boolean(editContext);
+  // 尚未进入已合入目录 index_v2.csv 的资源（全新发布 / 首次提交的进行中 PR）
+  // 允许改 ID 与类型；已合入目录的资源锁定（目录列表未加载时同样锁定）。
+  const canEditIdentity = canEditResourceIdentity({
+    editContext,
+    catalogIds: existingCatalogIds,
+  });
   const missingEditContext = isEditMode && !editContext;
 
   useEffect(() => {
@@ -872,28 +882,43 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [resourceType, itemId, existingCatalogIds]);
 
+  // 未合入目录前允许改资源 ID / 类型：改完之后用户资源仓库里的 manifest 与
+  // 包体就对不上了，必须重跑步骤 2 重传；这里把已成功的上传状态作废并给出提示，
+  // 步骤 3 的 ID 一致性守卫（uploadedId 校验）仍会兜底。
+  const invalidateUploadedAssets = useCallback(
+    (reason: string) => {
+      if (repoStatus !== "success") return;
+      setRepoStatus("idle");
+      setRepoMessage(`${reason}，请重新执行步骤 2 上传仓库文件后再提交 PR。`);
+      setLastManifest(null);
+    },
+    [repoStatus],
+  );
+
   const handleResourceTypeChange = useCallback(
     (next: ResourceType) => {
-      if (isEditing || next === resourceType) return;
+      if ((isEditing && !canEditIdentity) || next === resourceType) return;
       idsByTypeRef.current[resourceType] = itemIdRef.current;
       const cached = idsByTypeRef.current[next];
       const suggested =
         next === "res_pack" ? normalizeResPackIdInput(itemName) : "";
       setItemId(cached !== undefined ? cached : suggested);
       setResourceType(next);
+      invalidateUploadedAssets("资源类型已变更");
     },
-    [resourceType, isEditing, itemName],
+    [resourceType, isEditing, canEditIdentity, itemName, invalidateUploadedAssets],
   );
 
   const handleItemIdChange = useCallback(
     (value: string) => {
-      if (isEditing) return;
+      if (isEditing && !canEditIdentity) return;
       // 资源 ID 不做任何自动改写：创作者填什么就存什么，不合规只提示。
       // 自动替换非法字符会打断输入法组字（拼音中间的组字符会被替成 '-'），
       // 也会让 CSV id 与包内 themeId 悄悄分叉。
       setItemId(value);
+      invalidateUploadedAssets("资源 ID 已变更");
     },
-    [isEditing],
+    [isEditing, canEditIdentity, invalidateUploadedAssets],
   );
 
   useEffect(() => {
@@ -1835,13 +1860,19 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       if (resourceType === "watchface") {
         const formatError = validateWatchfaceIdFormat(itemId);
         if (formatError) throw new Error(formatError);
+      }
+
+      // 目录 ID 占用校验：所有资源类型都查（表盘原来就有；其余类型在
+      // 「改 ID 后重传」场景同样可能撞上目录里已合入的资源）。自身的
+      // 原 ID 不算冲突，这样已发布资源正常更新不会被误拦。
+      const nextId = itemId.trim();
+      if (nextId) {
         const ids = await fetchExistingCatalogIds(token);
         setExistingCatalogIds(ids);
-        const ownedId = editContext?.catalog.entry.id.trim();
-        const existingName = ids.get(itemId.trim());
-        if (existingName && itemId.trim() !== ownedId) {
+        const existingName = ids.get(nextId);
+        if (existingName && nextId !== editContext?.catalog.entry.id.trim()) {
           throw new Error(
-            `资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`,
+            `资源 ID "${nextId}" 已被「${existingName}」占用，请更换一个。`,
           );
         }
       }
@@ -2003,6 +2034,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       if (resourceType === "watchface") {
         const formatError = validateWatchfaceIdFormat(itemId);
         if (formatError) throw new Error(formatError);
+      }
+
+      // 继续编辑首次提交 PR 时允许改资源 ID：提交前确认新 ID 没有撞上
+      // 目录里已合入的资源（步骤 2 的校验只覆盖了重传路径）。
+      if (
+        mode === "in_progress" &&
+        editContext &&
+        itemId.trim() !== editContext.catalog.entry.id.trim()
+      ) {
+        const ids = await fetchExistingCatalogIds(token);
+        setExistingCatalogIds(ids);
+        const existingName = ids.get(itemId.trim());
+        if (existingName) {
+          throw new Error(
+            `资源 ID "${itemId.trim()}" 已被「${existingName}」占用，请更换一个。`,
+          );
+        }
       }
       const uploadedId = JSON.parse(
         (lastManifest ?? manifestResult).manifestJson,
@@ -2909,7 +2957,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
-                idReadOnly={isEditing}
+                idReadOnly={isEditing && !canEditIdentity}
                 onItemIdChange={(value) => {
                   handleItemIdChange(value);
                   logFieldChange("itemId", "资源 ID", value);

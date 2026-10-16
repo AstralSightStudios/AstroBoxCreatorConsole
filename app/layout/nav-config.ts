@@ -30,8 +30,6 @@ export interface NavLinkConfig {
   alwaysVisible?: boolean;
   fixedPosition?: boolean;
   requireRoles?: string[];
-  /** 需要当前 GitHub 账号对社区仓库具备写入权限后才显示。 */
-  requireRepoPermission?: boolean;
 }
 
 export interface NavSectionConfig {
@@ -135,7 +133,6 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         icon: PackageIcon,
         label: "资源管理",
         path: "/cloudcontrol",
-        requireRepoPermission: true,
       },
       {
         id: "explorepage",
@@ -222,14 +219,12 @@ export function hasRequiredNavRole(
   return item.requireRoles.some((role) => roles.includes(role));
 }
 
-export function isNavItemPermitted(
-  item: NavLinkConfig,
-  roles: readonly string[],
-  hasRepoPermission: boolean,
-) {
-  if (!hasRequiredNavRole(item, roles)) return false;
-  if (item.requireRepoPermission && !hasRepoPermission) return false;
-  return true;
+/**
+ * 与 PR 审核一致的策略：侧栏默认展示所有入口，
+ * 页面进入后再按自身权限（角色 / 仓库权限）给出提示或拦截。
+ */
+export function isNavItemPermitted(item: NavLinkConfig, roles: readonly string[]) {
+  return hasRequiredNavRole(item, roles);
 }
 
 export function sortNavItems<T extends { id: string }>(

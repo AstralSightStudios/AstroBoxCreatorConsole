@@ -27,7 +27,7 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
     return {
       label: "资源 ID（快应用）",
       description:
-        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。",
+        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。未合入目录前可修改，修改后需用新包名重新打包再上传；合入目录后不可改动。",
       links: [
         {
           label: "Oracle Java 语言规范 · 包命名",
@@ -44,19 +44,19 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
     return {
       label: "资源 ID（表盘）",
       description:
-        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，已发布后不要改动。",
+        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，合入目录后不要改动；未合入前可修改，修改后重新上传包体会自动改写。",
     };
   }
   if (resourceType === "res_pack") {
     return {
       label: "资源 ID（资源包）",
-      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。已发布后不要改动，否则设备上会出现两个主题目录。`,
+      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。合入目录后不要改动，否则设备上会出现两个主题目录；未合入前可修改，修改后重新上传包体会自动改写。`,
     };
   }
   return {
     label: "资源 ID（模块）",
     description:
-      "模块的唯一标识，直接填写模块名称即可。仅支持字母、数字、下划线和中划线，且以字母或数字开头，已发布后不要改动。",
+      "模块的唯一标识，直接填写模块名称即可。仅支持字母、数字、下划线和中划线，且以字母或数字开头，合入目录后不要改动；未合入前可修改，修改后重新上传 manifest 即可。",
   };
 }
 
@@ -65,7 +65,7 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
     {
       label: "资源类型",
       description:
-        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。已发布的资源不可修改。",
+        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源一旦合入目录（发布上线）就不可再修改；尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改，修改后需重新上传包体与 manifest 才能提交。",
     },
     {
       label: "资源名称",

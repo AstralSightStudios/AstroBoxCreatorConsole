@@ -1,6 +1,5 @@
 import { unzipSync, zipSync, type Unzipped } from "fflate";
 import { fetchCatalogEntries } from "./catalog";
-import { PUBLISH_CONFIG } from "~/config/publish";
 import {
   WATCHFACE_MAGIC,
   ZIP_MAGIC,
@@ -125,13 +124,9 @@ async function writeWatchfaceId(file: File, id: string): Promise<File> {
 export async function fetchExistingCatalogIds(
   token: string,
 ): Promise<Map<string, string>> {
-  const { entries } = await fetchCatalogEntries({
-    token,
-    owner: "AstralSightStudios",
-    repo: "AstroBox-Repo",
-    ref: "main",
-    path: PUBLISH_CONFIG.catalogFilePath,
-  });
+  // 跟随 repEnv 配置的上游仓库读取根目录 index_v2.csv，
+  // 避免测试环境误查正式环境的已合入目录。
+  const { entries } = await fetchCatalogEntries({ token });
   const map = new Map<string, string>();
   for (const e of entries) {
     const id = e.id.trim();
