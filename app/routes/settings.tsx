@@ -89,7 +89,6 @@ import {
   type NavLinkConfig,
   type NavSectionConfig,
 } from "~/layout/nav-config";
-import { useCommunityRepoManageAccess } from "~/logic/account/repo-permission";
 import { useAccountState } from "~/logic/account/store";
 import { SectionCard } from "./resource/publish/components/shared";
 
@@ -624,11 +623,10 @@ function NavigationItemsSettings({
 }) {
   const [dragState, setDragState] = useState<NavDragState | null>(null);
   const dragStateRef = useRef<NavDragState | null>(null);
-  const repoAccess = useCommunityRepoManageAccess();
   const availableSections = NAV_PREFERENCE_SECTIONS.map((section) => ({
     section,
     items: sortNavItems(section.items, preferences.itemOrder).filter((item) =>
-      isNavItemPermitted(item, roles, repoAccess.allowed),
+      isNavItemPermitted(item, roles),
     ),
   })).filter(({ items }) => items.length > 0);
 
@@ -865,9 +863,8 @@ export default function Settings({
   // 启动页候选与导航项同源，按当前账号权限过滤后再按导航分组合并，
   // 保证「选得到的启动页」永远等于「导航里存在的页面」。
   const currentStartupPage = useStartupPage();
-  const startupRepoAccess = useCommunityRepoManageAccess();
   const startupPageOptions = STARTUP_PAGE_OPTIONS.filter((option) =>
-    isNavItemPermitted(option, navRoles, startupRepoAccess.allowed),
+    isNavItemPermitted(option, navRoles),
   );
   const startupPageGroups = [...startupPageOptions.reduce<
     Map<string, StartupPageOption[]>
