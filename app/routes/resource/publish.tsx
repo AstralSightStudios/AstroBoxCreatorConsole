@@ -161,6 +161,7 @@ export default function ResourcePublish() {
         catalog: resource.catalog,
         prNumber: resource.prNumber,
         prUrl: resource.prUrl,
+        prTitle: resource.prTitle,
         prState: resource.prState,
         prHead,
         reviewState: resource.status,

@@ -204,6 +204,21 @@ export async function reopenPullRequest(prNumber: number) {
   );
 }
 
+/** 更新 PR 标题（PATCH /pulls/{n} 的 title 字段）。 */
+export async function updatePullRequestTitle(
+  prNumber: number,
+  title: string,
+) {
+  return githubFetch<unknown>(
+    repoPath(`/pulls/${prNumber}`),
+    {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ title }),
+    },
+  );
+}
+
 export async function listPullRequestComments(prNumber: number) {
   return githubFetch<GithubIssueComment[]>(
     repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`),

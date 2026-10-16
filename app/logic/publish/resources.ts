@@ -62,6 +62,8 @@ export interface ResourceEditContext {
     catalog: ResourceCatalogContext;
     prNumber?: number;
     prUrl?: string;
+    /** PR 当前标题，用于在资源标题变更时同步刷新。 */
+    prTitle?: string;
     prState?: "open" | "closed" | "merged";
     prHead?: { owner: string; repo: string; ref: string };
     reviewState?: ReviewState;
@@ -70,6 +72,25 @@ export interface ResourceEditContext {
         path: string;
         request: SubmissionRequest;
     };
+}
+
+/**
+ * 依据旧 PR 标题推导出更新后的标题：保留原来的
+ * 「[ABCC] Add new resource / Update resource」动作前缀，仅刷新资源名称部分。
+ * 旧标题缺失或不是 ABCC 生成格式时，退回标准的「Update resource」格式。
+ */
+export function buildResourcePrTitle(options: {
+    currentTitle?: string;
+    itemName: string;
+    itemId: string;
+}): string {
+    const name =
+        options.itemName.trim() || options.itemId.trim() || "资源";
+    const action =
+        options.currentTitle?.trim().match(
+            /^\[ABCC\]\s*(Add new resource|Update resource)\s*:/,
+        )?.[1] ?? "Update resource";
+    return `[ABCC] ${action}: ${name}`;
 }
 
 function requireGithubAccount() {
@@ -151,6 +172,7 @@ export async function buildInProgressEditContextFromPr(options: {
         catalog,
         prNumber,
         prUrl: full.html_url || "",
+        prTitle: full.title || undefined,
         prState:
             full.state === "open"
                 ? "open"

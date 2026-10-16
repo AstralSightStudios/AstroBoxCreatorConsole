@@ -66,6 +66,7 @@ import {
 import {
   createPullRequestComment,
   reopenPullRequest,
+  updatePullRequestTitle,
 } from "~/api/github/pr-review";
 import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
@@ -136,7 +137,7 @@ import {
   listCurrentUserRepos,
 } from "~/logic/publish/github-actions";
 import { PrStepSection } from "./components/PrStepSection";
-import { type ResourceEditContext } from "~/logic/publish/resources";
+import { type ResourceEditContext, buildResourcePrTitle } from "~/logic/publish/resources";
 import { registerVersionResetIntent } from "~/api/astrobox/resource";
 import {
   DEFAULT_VERSION_RESET_OPTIONS,
@@ -2075,6 +2076,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             targetBranch: prHead.ref,
           }),
         );
+
+        // 资源标题可能已被修改：同步刷新 PR 标题，避免评审列表仍显示旧名称。
+        // 保留原 PR 的「Add new resource / Update resource」动作前缀语义。
+        const previousName = (editContext.catalog.entry.name || "").trim();
+        if (
+          itemName.trim() &&
+          itemName.trim() !== previousName &&
+          editContext.prNumber
+        ) {
+          const nextPrTitle = buildResourcePrTitle({
+            currentTitle: editContext.prTitle,
+            itemName,
+            itemId,
+          });
+          if (nextPrTitle !== editContext.prTitle?.trim()) {
+            await flowSpan("pr/retitle", "同步 PR 标题为最新资源标题", () =>
+              updatePullRequestTitle(editContext.prNumber as number, nextPrTitle),
+            );
+            log.info("pr/retitle", "PR 标题已同步资源名称", {
+              data: {
+                prNumber: editContext.prNumber,
+                prTitle: nextPrTitle,
+              },
+            });
+          }
+        }
 
         if (useStaging) {
           if (!submission) {
