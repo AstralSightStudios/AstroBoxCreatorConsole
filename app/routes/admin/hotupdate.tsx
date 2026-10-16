@@ -4,7 +4,9 @@ import { toast } from "sonner";
 import {
   HOTUPDATE_PLATFORMS,
   HotUpdateApi,
+  estimateUpgradeBytes,
   parseReleaseJson,
+  summarizeEncodings,
   type HotUpdatePatch,
   type HotUpdatePlatform,
   type HotUpdateRelease,
@@ -80,6 +82,7 @@ export default function AdminHotUpdatePage() {
   const [rMaxNative, setRMaxNative] = useState("");
   const [rRollout, setRRollout] = useState("1");
   const [rNotes, setRNotes] = useState("");
+  const [rMandatory, setRMandatory] = useState(false);
   const [creatingRelease, setCreatingRelease] = useState(false);
 
   const parsedRelease = useMemo<ParsedReleaseJson | null>(() => {
@@ -108,7 +111,30 @@ export default function AdminHotUpdatePage() {
     if (parsedRelease.platform) setRPlatform(parsedRelease.platform);
     if (parsedRelease.filesBaseUrl) setRBaseUrl(parsedRelease.filesBaseUrl);
     if (parsedRelease.maxNativeVersion) setRMaxNative(parsedRelease.maxNativeVersion);
+    setRMandatory(parsedRelease.mandatory);
   }, [parsedRelease]);
+
+  // 发布前预览：传输编码统计 + 从同渠道/平台上一个版本升级的预计下载量。
+  const parsedEncoding = useMemo(() => {
+    if (!parsedRelease) return null;
+    const summary = summarizeEncodings(parsedRelease.files);
+    const previous = releases
+      .filter(
+        (r) =>
+          r.channel === rChannel.trim() &&
+          (r.platform === rPlatform || r.platform === "all") &&
+          r.version < parsedRelease.version &&
+          r.files.length > 0,
+      )
+      .sort((a, b) => b.version - a.version)[0];
+    const upgrade = previous
+      ? {
+          version: previous.version,
+          ...estimateUpgradeBytes(parsedRelease.files, previous.files),
+        }
+      : null;
+    return { ...summary, upgrade };
+  }, [parsedRelease, releases, rChannel, rPlatform]);
 
   // create-patch form
   const [pChannel, setPChannel] = useState("stable");
@@ -173,6 +199,13 @@ export default function AdminHotUpdatePage() {
     const rollout = Number(rRollout);
     if (Number.isNaN(rollout) || rollout < 0 || rollout > 1)
       return toast.error("灰度比例需在 0~1 之间");
+    if (
+      rMandatory &&
+      !confirm(
+        `确认以「强制更新」发布 v${parsedRelease.version}？\n低于该版本的用户会被整屏拦住，直到装好更新才能继续使用（无视灰度比例）。`,
+      )
+    )
+      return;
     setCreatingRelease(true);
     try {
       await HotUpdateApi.releases.create({
@@ -187,12 +220,14 @@ export default function AdminHotUpdatePage() {
         files: parsedRelease.files,
         rollout,
         notes: rNotes.trim() || undefined,
+        mandatory: rMandatory,
       });
       toast.success(
-        `已发布 v${parsedRelease.version}（${parsedRelease.files.length} 个文件）`,
+        `已发布 v${parsedRelease.version}（${parsedRelease.files.length} 个文件）${rMandatory ? "，强制更新" : ""}`,
       );
       setReleaseJsonText("");
       setRNotes("");
+      setRMandatory(false);
       await loadAll();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -213,6 +248,21 @@ export default function AdminHotUpdatePage() {
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
+  };
+
+  const toggleMandatory = async (r: HotUpdateRelease) => {
+    if (
+      !r.mandatory &&
+      !confirm(
+        `确认把 v${r.version} 设为强制更新？\n低于该版本的用户会被整屏拦住，直到装好更新才能继续使用（无视灰度比例）。`,
+      )
+    )
+      return;
+    await patchRelease(
+      r.id,
+      { mandatory: !r.mandatory },
+      r.mandatory ? "已取消强制更新" : "已设为强制更新",
+    );
   };
 
   const deleteRelease = async (id: string, version: number) => {
@@ -324,7 +374,7 @@ export default function AdminHotUpdatePage() {
   return (
     <AdminPage
       title="热更新管理"
-      description="前端按文件内容寻址增量更新：用 hotupdate-pack.ts 打包产出 release.json + files/，把 files/ 传到 CDN，这里粘贴 release.json 发布即可。客户端只下变更文件，字体/wasm 复用。"
+      description="前端按文件内容寻址增量更新：用 hotupdate-pack.ts 打包产出 release.json + files/，把 files/ 传到 CDN，这里粘贴 release.json 发布即可。客户端只下变更文件（优先下二进制差分 / zstd 压缩版），字体/wasm 复用；普通更新在用户切到后台时无感切换，强制更新会拦住界面直到装好。"
       requiredRoles={["admin"]}
       loading={loading && releases.length === 0 && patches.length === 0}
       error={error}
@@ -422,6 +472,21 @@ export default function AdminHotUpdatePage() {
                   {parsedRelease.maxNativeVersion
                     ? ` · 最高原生 ${parsedRelease.maxNativeVersion}`
                     : ""}
+                  {parsedEncoding && (
+                    <div className="mt-1 text-emerald-100/80">
+                      {parsedEncoding.zstFiles > 0 || parsedEncoding.patchedFiles > 0
+                        ? `${parsedEncoding.zstFiles} 个文件带压缩版 · ${parsedEncoding.patchedFiles} 个文件带差分 · 全新安装约 ${formatBytes(parsedEncoding.coldBytes)}`
+                        : "未包含压缩 / 差分（用 hotupdate-pack.ts 打包并装好 zstd 可大幅减小下载量）"}
+                      {parsedEncoding.upgrade && (
+                        <>
+                          <br />从 v{parsedEncoding.upgrade.version} 升级：
+                          {parsedEncoding.upgrade.changed} 个文件变化，约{" "}
+                          {formatBytes(parsedEncoding.upgrade.bytes)}（原文件{" "}
+                          {formatBytes(parsedEncoding.upgrade.rawBytes)}）
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               <Field label="filesBaseUrl（CDN 内容寻址根，文件地址 = base + sha256）">
@@ -472,6 +537,20 @@ export default function AdminHotUpdatePage() {
                   onChange={(e) => setRNotes(e.target.value)}
                 />
               </Field>
+              <label className="flex items-start gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
+                <Switch
+                  size="1"
+                  className="mt-0.5"
+                  checked={rMandatory}
+                  onCheckedChange={setRMandatory}
+                />
+                <span>
+                  强制更新
+                  <span className="block text-white/45">
+                    低于该版本的用户会被整屏拦住，下载安装完成后才能继续使用（无视灰度比例）。默认的普通更新会在用户切到后台 / 闲置时无感切换。
+                  </span>
+                </span>
+              </label>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-white/45">
                   确保 files/ 已传到 filesBaseUrl 路径下。
@@ -502,6 +581,7 @@ export default function AdminHotUpdatePage() {
                       {r.semver ? ` · ${r.semver}` : ""}
                     </span>
                     {r.revoked && <Badge color="red">已吊销</Badge>}
+                    {r.mandatory && <Badge color="orange">强制更新</Badge>}
                     {!r.enabled && <Badge color="amber">已停用</Badge>}
                     {r.enabled && !r.revoked && (
                       <Badge color="green">下发中</Badge>
@@ -515,6 +595,13 @@ export default function AdminHotUpdatePage() {
                     <span>
                       {r.fileCount} 个文件 · {formatBytes(r.totalSize)}
                     </span>
+                    {r.encoding &&
+                      (r.encoding.zstFiles > 0 || r.encoding.patchedFiles > 0) && (
+                        <span>
+                          压缩 {r.encoding.zstFiles} · 差分 {r.encoding.patchedFiles} ·
+                          全新安装 {formatBytes(r.encoding.zstBytes)}
+                        </span>
+                      )}
                     {(r.minNativeVersion || r.maxNativeVersion) && (
                       <span>
                         原生范围：{r.minNativeVersion || "*"} ~{" "}
@@ -670,6 +757,14 @@ export default function AdminHotUpdatePage() {
                         }
                       >
                         {r.revoked ? "恢复" : "吊销"}
+                      </Button>
+                      <Button
+                        size="1"
+                        variant="soft"
+                        color={r.mandatory ? "gray" : "orange"}
+                        onClick={() => toggleMandatory(r)}
+                      >
+                        {r.mandatory ? "取消强制" : "设为强制"}
                       </Button>
                       <Button
                         size="1"

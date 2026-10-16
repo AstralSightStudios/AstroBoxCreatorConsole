@@ -17,10 +17,32 @@ export const HOTUPDATE_PLATFORMS: HotUpdatePlatform[] = [
   "linux",
 ];
 
+export interface HotUpdateBlob {
+  sha256: string;
+  size: number;
+}
+
+/** zstd --patch-from 差分：客户端本地有 from 那份旧文件时只需下载这一小段。 */
+export interface HotUpdateFilePatch extends HotUpdateBlob {
+  from: string;
+  fromPath: string;
+}
+
 export interface HotUpdateFile {
   path: string;
   sha256: string;
   size: number;
+  /** 整文件 zstd 压缩版（hotupdate-pack.ts 产出，可选）。 */
+  zst?: HotUpdateBlob;
+  /** 相对旧版本的二进制差分（可选）。 */
+  patches?: HotUpdateFilePatch[];
+}
+
+export interface HotUpdateEncodingStats {
+  zstFiles: number;
+  patchedFiles: number;
+  /** 全新安装（无任何可复用文件）时的下载量：有压缩版按压缩版计。 */
+  zstBytes: number;
 }
 
 export interface HotUpdateRelease {
@@ -39,6 +61,9 @@ export interface HotUpdateRelease {
   notes: string;
   enabled: boolean;
   revoked: boolean;
+  /** 强制更新：低于该版本的客户端被整屏拦住直到装好（无视灰度）。 */
+  mandatory: boolean;
+  encoding?: HotUpdateEncodingStats;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -66,10 +91,17 @@ export interface ManifestPreview {
     min_native_version: string;
     platform: string;
     files_base_url: string;
-    files: HotUpdateFile[];
+    files: {
+      path: string;
+      sha256: string;
+      size: number;
+      zst?: HotUpdateBlob;
+      patches?: { from: string; from_path: string; sha256: string; size: number }[];
+    }[];
     rollout: number;
     revoke: number[];
     notes: string;
+    required_version?: number;
   } | null;
   envelope: { payload: string; sig: string } | null;
   signed: boolean;
@@ -97,6 +129,7 @@ export interface CreateReleaseBody {
   notes?: string;
   enabled?: boolean;
   revoked?: boolean;
+  mandatory?: boolean;
 }
 
 export interface UpdateReleaseBody {
@@ -109,6 +142,7 @@ export interface UpdateReleaseBody {
   notes?: string;
   enabled?: boolean;
   revoked?: boolean;
+  mandatory?: boolean;
 }
 
 export interface CreatePatchBody {
@@ -208,7 +242,78 @@ export interface ParsedReleaseJson {
   minNativeVersion: string;
   maxNativeVersion: string;
   filesBaseUrl?: string;
+  mandatory: boolean;
   files: HotUpdateFile[];
+}
+
+const HEX64 = /^[0-9a-fA-F]{64}$/;
+
+function parseBlob(raw: any): HotUpdateBlob | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw.sha256 !== "string" || !HEX64.test(raw.sha256))
+    throw new Error("release.json 的 zst 条目非法");
+  return {
+    sha256: raw.sha256.toLowerCase(),
+    size: typeof raw.size === "number" ? raw.size : 0,
+  };
+}
+
+function parsePatches(raw: any): HotUpdateFilePatch[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new Error("release.json 的 patches 不是数组");
+  return raw.map((p: any) => {
+    if (
+      !p ||
+      typeof p.from !== "string" ||
+      !HEX64.test(p.from) ||
+      typeof p.sha256 !== "string" ||
+      !HEX64.test(p.sha256)
+    )
+      throw new Error("release.json 的 patches 条目非法");
+    return {
+      from: p.from.toLowerCase(),
+      fromPath: typeof p.fromPath === "string" ? p.fromPath : "",
+      sha256: p.sha256.toLowerCase(),
+      size: typeof p.size === "number" ? p.size : 0,
+    };
+  });
+}
+
+/** 统计清单里的传输编码，用于发布前预览。 */
+export function summarizeEncodings(files: HotUpdateFile[]) {
+  let zstFiles = 0;
+  let patchedFiles = 0;
+  let coldBytes = 0;
+  for (const f of files) {
+    if (f.zst) zstFiles++;
+    if (f.patches?.length) patchedFiles++;
+    coldBytes += f.zst?.size ?? f.size;
+  }
+  return { zstFiles, patchedFiles, coldBytes };
+}
+
+/**
+ * 估算已装着 `base` 版本的客户端升级到 `files` 要下载多少：没变的文件零下载，
+ * 变了的取「来自该版本的差分 / 压缩版 / 原文件」里最小的。
+ */
+export function estimateUpgradeBytes(
+  files: HotUpdateFile[],
+  base: HotUpdateFile[],
+) {
+  const baseShas = new Set(base.map((f) => f.sha256));
+  let bytes = 0;
+  let rawBytes = 0;
+  let changed = 0;
+  for (const f of files) {
+    if (baseShas.has(f.sha256)) continue;
+    changed++;
+    rawBytes += f.size;
+    const patch = f.patches
+      ?.filter((p) => baseShas.has(p.from))
+      .reduce((min, p) => Math.min(min, p.size), Infinity);
+    bytes += Math.min(patch ?? Infinity, f.zst?.size ?? Infinity, f.size);
+  }
+  return { changed, bytes, rawBytes };
 }
 
 export function parseReleaseJson(text: string): ParsedReleaseJson {
@@ -222,14 +327,19 @@ export function parseReleaseJson(text: string): ParsedReleaseJson {
       !f ||
       typeof f.path !== "string" ||
       typeof f.sha256 !== "string" ||
-      !/^[0-9a-fA-F]{64}$/.test(f.sha256)
+      !HEX64.test(f.sha256)
     )
       throw new Error("release.json 的 files 条目非法");
-    return {
+    const file: HotUpdateFile = {
       path: f.path,
       sha256: String(f.sha256).toLowerCase(),
       size: typeof f.size === "number" ? f.size : 0,
     };
+    const zst = parseBlob(f.zst);
+    if (zst) file.zst = zst;
+    const patches = parsePatches(f.patches);
+    if (patches?.length) file.patches = patches;
+    return file;
   });
   if (!files.some((f) => f.path === "index.html"))
     throw new Error("release.json 的 files 里没有 index.html");
@@ -247,6 +357,7 @@ export function parseReleaseJson(text: string): ParsedReleaseJson {
       typeof raw.maxNativeVersion === "string" ? raw.maxNativeVersion : "",
     filesBaseUrl:
       typeof raw.filesBaseUrl === "string" ? raw.filesBaseUrl : undefined,
+    mandatory: raw.mandatory === true,
     files,
   };
 }
