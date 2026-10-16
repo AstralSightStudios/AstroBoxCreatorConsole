@@ -11,6 +11,7 @@ import {
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Collapsible } from "radix-ui";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -204,12 +205,12 @@ function DeviceKeySection({
         onDelete={onDelete}
       />
       {group.history.length > 0 && (
-        <>
-          <button
-            type="button"
-            onClick={() => setHistoryOpen((prev) => !prev)}
-            className="my-0.5"
-          >
+        <Collapsible.Root
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          className="mt-0.5"
+        >
+          <Collapsible.Trigger asChild>
             <Button size="1" variant="ghost" color="gray" highContrast>
               <CaretRightIcon
                 size={12}
@@ -220,8 +221,8 @@ function DeviceKeySection({
               />
               历史版本（{group.history.length}）
             </Button>
-          </button>
-          {historyOpen && (
+          </Collapsible.Trigger>
+          <Collapsible.Content className="abcc-collapsible-content">
             <div className="pl-2">
               {group.history.map((entry) => (
                 <KeyEntryRow
@@ -232,8 +233,8 @@ function DeviceKeySection({
                 />
               ))}
             </div>
-          )}
-        </>
+          </Collapsible.Content>
+        </Collapsible.Root>
       )}
     </div>
   );
@@ -257,35 +258,36 @@ function ResourceGroupSection({
   const reachedLimit = group.items.length >= FILE_KEY_LIST_LIMIT;
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="w-full text-left"
-      >
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <CaretRightIcon
-              size={14}
-              className="shrink-0 text-white/60"
-              style={{
-                transform: open ? "rotate(90deg)" : undefined,
-                transition: "transform 0.15s ease",
-              }}
-            />
-            <span className="min-w-0 truncate text-sm font-medium text-white">
-              {group.resource.entry.name}
-            </span>
-            <span className="shrink-0 text-xs text-white/50">
-              {group.resource.entry.id}
-            </span>
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <Collapsible.Trigger asChild className="w-full">
+        <button
+          type="button"
+          className="w-full text-left"
+        >
+          <div className="flex w-full min-w-0 items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <CaretRightIcon
+                size={14}
+                className="shrink-0 text-white/60"
+                style={{
+                  transform: open ? "rotate(90deg)" : undefined,
+                  transition: "transform 0.15s ease",
+                }}
+              />
+              <span className="min-w-0 truncate text-sm font-medium text-white">
+                {group.resource.entry.name}
+              </span>
+              <span className="shrink-0 text-xs text-white/50">
+                {group.resource.entry.id}
+              </span>
+            </div>
+            <Badge size="1" variant="soft" color="gray">
+              {deviceGroups.length} 设备 / {group.items.length} 条映射
+            </Badge>
           </div>
-          <Badge size="1" variant="soft" color="gray">
-            {deviceGroups.length} 设备 / {group.items.length} 条映射
-          </Badge>
-        </div>
-      </button>
-      {open && (
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content className="abcc-collapsible-content">
         <div>
           {deviceGroups.map((deviceGroup) => (
             <DeviceKeySection
@@ -301,8 +303,8 @@ function ResourceGroupSection({
             </div>
           )}
         </div>
-      )}
-    </>
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }
 

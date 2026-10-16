@@ -1059,6 +1059,44 @@ html.numeric-scrub-active * {
     }
 }
 
+/* Radix Collapsible 原语的高度过渡（@radix-ui/themes 未内置该组件样式，自行补充） */
+.abcc-collapsible-content {
+    overflow: hidden;
+}
+
+.abcc-collapsible-content[data-state='open'] {
+    animation: abcc-collapsible-down 0.2s ease;
+}
+
+.abcc-collapsible-content[data-state='closed'] {
+    animation: abcc-collapsible-up 0.2s ease;
+}
+
+@keyframes abcc-collapsible-down {
+    from {
+        height: 0;
+    }
+    to {
+        height: var(--radix-collapsible-content-height);
+    }
+}
+
+@keyframes abcc-collapsible-up {
+    from {
+        height: var(--radix-collapsible-content-height);
+    }
+    to {
+        height: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .abcc-collapsible-content[data-state='open'],
+    .abcc-collapsible-content[data-state='closed'] {
+        animation: none;
+    }
+}
+
 @keyframes s11a-imsg-typing {
     0%,
     55%,
