@@ -73,11 +73,38 @@ export function filterReviewTagComments<T extends {
 }
 
 export function deriveReviewStatus(comments: Array<{ id?: number; body?: string; created_at?: string; user?: { login: string; avatar_url?: string } }>): ReviewStatusResult {
+    // 注意：调用方传入的评论可能是倒序（listPullRequestTimeline 按最新在前排序，
+    // 供时间线 UI 使用），也可能是正序。这里做两遍扫描，使结果与数组顺序无关：
+    // 第一遍收集所有 NEEDFIX，第二遍再用 FIXED 按 tagId 配对。
     const needFixes = new Map<string, string>();
     const needFixCommentIds = new Map<string, number>();
     const needFixCommentBodies = new Map<string, string>();
     const needFixCreatedAt = new Map<string, string>();
     const needFixAuthor = new Map<string, { login: string; avatar_url?: string }>();
+
+    for (const comment of comments) {
+        const body = comment.body?.trim();
+        if (!body) continue;
+        const match = body.match(COMMENT_PATTERN);
+        if (!match) continue;
+        const kind = match[1].toUpperCase();
+        if (kind !== "NEEDFIX") continue;
+        const id = (match[2] || "").trim();
+        const message = (match[3] || "").trim();
+
+        needFixes.set(id, message);
+        if (typeof comment.id === "number") {
+            needFixCommentIds.set(id, comment.id);
+        }
+        needFixCommentBodies.set(id, body);
+        if (comment.created_at) {
+            needFixCreatedAt.set(id, comment.created_at);
+        }
+        if (comment.user) {
+            needFixAuthor.set(id, comment.user);
+        }
+    }
+
     const fixed = new Set<string>();
     const fixedMessages = new Map<string, string>();
     const fixedCreatedAt = new Map<string, string>();
@@ -89,34 +116,18 @@ export function deriveReviewStatus(comments: Array<{ id?: number; body?: string;
         const match = body.match(COMMENT_PATTERN);
         if (!match) continue;
         const kind = match[1].toUpperCase();
+        if (kind !== "FIXED") continue;
         const id = (match[2] || "").trim();
+        if (!needFixes.has(id) || fixed.has(id)) continue;
         const message = (match[3] || "").trim();
 
-        if (kind === "NEEDFIX") {
-            needFixes.set(id, message);
-            if (typeof comment.id === "number") {
-                needFixCommentIds.set(id, comment.id);
-            }
-            needFixCommentBodies.set(id, body);
-            if (comment.created_at) {
-                needFixCreatedAt.set(id, comment.created_at);
-            }
-            if (comment.user) {
-                needFixAuthor.set(id, comment.user);
-            }
-            fixed.delete(id);
-            fixedMessages.delete(id);
-        } else if (kind === "FIXED") {
-            if (needFixes.has(id)) {
-                fixed.add(id);
-                fixedMessages.set(id, message);
-                if (comment.created_at) {
-                    fixedCreatedAt.set(id, comment.created_at);
-                }
-                if (comment.user) {
-                    fixedAuthor.set(id, comment.user);
-                }
-            }
+        fixed.add(id);
+        fixedMessages.set(id, message);
+        if (comment.created_at) {
+            fixedCreatedAt.set(id, comment.created_at);
+        }
+        if (comment.user) {
+            fixedAuthor.set(id, comment.user);
         }
     }
 

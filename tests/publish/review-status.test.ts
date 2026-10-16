@@ -31,6 +31,46 @@ describe("review tags", () => {
     expect(status.state).toBe("fixed_waiting");
   });
 
+  test("deriveReviewStatus is order-independent (timeline returns newest first)", () => {
+    // listPullRequestTimeline 按最新在前排序，FIXED 会排在 NEEDFIX 之前。
+    const fixedComment = {
+      id: 200,
+      body: "[ABCC_FIXED_abc123] 已按意见修复",
+      user: { login: "creator" },
+      created_at: "2026-08-12T11:00:00Z",
+    };
+    const needFixComment = {
+      id: 100,
+      body: "[ABCC_NEEDFIX_abc123] 请修复图标比例",
+      user: { login: "member-one" },
+      created_at: "2026-08-12T10:00:00Z",
+    };
+
+    const status = deriveReviewStatus([fixedComment, needFixComment]);
+    expect(status.state).toBe("fixed_waiting");
+    expect(status.items[0].fixed).toBe(true);
+    expect(status.items[0].fixedMessage).toBe("已按意见修复");
+  });
+
+  test("a new NEEDFIX after FIXED moves the PR back to changes_requested", () => {
+    const fixedOld = {
+      id: 2,
+      body: "[ABCC_FIXED_old1] 已修复",
+      created_at: "2026-08-12T11:00:00Z",
+    };
+    const newNeedFix = {
+      id: 3,
+      body: "[ABCC_NEEDFIX_new2] 新问题",
+      created_at: "2026-08-12T12:00:00Z",
+    };
+
+    const status = deriveReviewStatus([newNeedFix, fixedOld]);
+    expect(status.state).toBe("changes_requested");
+    expect(status.items).toHaveLength(1);
+    expect(status.items[0].id).toBe("new2");
+    expect(status.items[0].fixed).toBe(false);
+  });
+
   test("filter keeps member tags and author FIXED/REOPEN, drops external tags", () => {
     const comments = [
       { id: 1, body: "[ABCC_NEEDFIX_x] 问题", user: { login: "member-one" } },
