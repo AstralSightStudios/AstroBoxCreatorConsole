@@ -3,10 +3,15 @@ import {
   Badge,
   Button,
   Callout,
+  Dialog,
   Spinner,
 } from "~/components/ScaleAwareThemes";
 import {
+  ArrowSquareOutIcon,
   CaretRightIcon,
+  CopyIcon,
+  GithubLogoIcon,
+  InfoIcon,
   TrashIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
@@ -19,6 +24,11 @@ import {
   listSellerResourceFileKeys,
   type SellerResourceFileKey,
 } from "~/api/astrobox/order";
+import { loadAccountState } from "~/logic/account/store";
+import {
+  fetchManifestForCatalogEntry,
+  type ManifestV2,
+} from "~/logic/publish/manifest-loader";
 import {
   loadOwnedCatalogResourcesForCurrentUser,
   type ResourceCatalogContext,
@@ -30,6 +40,16 @@ import { SectionCard } from "~/routes/resource/publish/components/shared";
  * "可能还有更早的历史记录"，避免用户误以为列表已是全量。
  */
 const FILE_KEY_LIST_LIMIT = 500;
+
+/** 复制文本到剪贴板，成功/失败均有 toast 反馈。 */
+async function copyText(text: string, successMessage = "已复制") {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(successMessage);
+  } catch (err) {
+    toast.error("复制失败：" + ((err as Error)?.message || "未知错误"));
+  }
+}
 
 /** 新到旧排序（createdAt 为 ISO 字符串，字典序即时间序）。 */
 function newestFirst(a: SellerResourceFileKey, b: SellerResourceFileKey) {
@@ -63,6 +83,32 @@ function groupItemsByDevice(items: SellerResourceFileKey[]): DeviceKeyGroup[] {
     .sort((a, b) => newestFirst(a.latest, b.latest));
 }
 
+/**
+ * 从资源仓库根目录的 manifest_v2.json 解析每台设备的包体文件名，
+ * 用于在 GitHub 上直达具体的加密文件。读取失败一律返回空表，
+ * 不阻塞密钥列表本身的加载。
+ */
+async function fetchDeviceFileNames(
+  resource: ResourceCatalogContext,
+): Promise<{ downloadFileNames: Record<string, string>; manifest?: ManifestV2 }> {
+  const token = loadAccountState().github?.token;
+  if (!token) return { downloadFileNames: {} };
+  try {
+    const { manifest } = await fetchManifestForCatalogEntry({
+      entry: resource.entry,
+      token,
+    });
+    const downloadFileNames: Record<string, string> = {};
+    for (const [deviceId, info] of Object.entries(manifest.downloads ?? {})) {
+      const name = info?.file_name?.trim();
+      if (name) downloadFileNames[deviceId] = name;
+    }
+    return { downloadFileNames, manifest };
+  } catch {
+    return { downloadFileNames: {} };
+  }
+}
+
 async function fetchEncryptedResources() {
   const ownedResources = await loadOwnedCatalogResourcesForCurrentUser().catch(
     () => [] as ResourceCatalogContext[],
@@ -71,11 +117,14 @@ async function fetchEncryptedResources() {
 
   const results = await Promise.allSettled(
     ownedResources.map(async (resource) => {
-      const items = await listSellerResourceFileKeys({
-        resourceId: resource.entry.id,
-        limit: FILE_KEY_LIST_LIMIT,
-      });
-      return { resource, items };
+      const [items, fileNames] = await Promise.all([
+        listSellerResourceFileKeys({
+          resourceId: resource.entry.id,
+          limit: FILE_KEY_LIST_LIMIT,
+        }),
+        fetchDeviceFileNames(resource),
+      ]);
+      return { resource, items, ...fileNames };
     }),
   );
 
@@ -86,19 +135,46 @@ async function fetchEncryptedResources() {
       ): r is PromiseFulfilledResult<{
         resource: ResourceCatalogContext;
         items: SellerResourceFileKey[];
+        downloadFileNames: Record<string, string>;
+        manifest?: ManifestV2;
       }> => r.status === "fulfilled",
     )
     .map((r) => r.value)
     .filter((group) => group.items.length > 0);
 }
 
-type ResourceKeyGroup = {
+export type ResourceKeyGroup = {
   resource: ResourceCatalogContext;
   items: SellerResourceFileKey[];
+  /** 设备 → manifest 中的包体文件名，用于 GitHub 直达文件（可能缺失）。 */
+  downloadFileNames?: Record<string, string>;
+  manifest?: ManifestV2;
 };
 
 interface EncryptedFilesCardProps {
   isVip: boolean;
+}
+
+/** 加密包体在资源仓库 `downloads/` 目录下的 GitHub 目录链接。 */
+function buildGithubDownloadsUrl(entry: ResourceCatalogContext["entry"]) {
+  const owner = entry.repo_owner.trim();
+  const repo = entry.repo_name.trim();
+  if (!owner || !repo) return null;
+  const ref = entry.repo_commit_hash.trim() || "main";
+  return `https://github.com/${owner}/${repo}/tree/${ref}/downloads`;
+}
+
+/** 指向具体加密文件的 GitHub 链接（仓库路径为 downloads/{fileName}）。 */
+function buildGithubFileUrl(
+  entry: ResourceCatalogContext["entry"],
+  fileName: string,
+) {
+  const owner = entry.repo_owner.trim();
+  const repo = entry.repo_name.trim();
+  if (!owner || !repo) return null;
+  const ref = entry.repo_commit_hash.trim() || "main";
+  const encoded = fileName.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${owner}/${repo}/blob/${ref}/downloads/${encoded}`;
 }
 
 /** 密钥条目操作列：删除按钮（带确认弹窗与进行中状态）。 */
@@ -114,7 +190,13 @@ function KeyEntryDeleteButton({
   return (
     <AlertDialog.Root>
       <AlertDialog.Trigger>
-        <Button size="2" variant="soft" color="red" disabled={isDeleting}>
+        <Button
+          size="2"
+          variant="soft"
+          color="red"
+          disabled={isDeleting}
+          title="删除密钥映射"
+        >
           {isDeleting ? <Spinner size="2" /> : <TrashIcon size={16} />}
         </Button>
       </AlertDialog.Trigger>
@@ -140,24 +222,137 @@ function KeyEntryDeleteButton({
   );
 }
 
-/** 单条密钥映射行：哈希 + 创建时间 + 删除。 */
+/** 详情行：字段名 + 值。 */
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-sm text-white/50">{label}</span>
+      <span className="min-w-0 break-all text-right text-sm text-white/90">
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/** 包体详情弹窗：完整哈希（可复制）、设备、时间与 GitHub 文件链接。 */
+function KeyEntryDetailsDialog({
+  entry,
+  resource,
+  downloadFileNames,
+}: {
+  entry: SellerResourceFileKey;
+  resource: ResourceCatalogContext;
+  downloadFileNames?: Record<string, string>;
+}) {
+  const fileName = downloadFileNames?.[entry.deviceId]?.trim();
+  const fileUrl = fileName
+    ? buildGithubFileUrl(resource.entry, fileName)
+    : null;
+  const dirUrl = buildGithubDownloadsUrl(resource.entry);
+  const hash = entry.encryptedFileHash;
+
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger>
+        <Button size="2" variant="soft" color="gray" title="包体详情">
+          <InfoIcon size={16} />
+        </Button>
+      </Dialog.Trigger>
+      <Dialog.Content maxWidth="480px">
+        <Dialog.Title>包体详情</Dialog.Title>
+        <Dialog.Description size="2" className="text-white/60">
+          服务端保存的密钥映射。哈希是密文文件的 sha256，用于识别"哪个加密包
+          配哪条密钥"；密钥本身不下发到控制台。
+        </Dialog.Description>
+
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-2">
+            <span className="shrink-0 text-sm text-white/50">哈希</span>
+            <div className="flex min-w-0 items-start justify-end gap-1.5">
+              <code className="min-w-0 break-all text-right text-xs text-white/80 bg-white/10 px-1.5 py-0.5 rounded">
+                {hash}
+              </code>
+              <Button
+                size="1"
+                variant="soft"
+                color="gray"
+                title="复制完整哈希"
+                onClick={() => void copyText(hash, "哈希已复制")}
+              >
+                <CopyIcon size={14} />
+              </Button>
+            </div>
+          </div>
+
+          <DetailRow label="设备">{entry.deviceId}</DetailRow>
+          <DetailRow label="创建时间">
+            {new Date(entry.createdAt).toLocaleString()}
+          </DetailRow>
+          {entry.updatedAt.trim() && entry.updatedAt !== entry.createdAt && (
+            <DetailRow label="更新时间">
+              {new Date(entry.updatedAt).toLocaleString()}
+            </DetailRow>
+          )}
+          {fileName && <DetailRow label="包体文件">{fileName}</DetailRow>}
+
+          {(fileUrl || dirUrl) && (
+            <div className="flex justify-end">
+              {fileUrl ? (
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline"
+                >
+                  在 GitHub 打开该文件
+                  <ArrowSquareOutIcon size={14} />
+                </a>
+              ) : (
+                <a
+                  href={dirUrl!}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline"
+                >
+                  在 GitHub 打开 downloads 目录
+                  <ArrowSquareOutIcon size={14} />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <Dialog.Close>
+            <Button variant="soft" color="gray">
+              关闭
+            </Button>
+          </Dialog.Close>
+        </div>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+}
+
+/** 单条密钥映射行：时间 + 详情 + 删除（哈希收进详情弹窗）。 */
 function KeyEntryRow({
   entry,
   badge,
+  resource,
+  downloadFileNames,
   isDeleting,
   onDelete,
 }: {
   entry: SellerResourceFileKey;
   badge?: string;
+  resource: ResourceCatalogContext;
+  downloadFileNames?: Record<string, string>;
   isDeleting: boolean;
   onDelete: (entry: SellerResourceFileKey) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1.5">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <code className="text-xs text-white/80 bg-white/10 px-1.5 py-0.5 rounded">
-          {entry.encryptedFileHash.slice(0, 16)}…
-        </code>
         {badge && (
           <Badge size="1" variant="soft" color="green">
             {badge}
@@ -167,11 +362,18 @@ function KeyEntryRow({
           {new Date(entry.createdAt).toLocaleString()}
         </span>
       </div>
-      <KeyEntryDeleteButton
-        entry={entry}
-        isDeleting={isDeleting}
-        onDelete={onDelete}
-      />
+      <div className="flex shrink-0 items-center gap-1">
+        <KeyEntryDetailsDialog
+          entry={entry}
+          resource={resource}
+          downloadFileNames={downloadFileNames}
+        />
+        <KeyEntryDeleteButton
+          entry={entry}
+          isDeleting={isDeleting}
+          onDelete={onDelete}
+        />
+      </div>
     </div>
   );
 }
@@ -179,28 +381,51 @@ function KeyEntryRow({
 /** 单个设备的密钥映射区：默认只显示最新一条，更早的历史折叠。 */
 function DeviceKeySection({
   group,
+  resource,
+  downloadFileNames,
   isDeleting,
   onDelete,
 }: {
   group: DeviceKeyGroup;
+  resource: ResourceCatalogContext;
+  downloadFileNames?: Record<string, string>;
   isDeleting: (entry: SellerResourceFileKey) => boolean;
   onDelete: (entry: SellerResourceFileKey) => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const fileName = downloadFileNames?.[group.deviceId]?.trim();
+  const fileUrl = fileName
+    ? buildGithubFileUrl(resource.entry, fileName)
+    : null;
 
   return (
-    <div className="border-t border-white/5 px-4 py-2.5 first:border-t-0">
+    <div className="border-t border-white/5 px-3 py-2.5 sm:px-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-white/80">
+        <span className="min-w-0 truncate text-sm font-medium text-white/80">
           {group.deviceId}
         </span>
-        <span className="shrink-0 text-xs text-white/45">
-          {group.history.length + 1} 条映射
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {fileUrl && (
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`在 GitHub 打开加密文件 ${fileName}`}
+              className="text-white/50 transition-colors hover:text-white"
+            >
+              <GithubLogoIcon size={15} />
+            </a>
+          )}
+          <span className="text-xs text-white/45">
+            {group.history.length + 1} 条映射
+          </span>
+        </div>
       </div>
       <KeyEntryRow
         entry={group.latest}
         badge="最新"
+        resource={resource}
+        downloadFileNames={downloadFileNames}
         isDeleting={isDeleting(group.latest)}
         onDelete={onDelete}
       />
@@ -228,6 +453,8 @@ function DeviceKeySection({
                 <KeyEntryRow
                   key={`${entry.resourceId}-${entry.deviceId}-${entry.encryptedFileHash}`}
                   entry={entry}
+                  resource={resource}
+                  downloadFileNames={downloadFileNames}
                   isDeleting={isDeleting(entry)}
                   onDelete={onDelete}
                 />
@@ -256,43 +483,64 @@ function ResourceGroupSection({
   const [open, setOpen] = useState(false);
   const deviceGroups = groupItemsByDevice(group.items);
   const reachedLimit = group.items.length >= FILE_KEY_LIST_LIMIT;
+  const githubDownloadsUrl = buildGithubDownloadsUrl(group.resource.entry);
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <Collapsible.Trigger asChild className="w-full">
-        <button
-          type="button"
-          className="w-full text-left"
-        >
-          <div className="flex w-full min-w-0 items-center justify-between gap-3 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <CaretRightIcon
-                size={14}
-                className="shrink-0 text-white/60"
-                style={{
-                  transform: open ? "rotate(90deg)" : undefined,
-                  transition: "transform 0.15s ease",
-                }}
-              />
-              <span className="min-w-0 truncate text-sm font-medium text-white">
+      {/* 头部行平铺三段：折叠触发区 | GitHub 链接 | 摘要徽章。
+          链接必须放在触发按钮外，HTML 不允许 button 内嵌套 a。 */}
+      <div className="flex w-full items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4">
+        <Collapsible.Trigger asChild className="min-w-0 flex-1">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            <CaretRightIcon
+              size={14}
+              className="shrink-0 text-white/60"
+              style={{
+                transform: open ? "rotate(90deg)" : undefined,
+                transition: "transform 0.15s ease",
+              }}
+            />
+            {/* 窄屏：id 换行到资源名下方，保证资源名始终可见 */}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-white">
                 {group.resource.entry.name}
               </span>
-              <span className="shrink-0 text-xs text-white/50">
+              <span className="block truncate text-xs text-white/50 sm:hidden">
                 {group.resource.entry.id}
               </span>
-            </div>
-            <Badge size="1" variant="soft" color="gray">
-              {deviceGroups.length} 设备 / {group.items.length} 条映射
-            </Badge>
-          </div>
-        </button>
-      </Collapsible.Trigger>
+            </span>
+            {/* 宽屏：id 与资源名同行 */}
+            <span className="hidden shrink-0 text-xs text-white/50 sm:block">
+              {group.resource.entry.id}
+            </span>
+          </button>
+        </Collapsible.Trigger>
+        {githubDownloadsUrl && (
+          <a
+            href={githubDownloadsUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="在 GitHub 打开加密文件所在目录"
+            className="shrink-0 text-white/50 transition-colors hover:text-white"
+          >
+            <GithubLogoIcon size={18} />
+          </a>
+        )}
+        <Badge size="1" variant="soft" color="gray" className="shrink-0">
+          {deviceGroups.length} 设备 / {group.items.length} 条映射
+        </Badge>
+      </div>
       <Collapsible.Content className="abcc-collapsible-content">
         <div>
           {deviceGroups.map((deviceGroup) => (
             <DeviceKeySection
               key={deviceGroup.deviceId}
               group={deviceGroup}
+              resource={group.resource}
+              downloadFileNames={group.downloadFileNames}
               isDeleting={isDeleting}
               onDelete={onDelete}
             />
