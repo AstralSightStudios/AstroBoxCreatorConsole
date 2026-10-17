@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  authorNameFromSearchResult,
   collectBoundAuthorNames,
   collectUnboundAuthorNames,
   hasBoundAuthor,
@@ -110,5 +111,23 @@ describe("作者提醒文案", () => {
 
   test("完全没有作者时也提醒", () => {
     expect(unboundAuthorNotice([])).toContain("没有关联 AstroBox 账号的作者");
+  });
+});
+
+describe("从搜索结果取署名", () => {
+  test("始终取 username，不用 displayName", () => {
+    expect(
+      authorNameFromSearchResult({ displayName: "星空", username: "star" }),
+    ).toBe("star");
+  });
+
+  test("去掉首尾空白", () => {
+    expect(authorNameFromSearchResult({ username: "  star  " })).toBe("star");
+  });
+
+  test("username 缺失或为空时得到空串", () => {
+    expect(authorNameFromSearchResult({ displayName: "星空" })).toBe("");
+    expect(authorNameFromSearchResult({ username: "   " })).toBe("");
+    expect(authorNameFromSearchResult({})).toBe("");
   });
 });

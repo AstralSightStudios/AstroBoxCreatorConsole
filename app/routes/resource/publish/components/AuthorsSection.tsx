@@ -9,7 +9,6 @@ import {
     Button,
     Callout,
     Switch,
-    TextField,
 } from "~/components/ScaleAwareThemes";
 import {
     type Dispatch,
@@ -23,14 +22,20 @@ import {
     FieldHelpDialog,
     SectionCard,
 } from "./shared";
-import { withBoundFirstAuthor } from "~/logic/publish/author-match";
+import {
+    authorNameFromSearchResult,
+    withBoundFirstAuthor,
+} from "~/logic/publish/author-match";
 import { log } from "~/logic/logging";
 import { logFieldChange } from "~/logic/logging/publish-flow";
+import { AuthorNameInput } from "./AuthorNameInput";
+import type { AuthorSearchItem } from "~/api/astrobox/profile";
 
 const AUTHOR_FIELD_HELP: FieldHelpItem[] = [
     {
         label: "作者名称",
-        description: "展示在资源详情页的作者署名。第一个作者默认填入当前登录的 AstroBox 用户名。",
+        description:
+            "请填 AstroBox 用户名（username，不是显示名）。第一个作者默认填入当前登录的 AstroBox 用户名；第二个作者及以后可直接按用户名搜索创作者并选择。",
     },
     {
         label: "关联 AstroBox 账号",
@@ -68,10 +73,26 @@ export function AuthorsSection({
         setAuthors((prev) => [...prev, { name: "", bindABAccount: true }]);
     };
 
+    // 从创作者搜索结果点选：回填署名并默认关联 AstroBox 账号。第一个作者固定为
+    // 当前账号，不参与搜索，所以这里只会作用在第二作者及以后。
+    const pickSearchedAuthor = (index: number, author: AuthorSearchItem) => {
+        const name = authorNameFromSearchResult(author);
+        if (!name) return;
+        log.info("form/authors", "通过搜索选择作者", {
+            data: { index: index + 1, name, userId: author.userId },
+        });
+        logFieldChange(`author-name-${index}`, `作者名称(#${index + 1})`, name);
+        setAuthors((prev) =>
+            prev.map((item, idx) =>
+                idx === index ? { ...item, name, bindABAccount: true } : item,
+            ),
+        );
+    };
+
     return (
         <SectionCard
             title="作者"
-            description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，尽量不要改名或移除。"
+            description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，尽量不要改名或移除。第二个作者起请填 AstroBox 用户名，可直接搜索创作者。"
             fieldKey="authors"
             headerExtra={
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -157,22 +178,21 @@ export function AuthorsSection({
 
                                 <div className="flex flex-col gap-2.5 md:flex-row md:flex-wrap md:items-center md:gap-x-4 md:gap-y-2">
                                     <div className="flex min-w-0 items-center gap-2 md:grow md:shrink md:basis-[300px]">
-                                        <TextField.Root
-                                            className="min-w-0 flex-1"
+                                        <AuthorNameInput
+                                            value={author.name}
                                             placeholder={
                                                 isFirst
                                                     ? "当前 AstroBox 账号"
-                                                    : "作者名称"
+                                                    : "AstroBox 用户名，可搜索创作者"
                                             }
-                                            value={author.name}
-                                            radius="large"
-                                            onChange={(e) => {
+                                            enableSearch={!isFirst}
+                                            onChange={(nextValue) => {
                                                 if (
                                                     isFirst &&
                                                     !firstAuthorEditConfirmed
                                                 ) {
                                                     setPendingFirstAuthorName(
-                                                        e.target.value,
+                                                        nextValue,
                                                     );
                                                     setConfirmEditFirstAuthor(
                                                         true,
@@ -182,20 +202,25 @@ export function AuthorsSection({
                                                 logFieldChange(
                                                     `author-name-${index}`,
                                                     `作者名称(#${index + 1})`,
-                                                    e.target.value,
+                                                    nextValue,
                                                 );
                                                 setAuthors((prev) =>
                                                     prev.map((item, idx) =>
                                                         idx === index
                                                             ? {
                                                                   ...item,
-                                                                  name: e.target
-                                                                      .value,
+                                                                  name: nextValue,
                                                               }
                                                             : item,
                                                     ),
                                                 );
                                             }}
+                                            onPick={(picked) =>
+                                                pickSearchedAuthor(
+                                                    index,
+                                                    picked,
+                                                )
+                                            }
                                         />
                                         {isFirst &&
                                         defaultAuthorName &&

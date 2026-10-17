@@ -1,16 +1,17 @@
 /**
  * 作者字段的绑定规则，发布表单与 PR 审核共用同一套口径。
  *
- * manifest / 表单里的 author[].name 是创作者自填的自由文本，既不是 GitHub 登录名，
- * 也不是 AstroBox 的 userId；唯一能把署名和真实账号挂上的是 author[].bindABAccount
- * 这个开关——它声明「这个署名对应一个真实的 AstroBox 账号」。
+ * manifest / 表单里的 author[].name 约定填 AstroBox「用户名」（username，账号的唯一
+ * 句柄），不是展示用的 displayName，也不是 AstroBox 的 userId；唯一能把署名和真实
+ * 账号挂上的是 author[].bindABAccount 这个开关——它声明「这个署名对应一个真实的
+ * AstroBox 账号」。
  *
  * 因此硬性要求只有一条：作者字段里至少有一条 author 开着 bindABAccount。
  * 一个都没有的话，资源就归属不到任何人：资源主页、Creator Pro 权益、
  * 2 免费 : 1 付费比例、加密与付费门槛、审核通知的收件人全部无从谈起。
  *
  * 明确不包含「署名是否真的对应某个账号」的反查——查这个只有 AstroBox 管理员做得到，
- * 创作者侧一律不查（详见 resreview/owner-pro.ts 的审核端反查）。
+ * 创作者侧一律不查（详见 resreview/owner-pro.ts 的审核端反查：按用户名精确取账号）。
  *
  * 本文件只放纯函数：不发请求、不读全局状态，方便单测覆盖口径本身。
  */
@@ -82,6 +83,19 @@ export function hasBoundAuthor(
     authors: ManifestAuthorLike[] | undefined,
 ): boolean {
     return collectBoundAuthorNames(authors).length > 0;
+}
+
+/**
+ * 从创作者搜索结果取一个可直接写进作者字段的署名。
+ *
+ * 作者字段约定填 AstroBox「用户名」（username，账号的唯一句柄），不是展示用的
+ * displayName——审核端只能拿用户名反查真实账号，displayName 会重名、也查不准。
+ * 因此这里始终取 username；为空时返回空串，由调用方忽略这次选择。
+ */
+export function authorNameFromSearchResult(result: {
+    username?: string;
+}): string {
+    return (result.username ?? "").trim();
 }
 
 /**
