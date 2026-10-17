@@ -117,7 +117,8 @@ export default function AdminHotUpdatePage() {
   // 发布前预览：传输编码统计 + 从同渠道/平台上一个版本升级的预计下载量。
   const parsedEncoding = useMemo(() => {
     if (!parsedRelease) return null;
-    const summary = summarizeEncodings(parsedRelease.files);
+    const allFiles = [...parsedRelease.files, ...(parsedRelease.logic?.files ?? [])];
+    const summary = summarizeEncodings(allFiles);
     const previous = releases
       .filter(
         (r) =>
@@ -130,7 +131,10 @@ export default function AdminHotUpdatePage() {
     const upgrade = previous
       ? {
           version: previous.version,
-          ...estimateUpgradeBytes(parsedRelease.files, previous.files),
+          ...estimateUpgradeBytes(allFiles, [
+            ...previous.files,
+            ...(previous.logic?.files ?? []),
+          ]),
         }
       : null;
     return { ...summary, upgrade };
@@ -162,6 +166,7 @@ export default function AdminHotUpdatePage() {
     "all",
   );
   const [previewNative, setPreviewNative] = useState("");
+  const [previewLogic, setPreviewLogic] = useState("");
   const [preview, setPreview] = useState<ManifestPreview | null>(null);
 
   const loadAll = async () => {
@@ -218,12 +223,13 @@ export default function AdminHotUpdatePage() {
           rMaxNative.trim() || parsedRelease.maxNativeVersion || undefined,
         filesBaseUrl: rBaseUrl.trim(),
         files: parsedRelease.files,
+        logic: parsedRelease.logic,
         rollout,
         notes: rNotes.trim() || undefined,
         mandatory: rMandatory,
       });
       toast.success(
-        `已发布 v${parsedRelease.version}（${parsedRelease.files.length} 个文件）${rMandatory ? "，强制更新" : ""}`,
+        `已发布 v${parsedRelease.version}（${parsedRelease.files.length} 个文件${parsedRelease.logic ? "，含逻辑层" : ""}）${rMandatory ? "，强制更新" : ""}`,
       );
       setReleaseJsonText("");
       setRNotes("");
@@ -363,6 +369,7 @@ export default function AdminHotUpdatePage() {
         previewChannel,
         previewPlatform,
         previewNative.trim() || undefined,
+        previewLogic.trim() || undefined,
       );
       setPreview(res);
       if (!res.manifest) toast.info("该渠道/平台当前无可下发的 manifest");
@@ -472,6 +479,19 @@ export default function AdminHotUpdatePage() {
                   {parsedRelease.maxNativeVersion
                     ? ` · 最高原生 ${parsedRelease.maxNativeVersion}`
                     : ""}
+                  {parsedRelease.logic && (
+                    <div className="mt-1 text-emerald-100/80">
+                      含逻辑层：宿主接口级别 ≥ {parsedRelease.logic.minHostLevel}
+                      {parsedRelease.logic.buildId
+                        ? ` · 构建 ${parsedRelease.logic.buildId}`
+                        : ""}{" "}
+                      ·{" "}
+                      {formatBytes(
+                        parsedRelease.logic.files.reduce((s, f) => s + f.size, 0),
+                      )}
+                      。只会下发给能运行逻辑层的新原生壳，老原生壳拿不到这个版本。
+                    </div>
+                  )}
                   {parsedEncoding && (
                     <div className="mt-1 text-emerald-100/80">
                       {parsedEncoding.zstFiles > 0 || parsedEncoding.patchedFiles > 0
@@ -582,6 +602,11 @@ export default function AdminHotUpdatePage() {
                     </span>
                     {r.revoked && <Badge color="red">已吊销</Badge>}
                     {r.mandatory && <Badge color="orange">强制更新</Badge>}
+                    {r.logic && (
+                      <Badge color="violet">
+                        逻辑层 · 宿主 ≥ {r.logic.minHostLevel}
+                      </Badge>
+                    )}
                     {!r.enabled && <Badge color="amber">已停用</Badge>}
                     {r.enabled && !r.revoked && (
                       <Badge color="green">下发中</Badge>
@@ -606,6 +631,15 @@ export default function AdminHotUpdatePage() {
                       <span>
                         原生范围：{r.minNativeVersion || "*"} ~{" "}
                         {r.maxNativeVersion || "*"}
+                      </span>
+                    )}
+                    {r.logic && (
+                      <span>
+                        逻辑层：{formatBytes(r.logic.totalSize ?? 0)}
+                        {r.logic.encoding?.zstFiles
+                          ? `（压缩版 ${formatBytes(r.logic.encoding.zstBytes)}）`
+                          : ""}
+                        {r.logic.buildId ? ` · ${r.logic.buildId}` : ""}
                       </span>
                     )}
                   </div>
@@ -926,6 +960,14 @@ export default function AdminHotUpdatePage() {
                 value={previewNative}
                 onChange={(e) => setPreviewNative(e.target.value)}
                 placeholder="如 2.5.0"
+              />
+            </Field>
+            <Field label="逻辑层宿主级别（可选，留空 = 老原生壳）">
+              <input
+                className={inputClass}
+                value={previewLogic}
+                onChange={(e) => setPreviewLogic(e.target.value)}
+                placeholder="如 1"
               />
             </Field>
             <div className="flex items-end">
