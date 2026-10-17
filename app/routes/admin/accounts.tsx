@@ -838,7 +838,17 @@ function VipManager({
             ))}
           </Select.Content>
         </Select.Root>
-        <input className={inputClass} value={months} onChange={(event) => setMonths(event.target.value)} placeholder="月数" />
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+            <span className="text-white/55">月数</span>
+          </div>
+          <input
+            className={inputClass}
+            value={months}
+            onChange={(event) => setMonths(event.target.value)}
+            aria-label="月数"
+          />
+        </div>
         <div className="min-w-0">
           <div className="mb-1 flex items-center justify-between gap-2 text-xs">
             <span className="text-white/55">时间</span>
