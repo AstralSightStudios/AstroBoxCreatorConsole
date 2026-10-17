@@ -11,7 +11,8 @@ import Interactions from "~/routes/interactions";
 import AfdianIncomePage from "~/routes/afdian-income";
 import AfdianMessagesPage from "~/routes/afdian-messages";
 import Profile from "~/routes/profile";
-import CloudControl from "~/routes/cloudcontrol";
+import ManageResourcesPage from "~/routes/manage-resources/page";
+import ManageResourceDetailPage from "~/routes/manage-resources/detail";
 import ResourceEncrypt from "~/routes/resource/encrypt";
 import ResourceManage from "~/routes/resource/manage";
 import ResourcePublish from "~/routes/resource/publish";
@@ -64,7 +65,8 @@ const router = createBrowserRouter([
       { path: "publish", element: <ResourcePublish /> },
       { path: "manage", element: <ResourceManage /> },
       { path: "encrypt", element: <ResourceEncrypt /> },
-      { path: "cloudcontrol", element: <CloudControl /> },
+      { path: "manage-resources", element: <ManageResourcesPage /> },
+      { path: "manage-resources/detail", element: <ManageResourceDetailPage /> },
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "resreview", element: <ResourceReviewPage /> },

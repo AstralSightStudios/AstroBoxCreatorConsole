@@ -129,10 +129,10 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
         path: "/resreview",
       },
       {
-        id: "cloudcontrol",
+        id: "manage-resources",
         icon: PackageIcon,
         label: "资源管理",
-        path: "/cloudcontrol",
+        path: "/manage-resources",
       },
       {
         id: "explorepage",
@@ -202,6 +202,14 @@ export const NAV_SECTIONS: NavSectionConfig[] = [
 export const NAV_ITEMS_IN_ORDER = NAV_SECTIONS.flatMap(
   (section) => section.items,
 );
+
+/**
+ * 导航项 id 的历史别名。改名后必须把旧 id 映射到新 id，
+ * 否则用户已保存的排序 / 显隐偏好会对不上：排序里旧 id 失效会把该项目挤到分组末尾。
+ */
+export const NAV_ITEM_ID_ALIASES: Record<string, string> = {
+  cloudcontrol: "manage-resources",
+};
 
 export const NAV_PRIMARY_ACTION: NavLinkConfig = {
   id: "publish-new-resource",

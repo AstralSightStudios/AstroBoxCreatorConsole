@@ -51,6 +51,18 @@ describe("导航项偏好", () => {
     });
   });
 
+  test("旧导航项 id 迁移到新 id", () => {
+    expect(
+      normalizeNavItemPreferences({
+        hiddenItemIds: ["cloudcontrol"],
+        itemOrder: ["resreview", "cloudcontrol", "explorepage"],
+      }),
+    ).toEqual({
+      hiddenItemIds: ["manage-resources"],
+      itemOrder: ["resreview", "manage-resources", "explorepage"],
+    });
+  });
+
   test("按用户顺序排列并在末尾保留新项目", () => {
     const items = [{ id: "overview" }, { id: "analysis" }, { id: "new" }];
 
@@ -87,11 +99,11 @@ describe("导航项偏好", () => {
   test("资源管理入口要求仓库权限，PR审核保持原样", () => {
     const items = NAV_SECTIONS.flatMap((section) => section.items);
     const review = items.find((item) => item.id === "resreview");
-    const resources = items.find((item) => item.id === "cloudcontrol");
+    const resources = items.find((item) => item.id === "manage-resources");
 
     expect(resources).toMatchObject({
       label: "资源管理",
-      path: "/cloudcontrol",
+      path: "/manage-resources",
       requireRepoPermission: true,
     });
     expect(review?.requireRepoPermission).toBeUndefined();

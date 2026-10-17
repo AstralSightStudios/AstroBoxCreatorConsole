@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { NAV_ITEM_ID_ALIASES } from "~/layout/nav-config";
 
 // 导航显示偏好与账号区域收缩配置
 const ACCOUNT_COLLAPSE_STORAGE_KEY = "ABCC_NAV_ACCOUNT_COLLAPSE_V1";
@@ -26,13 +27,17 @@ function isBrowser() {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
 
+function migrateNavItemId(id: string): string {
+  return NAV_ITEM_ID_ALIASES[id] ?? id;
+}
+
 function normalizeIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
 
   const ids = value.filter(
     (item): item is string => typeof item === "string" && item.length > 0,
   );
-  return [...new Set(ids)];
+  return [...new Set(ids.map(migrateNavItemId))];
 }
 
 export function normalizeNavItemPreferences(
