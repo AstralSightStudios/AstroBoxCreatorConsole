@@ -653,6 +653,23 @@ export default function ResourceReviewPage() {
     }
   };
 
+  // 批准与合入合并为单一步骤：先提交 GitHub Approve，成功后再执行合入。
+  // 若 approve 失败则中断，避免出现「未批准却已合入」的状态。
+  const approveAndMerge = async () => {
+    if (!openNumber || approving || merging) return;
+    const number = openNumber;
+    setApproving(true);
+    try {
+      await approvePullRequest(number);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+      setApproving(false);
+      return;
+    }
+    setApproving(false);
+    await merge();
+  };
+
   const closePr = async (reason: string) => {
     if (!openNumber || closing) return;
     const number = openNumber;
@@ -883,7 +900,7 @@ export default function ResourceReviewPage() {
                   noticeDraft={noticeDraft}
                   onNoticeDraftChange={setNoticeDraft}
                 onApprove={approve}
-                onMerge={merge}
+                onApproveAndMerge={approveAndMerge}
                 onClose={closePr}
                 onRefuse={refusePr}
               />

@@ -45,7 +45,7 @@ interface PullRequestReviewWorkspaceProps {
   noticeStatusByCommentId?: Record<number, CcNoticeDeliveryStatus>;
   checkingNoticeStatus?: boolean;
   onApprove: () => void;
-  onMerge: () => void;
+  onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
 }
@@ -97,7 +97,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             noticeStatusByCommentId={props.noticeStatusByCommentId}
             checkingNoticeStatus={props.checkingNoticeStatus}
             onApprove={props.onApprove}
-            onMerge={props.onMerge}
+            onApproveAndMerge={props.onApproveAndMerge}
             onClose={props.onClose}
             onRefuse={props.onRefuse}
           />

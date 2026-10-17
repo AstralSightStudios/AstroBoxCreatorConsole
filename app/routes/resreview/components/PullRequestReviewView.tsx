@@ -46,7 +46,7 @@ export interface PullRequestReviewViewProps {
   refusing: boolean;
   canMerge: boolean;
   onApprove: () => void;
-  onMerge: () => void;
+  onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
   summaryCardRef?: React.RefObject<HTMLDivElement | null>;
@@ -83,7 +83,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     refusing,
     canMerge,
     onApprove,
-    onMerge,
+    onApproveAndMerge,
     onClose,
     onRefuse,
     summaryCardRef,
@@ -127,7 +127,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           closing={closing}
           refusing={refusing}
           canMerge={canMerge}
-          onMerge={onMerge}
+          onApproveAndMerge={onApproveAndMerge}
           onClose={onClose}
           onRefuse={onRefuse}
         />

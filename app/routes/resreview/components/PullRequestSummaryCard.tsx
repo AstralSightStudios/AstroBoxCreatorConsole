@@ -16,7 +16,7 @@ interface PullRequestSummaryCardProps {
   closing: boolean;
   refusing: boolean;
   canMerge: boolean;
-  onMerge: () => void;
+  onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
 }
@@ -30,7 +30,7 @@ export function PullRequestSummaryCard({
   closing,
   refusing,
   canMerge,
-  onMerge,
+  onApproveAndMerge,
   onClose,
   onRefuse,
 }: PullRequestSummaryCardProps) {
@@ -92,12 +92,17 @@ export function PullRequestSummaryCard({
           >
             <GithubLogo size={16} weight="duotone" />
           </Button>
-          <Button color="green" onClick={onApprove} disabled={approving}>
-            {approving ? "通过中..." : "通过"}
-          </Button>
-          {canMerge && (
-            <Button color="blue" onClick={() => setMergeDialogOpen(true)} disabled={merging}>
-              {merging ? "合入中..." : "合入"}
+          {canMerge ? (
+            <Button
+              color="blue"
+              onClick={() => setMergeDialogOpen(true)}
+              disabled={approving || merging}
+            >
+              {approving ? "批准中..." : merging ? "合入中..." : "批准并合入"}
+            </Button>
+          ) : (
+            <Button color="green" onClick={onApprove} disabled={approving}>
+              {approving ? "通过中..." : "通过"}
             </Button>
           )}
           {openPull.state === "open" && (
@@ -131,7 +136,7 @@ export function PullRequestSummaryCard({
         <Dialog.Content className="max-w-[420px]">
           <Dialog.Title>合入 PR #{openPull.number}</Dialog.Title>
           <Dialog.Description size="2" className="text-white/60">
-            合入后将触发仓库 Action 自动应用该资源更新/提交请求，确认完成审核并通过。
+            确认后将先提交 GitHub Approve，再合入 PR。合入后会触发仓库 Action 自动应用该资源更新/提交请求。
           </Dialog.Description>
           <div className="mt-4 flex justify-end gap-2">
             <Button
@@ -143,13 +148,13 @@ export function PullRequestSummaryCard({
             </Button>
             <Button
               color="blue"
-              disabled={merging}
+              disabled={approving || merging}
               onClick={() => {
                 setMergeDialogOpen(false);
-                onMerge();
+                onApproveAndMerge();
               }}
             >
-              {merging ? "合入中..." : "确认合入"}
+              {approving ? "批准中..." : merging ? "合入中..." : "确认批准并合入"}
             </Button>
           </div>
         </Dialog.Content>
