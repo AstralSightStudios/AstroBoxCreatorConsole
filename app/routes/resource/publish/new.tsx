@@ -67,6 +67,7 @@ import {
   createPullRequestComment,
   reopenPullRequest,
   updatePullRequestTitle,
+  waitForPullRequestOpen,
 } from "~/api/github/pr-review";
 import { renderCommentMarkdownInlineHtml } from "~/routes/resreview/utils/comment";
 import Page from "~/layout/page";
@@ -2104,16 +2105,48 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         }
         const submission = editContext.submission;
 
-        if (editContext.prState === "closed" && editContext.prNumber) {
-          await flowSpan("pr/reopen", "重新打开已关闭的 PR", () =>
-            reopenPullRequest(editContext.prNumber as number),
-          );
+        // 更新已关闭的 PR 之前必须先让它重新打开。
+        // 组织成员可以直接重开；外部贡献者对目标仓库只有读权限，GitHub 会返回一个
+        // 不含任何明细的 422，此时改为发 [ABCC_REOPEN] 评论，由仓库侧 GitHub Actions
+        // 用仓库自己的 token 代为重开（见 AstroBox-Repo 的 resource-submissions.yml）。
+        // 万一 Actions 没能在超时内完成（服务异常等），退化为用同一分支新建一个 PR，
+        // 避免这次提交丢失，也避免让创作者反复手动重开。
+        let prNumber = editContext.prNumber;
+        let reuseExistingPr = true;
+        let createdNewPr = false;
+        // 需要等仓库代重开的 PR 编号。真正的确认放到分支更新之后再做，
+        // 让「同步分支 + 更新提交条目」这段时间去覆盖 Action 的重开耗时。
+        let pendingReopenPr: number | null = null;
+        if (editContext.prState === "closed" && prNumber) {
+          const closedPrNumber = prNumber;
+          let reopenedBySelf = false;
+          try {
+            await flowSpan("pr/reopen", "重新打开已关闭的 PR", () =>
+              reopenPullRequest(closedPrNumber),
+            );
+            reopenedBySelf = true;
+          } catch (error) {
+            // 422 表示服务端拒绝：多数情况是没有写权限，也可能是分支被强推或删除
+            // 导致该 PR 不可重开。两种情况都先交给仓库侧 Action 试一次。
+            if (!isGithubStatus(error, 422)) throw error;
+            log.warn("pr/reopen", "无法直接重开该 PR，改为请求仓库代重开", {
+              data: { prNumber: closedPrNumber, status: 422 },
+            });
+          }
+
           await flowSpan("pr/comment", "发送 [ABCC_REOPEN] 评论", () =>
             createPullRequestComment(
-              editContext.prNumber as number,
-              "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。",
+              closedPrNumber,
+              reopenedBySelf
+                ? "[ABCC_REOPEN] 创作者已重新打开此 PR 并提交更新。"
+                : "[ABCC_REOPEN] 创作者请求重新打开此 PR 并提交更新。",
             ),
           );
+
+          if (!reopenedBySelf) {
+            // 这里只登记、不等待：确认挪到分支更新之后（见下方 pr/reopen-wait）。
+            pendingReopenPr = closedPrNumber;
+          }
         }
 
         await flowSpan("pr/sync", "同步 PR 分支与上游", () =>
@@ -2124,32 +2157,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             targetBranch: prHead.ref,
           }),
         );
-
-        // 资源标题可能已被修改：同步刷新 PR 标题，避免评审列表仍显示旧名称。
-        // 保留原 PR 的「Add new resource / Update resource」动作前缀语义。
-        const previousName = (editContext.catalog.entry.name || "").trim();
-        if (
-          itemName.trim() &&
-          itemName.trim() !== previousName &&
-          editContext.prNumber
-        ) {
-          const nextPrTitle = buildResourcePrTitle({
-            currentTitle: editContext.prTitle,
-            itemName,
-            itemId,
-          });
-          if (nextPrTitle !== editContext.prTitle?.trim()) {
-            await flowSpan("pr/retitle", "同步 PR 标题为最新资源标题", () =>
-              updatePullRequestTitle(editContext.prNumber as number, nextPrTitle),
-            );
-            log.info("pr/retitle", "PR 标题已同步资源名称", {
-              data: {
-                prNumber: editContext.prNumber,
-                prTitle: nextPrTitle,
-              },
-            });
-          }
-        }
 
         if (useStaging) {
           if (!submission) {
@@ -2182,7 +2189,82 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           );
         }
 
-        if (editContext.mode === "in_progress" && editContext.prNumber) {
+        // 更新已经写进分支，这时再确认 PR 是否已被仓库重开。开火发生在上传之前，
+        // 中间的「同步分支 + 更新条目」已经耗掉几秒，正常情况这里第一次查询就是 open，
+        // 用户几乎不用等；只有 Action 真的异常才用满 20s 预算并落到下面的新建 PR 兜底。
+        if (pendingReopenPr) {
+          const reopened = await flowSpan(
+            "pr/reopen-wait",
+            "确认 PR 已被重新打开",
+            () =>
+              waitForPullRequestOpen(pendingReopenPr as number, {
+                timeoutMs: 20_000,
+              }),
+          );
+          if (!reopened) {
+            log.warn("pr/reopen", "仓库未能在超时内重开 PR，改为新建 PR", {
+              data: { prNumber: pendingReopenPr },
+            });
+            reuseExistingPr = false;
+          }
+        }
+
+        // Actions 未能在超时内重开原 PR：用同一分支新建 PR 兜底，保证更新可被审核。
+        if (!reuseExistingPr) {
+          const nextPrTitle = buildResourcePrTitle({
+            currentTitle: editContext.prTitle,
+            itemName,
+            itemId,
+          });
+          const created = await flowSpan("pr/create", "用同一分支新建 PR", () =>
+            createSubmissionPullRequest({
+              forkOwner: prHead.owner,
+              forkRepo: prHead.repo,
+              branch: prHead.ref,
+              token,
+              title: nextPrTitle,
+              body: prBodyContent || undefined,
+            }),
+          );
+          prNumber = created?.number;
+          if (!prNumber) {
+            throw new Error("原 PR 无法重开，新建 PR 也未返回编号。");
+          }
+          createdNewPr = true;
+          log.info("pr/create", `原 PR 无法重开，已新建 PR #${prNumber}`, {
+            data: { prNumber, prUrl: created?.html_url, branch: prHead.ref },
+          });
+        }
+
+        // 资源标题可能已被修改：同步刷新 PR 标题，避免评审列表仍显示旧名称。
+        // 保留原 PR 的「Add new resource / Update resource」动作前缀语义。
+        // 退化为新建 PR 时，标题在上面建 PR 时就已给定，这里只处理复用原 PR 的情况。
+        const previousName = (editContext.catalog.entry.name || "").trim();
+        if (
+          reuseExistingPr &&
+          itemName.trim() &&
+          itemName.trim() !== previousName &&
+          prNumber
+        ) {
+          const nextPrTitle = buildResourcePrTitle({
+            currentTitle: editContext.prTitle,
+            itemName,
+            itemId,
+          });
+          if (nextPrTitle !== editContext.prTitle?.trim()) {
+            await flowSpan("pr/retitle", "同步 PR 标题为最新资源标题", () =>
+              updatePullRequestTitle(prNumber as number, nextPrTitle),
+            );
+            log.info("pr/retitle", "PR 标题已同步资源名称", {
+              data: {
+                prNumber,
+                prTitle: nextPrTitle,
+              },
+            });
+          }
+        }
+
+        if (editContext.mode === "in_progress" && prNumber) {
           for (const item of needFixItems) {
             if (!fixedSelections[item.id]) continue;
             const note = (fixedNotes[item.id] || "").trim();
@@ -2203,18 +2285,28 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               }\n${quoted}`;
             }
             await flowSpan("pr/comment", `发送整改说明评论 [${item.id}]`, () =>
-              createPullRequestComment(editContext.prNumber as number, body),
+              createPullRequestComment(prNumber as number, body),
             );
           }
         }
 
         await registerVersionResetForPush(repoInfo.commitSha);
         setPrStatus("success");
-        setPrMessage("已更新现有 PR。");
-        toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
-        log.info("pr/submit", "已更新现有 PR", { data: { prNumber: editContext.prNumber } });
-        reportSuccess("publish/pr", "已更新现有 PR。");
-        await endResourceSession("completed", `已更新现有 PR #${editContext.prNumber ?? "?"}`);
+        if (createdNewPr) {
+          setPrMessage("原 PR 暂时无法重开，已改用新 PR 提交更新。");
+          toast.success("更新完成，已提交到新的 PR，记得查看AstroBox信箱和待审核列表。");
+          log.info("pr/submit", "已新建 PR 提交更新", { data: { prNumber } });
+          reportSuccess("publish/pr", "已新建 PR 提交更新。");
+        } else {
+          setPrMessage("已更新现有 PR。");
+          toast.success("更新完成，记得查看AstroBox信箱和待审核列表查看待审状态。");
+          log.info("pr/submit", "已更新现有 PR", { data: { prNumber } });
+          reportSuccess("publish/pr", "已更新现有 PR。");
+        }
+        await endResourceSession(
+          "completed",
+          `${createdNewPr ? "已新建 PR" : "已更新现有 PR"} #${prNumber ?? "?"}`,
+        );
         navigate("/publish", { replace: true });
         return;
       }

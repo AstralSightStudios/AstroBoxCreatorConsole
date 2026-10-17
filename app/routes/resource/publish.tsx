@@ -17,7 +17,9 @@ import {
   createPullRequestComment,
   getPullRequest,
   reopenPullRequest,
+  waitForPullRequestOpen,
 } from "~/api/github/pr-review";
+import { isGithubStatus } from "~/logic/publish/github-actions";
 import { loadAccountState } from "~/logic/account/store";
 import { decodeCatalogContent, getFileContent } from "~/logic/publish/catalog";
 import {
@@ -178,14 +180,36 @@ export default function ResourcePublish() {
 
   const handleReopen = async (resource: PublishingResource) => {
     if (reopening !== null) return;
-    setReopening(resource.prNumber);
+    const prNumber = resource.prNumber;
+    setReopening(prNumber);
     try {
-      await reopenPullRequest(resource.prNumber);
+      // 组织成员可以直接重开；外部贡献者对目标仓库只有读权限，GitHub 会返回一个
+      // 不含任何明细的 422。此时改为发 [ABCC_REOPEN] 评论，由仓库侧 GitHub Actions
+      // 用仓库自己的 token 代为重开，再等它几秒。
+      let reopened = false;
+      try {
+        await reopenPullRequest(prNumber);
+        reopened = true;
+      } catch (err) {
+        if (!isGithubStatus(err, 422)) throw err;
+      }
+
       await createPullRequestComment(
-        resource.prNumber,
-        "[ABCC_REOPEN] 创作者已重新打开此 PR。",
+        prNumber,
+        reopened
+          ? "[ABCC_REOPEN] 创作者已重新打开此 PR。"
+          : "[ABCC_REOPEN] 创作者请求重新打开此 PR。",
       );
-      toast.success("PR 已重新打开，并已记录 REOPEN 标签。");
+
+      if (!reopened) {
+        reopened = await waitForPullRequestOpen(prNumber, { timeoutMs: 20_000 });
+      }
+
+      if (reopened) {
+        toast.success("PR 已重新打开，并已记录 REOPEN 标签。");
+      } else {
+        toast.warning("重开请求已提交，仓库暂未重开该 PR，请稍后刷新查看。");
+      }
       setRefreshTick((prev) => prev + 1);
     } catch (err) {
       toast.error((err as Error).message || "重新打开 PR 失败");

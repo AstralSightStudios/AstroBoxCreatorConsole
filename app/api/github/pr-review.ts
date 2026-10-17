@@ -229,6 +229,30 @@ export async function reopenPullRequest(prNumber: number) {
   );
 }
 
+/**
+ * 轮询等待 PR 变为 open。
+ *
+ * 外部贡献者对目标仓库没有写权限，无法自己重开 PR，只能发 [ABCC_REOPEN] 评论，
+ * 由仓库侧的 GitHub Actions 用仓库 token 代为重开。重开是异步的，这里给它一点
+ * 时间；返回 false 表示超时（或期间被合并），调用方据此决定是否兜底新建 PR。
+ */
+export async function waitForPullRequestOpen(
+  prNumber: number,
+  options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  const intervalMs = options.intervalMs ?? 3_000;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const pr = await getPullRequest(prNumber);
+    if (pr.state === "open") return true;
+    // 已被合并的 PR 不该再被重开，也不必新建 PR 去替代它。
+    if (pr.merged_at) return false;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 /** 更新 PR 标题（PATCH /pulls/{n} 的 title 字段）。 */
 export async function updatePullRequestTitle(
   prNumber: number,
