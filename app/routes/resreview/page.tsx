@@ -67,6 +67,7 @@ import {
   loadPrResourcePreviews,
   loadStagingPrResourcePreviews,
   getErrorMessage,
+  isSelfApproveError,
   extractOldCatalogEntriesFromFiles,
   runWithConcurrency,
 } from "./utils";
@@ -675,19 +676,37 @@ export default function ResourceReviewPage() {
   };
 
   // 批准与合入合并为单一步骤：先提交 GitHub Approve，成功后再执行合入。
-  // 若 approve 失败则中断，避免出现「未批准却已合入」的状态。
+  // GitHub 不允许批准自己的 PR（返回 422），此类情况跳过批准直接合入。
   const approveAndMerge = async () => {
     if (!openNumber || approving || merging) return;
     const number = openNumber;
-    setApproving(true);
-    try {
-      await approvePullRequest(number);
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-      setApproving(false);
-      return;
+    const myLogin = accountState.github?.username?.trim().toLowerCase() ?? "";
+    const authorLogin = openPull?.user?.login?.trim().toLowerCase() ?? "";
+    const isOwnPull = Boolean(myLogin && authorLogin && myLogin === authorLogin);
+    let skippedApprove = isOwnPull;
+    if (!isOwnPull) {
+      setApproving(true);
+      let approved = false;
+      try {
+        await approvePullRequest(number);
+        approved = true;
+      } catch (err) {
+        // 兜底：即便未能预先识别作者身份，只要 GitHub 明确因「不能批准自己的 PR」
+        // 而拒绝，也跳过批准继续合入，而不是中断整个流程。
+        if (isSelfApproveError(err)) {
+          approved = true;
+          skippedApprove = true;
+        } else {
+          toast.error(getErrorMessage(err));
+        }
+      } finally {
+        setApproving(false);
+      }
+      if (!approved) return;
     }
-    setApproving(false);
+    if (skippedApprove) {
+      toast.message("当前合入本人 PR，已跳过 approve");
+    }
     await merge();
   };
 

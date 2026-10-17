@@ -18,7 +18,7 @@ import {
   type CcNoticeCheckTarget,
 } from "~/logic/inbox/send";
 import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
-import { getRepoFile } from "~/logic/publish/github-actions";
+import { getRepoFile, isGithubStatus } from "~/logic/publish/github-actions";
 import {
   decodeCatalogContent,
   getFileContent,
@@ -47,6 +47,17 @@ export function isVideoPath(path: string) {
 
 export function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * GitHub 不允许对自己的 PR 提交 Approve，此时返回 422，响应体 errors 为
+ * `Review Can not approve your own pull request`。用于「批准并合入」流程在识别到
+ * 自己审核自己的资源时跳过批准，直接合入。
+ */
+export function isSelfApproveError(error: unknown) {
+  if (!isGithubStatus(error, 422)) return false;
+  const body = (error as { body?: string }).body ?? "";
+  return /approve your own/i.test(body);
 }
 
 /** 并发受限地执行异步任务，避免一次性打爆 GitHub API（限流/超时）。 */
