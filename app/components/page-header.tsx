@@ -6,7 +6,7 @@ import {
 
 interface PageHeaderProps {
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
   action?: ReactNode;
 }
@@ -38,7 +38,9 @@ export default function PageHeader({
           {icon}
           <h1 className="text-2xl font-medium text-white">{title}</h1>
         </div>
-        <p className="mt-1 text-sm text-white/50">{description}</p>
+        {description ? (
+          <p className="mt-1 text-sm text-white/50">{description}</p>
+        ) : null}
       </div>
       {action}
     </div>
