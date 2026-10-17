@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, Select } from "~/components/ScaleAwareThemes";
+import { Button, Dialog, Select, TextArea } from "~/components/ScaleAwareThemes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, CheckSquare, WarningCircle } from "@phosphor-icons/react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
@@ -12,8 +12,17 @@ import {
   findSentCcNotice,
   revokeCcNotice,
   inspectCcNotices,
+  getCcNoticeOutcome,
   type CcNoticeDeliveryStatus,
+  type CcNoticePayload,
 } from "~/logic/inbox/send";
+import {
+  addCcNoticeFailures,
+  clearCcNoticeFailures,
+  loadCcNoticeFailures,
+  removeCcNoticeFailure,
+  type CcNoticeFailure,
+} from "~/logic/inbox/batch-failures";
 import type { CcNoticeSubtype } from "~/logic/inbox/types";
 
 /** notifyCc 的三态：发送成功 / 找不到收件人（根本没发）/ 发送失败。 */
@@ -51,6 +60,7 @@ import {
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import ReviewersDrawer from "./components/ReviewersDrawer";
+import BatchNoticeFailuresDrawer from "./components/BatchNoticeFailuresDrawer";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
 import {
   buildCcNoticeCheckPlan,
@@ -172,6 +182,17 @@ export default function ResourceReviewPage() {
   const [merging, setMerging] = useState(false);
   const [closing, setClosing] = useState(false);
   const [refusing, setRefusing] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedNumbers, setSelectedNumbers] = useState<Set<number>>(new Set());
+  const [bulkClosing, setBulkClosing] = useState(false);
+  const [bulkCloseDialogOpen, setBulkCloseDialogOpen] = useState(false);
+  const [bulkCloseReason, setBulkCloseReason] = useState("");
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+  const [batchFailures, setBatchFailures] = useState<CcNoticeFailure[]>(() =>
+    loadCcNoticeFailures(),
+  );
+  const [failuresDrawerOpen, setFailuresDrawerOpen] = useState(false);
+  const [retryingNumbers, setRetryingNumbers] = useState<Set<number>>(new Set());
   const loadDetailRef = useRef<number>(0);
 
   const canReview = hasCommunityRepoManagePermission(permission);
@@ -722,25 +743,31 @@ export default function ResourceReviewPage() {
     }
   };
 
-  const notifyCc = async (params: {
-    subtype: CcNoticeSubtype;
-    prNumber: number;
-    tagId?: string;
-    content?: string;
-    senderNote?: string;
-    createMode?: boolean;
-    titleOverride?: string;
-    bodyOverride?: string;
-    force?: boolean;
-  }): Promise<CcNoticeSendResult> => {
+  const sendNoticeForPreviews = async (
+    params: {
+      subtype: CcNoticeSubtype;
+      prNumber: number;
+      tagId?: string;
+      content?: string;
+      senderNote?: string;
+      createMode?: boolean;
+      titleOverride?: string;
+      bodyOverride?: string;
+      force?: boolean;
+    },
+    previews: PrResourcePreview[],
+  ): Promise<{
+    status: "sent" | "skipped" | "queued";
+    payload?: CcNoticePayload;
+  }> => {
     const { userIds, resourceName, resourceId } = await resolveRecipientUserIds(
-      resourcePreviews,
+      previews,
       getAstroboxToken(),
     );
     // 作者没有在 manifest 里声明绑定 AstroBox 账号，或按名称匹配不到账号，
     // 通知压根发不出去，单独返回 skipped 供调用方提示，不要和发送失败混淆。
-    if (userIds.length === 0) return "skipped";
-    const ok = await sendCcNotice({
+    if (userIds.length === 0) return { status: "skipped" };
+    const payload: CcNoticePayload = {
       subtype: params.subtype,
       tagId: params.tagId,
       content: params.content,
@@ -765,8 +792,32 @@ export default function ResourceReviewPage() {
           : params.content?.trim() ||
             params.senderNote?.trim() ||
             CC_NOTICE_BODIES[params.subtype]),
-    }, { force: params.force });
-    return ok ? "sent" : "failed";
+    };
+    await sendCcNotice(payload, { force: params.force });
+    // 不看 sendCcNotice 的布尔值：它把「幂等命中（已发过）」和「发送失败」都返回 false，
+    // 必须读落盘记录才能区分「已送达」与「已入待补发队列」。
+    const outcome = getCcNoticeOutcome({
+      subtype: params.subtype,
+      prNumber: params.prNumber,
+      tagId: params.tagId,
+    });
+    return { status: outcome === "sent" ? "sent" : "queued", payload };
+  };
+
+  const notifyCc = async (params: {
+    subtype: CcNoticeSubtype;
+    prNumber: number;
+    tagId?: string;
+    content?: string;
+    senderNote?: string;
+    createMode?: boolean;
+    titleOverride?: string;
+    bodyOverride?: string;
+    force?: boolean;
+  }): Promise<CcNoticeSendResult> => {
+    const { status } = await sendNoticeForPreviews(params, resourcePreviews);
+    if (status === "skipped") return "skipped";
+    return status === "sent" ? "sent" : "failed";
   };
 
   const retryCcNoticeFor = async (params: {
@@ -815,6 +866,180 @@ export default function ResourceReviewPage() {
       return;
     }
     toast.error("该评论没有对应的 AstroBox 信箱通知");
+  };
+
+  const enterSelectMode = () => {
+    setSelectMode(true);
+    setSelectedNumbers(new Set());
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedNumbers(new Set());
+    setBulkCloseReason("");
+  };
+
+  const toggleSelect = (number: number) => {
+    setSelectedNumbers((prev) => {
+      const next = new Set(prev);
+      if (next.has(number)) next.delete(number);
+      else next.add(number);
+      return next;
+    });
+  };
+
+  // 批量为每个 PR 加载 files + 预览，用于解析 AstroBox 收件人（与详情页同一套逻辑）。
+  const loadPreviewsForBatch = async (
+    number: number,
+    pull: GithubPullRequest,
+  ): Promise<PrResourcePreview[]> => {
+    const token = accountState.github?.token || "";
+    const nextFiles = await listPullRequestFiles(number);
+    return publishMode === "staging" || hasSubmissionFiles(nextFiles)
+      ? loadStagingPrResourcePreviews(nextFiles, token, pull)
+      : loadPrResourcePreviews(nextFiles, token);
+  };
+
+  const bulkClose = async (reason: string) => {
+    if (bulkClosing) return;
+    // 选中是显式动作，即便之后切换了状态筛选也要照常关闭，故基于 pulls 而非 visiblePulls。
+    const targets = pulls.filter((pull) => selectedNumbers.has(pull.number));
+    if (targets.length === 0) return;
+    setBulkClosing(true);
+    setBulkProgress({ done: 0, total: targets.length });
+
+    const newFailures: CcNoticeFailure[] = [];
+    const closeErrors: Array<{ number: number }> = [];
+    let closedCount = 0;
+    let skippedCount = 0;
+    let noticeErrorCount = 0;
+
+    try {
+      await runWithConcurrency(targets, 3, async (pull) => {
+        const number = pull.number;
+        try {
+          // 关闭前复查状态：跨设备/并发场景下已被关闭的 PR 直接跳过，避免重复评论。
+          const fresh = await getPullRequest(number);
+          if (fresh.state !== "open") {
+            skippedCount += 1;
+            return;
+          }
+          await closePullRequest(number);
+          const commentBody = reason
+            ? `[ABCC_CLOSE] ${reason}`
+            : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
+          await createPullRequestComment(number, commentBody);
+          closedCount += 1;
+
+          // PR 已关闭成功后，通知失败不应算作「关闭失败」，单独捕获。
+          try {
+            const previews = await loadPreviewsForBatch(number, fresh);
+            const { status, payload } = await sendNoticeForPreviews(
+              {
+                subtype: "review-closed",
+                prNumber: number,
+                content: reason,
+                senderNote: reason,
+              },
+              previews,
+            );
+            // 作者未绑定账号（skipped）按通过处理；只有入待补发队列才算失败。
+            if (status === "queued" && payload) {
+              newFailures.push({
+                subtype: "review-closed",
+                prNumber: number,
+                title: pull.title,
+                error: "AstroBox 信箱通知发送失败，可重试补发。",
+                payload,
+                failedAt: new Date().toISOString(),
+              });
+            }
+          } catch (noticeErr) {
+            noticeErrorCount += 1;
+            console.error("批量关闭通知发送异常", number, noticeErr);
+          }
+        } catch (err) {
+          closeErrors.push({ number });
+          console.error("批量关闭 PR 失败", number, err);
+        } finally {
+          setBulkProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+        }
+      });
+
+      if (newFailures.length > 0) {
+        addCcNoticeFailures(newFailures);
+        setBatchFailures(loadCcNoticeFailures());
+      }
+      await loadPulls();
+      exitSelectMode();
+
+      if (closedCount > 0) {
+        toast.success(
+          newFailures.length > 0
+            ? `已关闭 ${closedCount} 个 PR，${newFailures.length} 条通知发送失败`
+            : `已关闭 ${closedCount} 个 PR`,
+          { duration: 4000 },
+        );
+      }
+      if (skippedCount > 0) {
+        toast.message(`${skippedCount} 个 PR 已是关闭状态，已跳过`);
+      }
+      if (noticeErrorCount > 0) {
+        toast.error(`${noticeErrorCount} 条通知发送异常，请检查网络或稍后重试`);
+      }
+      if (closeErrors.length > 0) {
+        toast.error(
+          `有 ${closeErrors.length} 个 PR 关闭失败：${closeErrors
+            .map((item) => `#${item.number}`)
+            .join("、")}`,
+        );
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setBulkClosing(false);
+      setBulkCloseDialogOpen(false);
+      setBulkProgress({ done: 0, total: 0 });
+    }
+  };
+
+  const ignoreBatchFailure = (item: CcNoticeFailure) => {
+    removeCcNoticeFailure(item);
+    setBatchFailures(loadCcNoticeFailures());
+  };
+
+  const ignoreAllBatchFailures = () => {
+    clearCcNoticeFailures();
+    setBatchFailures([]);
+    setFailuresDrawerOpen(false);
+  };
+
+  const retryBatchFailure = async (item: CcNoticeFailure) => {
+    const key = { subtype: item.subtype, prNumber: item.prNumber };
+    setRetryingNumbers((prev) => new Set(prev).add(item.prNumber));
+    try {
+      // 先复查一手记录：之前是假阳性（其实已发/已被队列补发成功）的直接移出，不重发。
+      const before = getCcNoticeOutcome({ ...key, tagId: item.payload.tagId });
+      if (before !== "sent") {
+        await sendCcNotice(item.payload, { force: true });
+      }
+      const after = getCcNoticeOutcome({ ...key, tagId: item.payload.tagId });
+      if (after === "sent") {
+        removeCcNoticeFailure(item);
+        setBatchFailures(loadCcNoticeFailures());
+        toast.success(`#${item.prNumber} 关闭通知已发送`);
+      } else {
+        toast.error(`#${item.prNumber} 通知发送失败，请稍后重试`);
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRetryingNumbers((prev) => {
+        const next = new Set(prev);
+        next.delete(item.prNumber);
+        return next;
+      });
+    }
   };
 
   const topbarActions = null;
@@ -920,7 +1145,7 @@ export default function ResourceReviewPage() {
                 <p className="text-sm text-white/60">
                   {env.owner}/{env.repoName}
                 </p>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
                     <div className="min-w-0 flex-1">
                     <Select.Root
@@ -937,27 +1162,80 @@ export default function ResourceReviewPage() {
                     </Select.Root>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    color="gray"
-                    className="shrink-0"
-                    disabled={loadingPulls}
-                    onClick={handleRefreshList}
-                  >
-                    <motion.div
-                      animate={{ rotate: loadingPulls ? 360 : 0 }}
-                      transition={{
-                        duration: 0.7,
-                        ease: "easeInOut",
-                        repeat: loadingPulls ? Infinity : 0,
-                      }}
-                      style={{ display: "flex" }}
-                    >
-                      <ArrowClockwiseIcon size={15} />
-                    </motion.div>
-                    刷新
-                  </Button>
+                  {selectMode ? (
+                    <>
+                      <span className="shrink-0 text-sm text-white/70">
+                        已选 {selectedNumbers.size} 项
+                      </span>
+                      <Button
+                        color="red"
+                        className="shrink-0"
+                        disabled={selectedNumbers.size === 0 || bulkClosing}
+                        onClick={() => setBulkCloseDialogOpen(true)}
+                      >
+                        {bulkClosing ? "关闭中..." : "批量关闭"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        color="gray"
+                        className="shrink-0"
+                        disabled={bulkClosing}
+                        onClick={exitSelectMode}
+                      >
+                        取消
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        color="gray"
+                        className="shrink-0"
+                        disabled={loadingPulls}
+                        onClick={handleRefreshList}
+                      >
+                        <motion.div
+                          animate={{ rotate: loadingPulls ? 360 : 0 }}
+                          transition={{
+                            duration: 0.7,
+                            ease: "easeInOut",
+                            repeat: loadingPulls ? Infinity : 0,
+                          }}
+                          style={{ display: "flex" }}
+                        >
+                          <ArrowClockwiseIcon size={15} />
+                        </motion.div>
+                        刷新
+                      </Button>
+                      <Button
+                        variant="soft"
+                        color="gray"
+                        className="shrink-0"
+                        disabled={visiblePulls.length === 0}
+                        onClick={enterSelectMode}
+                      >
+                        <CheckSquare size={15} />
+                        批量管理
+                      </Button>
+                    </>
+                  )}
                 </div>
+                {batchFailures.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFailuresDrawerOpen(true)}
+                    className="flex w-full items-center gap-2 rounded-[12px] border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-left text-sm text-amber-100 transition-colors hover:bg-amber-300/15"
+                  >
+                    <WarningCircle
+                      size={16}
+                      weight="duotone"
+                      className="shrink-0"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {batchFailures.length} 条关闭通知未成功发送 · 查看
+                    </span>
+                  </button>
+                )}
               </div>
 
               <section className="flex min-h-0 flex-1 flex-col">
@@ -975,7 +1253,10 @@ export default function ResourceReviewPage() {
                             reviewers={deriveNeedFixAuthors(
                               commentsByPr[pull.number] ?? [],
                             )}
+                            selectable={selectMode}
+                            selected={selectedNumbers.has(pull.number)}
                             onClick={() => handleSelectPull(pull)}
+                            onToggleSelect={() => toggleSelect(pull.number)}
                             onOpenReviewers={() =>
                               setReviewersPrNumber(pull.number)
                             }
@@ -1004,6 +1285,59 @@ export default function ResourceReviewPage() {
             : []
         }
       />
+      <BatchNoticeFailuresDrawer
+        open={failuresDrawerOpen}
+        onClose={() => setFailuresDrawerOpen(false)}
+        failures={batchFailures}
+        retryingNumbers={retryingNumbers}
+        onRetry={(item) => void retryBatchFailure(item)}
+        onIgnore={ignoreBatchFailure}
+        onIgnoreAll={ignoreAllBatchFailures}
+      />
+      <Dialog.Root
+        open={bulkCloseDialogOpen}
+        onOpenChange={(open) => {
+          if (!bulkClosing) setBulkCloseDialogOpen(open);
+        }}
+      >
+        <Dialog.Content className="max-w-[420px]">
+          <Dialog.Title>批量关闭 {selectedNumbers.size} 个 PR</Dialog.Title>
+          <Dialog.Description size="2" className="text-white/60">
+            将逐一关闭选中的 PR，并以 CLOSE 标签评论记录同一关闭原因；发送给创作者的
+            AstroBox 信箱通知内容也保持一致。作者未绑定账号的 PR 不会收到通知。
+          </Dialog.Description>
+          <label className="mt-3 block text-sm text-white/70">
+            关闭原因（可选）
+          </label>
+          <TextArea
+            className="mt-1.5 min-h-[100px] resize-y border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
+            placeholder="例如：该批提交不符合资源规范，请按审核意见修改后重新打开。"
+            value={bulkCloseReason}
+            onChange={(e) => setBulkCloseReason(e.target.value)}
+            disabled={bulkClosing}
+            radius="large"
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="soft"
+              color="gray"
+              disabled={bulkClosing}
+              onClick={() => setBulkCloseDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              color="red"
+              disabled={bulkClosing}
+              onClick={() => void bulkClose(bulkCloseReason.trim())}
+            >
+              {bulkClosing
+                ? `关闭中 ${bulkProgress.done}/${bulkProgress.total}`
+                : "确认关闭"}
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
     </div>
   );
 }

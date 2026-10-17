@@ -3,7 +3,7 @@ import {
   deriveReviewStatus,
   type NeedFixAuthorStat,
 } from "~/logic/publish/review-status";
-import { UserCircle } from "@phosphor-icons/react";
+import { Check, UserCircle } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
@@ -14,7 +14,11 @@ interface PullRequestCardProps {
   comments: GithubIssueComment[];
   /** 该 PR 上发送 NEEDFIX 的负责审核者分布（由 deriveNeedFixAuthors 得出）。 */
   reviewers: NeedFixAuthorStat[];
+  /** 选择模式：底部审核栏左侧留出复选框格，点击卡片勾选而非进入详情。 */
+  selectable?: boolean;
+  selected?: boolean;
   onClick: () => void;
+  onToggleSelect?: () => void;
   onOpenReviewers: () => void;
 }
 
@@ -40,7 +44,10 @@ export function PullRequestCard({
   pull,
   comments,
   reviewers,
+  selectable = false,
+  selected = false,
   onClick,
+  onToggleSelect,
   onOpenReviewers,
 }: PullRequestCardProps) {
   const status = deriveReviewStatus(comments);
@@ -50,15 +57,44 @@ export function PullRequestCard({
         ? "merged"
         : "closed"
       : "open";
+
+  const reviewerContent = (
+    <>
+      <span className="shrink-0 text-xs font-medium text-white/45">负责审核</span>
+      {reviewers.length > 0 ? (
+        <span className="flex min-w-0 items-center">
+          <span className="flex items-center -space-x-2">
+            {reviewers.slice(0, 5).map((reviewer) => (
+              <ReviewerAvatar key={reviewer.login} reviewer={reviewer} />
+            ))}
+          </span>
+          {reviewers.length > 5 && (
+            <span className="ml-1.5 shrink-0 text-xs text-white/45">
+              +{reviewers.length - 5}
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="truncate text-xs text-white/35">暂无负责审核者</span>
+      )}
+    </>
+  );
+
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div
+      className={`min-w-0 overflow-hidden rounded-[14px] border transition-colors ${
+        selectable && selected
+          ? "border-white/30 bg-white/[0.05]"
+          : "border-white/10 bg-nav-item"
+      }`}
+    >
       <motion.button
         layoutId={`pr-item-${pull.number}`}
         layout
         transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.85 }}
         type="button"
-        onClick={onClick}
-        className="flex w-full min-w-0 flex-col gap-3 overflow-hidden rounded-t-[14px] rounded-b-none border border-white/10 bg-nav-item px-4 py-4 text-left hover:border-white/20 hover:bg-nav-item-hover transition-colors"
+        onClick={selectable ? onToggleSelect : onClick}
+        className="flex w-full min-w-0 flex-col gap-3 px-4 py-4 text-left transition-colors hover:bg-nav-item-hover"
       >
         <div className="min-w-0 flex-1">
           <h2 className="line-clamp-2 text-base font-semibold text-white">
@@ -94,29 +130,47 @@ export function PullRequestCard({
         </div>
       </motion.button>
 
-      <button
-        type="button"
-        onClick={onOpenReviewers}
-        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-b-[14px] rounded-t-none border border-white/10 bg-nav-item px-4 py-2.5 text-left transition-colors hover:border-white/20 hover:bg-nav-item-hover"
-      >
-        <span className="shrink-0 text-xs font-medium text-white/45">负责审核</span>
-        {reviewers.length > 0 ? (
-          <span className="flex min-w-0 items-center">
-            <span className="flex items-center -space-x-2">
-              {reviewers.slice(0, 5).map((reviewer) => (
-                <ReviewerAvatar key={reviewer.login} reviewer={reviewer} />
-              ))}
+      {/*
+        底部审核栏与卡片正文同属一个容器，用横向分割线连接（不再留空隙）。
+        多选模式下在审核栏左侧切出复选框格，用纵向分割线隔开复选框与审核栏。
+      */}
+      {selectable ? (
+        <div className="flex items-stretch border-t border-white/10">
+          <button
+            type="button"
+            aria-label={selected ? "取消选择该 PR" : "选择该 PR"}
+            aria-pressed={selected}
+            onClick={onToggleSelect}
+            className="flex w-12 shrink-0 items-center justify-center border-r border-white/10 transition-colors hover:bg-nav-item-hover"
+          >
+            <span
+              aria-hidden="true"
+              className={`flex h-5 w-5 items-center justify-center rounded-[6px] border transition-colors ${
+                selected
+                  ? "border-white/70 bg-white text-neutral-900"
+                  : "border-white/30 bg-transparent text-transparent"
+              }`}
+            >
+              <Check size={13} weight="bold" />
             </span>
-            {reviewers.length > 5 && (
-              <span className="ml-1.5 shrink-0 text-xs text-white/45">
-                +{reviewers.length - 5}
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="truncate text-xs text-white/35">暂无负责审核者</span>
-        )}
-      </button>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenReviewers}
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-nav-item-hover"
+          >
+            {reviewerContent}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpenReviewers}
+          className="flex w-full min-w-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-2.5 text-left transition-colors hover:bg-nav-item-hover"
+        >
+          {reviewerContent}
+        </button>
+      )}
     </div>
   );
 }
