@@ -1834,7 +1834,7 @@ export async function runResourceRuleChecks(options: {
     // 逐个作者的匹配状态在「资源信息」Tab 的作者列表里已有徽章展示，
     // 这里只给汇总结论，不重复罗列每个作者。
     const parts: string[] = [];
-    if (notFound.length > 0) parts.push(`${notFound.length} 个作者未匹配到 AstroBox 账户`);
+    if (notFound.length > 0) parts.push(`${notFound.length} 个作者的用户名未匹配到 AstroBox 账户`);
     if (errored.length > 0) parts.push(`${errored.length} 个作者查询失败`);
     if (declaredUnboundNames.length > 0)
       parts.push(`${declaredUnboundNames.length} 个作者未声明绑定`);

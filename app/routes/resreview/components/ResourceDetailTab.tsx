@@ -434,7 +434,7 @@ function InfoRow({ label, value, children }: { label: string; value?: string; ch
   );
 }
 
-/** 作者开启绑定 AstroBox 后，通过后端 /admin/users 按名称查询得到的真实权益徽章。 */
+/** 作者开启绑定 AstroBox 后，按 AstroBox 用户名反查到的真实权益徽章。 */
 function ProBadge({ status }: { status: AuthorProStatus }) {
   const base =
     "ml-auto shrink-0 rounded-full border px-2 py-0.5 text-[11px]";
@@ -444,7 +444,7 @@ function ProBadge({ status }: { status: AuthorProStatus }) {
     case "no-auth":
       return <span className={`${base} border-white/10 bg-white/5 text-white/45`}>未登录 AstroBox</span>;
     case "not-found":
-      return <span className={`${base} border-red-400/30 bg-red-500/10 text-red-300`}>名称未匹配账户</span>;
+      return <span className={`${base} border-red-400/30 bg-red-500/10 text-red-300`}>用户名未匹配账户</span>;
     case "error":
       return <span className={`${base} border-red-400/30 bg-red-500/10 text-red-300`}>查询失败</span>;
     case "found": {

@@ -4,14 +4,22 @@ import {
   type AdminUserSummary,
   type VipTier,
 } from "~/api/astrobox/admin";
+import { getPublicProfile } from "~/api/astrobox/profile";
+import { ApiError } from "~/api/astrobox/request";
 
 /**
- * manifest 的 author[].name 是创作者自填的名称（自由文本，非 GitHub 登录名，
- * 也非 AstroBox 账户 id），author[].bindABAccount 只是自报开关。
+ * manifest 的 author[].name 约定填 AstroBox「用户名」（username，账号的唯一句柄），
+ * 不是展示用的 displayName；author[].bindABAccount 仍是自报开关。
  *
- * 流程：先看 bindABAccount 是否开启；开启（声明已绑定 AstroBox）后，再通过后端
- * /admin/users 按「名称」搜索并精确比对 displayName / username，取该作者真实 vip
- * 权益。仅 AstroBox 管理员可调用；未登录或非管理员时返回 no-auth。
+ * 流程：先看 bindABAccount 是否开启；开启（声明已绑定 AstroBox）后，用公开的
+ * /account/profile 按 username 精确取到 userId，再拉 /admin/users/:userId 拿真实
+ * vip 权益。这里不走 /admin/users?search 模糊搜索——该接口对 userId / displayName /
+ * email / username 做子串匹配且按注册时间截断，短用户名（如「ab」）会命中大量账号，
+ * 真正的账号常被挤出结果页，于是明明存在的作者被误判成未匹配。
+ *
+ * 因此反查只认用户名精确匹配，分不出「displayName 恰好等于用户名」的情况也无所谓：
+ * 作者字段本来就只允许填用户名，displayName 一律视为未匹配。
+ * 后一步 /admin/users/:userId 仅 AstroBox 管理员可调用；未登录或非管理员时返回 no-auth。
  */
 export type AuthorProStatus =
   | { state: "loading" }
@@ -23,18 +31,20 @@ export type AuthorProStatus =
 const cache = new Map<string, AuthorProStatus>();
 const inflight = new Map<string, Promise<AuthorProStatus>>();
 
-async function findUserByName(name: string): Promise<AuthorProStatus> {
-  const target = name.trim().toLowerCase();
+async function findUserByUsername(username: string): Promise<AuthorProStatus> {
+  const target = username.trim();
   if (!target) return { state: "not-found" };
   try {
-    const res = await AdminApi.users.list({ search: target, limit: 50 });
-    const match = res.items.find(
-      (u) =>
-        u.displayName.trim().toLowerCase() === target ||
-        u.username.trim().toLowerCase() === target,
-    );
-    return match ? { state: "found", user: match } : { state: "not-found" };
+    // 公开接口按 username 做 findOne（精确），短用户名不会歧义。
+    const profile = await getPublicProfile({ username: target });
+    // 再用管理员接口补上 vip / vipExpireMap，供 Creator Pro 与比例判定使用。
+    const user = await AdminApi.users.detail(profile.userId);
+    return { state: "found", user };
   } catch (err) {
+    // 账号不存在时服务端返回 404，其余（网络、权限、5xx）都算查询失败。
+    if (err instanceof ApiError && err.status === 404) {
+      return { state: "not-found" };
+    }
     return {
       state: "error",
       message: err instanceof Error ? err.message : String(err),
@@ -49,7 +59,7 @@ function resolveOne(
   if (!astroboxToken) return Promise.resolve({ state: "no-auth" } as AuthorProStatus);
   const cached = cache.get(name);
   if (cached && cached.state !== "loading") return Promise.resolve(cached);
-  const pending = inflight.get(name) ?? findUserByName(name);
+  const pending = inflight.get(name) ?? findUserByUsername(name);
   inflight.set(name, pending);
   return pending.finally(() => {
     inflight.delete(name);

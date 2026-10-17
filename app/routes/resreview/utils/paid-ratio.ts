@@ -151,7 +151,7 @@ async function fetchCatalogOnce(token: string): Promise<CatalogEntry[]> {
 function unresolvedReason(status: Exclude<AuthorProStatus, { state: "found" }>): string {
     switch (status.state) {
         case "not-found":
-            return "名称未匹配账户";
+            return "用户名未匹配账户";
         case "error":
             return status.message;
         case "no-auth":

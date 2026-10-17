@@ -92,7 +92,7 @@ const CC_NOTICE_BODIES: Record<
 
 /**
  * 解析当前 PR 中「声明已绑定 AstroBox 账号」的作者（manifest.item.author 里
- * bindABAccount 为 true 的 name），再按名称精确匹配 /admin/users，拿到真实 userId。
+ * bindABAccount 为 true 的 name，约定为 AstroBox 用户名），按用户名精确反查真实 userId。
  */
 async function resolveRecipientUserIds(
   previews: PrResourcePreview[],
