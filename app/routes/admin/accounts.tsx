@@ -876,7 +876,6 @@ function VipManager({
               aria-label="滚轮选择时间"
             />
           )}
-          {manualExpiry && <p className="mt-1 text-xs text-white/45">例：9999/12/31 23:59</p>}
         </div>
         <Button className="w-full" onClick={submit}>应用</Button>
       </div>
