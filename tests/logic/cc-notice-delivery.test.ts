@@ -35,6 +35,7 @@ mock.module("sonner", () => ({ toast: { error: mock(() => {}) } }));
 const {
   buildCcNoticeCheckTarget,
   inspectCcNotices,
+  getCcNoticeOutcome,
 } = await import("../../app/logic/inbox/send");
 
 const PR = 1029;
@@ -383,5 +384,93 @@ describe("审核通知送达状态检测", () => {
       targets: [target],
     });
     expect(statuses.get(target.key)?.state).toBe("sent");
+  });
+});
+
+/**
+ * getCcNoticeOutcome 是批量关闭判定「是否进失败列表」的依据。
+ * sendCcNotice 的布尔返回值把「幂等命中（其实已发）」和「发送失败入队」都算 false，
+ * 所以这里必须读落盘记录；这组用例把四种状态固定下来。
+ */
+describe("getCcNoticeOutcome 发送结果判定", () => {
+  beforeEach(() => {
+    resetStorage();
+  });
+
+  const KEY = `${PR}:review-closed:`;
+
+  test("无任何记录时返回 none", () => {
+    expect(getCcNoticeOutcome({ subtype: "review-closed", prNumber: PR })).toBe(
+      "none",
+    );
+  });
+
+  test("有成功发送记录（bulkId）时返回 sent", () => {
+    localStorage.setItem(
+      "CC_NOTICE_BULK_RECORDS_V1",
+      JSON.stringify({
+        [KEY]: {
+          bulkId: "bulk-1",
+          payload: {
+            subtype: "review-closed",
+            prNumber: PR,
+            prUrl: "",
+            userIds: ["u1"],
+            title: "t",
+            body: "b",
+          },
+        },
+      }),
+    );
+    expect(getCcNoticeOutcome({ subtype: "review-closed", prNumber: PR })).toBe(
+      "sent",
+    );
+  });
+
+  /** 幂等键在成功发送时也会写入，bulkId 记录缺失（旧数据/空 bulkId）时仍应判为已发。 */
+  test("仅有幂等键命中时仍返回 sent", () => {
+    localStorage.setItem("CC_NOTICE_SENT_KEYS_V1", JSON.stringify([KEY]));
+    expect(getCcNoticeOutcome({ subtype: "review-closed", prNumber: PR })).toBe(
+      "sent",
+    );
+  });
+
+  test("进入待补发队列时返回 queued", () => {
+    localStorage.setItem(
+      "CC_NOTICE_PENDING_QUEUE_V1",
+      JSON.stringify([
+        {
+          subtype: "review-closed",
+          prNumber: PR,
+          prUrl: "",
+          userIds: ["u1"],
+          title: "t",
+          body: "b",
+        },
+      ]),
+    );
+    expect(getCcNoticeOutcome({ subtype: "review-closed", prNumber: PR })).toBe(
+      "queued",
+    );
+  });
+
+  test("成功记录优先于待补发队列", () => {
+    localStorage.setItem("CC_NOTICE_SENT_KEYS_V1", JSON.stringify([KEY]));
+    localStorage.setItem(
+      "CC_NOTICE_PENDING_QUEUE_V1",
+      JSON.stringify([
+        {
+          subtype: "review-closed",
+          prNumber: PR,
+          prUrl: "",
+          userIds: ["u1"],
+          title: "t",
+          body: "b",
+        },
+      ]),
+    );
+    expect(getCcNoticeOutcome({ subtype: "review-closed", prNumber: PR })).toBe(
+      "sent",
+    );
   });
 });

@@ -322,6 +322,31 @@ export function findSentCcNotice(params: {
   return loadBulkRecords()[key] ?? null;
 }
 
+export type CcNoticeOutcome = "sent" | "queued" | "none";
+
+/**
+ * 读本机落盘记录，判断某条审核通知的真实发送结果。
+ *
+ * 为什么不能直接用 `sendCcNotice` 的布尔返回值：它在「幂等命中（其实上一次已发成功）」
+ * 和「本次发送失败已入待补发队列」两种情况下都返回 `false`，调用方无法区分，会把
+ * 「已送达」误判成「发送失败」，进而触发带 force 的重复投递。批量关闭要据此决定是否
+ * 进失败列表，必须读落盘记录本身：
+ * - 有成功记录（bulkId 或幂等键）→ `sent`
+ * - 已进待补发队列 → `queued`
+ * - 无任何记录 → `none`
+ */
+export function getCcNoticeOutcome(params: {
+  subtype: CcNoticeSubtype;
+  prNumber: number;
+  tagId?: string;
+}): CcNoticeOutcome {
+  const key = buildNoticeKey(params.subtype, params.prNumber, params.tagId);
+  if (loadBulkRecords()[key]?.bulkId) return "sent";
+  if (loadSentKeys().has(key)) return "sent";
+  if (isPendingInQueue(key)) return "queued";
+  return "none";
+}
+
 /**
  * 本机没有发送记录时，按业务键（kind + metadata.subtype/prNumber/tagId）从服务端
  * 把那条消息捞回来。服务端 /admin/inbox 只能按收件人 + kind 过滤，metadata 只能
