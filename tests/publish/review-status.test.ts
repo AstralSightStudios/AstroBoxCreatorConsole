@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  deriveNeedFixAuthors,
   deriveReviewStatus,
   filterReviewTagComments,
   resolveLatestTagAction,
@@ -143,5 +144,74 @@ describe("review tags", () => {
       created_at: "2026-08-12T10:00:00Z",
     };
     expect(resolveLatestTagAction([commentWithQuote])).toBeNull();
+  });
+});
+
+describe("deriveNeedFixAuthors", () => {
+  test("returns an empty list when there is no NEEDFIX", () => {
+    expect(deriveNeedFixAuthors([])).toEqual([]);
+    expect(
+      deriveNeedFixAuthors([
+        { id: 1, body: "普通评论", user: { login: "member-one" } },
+        { id: 2, body: "[ABCC_FIXED_x] 修复", user: { login: "creator" } },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("computes per-author counts and percentages sorted by count", () => {
+    const comments = [
+      { id: 1, body: "[ABCC_NEEDFIX_a] 问题1", user: { login: "member-one", avatar_url: "a1" } },
+      { id: 2, body: "[ABCC_NEEDFIX_b] 问题2", user: { login: "member-one", avatar_url: "a1" } },
+      { id: 3, body: "[ABCC_NEEDFIX_c] 问题3", user: { login: "member-one", avatar_url: "a1" } },
+      { id: 4, body: "[ABCC_NEEDFIX_d] 问题4", user: { login: "member-two", avatar_url: "a2" } },
+    ];
+
+    const authors = deriveNeedFixAuthors(comments);
+    expect(authors).toHaveLength(2);
+    expect(authors[0]).toEqual({
+      login: "member-one",
+      avatar_url: "a1",
+      count: 3,
+      percent: 75,
+    });
+    expect(authors[1]).toEqual({
+      login: "member-two",
+      avatar_url: "a2",
+      count: 1,
+      percent: 25,
+    });
+  });
+
+  test("dedupes NEEDFIX by tagId (editing a NEEDFIX does not double count)", () => {
+    const comments = [
+      { id: 1, body: "[ABCC_NEEDFIX_same] 初版", user: { login: "member-one" } },
+      { id: 2, body: "[ABCC_NEEDFIX_same] 编辑后", user: { login: "member-one" } },
+    ];
+    const authors = deriveNeedFixAuthors(comments);
+    expect(authors).toEqual([
+      { login: "member-one", avatar_url: undefined, count: 1, percent: 100 },
+    ]);
+  });
+
+  test("breaks ties by most recent NEEDFIX author first", () => {
+    const comments = [
+      {
+        id: 1,
+        body: "[ABCC_NEEDFIX_a] 早",
+        user: { login: "member-one" },
+        created_at: "2026-08-12T10:00:00Z",
+      },
+      {
+        id: 2,
+        body: "[ABCC_NEEDFIX_b] 晚",
+        user: { login: "member-two" },
+        created_at: "2026-08-12T12:00:00Z",
+      },
+    ];
+    const authors = deriveNeedFixAuthors(comments);
+    expect(authors.map((author) => author.login)).toEqual([
+      "member-two",
+      "member-one",
+    ]);
   });
 });

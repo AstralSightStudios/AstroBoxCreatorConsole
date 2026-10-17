@@ -23,6 +23,7 @@ import { useRepoEnv } from "~/config/repoEnv";
 import { useReviewMode } from "~/config/publishMode";
 import {
   deriveReviewStatus,
+  deriveNeedFixAuthors,
   filterReviewTagComments,
   resolveLatestTagAction,
 } from "~/logic/publish/review-status";
@@ -49,6 +50,7 @@ import {
 } from "~/api/github/pr-review";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
+import ReviewersDrawer from "./components/ReviewersDrawer";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
 import {
   buildCcNoticeCheckPlan,
@@ -161,6 +163,9 @@ export default function ResourceReviewPage() {
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] =
     useState(true);
+  const [reviewersPrNumber, setReviewersPrNumber] = useState<number | null>(
+    null,
+  );
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -950,7 +955,13 @@ export default function ResourceReviewPage() {
                             key={pull.number}
                             pull={pull}
                             comments={commentsByPr[pull.number] ?? []}
+                            reviewers={deriveNeedFixAuthors(
+                              commentsByPr[pull.number] ?? [],
+                            )}
                             onClick={() => handleSelectPull(pull)}
+                            onOpenReviewers={() =>
+                              setReviewersPrNumber(pull.number)
+                            }
                           />
                         ))}
                       </div>
@@ -962,6 +973,20 @@ export default function ResourceReviewPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ReviewersDrawer
+        open={reviewersPrNumber !== null}
+        onClose={() => setReviewersPrNumber(null)}
+        pull={
+          reviewersPrNumber !== null
+            ? pulls.find((pull) => pull.number === reviewersPrNumber) ?? null
+            : null
+        }
+        comments={
+          reviewersPrNumber !== null
+            ? commentsByPr[reviewersPrNumber] ?? []
+            : []
+        }
+      />
     </div>
   );
 }

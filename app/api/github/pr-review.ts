@@ -145,6 +145,31 @@ export async function listOrganizationMembers(org: string): Promise<Set<string>>
   return members;
 }
 
+export interface GithubUserProfile {
+  login: string;
+  /** GitHub 资料页展示名，可能为空。 */
+  name?: string;
+  avatar_url?: string;
+}
+
+// 用户资料基本不变，按 login 长期缓存，避免每次打开审核者抽屉都请求。
+const githubUserProfileCache = new Map<string, GithubUserProfile>();
+
+/** 拉取 GitHub 用户资料（用于审核者抽屉展示 displayname）。 */
+export async function getGithubUserProfile(
+  login: string,
+): Promise<GithubUserProfile> {
+  const key = login.trim().toLowerCase();
+  const cached = githubUserProfileCache.get(key);
+  if (cached) return cached;
+  const profile = await githubFetch<GithubUserProfile>(
+    `https://api.github.com/users/${encodeURIComponent(login.trim())}`,
+    { headers: headers() },
+  );
+  githubUserProfileCache.set(key, profile);
+  return profile;
+}
+
 export async function listReviewPullRequests(
   state: "open" | "closed" | "all" = "open",
 ) {

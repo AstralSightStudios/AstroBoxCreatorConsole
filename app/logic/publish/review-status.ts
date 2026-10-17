@@ -18,6 +18,73 @@ export interface ReviewStatusResult {
     items: NeedFixItem[];
 }
 
+/** 单个审核者在某个 PR 上发送 NEEDFIX 的占比统计。 */
+export interface NeedFixAuthorStat {
+    login: string;
+    avatar_url?: string;
+    /** 该审核者发送的 NEEDFIX 条数（按 tagId 去重）。 */
+    count: number;
+    /** 占本 PR 全部 NEEDFIX 的百分比（四舍五入）。 */
+    percent: number;
+}
+
+/**
+ * 统计一个 PR 上每条 NEEDFIX 标签的作者分布，作为「负责审核者」的判定依据。
+ *
+ * 复用 `deriveReviewStatus` 的按 tagId 去重口径：同一条 NEEDFIX 被编辑只算一次。
+ * 调用方传入的评论通常已经过 `filterReviewTagComments` 过滤，因此这里的作者
+ * 天然只包含对仓库有权限（组织成员）的人。按条数降序排列，并列时最近发送者靠前。
+ */
+export function deriveNeedFixAuthors(
+    comments: Array<{
+        id?: number;
+        body?: string;
+        created_at?: string;
+        user?: { login: string; avatar_url?: string };
+    }>,
+): NeedFixAuthorStat[] {
+    const items = deriveReviewStatus(comments).items;
+    const total = items.length;
+    if (total === 0) return [];
+
+    const byLogin = new Map<
+        string,
+        { login: string; avatar_url?: string; count: number; latest: string }
+    >();
+    for (const item of items) {
+        const login = item.author?.login?.trim();
+        if (!login) continue;
+        const createdAt = item.createdAt || "";
+        const existing = byLogin.get(login);
+        if (existing) {
+            existing.count += 1;
+            if (createdAt > existing.latest) existing.latest = createdAt;
+            if (!existing.avatar_url && item.author?.avatar_url) {
+                existing.avatar_url = item.author.avatar_url;
+            }
+        } else {
+            byLogin.set(login, {
+                login,
+                avatar_url: item.author?.avatar_url,
+                count: 1,
+                latest: createdAt,
+            });
+        }
+    }
+
+    return Array.from(byLogin.values())
+        .sort(
+            (a, b) =>
+                b.count - a.count || b.latest.localeCompare(a.latest),
+        )
+        .map((entry) => ({
+            login: entry.login,
+            avatar_url: entry.avatar_url,
+            count: entry.count,
+            percent: Math.round((entry.count / total) * 100),
+        }));
+}
+
 const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
 
 export type TagAction = "close" | "reopen";
