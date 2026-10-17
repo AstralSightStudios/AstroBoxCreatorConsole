@@ -1,10 +1,25 @@
-import { forwardRef, type SVGProps } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type SVGProps,
+} from "react";
 
 export type DynamicDrawerHandleDirection = "up" | "down";
 
+/**
+ * 命令式句柄：抽屉拖拽时由父组件在 `onDrag` 里调用 `setProgress`，
+ * 直接改写 `<path>` 的 `d` 属性，避免每帧 setState 触发整个抽屉重渲染
+ * （对齐 AstroBox-NG 的 `DynamicDrawerHandleRef` 约定）。
+ */
+export interface DynamicDrawerHandleRef {
+  setProgress: (progress: number) => void;
+}
+
 export interface DynamicDrawerHandleProps
   extends Omit<SVGProps<SVGSVGElement>, "direction"> {
-  progress: number;
+  /** 受控进度；不传时由 ref.setProgress 驱动 */
+  progress?: number;
   direction?: DynamicDrawerHandleDirection;
 }
 
@@ -31,6 +46,7 @@ function buildPath(progress: number, direction: DynamicDrawerHandleDirection) {
   const normalizedProgress = Math.min(Math.max(progress, 0), 1);
   const arrowNumbers = direction === "up" ? upArrowNumbers : downArrowNumbers;
   const lineNumbers = direction === "up" ? upLineNumbers : downLineNumbers;
+  // Keep the resting handle neutral and reveal the directional arrow while dragging.
   const values = lineNumbers.map(
     (value, index) =>
       value + (arrowNumbers[index] - value) * normalizedProgress,
@@ -40,15 +56,41 @@ function buildPath(progress: number, direction: DynamicDrawerHandleDirection) {
 }
 
 const DynamicDrawerHandle = forwardRef<
-  SVGSVGElement,
+  DynamicDrawerHandleRef,
   DynamicDrawerHandleProps
 >(function DynamicDrawerHandle(
-  { progress, direction = "up", strokeWidth = 5, ...props },
+  {
+    progress: controlledProgress,
+    direction = "up",
+    strokeWidth = 5,
+    ...props
+  },
   ref,
 ) {
+  const pathRef = useRef<SVGPathElement>(null);
+  const internalProgressRef = useRef(controlledProgress ?? 0);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setProgress: (nextProgress: number) => {
+        const normalized = Math.min(Math.max(nextProgress, 0), 1);
+        internalProgressRef.current = normalized;
+        if (pathRef.current) {
+          pathRef.current.setAttribute("d", buildPath(normalized, direction));
+        }
+      },
+    }),
+    [direction],
+  );
+
+  const activeProgress =
+    controlledProgress !== undefined
+      ? controlledProgress
+      : internalProgressRef.current;
+
   return (
     <svg
-      ref={ref}
       width={55}
       height={15}
       viewBox="0 0 55 15"
@@ -58,7 +100,8 @@ const DynamicDrawerHandle = forwardRef<
       {...props}
     >
       <path
-        d={buildPath(progress, direction)}
+        ref={pathRef}
+        d={buildPath(activeProgress, direction)}
         fill="none"
         stroke="currentColor"
         strokeWidth={strokeWidth}

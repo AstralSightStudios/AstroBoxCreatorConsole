@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AnimatePresence, animate, motion, useMotionValue } from "framer-motion";
+import { motion } from "framer-motion";
 import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react";
 import { ScrollArea, Skeleton } from "@radix-ui/themes";
-import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { InboxApi } from "~/api/astrobox/inbox";
 import {
@@ -13,9 +12,7 @@ import {
 } from "~/logic/inbox/types";
 import { useInbox } from "~/logic/inbox/use-inbox";
 import { useAccountState } from "~/logic/account/store";
-import { useNavVisibility } from "~/layout/nav-visibility-context";
-import { useUiScaleViewport } from "~/components/UiScaleContext";
-import DynamicDrawerHandle from "./DynamicDrawerHandle";
+import FloatingDrawer from "~/components/drawer/FloatingDrawer";
 import InboxMessageCard from "./InboxMessageCard";
 import InboxReadStack from "./InboxReadStack";
 import PanelButton from "./PanelButton";
@@ -38,8 +35,6 @@ function errorText(err: unknown) {
 export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const { count, markRead, markAllRead, remove, refreshUnread } = useInbox();
   const navigate = useNavigate();
-  const { isDesktop } = useNavVisibility();
-  const { factor, logicalHeight, portalContainer } = useUiScaleViewport();
   const token = useAccountState().astrobox?.token;
   // 首次打开前不请求，之后由 React Query 缓存；抽屉常驻挂载，开合不再打接口。
   const [hasOpenedOnce, setHasOpenedOnce] = useState(false);
@@ -66,67 +61,6 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
-  // 窄屏底部抽屉：拖拽把手控制 sheet 位移。
-  const sheetY = useMotionValue(0);
-  const [dragProgress, setDragProgress] = useState(0);
-  const dragStateRef = useRef<{ startY: number; baseY: number } | null>(null);
-
-  const handleDragMove = useCallback((event: PointerEvent) => {
-    const drag = dragStateRef.current;
-    if (!drag) return;
-    const delta = (event.clientY - drag.startY) / factor;
-    sheetY.set(Math.max(0, drag.baseY + delta));
-    setDragProgress(Math.min(1, Math.max(0, delta / 240)));
-  }, [factor, sheetY]);
-
-  const handleDragEnd = useCallback(
-    (event: PointerEvent) => {
-      window.removeEventListener("pointermove", handleDragMove);
-      window.removeEventListener("pointerup", handleDragEnd);
-      const drag = dragStateRef.current;
-      dragStateRef.current = null;
-      setDragProgress(0);
-      if (!drag) return;
-      const delta = (event.clientY - drag.startY) / factor;
-      if (delta > 110) {
-        // 先让 sheet 跟手滑出屏幕，再触发关闭动画，避免突兀跳走。
-        void animate(
-          sheetY,
-          logicalHeight || 800,
-          {
-            type: "tween",
-            duration: 0.18,
-            ease: "easeIn",
-            onComplete: () => onClose(),
-          },
-        );
-        return;
-      }
-      void animate(sheetY, 0, {
-        type: "spring",
-        stiffness: 320,
-        damping: 32,
-      });
-    },
-    [factor, handleDragMove, logicalHeight, onClose, sheetY],
-  );
-
-  const handleDragStart = useCallback(
-    (event: React.PointerEvent) => {
-      dragStateRef.current = { startY: event.clientY, baseY: sheetY.get() };
-      window.addEventListener("pointermove", handleDragMove);
-      window.addEventListener("pointerup", handleDragEnd);
-    },
-    [handleDragEnd, handleDragMove, sheetY],
-  );
-
-  useEffect(
-    () => () => {
-      window.removeEventListener("pointermove", handleDragMove);
-      window.removeEventListener("pointerup", handleDragEnd);
-    },
-    [handleDragEnd, handleDragMove],
-  );
 
   useEffect(() => {
     if (open) setHasOpenedOnce(true);
@@ -136,15 +70,6 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
     if (inboxError) toast.error(errorText(inboxError));
   }, [inboxError]);
 
-  // 桌面端没有 X 按钮，点遮罩或按 Escape 也能关闭。
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
 
   const unreadMessages = items.filter((message) => !message.readAt);
   const readMessages = items.filter((message) => !!message.readAt);
@@ -194,10 +119,8 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
       setReadStackExpanded(false);
       pendingActionsRef.current.clear();
       setPendingActions(new Map());
-      sheetY.set(0);
-      setDragProgress(0);
     }
-  }, [expandedId, handleMarkRead, items, open, sheetY]);
+  }, [expandedId, handleMarkRead, items, open]);
 
   const handleMarkAllRead = useCallback(async () => {
     if (bulkPending) return;
@@ -292,6 +215,7 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
           宽度锁定靠 app.css 的 .inbox-scroll-area 规则（见那里的说明）。 */}
       <ScrollArea
         scrollbars="vertical"
+        data-vaul-no-drag
         className="inbox-scroll-area min-h-0 flex-1 overscroll-y-contain touch-pan-y"
       >
         <div className="flex w-full min-w-0 flex-col gap-2 px-3.5 pb-3.5">
@@ -399,81 +323,17 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   );
 
   return (
-    <AnimatePresence>
-      {open ? (
-        <>
-          <motion.div
-            className="fixed inset-0 z-[110] bg-black/40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          {isDesktop ? (
-            <motion.aside
-              className="fixed z-[120] flex w-[387px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] text-[color:var(--text-color)] shadow-[var(--nav-panel-shadow)]"
-              style={{
-                top: "max(0.5rem, var(--ui-safe-area-top))",
-                bottom: "max(0.5rem, var(--ui-safe-area-bottom))",
-                right: "max(0.5rem, var(--ui-safe-area-right))",
-              }}
-              initial={{ x: "calc(100% + 16px)" }}
-              animate={{ x: 0 }}
-              exit={{ x: "calc(100% + 16px)" }}
-              transition={{ type: "tween", duration: 0.22, ease: "easeOut" }}
-            >
-              {/* 浮层面板底：窄屏侧栏同款透明度 + 背景模糊 */}
-              <div
-                className="absolute inset-0 rounded-[18px] border border-[var(--nav-border-strong)] backdrop-blur-[40px]"
-                style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
-              />
-              <div className="relative z-1 flex h-full w-full flex-col gap-2.5">
-                {panelContent}
-              </div>
-            </motion.aside>
-          ) : (
-            portalContainer
-              ? createPortal(
-                  <motion.div
-                    className="fixed inset-x-0 top-0 z-[120] w-full"
-                    style={{
-                      height: "var(--ui-viewport-height)",
-                      paddingTop: "max(100px, calc(var(--ui-safe-area-top) + 56px))",
-                    }}
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    exit={{ y: "100%" }}
-                    transition={{
-                      type: "tween",
-                      duration: 0.28,
-                      ease: [0.32, 0.72, 0, 1],
-                    }}
-                  >
-                    {/* 窄屏底部抽屉：圆角顶 + 毛玻璃 + 可拖动把手 */}
-                    <motion.div
-                      style={{ y: sheetY }}
-                      className="relative flex h-full w-full flex-col overflow-hidden rounded-t-[28px] border-t-[1.5px] border-[var(--nav-border-strong)] bg-[rgba(0,0,0,0.75)] pt-2.5 text-[color:var(--text-color)] backdrop-blur-md"
-                    >
-                      <button
-                        type="button"
-                        aria-label="收起信箱"
-                        onPointerDown={handleDragStart}
-                        style={{ touchAction: "none" }}
-                        className="tauri-no-drag mx-auto flex h-[15px] w-16 shrink-0 items-center justify-center bg-transparent text-[color:var(--floating-panel-handle-bg)]"
-                      >
-                        <DynamicDrawerHandle progress={dragProgress} direction="down" />
-                      </button>
-                      <div className="relative z-1 flex min-h-0 flex-1 flex-col gap-2.5 pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
-                        {panelContent}
-                      </div>
-                    </motion.div>
-                  </motion.div>,
-                  portalContainer,
-                )
-              : null
-          )}
-        </>
-      ) : null}
-    </AnimatePresence>
+    <FloatingDrawer
+      open={open}
+      onClose={onClose}
+      title="信箱"
+      description="查看资源审核通知"
+      handleLabel="收起信箱"
+      sideOnDesktop
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
+        {panelContent}
+      </div>
+    </FloatingDrawer>
   );
 }
