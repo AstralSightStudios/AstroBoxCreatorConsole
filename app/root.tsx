@@ -39,8 +39,14 @@ import SessionExpiredPrompt from "./components/session-expired-prompt";
 import { hasRequiredAccounts, useAccountState } from "./logic/account/store";
 
 function InboxDrawerHost() {
-  const { open, closeInbox } = useInboxDrawer();
-  return <InboxDrawer open={open} onClose={closeInbox} />;
+  const { open, closeInbox, reuseHistoryEntry } = useInboxDrawer();
+  return (
+    <InboxDrawer
+      open={open}
+      onClose={closeInbox}
+      replaceHistoryEntry={reuseHistoryEntry}
+    />
+  );
 }
 
 /**

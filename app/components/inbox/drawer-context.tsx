@@ -12,6 +12,8 @@ interface InboxDrawerContextValue {
   open: boolean;
   openInbox: () => void;
   closeInbox: () => void;
+  /** 打开时是否复用了导航抽屉留下的临时历史记录（需要 replace 而非 push）。 */
+  reuseHistoryEntry: boolean;
 }
 
 const InboxDrawerContext = createContext<InboxDrawerContextValue | null>(null);
@@ -32,18 +34,21 @@ const InboxDrawerContext = createContext<InboxDrawerContextValue | null>(null);
  */
 export function InboxDrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { isDesktop, collapseNav } = useNavVisibility();
+  const [reuseHistoryEntry, setReuseHistoryEntry] = useState(false);
+  const { isDesktop, closeNavForOverlay } = useNavVisibility();
 
   const openInbox = useCallback(() => {
-    if (!isDesktop) collapseNav();
+    // 窄屏信箱入口在导航抽屉内。关闭导航时不回退历史，而是把导航写入的
+    // 临时历史项交给信箱复用，保证返回手势一次就能关掉信箱。
+    setReuseHistoryEntry(!isDesktop && closeNavForOverlay());
     setOpen(true);
-  }, [collapseNav, isDesktop]);
+  }, [closeNavForOverlay, isDesktop]);
 
   const closeInbox = useCallback(() => setOpen(false), []);
 
   const value = useMemo(
-    () => ({ open, openInbox, closeInbox }),
-    [open, openInbox, closeInbox],
+    () => ({ open, openInbox, closeInbox, reuseHistoryEntry }),
+    [open, openInbox, closeInbox, reuseHistoryEntry],
   );
 
   return (

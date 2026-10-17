@@ -27,6 +27,13 @@ interface NavVisibilityContextValue {
    * only resets internal state without touching the history stack.
    */
   collapseNavForNavigation: () => void;
+  /**
+   * Close the mobile drawer for another overlay (e.g. the inbox) without
+   * touching the history stack. The caller takes over the synthetic entry
+   * left by the drawer. Returns `true` when that entry is still current, so
+   * the caller should `replaceState` instead of pushing another entry.
+   */
+  closeNavForOverlay: () => boolean;
 }
 
 const NavVisibilityContext = createContext<
@@ -99,6 +106,17 @@ export function NavVisibilityProvider({ children }: React.PropsWithChildren) {
     }
   };
 
+  const closeNavForOverlay = () => {
+    if (isDesktop) return false;
+    // Do not rewind history here: the overlay reuses this entry (via
+    // replaceState) so one back gesture only dismisses the overlay, instead
+    // of first closing the drawer and then navigating the page back.
+    const hadHistoryEntry = drawerHistoryActiveRef.current;
+    drawerHistoryActiveRef.current = false;
+    setIsCollapsed(true);
+    return hadHistoryEntry;
+  };
+
   const toggleNav = () => {
     if (isDesktop) {
       setIsCollapsed(false);
@@ -119,6 +137,7 @@ export function NavVisibilityProvider({ children }: React.PropsWithChildren) {
       collapseNav,
       expandNav,
       collapseNavForNavigation,
+      closeNavForOverlay,
     }),
     [isCollapsed, isDesktop],
   );

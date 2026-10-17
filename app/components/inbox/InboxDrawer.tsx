@@ -22,17 +22,28 @@ import type { PendingAction } from "./types";
 interface InboxDrawerProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * 打开时复用一条已存在（由导航抽屉写入）的临时历史记录。
+   * `true` 时用 `replaceState` 接管该记录，避免返回时要按两次。
+   */
+  replaceHistoryEntry?: boolean;
 }
 
 /** 与 AstroBox 端一致：一次拉满 60 条，不做分页。 */
 const PAGE_SIZE = 60;
 const INBOX_QUERY_KEY = "astrobox-inbox";
+/** 打开抽屉时写入的临时历史记录标记，用于接管 Android 返回键/返回手势。 */
+const INBOX_HISTORY_STATE = "__inboxDrawerOpen";
 
 function errorText(err: unknown) {
   return err instanceof Error ? err.message : String(err);
 }
 
-export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
+export default function InboxDrawer({
+  open,
+  onClose,
+  replaceHistoryEntry = false,
+}: InboxDrawerProps) {
   const { count, markRead, markAllRead, remove, refreshUnread } = useInbox();
   const navigate = useNavigate();
   const token = useAccountState().astrobox?.token;
@@ -61,10 +72,57 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
   const [pendingActions, setPendingActions] = useState<
     Map<string, PendingAction>
   >(new Map());
+  // 抽屉当前是否持有一条临时历史记录（打开时写入，关闭时消费）。
+  const historyEntryActiveRef = useRef(false);
 
   useEffect(() => {
     if (open) setHasOpenedOnce(true);
   }, [open]);
+
+  // Android 系统返回手势/返回键：打开抽屉时压入一条临时历史记录，返回时
+  // 消费它并关闭抽屉，而不是让 WebView 退到上一层页面。窄屏下信箱由导航
+  // 抽屉内的入口打开，此时 openInbox 已把导航的临时记录交接过来，用
+  // replaceState 复用，保证一次返回只关闭信箱。
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    if (historyEntryActiveRef.current) return;
+
+    const currentState =
+      (window.history.state as Record<string, unknown> | null) ?? {};
+    const nextState = { ...currentState, [INBOX_HISTORY_STATE]: true };
+    if (replaceHistoryEntry) {
+      window.history.replaceState(nextState, "");
+    } else {
+      window.history.pushState(nextState, "");
+    }
+    historyEntryActiveRef.current = true;
+
+    return () => {
+      if (!historyEntryActiveRef.current) return;
+      historyEntryActiveRef.current = false;
+      // 只有当前历史项仍是本抽屉写入的那条时才回退。若抽屉打开期间发生了
+      // 路由导航（导航会替换掉这条临时记录），就不能再 back，否则会把刚
+      // 打开的目标页面退掉。
+      const state = window.history.state as Record<string, unknown> | null;
+      if (state?.[INBOX_HISTORY_STATE]) {
+        window.history.back();
+      }
+    };
+  }, [open, replaceHistoryEntry]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handlePopState = () => {
+      if (!historyEntryActiveRef.current) return;
+      // 系统返回已经消费了临时记录，这里只负责关闭抽屉；不要再触发 back。
+      historyEntryActiveRef.current = false;
+      onClose();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [onClose]);
 
   useEffect(() => {
     if (inboxError) toast.error(errorText(inboxError));
@@ -184,8 +242,17 @@ export default function InboxDrawer({ open, onClose }: InboxDrawerProps) {
         : null;
       if (!meta) return;
       const approved = meta.subtype === "review-approved";
+      // 抽屉打开时当前历史项是临时记录，用 replace 让目标路由直接接管它；
+      // 同时释放引用，避免关闭抽屉的清理逻辑再 back 一次。
+      const replaceHistory = historyEntryActiveRef.current;
+      if (replaceHistory) {
+        historyEntryActiveRef.current = false;
+      }
       onClose();
-      navigate(approved ? "/manage" : "/publish");
+      navigate(
+        approved ? "/manage" : "/publish",
+        replaceHistory ? { replace: true } : undefined,
+      );
     },
     [navigate, onClose],
   );
