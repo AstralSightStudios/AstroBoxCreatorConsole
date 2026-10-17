@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  indexItemAssetUrl,
   indexItemIconUrl,
   indexItemRepoUrl,
   parseIndexV2,
@@ -93,5 +94,20 @@ describe("index_v2.csv 解析", () => {
     expect(
       indexItemIconUrl({ ...entry!, icon: "https://cdn.example/icon.png" }),
     ).toBe("https://cdn.example/icon.png");
+  });
+
+  test("封面与预览图地址", () => {
+    const [entry] = parseIndexV2(
+      `${HEADER}a,A,watchface,Owner,Repo,abc,icon.png,cover/nested.png,,,,\n`,
+    );
+
+    expect(indexItemAssetUrl(entry!, "cover/nested.png")).toBe(
+      "https://raw.githubusercontent.com/Owner/Repo/abc/cover/nested.png",
+    );
+    expect(indexItemAssetUrl(entry!, "https://cdn.example/x.png")).toBe(
+      "https://cdn.example/x.png",
+    );
+    expect(indexItemAssetUrl(entry!, "/local/x.png")).toBe("/local/x.png");
+    expect(indexItemAssetUrl(entry!, "   ")).toBe("");
   });
 });

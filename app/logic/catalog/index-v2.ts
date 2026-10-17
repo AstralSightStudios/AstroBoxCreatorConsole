@@ -75,21 +75,28 @@ export function indexItemRepoUrl(entry: Pick<IndexV2Entry, "repo_owner" | "repo_
 }
 
 /** 与 NG `resolve_repo_asset_url` 相同：绝对地址原样使用，相对路径拼到仓库 raw 根上。 */
-export function indexItemIconUrl(entry: IndexV2Entry) {
-  const path = entry.icon.trim();
-  if (!path) return "";
+export function indexItemAssetUrl(
+  entry: Pick<IndexV2Entry, "repo_owner" | "repo_name" | "repo_commit_hash">,
+  path: string,
+) {
+  const value = (path || "").trim();
+  if (!value) return "";
   if (
-    path.startsWith("http://") ||
-    path.startsWith("https://") ||
-    path.startsWith("data:") ||
-    path.startsWith("blob:") ||
-    path.startsWith("tauri:") ||
-    path.startsWith("/")
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("tauri:") ||
+    value.startsWith("/")
   ) {
-    return path;
+    return value;
   }
   const base = `https://raw.githubusercontent.com/${encodeURIComponent(entry.repo_owner)}/${encodeURIComponent(entry.repo_name)}/${encodeURIComponent(entry.repo_commit_hash)}`;
-  return `${base}/${path.replace(/^\/+/, "")}`;
+  return `${base}/${value.replace(/^\/+/, "")}`;
+}
+
+export function indexItemIconUrl(entry: IndexV2Entry) {
+  return indexItemAssetUrl(entry, entry.icon);
 }
 
 export function parseIndexV2(csv: string): IndexV2Entry[] {
