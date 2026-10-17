@@ -4,6 +4,10 @@ import {
     isGithubStatus,
     optionalAuthHeaders,
 } from "~/logic/publish/github-actions";
+import {
+    getInstalledBuildInfo,
+    type InstalledBuildInfo,
+} from "./build-info";
 
 export const UPDATE_REPO = "AstralSightStudios/AstroBoxCreatorConsole";
 
@@ -28,37 +32,92 @@ interface LatestReleaseResponse {
 
 // --- Beta update (GitHub Actions artifacts) ---
 
+export type BetaPlatform = "windows" | "macos" | "linux" | "android";
+
+export interface BetaArtifact {
+    id: number;
+    name: string;
+    platform: BetaPlatform;
+    /** 构建版本号；兼容旧命名时为空字符串。 */
+    version: string;
+    /** 该产物所属的 run attempt（用于识别 workflow 重跑）。 */
+    attempt: number;
+    size: number;
+    downloadUrl: string;
+    expiresAt: string;
+}
+
 export interface BetaArtifactInfo {
     runId: number;
     runNumber: number;
+    runAttempt: number;
     workflowName: string;
-    artifactName: string;
-    artifactUrl: string;
-    artifactSize: number;
+    headSha: string;
+    htmlUrl: string;
     createdAt: string;
     updatedAt: string;
-    htmlUrl: string;
+    /** 形如 `beta #170.1`。 */
+    buildLabel: string;
+    /** 构建版本号；旧产物或无法解析时为空字符串。 */
+    version: string;
+    /** 同一 attempt 下按平台去重后的可下载产物。 */
+    artifacts: BetaArtifact[];
+}
+
+/** 当前安装的构建与候选构建的关系。 */
+export type BetaComparison = "update" | "up-to-date" | "unknown";
+
+export interface BetaUpdatePrompt {
+    info: BetaArtifactInfo;
+    comparison: BetaComparison;
+    /** 当前安装构建的人类可读标识。 */
+    currentBuildLabel: string;
+}
+
+export type BetaCheckResult =
+    | { status: "available"; prompt: BetaUpdatePrompt }
+    | { status: "up-to-date"; info: BetaArtifactInfo; currentBuildLabel: string }
+    | { status: "none" };
+
+interface WorkflowRepositoryRef {
+    id?: unknown;
+    full_name?: unknown;
 }
 
 interface WorkflowRunResponse {
     id?: unknown;
     run_number?: unknown;
+    run_attempt?: unknown;
     name?: unknown;
+    path?: unknown;
+    head_branch?: unknown;
+    head_sha?: unknown;
+    event?: unknown;
+    status?: unknown;
+    conclusion?: unknown;
     html_url?: unknown;
     created_at?: unknown;
     updated_at?: unknown;
-    conclusion?: unknown;
+    repository?: WorkflowRepositoryRef;
+    head_repository?: WorkflowRepositoryRef | null;
 }
 
-interface ArtifactsResponse {
-    artifacts?: Array<{
-        id?: unknown;
-        name?: unknown;
-        size_in_bytes?: unknown;
-        archive_download_url?: unknown;
-        created_at?: unknown;
-        updated_at?: unknown;
-    }>;
+interface ArtifactWorkflowRunRef {
+    id?: unknown;
+    repository_id?: unknown;
+    head_repository_id?: unknown;
+    head_branch?: unknown;
+    head_sha?: unknown;
+}
+
+interface ArtifactResponse {
+    id?: unknown;
+    name?: unknown;
+    size_in_bytes?: unknown;
+    archive_download_url?: unknown;
+    expires_at?: unknown;
+    expired?: unknown;
+    workflow_run?: ArtifactWorkflowRunRef | null;
 }
 
 function isBrowser() {
@@ -164,115 +223,473 @@ export async function checkForUpdate(
 
 // --- Beta update (GitHub Actions artifacts) ---
 
-// 结果缓存：避免启动自动检查与设置页手动检查在短时间内重复打 GitHub API。
+const UPDATE_WORKFLOW_FILE = "main.yml";
+const UPDATE_WORKFLOW_PATH = `.github/workflows/${UPDATE_WORKFLOW_FILE}`;
+const UPDATE_BRANCH = "main";
+const BETA_RUNS_PER_PAGE = 30;
+const BETA_MAX_RUN_PAGES = 2;
+const BETA_MAX_ARTIFACT_REQUESTS = 5;
 const ARTIFACT_CACHE_TTL_MS = 5 * 60_000;
-let artifactCache: { at: number; value: BetaArtifactInfo | null } | null = null;
-let artifactInflight: Promise<BetaArtifactInfo | null> | null = null;
 
-async function requestLatestArtifact(): Promise<BetaArtifactInfo | null> {
+const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const VERSION_PATTERN =
+    /^[vV]?(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// 新命名：astrobox-creator-console-<version>-<run_number>.<run_attempt>-<platform>
+const VERSIONED_ARTIFACT_PATTERN =
+    /^astrobox-creator-console-(.+)-(\d+)\.(\d+)-(windows|macos|linux|android)$/;
+const LEGACY_ARTIFACT_PLATFORMS: Record<string, BetaPlatform> = {
+    "tauri-build-macos-latest": "macos",
+    "tauri-build-windows-latest": "windows",
+    "tauri-build-ubuntu-22.04": "linux",
+    "android-apk": "android",
+};
+const TRUSTED_RUN_EVENTS = new Set(["push", "workflow_dispatch", "schedule"]);
+
+/**
+ * 本仓库的构建既可能由 `main` 上的手动触发产生，也可能由 `v*` 版本 tag 的
+ * push 产生（此时 GitHub 返回的 head_branch 是 tag 名）。两者都视为可信来源。
+ */
+function isTrustedBranch(branch: string): boolean {
+    return branch === UPDATE_BRANCH || VERSION_PATTERN.test(branch);
+}
+
+export interface ParsedBetaArtifactName {
+    version: string;
+    runNumber: number;
+    attempt: number;
+    platform: BetaPlatform;
+}
+
+/**
+ * 解析新命名的构建产物。旧工作流使用静态产物名，无法从中确认 attempt，
+ * 由 `toDownloadableArtifact` 单独兼容。
+ */
+export function parseBetaArtifactName(
+    name: string,
+): ParsedBetaArtifactName | null {
+    const match = VERSIONED_ARTIFACT_PATTERN.exec(name);
+    if (!match) return null;
+    const [, version, runNumberText, attemptText, platform] = match;
+    if (!VERSION_PATTERN.test(version)) return null;
+    const runNumber = Number(runNumberText);
+    const attempt = Number(attemptText);
+    if (!Number.isSafeInteger(runNumber) || runNumber <= 0) return null;
+    if (!Number.isSafeInteger(attempt) || attempt <= 0) return null;
+    return {
+        version,
+        runNumber,
+        attempt,
+        platform: platform as BetaPlatform,
+    };
+}
+
+interface TrustedRun {
+    id: number;
+    repositoryId: number;
+    runNumber: number;
+    runAttempt: number;
+    name: string;
+    headBranch: string;
+    headSha: string;
+    htmlUrl: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+/**
+ * 只接受「本仓库 main 分支、由可信事件触发、已成功完成」的工作流运行，
+ * 避免把 PR、fork 或其他工作流的产物误判为 Beta 构建。
+ */
+function toTrustedRun(raw: WorkflowRunResponse): TrustedRun | null {
+    if (readString(raw.path) !== UPDATE_WORKFLOW_PATH) return null;
+    const headBranch = readString(raw.head_branch);
+    if (!isTrustedBranch(headBranch)) return null;
+    if (readString(raw.status) !== "completed") return null;
+    if (readString(raw.conclusion) !== "success") return null;
+    if (!TRUSTED_RUN_EVENTS.has(readString(raw.event))) return null;
+
+    const repository = raw.repository;
+    const headRepository = raw.head_repository;
+    if (!repository || !headRepository) return null;
+    if (readString(repository.full_name) !== UPDATE_REPO) return null;
+    if (readString(headRepository.full_name) !== UPDATE_REPO) return null;
+
+    const repositoryId = Number(repository.id);
+    if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0) return null;
+    if (Number(headRepository.id) !== repositoryId) return null;
+
+    const id = Number(raw.id);
+    const runNumber = Number(raw.run_number);
+    const runAttempt = Number(raw.run_attempt);
+    const headSha = readString(raw.head_sha).toLowerCase();
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    if (!Number.isSafeInteger(runNumber) || runNumber <= 0) return null;
+    if (!Number.isSafeInteger(runAttempt) || runAttempt <= 0) return null;
+    if (!SHA_PATTERN.test(headSha)) return null;
+
+    return {
+        id,
+        repositoryId,
+        runNumber,
+        runAttempt,
+        name: readString(raw.name),
+        headBranch,
+        headSha,
+        htmlUrl: readString(raw.html_url),
+        createdAt: readString(raw.created_at),
+        updatedAt: readString(raw.updated_at),
+    };
+}
+
+function toDownloadableArtifact(
+    raw: ArtifactResponse,
+    run: TrustedRun,
+): BetaArtifact | null {
+    // 过期、空产物或缺少下载地址一律视为不可用。
+    if (raw.expired !== false) return null;
+    const size = Number(raw.size_in_bytes);
+    if (!Number.isSafeInteger(size) || size <= 0) return null;
+    const expiresAt = readString(raw.expires_at);
+    const expiresAtMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return null;
+
+    const id = Number(raw.id);
+    const downloadUrl = readString(raw.archive_download_url);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    if (!downloadUrl) return null;
+
+    // 产物的 workflow_run 必须与当前 run 完全一致，防止跨 run 混入。
+    const workflowRun = raw.workflow_run;
+    if (!workflowRun) return null;
+    if (Number(workflowRun.id) !== run.id) return null;
+    if (Number(workflowRun.repository_id) !== run.repositoryId) return null;
+    if (Number(workflowRun.head_repository_id) !== run.repositoryId) return null;
+    if (readString(workflowRun.head_branch) !== run.headBranch) return null;
+    if (readString(workflowRun.head_sha).toLowerCase() !== run.headSha) {
+        return null;
+    }
+
+    const name = readString(raw.name);
+    const parsed = parseBetaArtifactName(name);
+    let version: string;
+    let attempt: number;
+    let platform: BetaPlatform;
+    if (parsed) {
+        if (parsed.runNumber !== run.runNumber) return null;
+        // 部分重跑可能保留旧 attempt 的产物，只接受不超过当前 attempt 的。
+        if (parsed.attempt > run.runAttempt) return null;
+        version = parsed.version;
+        attempt = parsed.attempt;
+        platform = parsed.platform;
+    } else {
+        // 兼容旧静态命名。旧产物不含 attempt，无法安全区分重跑，
+        // 因此只在 run 的第一次 attempt 中接受。
+        const legacyPlatform = LEGACY_ARTIFACT_PLATFORMS[name];
+        if (!legacyPlatform || run.runAttempt !== 1) return null;
+        version = "";
+        attempt = 1;
+        platform = legacyPlatform;
+    }
+
+    return {
+        id,
+        name,
+        platform,
+        version,
+        attempt,
+        size,
+        downloadUrl,
+        expiresAt,
+    };
+}
+
+function collectBuildArtifacts(
+    rawArtifacts: ArtifactResponse[],
+    run: TrustedRun,
+): { attempt: number; version: string; artifacts: BetaArtifact[] } | null {
+    const all = rawArtifacts
+        .map((artifact) => toDownloadableArtifact(artifact, run))
+        .filter((artifact): artifact is BetaArtifact => artifact !== null);
+    if (all.length === 0) return null;
+
+    // 以最新的 attempt 为准：重跑后旧 attempt 的产物不应再被下载。
+    const attempt = Math.max(...all.map((artifact) => artifact.attempt));
+    const byPlatform = new Map<BetaPlatform, BetaArtifact>();
+    for (const artifact of all) {
+        if (artifact.attempt !== attempt) continue;
+        if (!byPlatform.has(artifact.platform)) {
+            byPlatform.set(artifact.platform, artifact);
+        }
+    }
+    if (byPlatform.size === 0) return null;
+
+    const artifacts = [...byPlatform.values()].sort((left, right) =>
+        left.platform.localeCompare(right.platform),
+    );
+    return {
+        attempt,
+        version: artifacts.find((artifact) => artifact.version)?.version ?? "",
+        artifacts,
+    };
+}
+
+/**
+ * 拉取最近一个「带可下载产物」的 Beta 构建。
+ * 最新的成功 run 可能没有产物（例如只有部分 job 上传），此时继续向前查找。
+ */
+async function requestLatestBetaBuild(): Promise<BetaArtifactInfo | null> {
     try {
-        // 获取最近的工作流运行（按创建时间倒序）
-        const runs = await githubFetchForUpdate<{ workflow_runs?: WorkflowRunResponse[] }>(
-            `https://api.github.com/repos/${UPDATE_REPO}/actions/runs?per_page=10&status=completed`,
-        );
+        let artifactRequests = 0;
 
-        const runsList = runs?.workflow_runs ?? [];
-        // 找到最近一次成功的运行
-        const successRun = runsList.find(
-            (run) => readString(run.conclusion) === "success",
-        );
-        if (!successRun) return null;
+        for (let page = 1; page <= BETA_MAX_RUN_PAGES; page += 1) {
+            const response = await githubFetchForUpdate<{
+                workflow_runs?: WorkflowRunResponse[];
+            }>(
+                `https://api.github.com/repos/${UPDATE_REPO}/actions/workflows/${UPDATE_WORKFLOW_FILE}/runs` +
+                    `?status=success&per_page=${BETA_RUNS_PER_PAGE}&page=${page}`,
+            );
 
-        const runId = Number(successRun.id);
-        const runNumber = Number(successRun.run_number);
-        const workflowName = readString(successRun.name);
-        const htmlUrl = readString(successRun.html_url);
-        const createdAt = readString(successRun.created_at);
-        const updatedAt = readString(successRun.updated_at);
+            const rawRuns = Array.isArray(response?.workflow_runs)
+                ? response.workflow_runs
+                : [];
+            if (rawRuns.length === 0) break;
 
-        if (!Number.isFinite(runId) || runId <= 0) return null;
+            const runs = rawRuns
+                .map(toTrustedRun)
+                .filter((run): run is TrustedRun => run !== null)
+                .sort(
+                    (left, right) =>
+                        right.runNumber - left.runNumber ||
+                        right.runAttempt - left.runAttempt,
+                );
 
-        // 获取该运行的 artifacts
-        const artifacts = await githubFetchForUpdate<ArtifactsResponse>(
-            `https://api.github.com/repos/${UPDATE_REPO}/actions/runs/${runId}/artifacts`,
-        );
+            for (const run of runs) {
+                if (artifactRequests >= BETA_MAX_ARTIFACT_REQUESTS) return null;
+                artifactRequests += 1;
 
-        const artifactList = artifacts?.artifacts ?? [];
-        // 优先选择可下载的产物
-        const artifact = artifactList.find((item) => {
-            const url = readString(item.archive_download_url);
-            return Boolean(url);
-        });
-        if (!artifact) return null;
+                const artifactsResponse = await githubFetchForUpdate<{
+                    artifacts?: ArtifactResponse[];
+                }>(
+                    `https://api.github.com/repos/${UPDATE_REPO}/actions/runs/${run.id}/artifacts?per_page=100`,
+                );
+                const rawArtifacts = Array.isArray(artifactsResponse?.artifacts)
+                    ? artifactsResponse.artifacts
+                    : [];
+                const build = collectBuildArtifacts(rawArtifacts, run);
+                if (!build) continue;
 
-        const artifactName = readString(artifact.name);
-        const artifactUrl = readString(artifact.archive_download_url);
-        const artifactSize = Number(artifact.size_in_bytes) || 0;
+                return {
+                    runId: run.id,
+                    runNumber: run.runNumber,
+                    runAttempt: build.attempt,
+                    workflowName: run.name || "CI Build",
+                    headSha: run.headSha,
+                    htmlUrl:
+                        run.htmlUrl ||
+                        `https://github.com/${UPDATE_REPO}/actions/runs/${run.id}`,
+                    createdAt: run.createdAt,
+                    updatedAt: run.updatedAt,
+                    buildLabel: `beta #${run.runNumber}.${build.attempt}`,
+                    version: build.version,
+                    artifacts: build.artifacts,
+                };
+            }
 
-        if (!artifactName || !artifactUrl) return null;
+            if (rawRuns.length < BETA_RUNS_PER_PAGE) break;
+        }
 
-        return {
-            runId,
-            runNumber: Number.isFinite(runNumber) ? runNumber : 0,
-            workflowName: workflowName || "CI Build",
-            artifactName,
-            artifactUrl,
-            artifactSize,
-            createdAt,
-            updatedAt,
-            htmlUrl:
-                htmlUrl ||
-                `https://github.com/${UPDATE_REPO}/actions/runs/${runId}`,
-        };
+        return null;
     } catch (error) {
         if (isGithubStatus(error, 404)) return null;
         throw error;
     }
 }
 
-/**
- * 获取最新的成功工作流运行及其 artifacts。
- * 默认命中 5 分钟缓存；传入 `{ force: true }` 绕过缓存（手动检查）。
- */
-export async function fetchLatestArtifact(options?: {
-    force?: boolean;
-}): Promise<BetaArtifactInfo | null> {
-    if (
-        !options?.force &&
-        artifactCache &&
-        Date.now() - artifactCache.at < ARTIFACT_CACHE_TTL_MS
-    ) {
-        return artifactCache.value;
+/** 当前安装构建的人类可读标识。 */
+export function describeInstalledBuild(
+    installed: InstalledBuildInfo,
+): string {
+    if (installed.ciRunNumber > 0 && installed.ciRunAttempt > 0) {
+        return `beta #${installed.ciRunNumber}.${installed.ciRunAttempt}`;
     }
-    // 并发去重：同一时刻只发一轮请求
-    if (artifactInflight) return artifactInflight;
+    if (SHA_PATTERN.test(installed.commitSha)) {
+        return `build ${installed.commitSha.slice(0, 7)}${
+            installed.sourceDirty ? " *" : ""
+        }`;
+    }
+    return "本地构建";
+}
 
-    artifactInflight = requestLatestArtifact();
+/**
+ * 先用 CI run number / attempt 做精确比较；无法判定时返回 `unknown`，
+ * 再由 `resolveBetaComparison` 尝试 commit 祖先关系。
+ */
+export function compareBetaBuildWithInstalled(
+    installed: InstalledBuildInfo,
+    info: Pick<BetaArtifactInfo, "runNumber" | "runAttempt">,
+): BetaComparison {
+    if (installed.sourceDirty) return "unknown";
+    if (installed.ciRunNumber > 0 && installed.ciRunAttempt > 0) {
+        if (info.runNumber !== installed.ciRunNumber) {
+            return info.runNumber > installed.ciRunNumber
+                ? "update"
+                : "up-to-date";
+        }
+        return info.runAttempt > installed.ciRunAttempt
+            ? "update"
+            : "up-to-date";
+    }
+    return "unknown";
+}
+
+async function resolveBetaComparison(
+    installed: InstalledBuildInfo,
+    info: BetaArtifactInfo,
+): Promise<BetaComparison> {
+    const known = compareBetaBuildWithInstalled(installed, info);
+    if (known !== "unknown") return known;
+    if (installed.sourceDirty) return "unknown";
+
+    const installedSha = installed.commitSha.toLowerCase();
+    if (!SHA_PATTERN.test(installedSha)) return "unknown";
+    if (installedSha === info.headSha.toLowerCase()) return "up-to-date";
+
     try {
-        const value = await artifactInflight;
-        artifactCache = { at: Date.now(), value };
+        const comparison = await githubFetchForUpdate<{ status?: unknown }>(
+            `https://api.github.com/repos/${UPDATE_REPO}/compare/` +
+                `${installedSha}...${info.headSha}?per_page=1`,
+        );
+        switch (readString(comparison?.status)) {
+            case "ahead":
+                return "update";
+            case "behind":
+            case "identical":
+                return "up-to-date";
+            default:
+                return "unknown";
+        }
+    } catch (error) {
+        if (isGithubStatus(error, 404)) return "unknown";
+        throw error;
+    }
+}
+
+let betaCheckCache: { at: number; value: BetaCheckResult } | null = null;
+let betaCheckInflight: Promise<BetaCheckResult> | null = null;
+
+/**
+ * 检查 GitHub Actions 上是否存在比当前安装构建更新的 Beta 产物。
+ * 默认命中 5 分钟缓存；`{ force: true }` 用于设置页手动检查。
+ */
+export async function checkForBetaUpdate(options?: {
+    force?: boolean;
+    installedBuild?: InstalledBuildInfo;
+}): Promise<BetaCheckResult> {
+    const installed = options?.installedBuild ?? getInstalledBuildInfo();
+    const cacheable = !options?.installedBuild;
+
+    if (
+        cacheable &&
+        !options?.force &&
+        betaCheckCache &&
+        Date.now() - betaCheckCache.at < ARTIFACT_CACHE_TTL_MS
+    ) {
+        return betaCheckCache.value;
+    }
+    // 并发去重：启动自动检查与设置页手动检查同时触发时只打一轮 API。
+    if (cacheable && !options?.force && betaCheckInflight) {
+        return betaCheckInflight;
+    }
+
+    const task = (async (): Promise<BetaCheckResult> => {
+        const info = await requestLatestBetaBuild();
+        if (!info) return { status: "none" };
+
+        const comparison = await resolveBetaComparison(installed, info);
+        const currentBuildLabel = describeInstalledBuild(installed);
+        if (comparison === "up-to-date") {
+            return { status: "up-to-date", info, currentBuildLabel };
+        }
+        return {
+            status: "available",
+            prompt: { info, comparison, currentBuildLabel },
+        };
+    })();
+
+    if (!cacheable) return task;
+
+    betaCheckInflight = task;
+    try {
+        const value = await task;
+        betaCheckCache = { at: Date.now(), value };
         return value;
     } finally {
-        artifactInflight = null;
+        betaCheckInflight = null;
     }
 }
 
-// --- 忽略的 beta run / 本地存储 ---
-
-const KEY_BETA_IGNORED_RUN = "ABCC_BETA_UPDATE_IGNORED_RUN_V1";
-
-export function getIgnoredBetaRun(): number {
-    const stored = readStorage(KEY_BETA_IGNORED_RUN);
-    return stored ? Number(stored) : 0;
+/** 根据当前平台选择要下载的产物；无法确定平台时仅接受唯一产物。 */
+export function selectBetaArtifact(
+    info: BetaArtifactInfo,
+    platform: BetaPlatform | null = detectBetaPlatform(),
+): BetaArtifact | null {
+    if (!platform) {
+        return info.artifacts.length === 1 ? info.artifacts[0] : null;
+    }
+    return (
+        info.artifacts.find((artifact) => artifact.platform === platform) ?? null
+    );
 }
 
-export function ignoreBetaRun(runId: number) {
-    writeStorage(KEY_BETA_IGNORED_RUN, String(runId));
+/** 从 WebView 的 UA 推断当前平台。 */
+export function detectBetaPlatform(): BetaPlatform | null {
+    if (typeof navigator === "undefined") return null;
+    const ua = navigator.userAgent || "";
+    // iOS 没有对应的 Actions 产物；iPad 的桌面模式 UA 会伪装成 macOS。
+    if (/iphone|ipad|ipod/i.test(ua)) return null;
+    if (/android/i.test(ua)) return "android";
+    if (/windows|win32|win64/i.test(ua)) return "windows";
+    if (/macintosh|mac os x|macos/i.test(ua)) return "macos";
+    if (/linux|x11/i.test(ua)) return "linux";
+    return null;
+}
+
+// --- 忽略的 beta 构建 / 本地存储 ---
+
+const KEY_BETA_IGNORED_BUILD = "ABCC_BETA_UPDATE_IGNORED_BUILD_V2";
+const KEY_BETA_LAST_NOTIFIED = "ABCC_BETA_UPDATE_LAST_NOTIFIED_V1";
+
+function formatBuildKey(info: Pick<BetaArtifactInfo, "runId" | "runAttempt">) {
+    return `${info.runId}.${info.runAttempt}`;
+}
+
+export function ignoreBetaBuild(
+    info: Pick<BetaArtifactInfo, "runId" | "runAttempt">,
+) {
+    writeStorage(KEY_BETA_IGNORED_BUILD, formatBuildKey(info));
     notifySubscribers();
 }
 
-export function isBetaRunIgnored(runId: number): boolean {
-    return runId > 0 && getIgnoredBetaRun() === runId;
+export function isBetaBuildIgnored(
+    info: Pick<BetaArtifactInfo, "runId" | "runAttempt">,
+): boolean {
+    return readStorage(KEY_BETA_IGNORED_BUILD) === formatBuildKey(info);
+}
+
+/**
+ * 无法判定当前构建是否最新时，同一个构建只自动提示一次，
+ * 避免本地构建每次启动都被弹窗打扰。
+ */
+export function isBetaBuildNotified(
+    info: Pick<BetaArtifactInfo, "runId" | "runAttempt">,
+): boolean {
+    return readStorage(KEY_BETA_LAST_NOTIFIED) === formatBuildKey(info);
+}
+
+export function markBetaBuildNotified(
+    info: Pick<BetaArtifactInfo, "runId" | "runAttempt">,
+) {
+    writeStorage(KEY_BETA_LAST_NOTIFIED, formatBuildKey(info));
 }
 
 // --- 忽略的版本 tag / 自动检查开关（localStorage 持久化） ---

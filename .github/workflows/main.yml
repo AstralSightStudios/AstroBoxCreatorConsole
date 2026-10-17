@@ -14,6 +14,10 @@ jobs:
         platform: [macos-latest, ubuntu-22.04, windows-latest]
 
     runs-on: ${{ matrix.platform }}
+    env:
+      ABCC_CI_RUN_NUMBER: ${{ github.run_number }}
+      ABCC_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+      ABCC_BUILD_COMMIT: ${{ github.sha }}
 
     steps:
       - name: Checkout repository
@@ -36,6 +40,23 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
+      - name: Read build metadata
+        id: build_metadata
+        shell: bash
+        run: |
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version for beta artifact name: $version"
+            exit 1
+          fi
+          case "${{ matrix.platform }}" in
+            macos-latest) platform=macos ;;
+            windows-latest) platform=windows ;;
+            ubuntu-22.04) platform=linux ;;
+            *) echo "::error::Unknown platform: ${{ matrix.platform }}"; exit 1 ;;
+          esac
+          echo "artifact_name=astrobox-creator-console-${version}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}-${platform}" >> "$GITHUB_OUTPUT"
 
       - name: Install bun
         run: npm install -g bun
@@ -95,12 +116,16 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: tauri-build-${{ matrix.platform }}
+          name: ${{ steps.build_metadata.outputs.artifact_name }}
           path: release-artifacts/*
           if-no-files-found: error
 
   build-android:
     runs-on: ubuntu-22.04
+    env:
+      ABCC_CI_RUN_NUMBER: ${{ github.run_number }}
+      ABCC_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+      ABCC_BUILD_COMMIT: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -120,6 +145,17 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
+      - name: Read build metadata
+        id: build_metadata
+        shell: bash
+        run: |
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version for beta artifact name: $version"
+            exit 1
+          fi
+          echo "artifact_name=astrobox-creator-console-${version}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}-android" >> "$GITHUB_OUTPUT"
 
       - name: Install bun
         run: npm install -g bun
@@ -160,6 +196,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: android-apk
+          name: ${{ steps.build_metadata.outputs.artifact_name }}
           path: release-artifacts/*
           if-no-files-found: error

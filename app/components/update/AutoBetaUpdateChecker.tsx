@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  fetchLatestArtifact,
-  isBetaRunIgnored,
+  checkForBetaUpdate,
+  isBetaBuildIgnored,
+  isBetaBuildNotified,
   isTauriRuntime,
-  type BetaArtifactInfo,
+  markBetaBuildNotified,
+  type BetaUpdatePrompt,
 } from "~/logic/update/update-checker";
 import { isBetaUpdateEnabled } from "~/config/betaUpdate";
 import BetaUpdateAvailableDialog from "./BetaUpdateAvailableDialog";
@@ -13,7 +15,7 @@ const CHECK_DELAY_MS = 5_000;
 
 /** 应用启动时静默检查一次 GitHub Actions 最新 artifact，有新版且未被忽略时弹窗提示。 */
 export default function AutoBetaUpdateChecker() {
-  const [info, setInfo] = useState<BetaArtifactInfo | null>(null);
+  const [prompt, setPrompt] = useState<BetaUpdatePrompt | null>(null);
   const [open, setOpen] = useState(false);
   const startedRef = useRef(false);
 
@@ -27,16 +29,20 @@ export default function AutoBetaUpdateChecker() {
         try {
           if (!isTauriRuntime() || !isBetaUpdateEnabled()) return;
 
-          // 获取最新的 artifact 以获取当前 runId 基准
-          const latest = await fetchLatestArtifact();
-          if (cancelled || !latest) return;
+          const result = await checkForBetaUpdate();
+          if (cancelled || result.status !== "available") return;
 
-          // 如果已经忽略了这个 run，不提示
-          if (isBetaRunIgnored(latest.runId)) return;
+          const { info, comparison } = result.prompt;
+          if (isBetaBuildIgnored(info)) return;
 
-          // 这里可以存储当前已知的最新 runId，下次对比
-          // 简单起见：只要有 artifact 且未忽略就提示（用户可手动忽略）
-          setInfo(latest);
+          // 无法比较（本地构建、diverged 等）时，同一个构建只提示一次；
+          // 能确认更新的构建则持续提示，直到用户安装或忽略。
+          if (comparison === "unknown") {
+            if (isBetaBuildNotified(info)) return;
+            markBetaBuildNotified(info);
+          }
+
+          setPrompt(result.prompt);
           setOpen(true);
         } catch {
           // 更新检测失败不打扰用户
@@ -52,7 +58,7 @@ export default function AutoBetaUpdateChecker() {
 
   return (
     <BetaUpdateAvailableDialog
-      info={info}
+      prompt={prompt}
       open={open}
       onOpenChange={setOpen}
     />

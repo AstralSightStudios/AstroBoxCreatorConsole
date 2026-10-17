@@ -72,12 +72,12 @@ import BetaUpdateAvailableDialog from "~/components/update/BetaUpdateAvailableDi
 import AccountsSection from "~/components/settings/AccountsSection";
 import AfdianAiAutoReplySection from "~/components/settings/AfdianAiAutoReplySection";
 import {
+  checkForBetaUpdate,
   checkForUpdate,
-  fetchLatestArtifact,
   isTauriRuntime,
   useUpdateCheckDisabled,
   type UpdateInfo,
-  type BetaArtifactInfo,
+  type BetaUpdatePrompt,
 } from "~/logic/update/update-checker";
 import { useBetaUpdateEnabled } from "~/config/betaUpdate";
 import Page from "~/layout/page";
@@ -855,7 +855,7 @@ export default function Settings({
   const [betaUpdateEnabled, setBetaUpdateEnabled] = useBetaUpdateEnabled();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [betaUpdateInfo, setBetaUpdateInfo] = useState<BetaArtifactInfo | null>(null);
+  const [betaUpdatePrompt, setBetaUpdatePrompt] = useState<BetaUpdatePrompt | null>(null);
   const [betaUpdateDialogOpen, setBetaUpdateDialogOpen] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [checkingBetaUpdate, setCheckingBetaUpdate] = useState(false);
@@ -978,14 +978,20 @@ export default function Settings({
     }
     setCheckingBetaUpdate(true);
     try {
-      // 手动检查绕过缓存，获取最新构建
-      const latest = await fetchLatestArtifact({ force: true });
-      if (!latest) {
+      // 手动检查绕过缓存，并与当前安装的构建做比较
+      const result = await checkForBetaUpdate({ force: true });
+      if (result.status === "none") {
         toast.info("未找到可用的 GitHub Actions 构建产物。");
         return;
       }
+      if (result.status === "up-to-date") {
+        toast.success(
+          `当前已是最新 Beta 构建（${result.info.buildLabel}）`,
+        );
+        return;
+      }
       // 手动检查无视「忽略此构建」，始终弹出
-      setBetaUpdateInfo(latest);
+      setBetaUpdatePrompt(result.prompt);
       setBetaUpdateDialogOpen(true);
     } catch (err) {
       toast.error(
@@ -1303,7 +1309,7 @@ export default function Settings({
         />
 
         <BetaUpdateAvailableDialog
-          info={betaUpdateInfo}
+          prompt={betaUpdatePrompt}
           open={betaUpdateDialogOpen}
           onOpenChange={setBetaUpdateDialogOpen}
         />

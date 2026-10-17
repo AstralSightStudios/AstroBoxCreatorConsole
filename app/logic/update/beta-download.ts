@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { loadAccountState } from "~/logic/account/store";
-import type { BetaArtifactInfo } from "./update-checker";
+import type { BetaArtifact } from "./update-checker";
 
 /**
  * GitHub Actions 的 artifact 下载接口即使对公开仓库也要求鉴权（未登录返回 401），
@@ -8,7 +8,7 @@ import type { BetaArtifactInfo } from "./update-checker";
  * 避免把动辄上百 MB 的构建包以 base64 形式穿过 IPC。
  */
 export async function downloadBetaArtifact(
-    info: BetaArtifactInfo,
+    artifact: BetaArtifact,
     targetPath: string,
 ): Promise<number> {
     const token = loadAccountState().github?.token?.trim();
@@ -18,7 +18,7 @@ export async function downloadBetaArtifact(
 
     return invoke<number>("download_file", {
         request: {
-            url: info.artifactUrl,
+            url: artifact.downloadUrl,
             headers: {
                 Authorization: `Bearer ${token}`,
                 Accept: "application/vnd.github+json",
