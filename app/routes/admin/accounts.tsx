@@ -1,5 +1,5 @@
 import { Badge, Button, IconButton, Select, Spinner, Tabs, Tooltip } from "~/components/ScaleAwareThemes";
-import { CaretLeft, CopyIcon, GithubLogoIcon, ArrowSquareOutIcon, XIcon } from "@phosphor-icons/react";
+import { CaretLeft, CopyIcon, GithubLogoIcon, ArrowSquareOutIcon, XIcon, CalendarBlankIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -66,7 +66,7 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function manualVipExpiryDate(value: string): Date {
+function mobileVipExpiryDate(value: string): Date {
   const parts = /^(\d{4,6})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})$/.exec(value.trim());
   if (!parts) return new Date(value);
 
@@ -780,19 +780,26 @@ function VipManager({
   const [tier, setTier] = useState<VipTier>("Pro");
   const [months, setMonths] = useState("1");
   const [expiresAt, setExpiresAt] = useState("");
-  const [manualExpiresAt, setManualExpiresAt] = useState("");
-  const [manualExpiry, setManualExpiry] = useState(false);
   const [reason, setReason] = useState("");
   const [notifyUser, setNotifyUser] = useState(false);
+  const isMobile = typeof navigator !== "undefined" && (
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+  const pickerParts = /^(\d{4,6})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})$/.exec(expiresAt.trim());
+  const pickerValue = pickerParts
+    ? `${pickerParts[1]}-${pickerParts[2].padStart(2, "0")}-${pickerParts[3].padStart(2, "0")}T${pickerParts[4].padStart(2, "0")}:${pickerParts[5].padStart(2, "0")}`
+    : "";
 
   const submit = async () => {
     try {
-      const expiryInput = manualExpiry ? manualExpiresAt : expiresAt;
       await AdminApi.users.adjustVip(detail.userId, {
         op,
         tier,
         months: months ? Number(months) : undefined,
-        expiresAt: expiryInput ? (manualExpiry ? manualVipExpiryDate(expiryInput) : new Date(expiryInput)).toISOString() : undefined,
+        expiresAt: expiresAt
+          ? (isMobile ? mobileVipExpiryDate(expiresAt) : new Date(expiresAt)).toISOString()
+          : undefined,
         reason,
         notifyUser,
       });
@@ -838,55 +845,75 @@ function VipManager({
             ))}
           </Select.Content>
         </Select.Root>
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-            <span className="text-white/55">月数</span>
-          </div>
-          <input
-            className={inputClass}
-            value={months}
-            onChange={(event) => setMonths(event.target.value)}
-            aria-label="月数"
-          />
-        </div>
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-            <span className="text-white/55">时间</span>
-            <button
-              type="button"
-              className="shrink-0 text-blue-400 hover:text-blue-300"
-              onClick={() => {
-                if (manualExpiry) {
-                  if (manualExpiresAt) setExpiresAt(manualExpiresAt.replaceAll("/", "-").replace(" ", "T"));
-                } else {
-                  if (expiresAt) setManualExpiresAt(expiresAt.replaceAll("-", "/").replace("T", " "));
-                }
-                setManualExpiry(!manualExpiry);
+        <input className={inputClass} value={months} onChange={(event) => setMonths(event.target.value)} placeholder="月数" />
+        {isMobile ? (
+          <div className="relative min-w-0 [&:focus-within>input]:border-white/30">
+            <input
+              className={`${inputClass} pr-11`}
+              ref={(input) => {
+                if (!input) return;
+                const context = document.createElement("canvas").getContext("2d");
+                if (!context) return;
+                let active = true;
+            
+                const fitText = () => {
+                  if (!active) return;
+                  input.style.fontSize = "";
+            
+                  const style = getComputedStyle(input);
+                  const available = input.clientWidth
+                    - parseFloat(style.paddingLeft)
+                    - parseFloat(style.paddingRight)
+                    - 2;
+                  if (available <= 0) return;
+            
+                  const text = input.value || input.placeholder;
+                  const spacing = (parseFloat(style.letterSpacing) || 0)
+                    * Math.max(0, text.length - 1);
+            
+                  context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+                  const width = context.measureText(text).width;
+            
+                  if (width + spacing > available && width > 0) {
+                    const size = parseFloat(style.fontSize)
+                      * Math.max(1, available - spacing) / width;
+                    input.style.fontSize = `${Math.floor(size * 100) / 100}px`;
+                  }
+            
+                  input.scrollLeft = 0;
+                };
+            
+                fitText();
+                const observer = new ResizeObserver(fitText);
+                observer.observe(input);
+                void document.fonts.ready.then(fitText);
+            
+                return () => {
+                  active = false;
+                  observer.disconnect();
+                };
               }}
-            >
-              {manualExpiry ? "滚轮选择" : "手动输入"}
-            </button>
-          </div>
-          {manualExpiry ? (
-            <input
-              className={inputClass}
-              value={manualExpiresAt}
-              onChange={(event) => setManualExpiresAt(event.target.value)}
               type="text"
-              aria-label="手动输入时间"
-              placeholder="yyyy/MM/dd HH:mm"
-              autoComplete="off"
-            />
-          ) : (
-            <input
-              className={inputClass}
               value={expiresAt}
               onChange={(event) => setExpiresAt(event.target.value)}
-              type="datetime-local"
-              aria-label="滚轮选择时间"
+              placeholder="yyyy/MM/dd HH:mm"
+              aria-label="会员时间"
+              autoComplete="off"
             />
-          )}
-        </div>
+            <label className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center text-white/60">
+              <CalendarBlankIcon size={18} aria-hidden="true" />
+              <input
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                type="datetime-local"
+                value={pickerValue}
+                onChange={(event) => setExpiresAt(event.target.value.replaceAll("-", "/").replace("T", " "))}
+                aria-label="打开日期时间选择器"
+              />
+            </label>
+          </div>
+        ) : (
+          <input className={inputClass} value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} type="datetime-local" />
+        )}
         <Button className="w-full" onClick={submit}>应用</Button>
       </div>
       <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
