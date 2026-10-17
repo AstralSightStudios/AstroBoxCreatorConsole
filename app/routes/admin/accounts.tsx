@@ -66,6 +66,16 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function manualVipExpiryDate(value: string): Date {
+  const parts = /^(\d{4,6})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})$/.exec(value.trim());
+  if (!parts) return new Date(value);
+
+  const date = new Date(0);
+  date.setFullYear(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+  date.setHours(Number(parts[4]), Number(parts[5]), 0, 0);
+  return date;
+}
+
 function VipBadge({ vip }: { vip: VipTier }) {
   return (
     <Badge color={VIP_BADGE_COLOR[vip]} variant="soft">
@@ -770,16 +780,19 @@ function VipManager({
   const [tier, setTier] = useState<VipTier>("Pro");
   const [months, setMonths] = useState("1");
   const [expiresAt, setExpiresAt] = useState("");
+  const [manualExpiresAt, setManualExpiresAt] = useState("");
+  const [manualExpiry, setManualExpiry] = useState(false);
   const [reason, setReason] = useState("");
   const [notifyUser, setNotifyUser] = useState(false);
 
   const submit = async () => {
     try {
+      const expiryInput = manualExpiry ? manualExpiresAt : expiresAt;
       await AdminApi.users.adjustVip(detail.userId, {
         op,
         tier,
         months: months ? Number(months) : undefined,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+        expiresAt: expiryInput ? (manualExpiry ? manualVipExpiryDate(expiryInput) : new Date(expiryInput)).toISOString() : undefined,
         reason,
         notifyUser,
       });
@@ -826,7 +839,45 @@ function VipManager({
           </Select.Content>
         </Select.Root>
         <input className={inputClass} value={months} onChange={(event) => setMonths(event.target.value)} placeholder="月数" />
-        <input className={inputClass} value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} type="datetime-local" />
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+            <span className="text-white/55">时间</span>
+            <button
+              type="button"
+              className="shrink-0 text-blue-400 hover:text-blue-300"
+              onClick={() => {
+                if (manualExpiry) {
+                  if (manualExpiresAt) setExpiresAt(manualExpiresAt.replaceAll("/", "-").replace(" ", "T"));
+                } else {
+                  if (expiresAt) setManualExpiresAt(expiresAt.replaceAll("-", "/").replace("T", " "));
+                }
+                setManualExpiry(!manualExpiry);
+              }}
+            >
+              {manualExpiry ? "滚轮选择" : "手动输入"}
+            </button>
+          </div>
+          {manualExpiry ? (
+            <input
+              className={inputClass}
+              value={manualExpiresAt}
+              onChange={(event) => setManualExpiresAt(event.target.value)}
+              type="text"
+              aria-label="手动输入时间"
+              placeholder="yyyy/MM/dd HH:mm"
+              autoComplete="off"
+            />
+          ) : (
+            <input
+              className={inputClass}
+              value={expiresAt}
+              onChange={(event) => setExpiresAt(event.target.value)}
+              type="datetime-local"
+              aria-label="滚轮选择时间"
+            />
+          )}
+          {manualExpiry && <p className="mt-1 text-xs text-white/45">例：9999/12/31 23:59</p>}
+        </div>
         <Button className="w-full" onClick={submit}>应用</Button>
       </div>
       <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
