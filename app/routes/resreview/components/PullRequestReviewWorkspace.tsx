@@ -68,6 +68,7 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar">
           <PullRequestReviewView
+            key={props.openNumber}
             openPull={props.openPull}
             openStatus={props.openStatus}
             openComments={props.openComments}
