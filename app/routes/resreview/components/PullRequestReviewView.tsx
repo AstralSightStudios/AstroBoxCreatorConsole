@@ -91,6 +91,12 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
   const accountState = useAccountState();
   const [tabValue, setTabValue] = useState("resources");
+  // 首次访问时才加载标签页，之后保留组件与请求结果，避免切换时重置或重复加载。
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(["resources"]));
+  const handleTabChange = useCallback((value: string) => {
+    setTabValue(value);
+    setVisitedTabs((previous) => previous.has(value) ? previous : new Set([...previous, value]));
+  }, []);
   /**
    * 自动检查 Tab 里点击图片问题行时跳到「资源信息」Tab 并高亮对应图片。
    * label 形如 `icon` / `cover` / `preview 3`。
@@ -99,15 +105,15 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
   const handleJumpToResourceImage = useCallback((label: string) => {
     setImageHighlight(label);
-    setTabValue("resources");
-  }, []);
+    handleTabChange("resources");
+  }, [handleTabChange]);
 
   const clearImageHighlight = useCallback(() => setImageHighlight(null), []);
 
   const handleFileComment = useCallback((filePath: string) => {
     onGeneralCommentChange(`> 文件: \`${filePath}\`\n\n`);
-    setTabValue("comments");
-  }, [onGeneralCommentChange]);
+    handleTabChange("comments");
+  }, [onGeneralCommentChange, handleTabChange]);
 
   const setRef = (el: HTMLDivElement | null) => {
     if (summaryCardRef) {
@@ -135,7 +141,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-4">
-          <Tabs.Root value={tabValue} onValueChange={setTabValue}>
+          <Tabs.Root value={tabValue} onValueChange={handleTabChange}>
             <Tabs.List className="flex gap-0 border-b border-white/10">
               <Tabs.Trigger
                 value="resources"
@@ -167,7 +173,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               </Tabs.Trigger>
             </Tabs.List>
 
-            <Tabs.Content value="resources" className="pt-3! outline-none!">
+            <Tabs.Content value="resources" forceMount={visitedTabs.has("resources") ? true : undefined} className="pt-3! outline-none! data-[state=inactive]:hidden">
               {loadingDetail && resourcePreviews.length === 0 ? (
                 <LoadingIndicator text="正在解析资源信息" />
               ) : (
@@ -179,7 +185,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               )}
             </Tabs.Content>
 
-            <Tabs.Content value="checks" className="pt-3! outline-none!">
+            <Tabs.Content value="checks" forceMount={visitedTabs.has("checks") ? true : undefined} className="pt-3! outline-none! data-[state=inactive]:hidden">
               {loadingDetail && resourcePreviews.length === 0 ? (
                 <LoadingIndicator text="正在解析资源信息" />
               ) : (
@@ -191,7 +197,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               )}
             </Tabs.Content>
 
-            <Tabs.Content value="files" className="pt-3! outline-none!">
+            <Tabs.Content value="files" forceMount={visitedTabs.has("files") ? true : undefined} className="pt-3! outline-none! data-[state=inactive]:hidden">
               {loadingDetail ? (
                 <LoadingIndicator />
               ) : (
@@ -217,7 +223,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               )}
             </Tabs.Content>
 
-            <Tabs.Content value="comments" className="pt-3! outline-none!">
+            <Tabs.Content value="comments" forceMount={visitedTabs.has("comments") ? true : undefined} className="pt-3! outline-none! data-[state=inactive]:hidden">
               <div className="flex flex-col gap-4">
                 <CommentComposer
                   avatarUrl={accountState.github?.avatar}
