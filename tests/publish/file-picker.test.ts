@@ -23,6 +23,13 @@ const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'
 const UNKNOWN = new Uint8Array([0x5a, 0xa5, 0x34, 0x12, 0x00]);
 
 describe("basenameFromPath", () => {
+  test("原生文件路径保留 # ? % 字符且不按 URL 解码", () => {
+    expect(basenameFromPath("/Users/creator/set#1/cover#1.png")).toBe("cover#1.png");
+    expect(basenameFromPath("C:\\Pictures\\set#1\\cover#1.png")).toBe("cover#1.png");
+    expect(basenameFromPath("/Users/creator/cover?1.png")).toBe("cover?1.png");
+    expect(basenameFromPath("/Users/creator/cover%2F1.png")).toBe("cover%2F1.png");
+  });
+
   test("Android MediaStore content:// 路径取到数字 ID", () => {
     expect(
       basenameFromPath("content://media/external/images/media/53001"),

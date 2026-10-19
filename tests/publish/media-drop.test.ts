@@ -6,6 +6,15 @@ import {
 } from "../../app/logic/publish/media-drop";
 
 describe("媒体文件拖入", () => {
+  test("文件名或文件夹含 # ? % 时仍识别原生图片路径", () => {
+    expect(isDroppedImage("/Users/creator/Pictures/cover#1.png")).toBe(true);
+    expect(isDroppedImage("/Users/creator/set#1/cover.png")).toBe(true);
+    expect(isDroppedImage("C:\\Pictures\\set#1\\cover#1.png")).toBe(true);
+    expect(isDroppedImage("/Users/creator/set?1/cover.png")).toBe(true);
+    expect(isDroppedImage("/Users/creator/cover%1.png")).toBe(true);
+    expect(isDroppedImage("/Users/creator/set#1/package.zip")).toBe(false);
+  });
+
   test("识别 macOS 和 Windows 图片路径以及没有 MIME 的浏览器文件", () => {
     expect(isDroppedImage("/Users/creator/图片/封面.PNG")).toBe(true);
     expect(isDroppedImage("C:\\Users\\creator\\Pictures\\cover.JPEG")).toBe(true);
