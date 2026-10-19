@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
+import { Dialog } from "~/components/ScaleAwareThemes";
 import { pickFiles } from "~/logic/publish/file-picker";
 import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
@@ -171,7 +172,7 @@ function PreviewCard({
   width: number;
   showProgress: boolean;
   onGripPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onOpen: () => void;
+  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
   onLoad?: (width: number, height: number) => void;
@@ -303,6 +304,7 @@ export function MediaSection({
   const dropTimerRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxTriggerRef = useRef<HTMLButtonElement | null>(null);
   const { rootRef: mediaDropRef, activeTarget: mediaDropTarget } = useMediaFileDrop({
     onPreviewUpload,
     onIconUpload,
@@ -345,18 +347,6 @@ export function MediaSection({
 
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
-
-  useEffect(() => {
-    if (lightboxIndex == null) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setLightboxIndex(null);
-        setShowInfo(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightboxIndex]);
 
   useEffect(() => {
     const node = previewScrollerRef.current;
@@ -852,7 +842,8 @@ export function MediaSection({
                     width={previewWidthFor(item)}
                     showProgress={item.id === previewProcessingId}
                     onGripPointerDown={(event) => startGripDrag(event, item.id, index)}
-                    onOpen={() => {
+                    onOpen={(event) => {
+                      lightboxTriggerRef.current = event.currentTarget;
                       setShowInfo(false);
                       setLightboxIndex(index);
                     }}
@@ -940,69 +931,91 @@ export function MediaSection({
       </div>
 
       {lightboxIndex != null && lightboxItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
-          <div className="absolute right-4 top-4 flex items-center gap-2">
-            <button
-              type="button"
-              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
-              onClick={() => setShowInfo((prev) => !prev)}
-              aria-label="查看图片信息"
-            >
-              <InfoIcon size={18} weight="bold" />
-            </button>
-            <button
-              type="button"
-              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
-              onClick={() => {
-                setLightboxIndex(null);
-                setShowInfo(false);
-              }}
-              aria-label="关闭"
-            >
-              <XIcon size={18} weight="bold" />
-            </button>
-          </div>
-
-          <img
-            src={lightboxItem.url}
-            alt={lightboxItem.name}
-            className="max-h-[calc(var(--ui-viewport-height)-2rem)] max-w-[calc(var(--ui-viewport-width)-2rem)] rounded-xl object-contain"
-          />
-
-          {showInfo && (
-            <div className="absolute right-0 top-0 flex h-full w-[min(88%,360px)] flex-col border-l border-white/15 bg-[#111] p-5 shadow-2xl">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-white">图片信息</h2>
-                <button
+        <Dialog.Root
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setLightboxIndex(null);
+              setShowInfo(false);
+            }
+          }}
+        >
+          <Dialog.Content
+            maxWidth="min(1100px, calc(var(--ui-viewport-width, 100vw) - 2rem))"
+            aria-describedby={undefined}
+            className="flex flex-col gap-3 !rounded-[14px] !bg-bg !p-4 !shadow-none"
+            style={{ height: "calc(var(--ui-viewport-height, 100vh) - 6rem)" }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              lightboxTriggerRef.current?.focus();
+            }}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 pb-3">
+              <Dialog.Title mb="0" size="4" weight="medium">图片预览</Dialog.Title>
+              <div className="flex items-center gap-2">
+                <Button
                   type="button"
-                  className="grid size-9 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setShowInfo(false)}
-                  aria-label="关闭信息"
+                  variant="soft"
+                  color="gray"
+                  className="!rounded-lg"
+                  onClick={() => setShowInfo((prev) => !prev)}
+                  aria-label="查看图片信息"
+                  aria-expanded={showInfo}
                 >
-                  <XIcon size={17} />
-                </button>
-              </div>
-              <div className="mt-5 flex flex-col gap-3 text-sm text-white/75">
-                <div className="break-all">
-                  <div className="text-xs text-white/45">文件名</div>
-                  <div>{lightboxItem.name}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/45">分辨率</div>
-                  <div>
-                    {lightboxItem.width && lightboxItem.height
-                      ? `${lightboxItem.width} × ${lightboxItem.height}`
-                      : "-"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/45">体积</div>
-                  <div>{formatFileSize(lightboxItem.file.size)}</div>
-                </div>
+                  <InfoIcon size={18} weight="bold" />
+                </Button>
+                <Dialog.Close>
+                  <Button type="button" variant="soft" color="gray" className="!rounded-lg">
+                    <XIcon size={18} weight="bold" />
+                    关闭
+                  </Button>
+                </Dialog.Close>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-black/20">
+              <img
+                src={lightboxItem.url}
+                alt={lightboxItem.name}
+                className="max-h-full max-w-full object-contain"
+              />
+
+              {showInfo && (
+                <div className="absolute inset-y-0 right-0 flex w-[min(88%,360px)] flex-col overflow-y-auto bg-bg p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-white">图片信息</h2>
+                    <button
+                      type="button"
+                      className="grid size-9 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setShowInfo(false)}
+                      aria-label="关闭信息"
+                    >
+                      <XIcon size={17} />
+                    </button>
+                  </div>
+                  <div className="mt-5 flex flex-col gap-3 text-sm text-white/75">
+                    <div className="break-all">
+                      <div className="text-xs text-white/45">文件名</div>
+                      <div>{lightboxItem.name}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/45">分辨率</div>
+                      <div>
+                        {lightboxItem.width && lightboxItem.height
+                          ? `${lightboxItem.width} × ${lightboxItem.height}`
+                          : "-"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/45">体积</div>
+                      <div>{formatFileSize(lightboxItem.file.size)}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Dialog.Content>
+        </Dialog.Root>
       )}
     </SectionCard>
   );
