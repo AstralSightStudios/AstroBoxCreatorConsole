@@ -224,3 +224,65 @@ export function deriveReviewStatus(comments: Array<{ id?: number; body?: string;
         items,
     };
 }
+
+function reviewTimestamp(value?: string): number {
+    const timestamp = Date.parse(value || "");
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+/**
+ * 待审核 / 已修复混合按提交时间倒序；只有需修复置底，按本轮进入需修复的时间倒序。
+ * FIXED 是创作者提交整改时发送的记录；普通评论与 PR updated_at 不参与排序。
+ */
+export function sortReviewPullRequests<T extends { number: number; created_at?: string }>(
+    pulls: readonly T[],
+    commentsByPr: Readonly<Record<number, Parameters<typeof deriveReviewStatus>[0]>>,
+): T[] {
+    return pulls
+        .map((pull) => {
+            const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
+            const createdAt = reviewTimestamp(pull.created_at);
+            const needsFix = status.state === "changes_requested";
+            let sortTime = createdAt;
+
+            if (!needsFix) {
+                for (const item of status.items) {
+                    sortTime = Math.max(sortTime, reviewTimestamp(item.fixedAt));
+                }
+            } else {
+                const events = status.items.flatMap((item) => {
+                    const needFixAt = reviewTimestamp(item.createdAt) || createdAt;
+                    const fixedAt = Math.max(needFixAt, reviewTimestamp(item.fixedAt));
+                    return [
+                        { id: item.id, at: needFixAt, fixed: false, order: 1 },
+                        ...(item.fixed ? [{
+                            id: item.id,
+                            at: fixedAt,
+                            fixed: true,
+                            // 同秒时先结束旧问题，再加入新问题；同秒提出并修复的最后处理。
+                            order: fixedAt > needFixAt ? 0 : 2,
+                        }] : []),
+                    ];
+                }).sort((a, b) => a.at - b.at || a.order - b.order);
+
+                const unresolved = new Set<string>();
+                for (const event of events) {
+                    if (event.fixed) {
+                        unresolved.delete(event.id);
+                    } else {
+                        // 已经处于需修复时追加意见，不改变本轮进入需修复的时间。
+                        if (unresolved.size === 0) sortTime = event.at;
+                        unresolved.add(event.id);
+                    }
+                }
+            }
+
+            return { pull, needsFix, sortTime };
+        })
+        .sort((a, b) =>
+            Number(a.needsFix) - Number(b.needsFix) ||
+            b.sortTime - a.sortTime ||
+            b.pull.number - a.pull.number,
+        )
+        .map(({ pull }) => pull);
+}
