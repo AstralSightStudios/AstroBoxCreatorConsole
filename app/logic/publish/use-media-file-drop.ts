@@ -79,7 +79,8 @@ export function useMediaFileDrop(options: MediaFileDropOptions) {
       await imports.run(target, async () => {
         try {
           const files = await load();
-          if (disposed || files.length === 0 || isUnavailable(target)) return;
+          // 预览弹窗只阻止新导入；已接受的导入继续完成，卸载后才丢弃结果。
+          if (disposed || files.length === 0) return;
           const current = optionsRef.current;
           const uploads = {
             previews: current.onPreviewUpload,
