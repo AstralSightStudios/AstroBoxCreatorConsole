@@ -125,7 +125,7 @@ async function resolvePickedFileName(
  * 构造浏览器 File 对象。Android WebView 无法用 FileReader 直接读取
  * content:// URI（报 NotFoundError），必须先经 ContentResolver 读到字节。
  */
-async function pathToFile(path: string): Promise<File> {
+export async function pathToFile(path: string): Promise<File> {
   const bytes = await readFile(path);
   const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const name = await resolvePickedFileName(path, buffer);

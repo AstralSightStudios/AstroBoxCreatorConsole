@@ -12,6 +12,7 @@ import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
 import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
+import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
@@ -23,12 +24,12 @@ interface MediaSectionProps {
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
-  onPreviewUpload: (files: File[]) => void;
+  onPreviewUpload: (files: File[]) => void | Promise<void>;
   onRemovePreview: (id: string) => void;
   onReorderPreview: (fromId: string, toId: string) => void;
   onMovePreviewToSlot: (fromIndex: number, slot: number) => void;
-  onIconUpload: (files: File[]) => void;
-  onCoverUpload: (files: File[]) => void;
+  onIconUpload: (files: File[]) => void | Promise<void>;
+  onCoverUpload: (files: File[]) => void | Promise<void>;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
   onMediaDimensions: (
@@ -55,6 +56,7 @@ function MediaTile({
   mediaClassName,
   imageClassName,
   fieldKey,
+  dropActive,
   onPick,
   onRemove,
 }: {
@@ -67,13 +69,15 @@ function MediaTile({
   imageClassName?: string;
   /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
   fieldKey?: PublishFieldKey;
+  dropActive?: boolean;
   onPick: () => void;
   onRemove: () => void;
 }) {
   return (
     <div
       data-publish-field={fieldKey}
-      className="relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3"
+      data-media-drop-target={fieldKey}
+      className={`relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 ${dropActive ? "ring-2 ring-blue-400 bg-blue-400/10" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div>
@@ -122,8 +126,13 @@ function MediaTile({
           onClick={onPick}
         >
           <UploadSimpleIcon size={24} weight="duotone" />
-          选择文件
+          点击选择或拖入图片
         </button>
+      )}
+      {dropActive && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/70 text-sm font-medium text-blue-200" aria-live="polite">
+          松开以{media ? "替换" : "导入"}{label}
+        </div>
       )}
     </div>
   );
@@ -294,6 +303,14 @@ export function MediaSection({
   const dropTimerRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const { rootRef: mediaDropRef, activeTarget: mediaDropTarget } = useMediaFileDrop({
+    onPreviewUpload,
+    onIconUpload,
+    onCoverUpload,
+    previewUploading,
+    iconUploading,
+    disabled: lightboxIndex !== null,
+  });
   const [showInfo, setShowInfo] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [edgePad, setEdgePad] = useState(0);
@@ -717,14 +734,15 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description="上传或导入预览图组、应用图标与封面。相同文件会自动复用，无需重复上传。"
+      description="点击选择或将图片拖入对应区域：图标与封面各一张，预览图支持多张。相同文件会自动复用，无需重复上传。"
     >
-      <div className="flex flex-col gap-4">
+      <div ref={mediaDropRef} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
             hint="宽高比 1:1"
             fieldKey="icon"
+            dropActive={mediaDropTarget === "icon"}
             media={icon}
             uploading={iconUploading}
             emptyClassName="aspect-square max-md:aspect-[3/1]"
@@ -737,6 +755,7 @@ export function MediaSection({
             label="封面"
             hint="宽高比严格 3:2"
             fieldKey="cover"
+            dropActive={mediaDropTarget === "cover"}
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
@@ -745,7 +764,16 @@ export function MediaSection({
           />
         </div>
 
-        <div data-publish-field="previews" className="flex flex-col gap-2">
+        <div
+          data-publish-field="previews"
+          data-media-drop-target="previews"
+          className={`relative flex flex-col gap-2 rounded-xl ${mediaDropTarget === "previews" ? "ring-2 ring-blue-400 bg-blue-400/10" : ""}`}
+        >
+          {mediaDropTarget === "previews" && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-black/70 text-sm font-medium text-blue-200" aria-live="polite">
+              松开以添加预览图
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-white">预览图</p>
@@ -792,7 +820,7 @@ export function MediaSection({
               onClick={() => void pickPreview()}
             >
               <ImagesSquareIcon size={28} weight="duotone" />
-              尚未上传预览图，点击选择文件
+              点击选择或拖入预览图，支持多张图片
             </button>
           ) : (
             <>
