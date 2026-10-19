@@ -3,13 +3,15 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { isTauriRuntime } from "~/logic/update/update-checker";
-import { basenameFromPath, pathToFile } from "./file-picker";
+import { basenameFromPath, pathToFile, pickFiles } from "./file-picker";
 import {
   dropClientPosition,
   isDroppedImage,
   mediaDropError,
   type MediaDropTarget,
 } from "./media-drop";
+import { createMediaImportGate } from "./media-import";
+import { PUBLISH_IMAGE_ACCEPT } from "./pre-publish-checks";
 
 interface MediaFileDropOptions {
   onPreviewUpload: (files: File[]) => void | Promise<void>;
@@ -20,23 +22,38 @@ interface MediaFileDropOptions {
   disabled?: boolean;
 }
 
-/** 仅媒体区接收文件；原生与浏览器事件分别处理，避免重复导入。 */
+type ImportMediaFiles = (
+  target: MediaDropTarget,
+  count: number | undefined,
+  load: () => Promise<File[]>,
+) => Promise<void>;
+
+const PICK_TITLES: Record<MediaDropTarget, string> = {
+  previews: "选择预览图",
+  icon: "选择图标",
+  cover: "选择封面",
+};
+
+/** 媒体区的文件选择与拖放共用导入流程；原生与浏览器拖放分别处理。 */
 export function useMediaFileDrop(options: MediaFileDropOptions) {
   const rootRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
+  const importFilesRef = useRef<ImportMediaFiles | null>(null);
   optionsRef.current = options;
   const [activeTarget, setActiveTarget] = useState<MediaDropTarget | null>(null);
 
   useEffect(() => {
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
-    const importing = new Set<MediaDropTarget>();
+    const imports = createMediaImportGate();
 
-    const isBusy = (target: MediaDropTarget) =>
-      importing.has(target) ||
+    const isUnavailable = (target: MediaDropTarget) =>
       optionsRef.current.disabled ||
       (target === "previews" && optionsRef.current.previewUploading) ||
       (target === "icon" && optionsRef.current.iconUploading);
+
+    const isBusy = (target: MediaDropTarget) =>
+      imports.isBusy(target) || isUnavailable(target);
 
     const targetAt = (x: number, y: number): MediaDropTarget | null => {
       const element = document.elementFromPoint(x, y)?.closest<HTMLElement>(
@@ -48,35 +65,35 @@ export function useMediaFileDrop(options: MediaFileDropOptions) {
       return isBusy(target) ? null : target;
     };
 
-    const importFiles = async (
-      target: MediaDropTarget,
-      count: number,
-      load: () => Promise<File[]>,
-    ) => {
-      setActiveTarget(null);
+    const importFiles: ImportMediaFiles = async (target, count, load) => {
       if (disposed || isBusy(target)) return;
-      const error = mediaDropError(target, count);
-      if (error) {
-        toast.error(error);
-        return;
+      setActiveTarget(null);
+      // 拖入时先检查数量，避免单图区域读入整批文件；选择器取消则不报错。
+      if (count !== undefined) {
+        const error = mediaDropError(target, count);
+        if (error) {
+          toast.error(error);
+          return;
+        }
       }
-      importing.add(target);
-      try {
-        const files = await load();
-        if (disposed || files.length === 0) return;
-        const current = optionsRef.current;
-        if (current.disabled) return;
-        const upload = target === "previews"
-          ? current.onPreviewUpload
-          : target === "icon" ? current.onIconUpload : current.onCoverUpload;
-        await upload(files);
-      } catch (error) {
-        console.error("拖入图片导入失败", error);
-        if (!disposed) toast.error("图片导入失败，请重试或点击选择文件。");
-      } finally {
-        importing.delete(target);
-      }
+      await imports.run(target, async () => {
+        try {
+          const files = await load();
+          if (disposed || files.length === 0 || isUnavailable(target)) return;
+          const current = optionsRef.current;
+          const uploads = {
+            previews: current.onPreviewUpload,
+            icon: current.onIconUpload,
+            cover: current.onCoverUpload,
+          };
+          await uploads[target](files);
+        } catch (error) {
+          console.error("图片导入失败", error);
+          if (!disposed) toast.error("图片导入失败，请重试或重新选择文件。");
+        }
+      });
     };
+    importFilesRef.current = importFiles;
 
     if (isTauriRuntime()) {
       void getCurrentWebview().onDragDropEvent(({ payload }) => {
@@ -154,9 +171,18 @@ export function useMediaFileDrop(options: MediaFileDropOptions) {
 
     return () => {
       disposed = true;
+      importFilesRef.current = null;
       unlisten?.();
     };
   }, []);
 
-  return { rootRef, activeTarget };
+  const pickMediaFiles = async (target: MediaDropTarget) => {
+    await importFilesRef.current?.(target, undefined, () => pickFiles({
+      multiple: target === "previews",
+      accept: PUBLISH_IMAGE_ACCEPT,
+      title: PICK_TITLES[target],
+    }));
+  };
+
+  return { rootRef, activeTarget, pickMediaFiles };
 }

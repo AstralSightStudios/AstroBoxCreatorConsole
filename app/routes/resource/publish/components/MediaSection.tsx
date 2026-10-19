@@ -11,8 +11,6 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "~/components/ScaleAwareThemes";
-import { pickFiles } from "~/logic/publish/file-picker";
-import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
@@ -305,7 +303,11 @@ export function MediaSection({
   const scrollRafRef = useRef<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const lightboxTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const { rootRef: mediaDropRef, activeTarget: mediaDropTarget } = useMediaFileDrop({
+  const {
+    rootRef: mediaDropRef,
+    activeTarget: mediaDropTarget,
+    pickMediaFiles,
+  } = useMediaFileDrop({
     onPreviewUpload,
     onIconUpload,
     onCoverUpload,
@@ -325,25 +327,6 @@ export function MediaSection({
   } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   moveToSlotRef.current = onMovePreviewToSlot;
-
-  const pickPreview = async () => {
-    const files = await pickFiles({
-      multiple: true,
-      accept: PUBLISH_IMAGE_ACCEPT,
-      title: "选择预览图",
-    });
-    if (files.length > 0) onPreviewUpload(files);
-  };
-
-  const pickIcon = async () => {
-    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择图标" });
-    if (files.length > 0) onIconUpload(files);
-  };
-
-  const pickCover = async () => {
-    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择封面" });
-    if (files.length > 0) onCoverUpload(files);
-  };
 
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
@@ -738,7 +721,7 @@ export function MediaSection({
             emptyClassName="aspect-square max-md:aspect-[3/1]"
             mediaClassName="aspect-square max-md:aspect-[3/1]"
             imageClassName="max-h-full max-w-full object-contain"
-            onPick={() => void pickIcon()}
+            onPick={() => void pickMediaFiles("icon")}
             onRemove={onRemoveIcon}
           />
           <MediaTile
@@ -749,7 +732,7 @@ export function MediaSection({
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
-            onPick={() => void pickCover()}
+            onPick={() => void pickMediaFiles("cover")}
             onRemove={onRemoveCover}
           />
         </div>
@@ -795,7 +778,7 @@ export function MediaSection({
                 type="button"
                 variant="soft"
                 disabled={previewUploading}
-                onClick={() => void pickPreview()}
+                onClick={() => void pickMediaFiles("previews")}
               >
                 <UploadSimpleIcon size={15} weight="bold" />
                 {previewUploading ? "处理中..." : "添加预览图"}
@@ -807,7 +790,7 @@ export function MediaSection({
             <button
               type="button"
               className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-              onClick={() => void pickPreview()}
+              onClick={() => void pickMediaFiles("previews")}
             >
               <ImagesSquareIcon size={28} weight="duotone" />
               点击选择或拖入预览图，支持多张图片
@@ -863,7 +846,7 @@ export function MediaSection({
               <button
                 type="button"
                 className="flex min-h-[180px] w-[200px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-                onClick={() => void pickPreview()}
+                onClick={() => void pickMediaFiles("previews")}
               >
                 <UploadSimpleIcon size={24} weight="duotone" />
                 {previewUploading ? "处理中..." : "添加预览图"}
