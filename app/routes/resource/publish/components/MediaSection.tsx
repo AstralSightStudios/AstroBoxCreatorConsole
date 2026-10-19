@@ -943,7 +943,7 @@ export function MediaSection({
           <Dialog.Content
             maxWidth="min(1100px, calc(var(--ui-viewport-width, 100vw) - 2rem))"
             aria-describedby={undefined}
-            className="flex flex-col gap-3 !rounded-[14px] !bg-bg !p-4 !shadow-none"
+            className="flex flex-col gap-3 !rounded-[14px] !bg-black/50 !p-4 !shadow-none backdrop-blur-[40px]"
             style={{ height: "calc(var(--ui-viewport-height, 100vh) - 6rem)" }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
@@ -981,7 +981,7 @@ export function MediaSection({
               />
 
               {showInfo && (
-                <div className="absolute inset-y-0 right-0 flex w-[min(88%,360px)] flex-col overflow-y-auto bg-bg p-4">
+                <div className="absolute inset-y-0 right-0 flex w-[min(88%,360px)] flex-col overflow-y-auto bg-black/50 p-4 backdrop-blur-[40px]">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-white">图片信息</h2>
                     <button
