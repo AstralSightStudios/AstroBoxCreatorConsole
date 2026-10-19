@@ -26,11 +26,16 @@ export function mediaDropError(
   return null;
 }
 
-/** 原生拖放是物理像素；DOM 命中测试使用 CSS 像素，兼容 Retina / Windows 缩放。 */
+/**
+ * Wry 0.55 的 macOS / Linux 拖放直接返回逻辑坐标，Windows 返回物理像素。
+ * Tauri 将两者都包装成 PhysicalPosition，但 Mac 上不能再除以 Retina 比例，
+ * 否则拖到预览图区时会错误命中左上方的图标区。
+ */
 export function dropClientPosition(
   position: { x: number; y: number },
   pixelRatio: number,
+  platform: string,
 ): { x: number; y: number } {
-  const scale = pixelRatio > 0 ? pixelRatio : 1;
+  const scale = /^Win/i.test(platform) && pixelRatio > 0 ? pixelRatio : 1;
   return { x: position.x / scale, y: position.y / scale };
 }

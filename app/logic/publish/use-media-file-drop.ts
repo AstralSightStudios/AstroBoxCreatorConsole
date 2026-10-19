@@ -85,7 +85,11 @@ export function useMediaFileDrop(options: MediaFileDropOptions) {
           setActiveTarget(null);
           return;
         }
-        const { x, y } = dropClientPosition(payload.position, window.devicePixelRatio);
+        const { x, y } = dropClientPosition(
+          payload.position,
+          window.devicePixelRatio,
+          navigator.platform,
+        );
         const target = targetAt(x, y);
         if (payload.type !== "drop") {
           setActiveTarget(target);
