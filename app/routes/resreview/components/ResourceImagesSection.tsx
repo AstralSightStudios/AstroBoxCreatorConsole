@@ -250,10 +250,10 @@ export function ResourceImagesSection({
         <div className="mb-2 text-xs font-semibold text-white/55">图片资源（Raw）</div>
         <div className="space-y-3">
           {(resource.iconUrl || resource.coverUrl) && (
-            <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
               {resource.iconUrl && (
                 <div ref={iconRef} className={`rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm`}>
-                  <div className="text-xs text-white/55">Icon · {resource.iconUrl.split("/").pop() || "icon"}</div>
+                  <div className="break-all text-xs text-white/55">Icon · {resource.iconUrl.split("/").pop() || "icon"}</div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.iconUrl)} ·
                     <span className={isIconRatioValid(resource.iconUrl) ? "" : "font-semibold text-red-400"}>
@@ -267,7 +267,7 @@ export function ResourceImagesSection({
               )}
               {resource.coverUrl && (
                 <div ref={coverRef} className={`rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm`}>
-                  <div className="text-xs text-white/55">Cover · {resource.coverUrl.split("/").pop() || "cover"}</div>
+                  <div className="break-all text-xs text-white/55">Cover · {resource.coverUrl.split("/").pop() || "cover"}</div>
                   <div className="mt-1 text-xs text-white/55">
                     像素：{formatImageDimensions(resource.coverUrl)} ·
                     <span className={isCoverRatioValid(resource.coverUrl) ? "" : "font-semibold text-red-400"}>
