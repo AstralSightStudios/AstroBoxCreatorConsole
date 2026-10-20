@@ -32,6 +32,7 @@ import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { canopusEntryProblems } from "~/logic/publish/canopus-package";
 import {
   BANNED_IMAGE_NOTICE,
   COVER_MAX_BYTES,
@@ -130,6 +131,8 @@ export interface PackageCheckResult {
   resPackErrors?: string[];
   /** CRPack 结构摘要（清单名 / 规则数 / TSV 实算字节 / 版本），仅展示不单独判不通过。 */
   resPackSummary?: string[];
+  /** 原生 Canopus 包体与条目声明不一致的明细；空数组表示已核对且相符。 */
+  canopusProblems?: string[];
 }
 
 export interface ImageSizeInfo {
@@ -2104,6 +2107,22 @@ export async function runResourceRuleChecks(options: {
           }
         }
 
+        // 原生 Canopus 模块：条目里的 canopus 元数据必须与包内清单一致。
+        if (restype === "canopus" && !result.skipped) {
+          const declared =
+            pkg.kind === "试用包" ? manifest?.ext?.trialDownloads : manifest?.downloads;
+          result.canopusProblems = canopusEntryProblems(
+            bytes,
+            resourceId,
+            pkg.devices.map((device) => ({
+              device,
+              version: declared?.[device]?.version,
+              versionCode: declared?.[device]?.versionCode,
+              canopus: declared?.[device]?.canopus,
+            })),
+          );
+        }
+
         // 快应用 rpk 的 debug 调试包判定。
         // - result.skipped（超大包只取头部）时字节被截断，zip 中央目录与签名块
         //   都不在手上，无法判定。
@@ -2180,6 +2199,25 @@ export async function runResourceRuleChecks(options: {
       })(),
       anchor: "packages",
     });
+
+    if (restype === "canopus") {
+      const checked = packageChecks.filter((p) => p.canopusProblems !== undefined);
+      const problems = checked.flatMap((p) =>
+        (p.canopusProblems ?? []).map((problem) => `${p.fileName}：${problem}`),
+      );
+      checks.push({
+        title: "Canopus 包体与条目元数据一致",
+        status: problems.length > 0 ? "fail" : checked.length > 0 ? "pass" : "manual",
+        detail:
+          problems.length > 0
+            ? problems.slice(0, 3).join("；") +
+              (problems.length > 3 ? `；另有 ${problems.length - 3} 项` : "")
+            : checked.length > 0
+              ? `${checked.length} 个包体的 ABI、target、版本与条目一致`
+              : "没有可核对的包体（加密或超大），需人工确认",
+        anchor: "packages",
+      });
+    }
 
     // 包内展示名和资源名对不上只警告：设备上看到的名字和商店标题可以人工放行。
     pushDisplayNameCheck(checks, restype, manifestName || csvName, packageChecks);

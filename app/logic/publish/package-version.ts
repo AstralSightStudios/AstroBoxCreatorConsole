@@ -1,5 +1,10 @@
 import { unzipSync, zipSync, type Unzipped } from "fflate";
 import {
+  isTarArchive,
+  readCanopusPackage,
+  type ManifestCanopusMeta,
+} from "./canopus-package";
+import {
   CORONA_MANIFEST_NAME,
   LEGACY_CORONA_MANIFEST_NAME,
   parseCrpack,
@@ -17,6 +22,9 @@ import {
  *   `manifest-watch.json`），原因见下方「为什么 rpk 不能改版本」。
  * - CRPack（资源包 `.crpack`）：`corona.json` 里的 `version` / `versionCode`，
  *   包体标识取 `themeId`。
+ * - 原生 Canopus 模块（`.canopus`，未压缩 tar）：`manifest.json` 的 `version` /
+ *   `version_code`，包体标识取 `module_id`；同时给出商店条目的 `canopus` 元数据。
+ *   不可改写：回执里绑定了产物哈希与 `module_version`。
  *
  * ## 为什么 rpk 不能改版本
  *
@@ -59,11 +67,16 @@ const RPK_UNWRITABLE_REASON =
   "快应用 rpk 带签名，改动包内任一字节都会导致手环验签失败、无法安装。" +
   "请在 rpk 构建工具链中改好 manifest.json 的 versionName / versionCode，用 aiot release 重新打包后再重新导入包体。";
 
+const CANOPUS_UNWRITABLE_REASON =
+  ".canopus 包的安装回执绑定了产物哈希与 module_version，不能在控制台里改版本。" +
+  "请用 canopus package 重新打包后再导入。";
+
 export type PackageVersionSource =
   | "zip-manifest"
   | "xiaomi-bin"
   | "xiaomi-mwz"
   | "crpack-corona"
+  | "canopus-manifest"
   | "unknown";
 
 export type PackageIdentityKind = "package" | "watchface-id" | "dial-id" | "theme-id";
@@ -83,6 +96,8 @@ export interface PackageVersionInfo {
   reason?: string;
   /** 包内承载版本的条目路径（zip 型用于诊断）。 */
   entry?: string;
+  /** 原生 Canopus 包体的商店元数据（ABI 与目标固件）。 */
+  canopus?: ManifestCanopusMeta;
 }
 
 export interface PackageVersionTarget {
@@ -349,6 +364,32 @@ function findCrpackManifestName(entries: Unzipped): string | undefined {
   return undefined;
 }
 
+/** 读取 `.canopus` 清单。解析失败不抛错，返回 readable=false。 */
+function readCanopusManifest(bytes: Uint8Array): PackageVersionInfo {
+  try {
+    const info = readCanopusPackage(bytes);
+    return {
+      version: info.version,
+      versionCode: info.versionCode,
+      identity: info.moduleId,
+      identityKind: "package",
+      source: "canopus-manifest",
+      readable: true,
+      writable: false,
+      entry: "manifest.json",
+      reason: CANOPUS_UNWRITABLE_REASON,
+      canopus: info.canopus,
+    };
+  } catch (error) {
+    return {
+      source: "canopus-manifest",
+      readable: false,
+      writable: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 /** 读取包体版本、标识与可改写能力。解析失败不抛错，返回 readable=false。 */
 export async function readPackageVersion(input: Blob): Promise<PackageVersionInfo> {
   let bytes: Uint8Array;
@@ -359,8 +400,9 @@ export async function readPackageVersion(input: Blob): Promise<PackageVersionInf
   }
   if (bytes.length === 0) return unknown("文件内容为空");
   if (startsWith(bytes, WATCHFACE_MAGIC)) return readXiaomiBin(bytes);
+  if (isTarArchive(bytes)) return readCanopusManifest(bytes);
   if (!startsWith(bytes, ZIP_MAGIC)) {
-    return unknown("不支持的包体格式（仅支持小米表盘、rpk/zip 与 CRPack 资源包）");
+    return unknown("不支持的包体格式（仅支持小米表盘、rpk/zip、CRPack 资源包与 .canopus 模块包）");
   }
   // CRPack 判定放在 unzipSync 之后、manifest.json 之前：包内不会有 manifest.json，
   // 但放前面能保证 crpack 一定走对分支，避免未来某个包同时含两种清单时误判。
@@ -445,6 +487,7 @@ export async function writePackageVersion(
   target: PackageVersionTarget,
 ): Promise<File> {
   const bytes = new Uint8Array(await file.arrayBuffer());
+  if (isTarArchive(bytes)) throw new Error(CANOPUS_UNWRITABLE_REASON);
   if (startsWith(bytes, WATCHFACE_MAGIC)) {
     return wrapFile(writeXiaomiBin(bytes, target), file);
   }

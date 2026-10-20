@@ -1,4 +1,4 @@
-import type { ManifestUpdateLogEntry } from "~/logic/publish/manifest";
+import type { ManifestCanopusMeta, ManifestUpdateLogEntry } from "~/logic/publish/manifest";
 import type { PackageVersionInfo } from "~/logic/publish/package-version";
 import type { UploadItem } from "./shared";
 
@@ -46,6 +46,8 @@ export type DownloadInput = {
     packageIdentityKind?: DownloadIdentityKind;
     /** 包体是否支持内置改写版本。 */
     packageWritable?: boolean;
+    /** 原生 Canopus 包体的 ABI 与目标固件，来自包内 manifest 或旧条目。 */
+    canopus?: ManifestCanopusMeta;
 };
 
 export type DeviceOption = { id: string; name: string; vendor?: string };

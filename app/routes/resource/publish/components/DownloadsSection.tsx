@@ -139,6 +139,7 @@ interface DownloadsSectionProps {
     packageIdentity?: string;
     packageIdentityKind?: DownloadIdentityKind;
     packageWritable?: boolean;
+    canopus?: DownloadInput["canopus"];
   }) => void;
 }
 
@@ -242,6 +243,7 @@ export function DownloadsSection({
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        canopus: template.canopus,
       });
     }
     setFillAllOpen(false);
@@ -296,6 +298,7 @@ export function DownloadsSection({
         packageIdentity: info?.identity,
         packageIdentityKind: info?.identityKind,
         packageWritable: info?.writable,
+        canopus: info?.canopus,
       }));
       log.info("download/file", "包体校验完成", {
         data: {
@@ -378,6 +381,7 @@ export function DownloadsSection({
         versionLocked: true,
         versionSource: "package",
         packageWritable: info.writable,
+        canopus: info.canopus,
         packageIdentity: info.identity,
         packageIdentityKind: info.identityKind,
       }));

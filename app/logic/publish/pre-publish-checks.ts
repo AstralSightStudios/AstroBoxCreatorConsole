@@ -8,6 +8,7 @@
  * 因此这里判定过一次之后压缩产物与原图结论一致，无需区分阶段。
  */
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
+import type { ResourceType } from "./resource-type";
 
 /**
  * 封面必须严格为 3:2 宽高比，且文件大小不得超过 COVER_MAX_BYTES。
@@ -208,6 +209,19 @@ export function rowsWithIdentityMismatch(
       Boolean(row.packageIdentity) &&
       row.packageIdentity !== id,
   );
+}
+
+/**
+ * 原生 Canopus 资源里新上传、却读不出 `.canopus` 清单的行。商店条目的 `canopus`
+ * 元数据只来自包内 manifest，读不出就无法在安装前拦下不兼容的固件。
+ * 沿用线上旧文件的行不重新读包体，不在此列。
+ */
+export function rowsWithoutCanopusMeta(
+  rows: DownloadInput[],
+  resourceType: ResourceType,
+): DownloadInput[] {
+  if (resourceType !== "canopus") return [];
+  return rows.filter((row) => row.file !== null && !row.canopus);
 }
 
 /**

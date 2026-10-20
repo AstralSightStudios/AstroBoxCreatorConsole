@@ -58,6 +58,7 @@ export function buildDownloadInputsFromManifest(params: {
           )
         : null,
       existingFileName: fileName,
+      canopus: info?.canopus,
     };
   });
 }

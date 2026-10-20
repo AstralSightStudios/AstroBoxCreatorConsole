@@ -1,5 +1,8 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import type { ManifestCanopusMeta } from "./canopus-package";
 import type { ResourceType } from "./resource-type";
+
+export type { ManifestCanopusMeta };
 
 export interface BasicAuthor {
     name: string;
@@ -31,6 +34,8 @@ export interface DownloadUploadInput {
     updatelogs?: ManifestUpdateLogEntry[];
     /** 导入包体时算好的内容哈希，用于判定多台设备是否共用同一个包体。 */
     packageHash?: string;
+    /** 原生 Canopus 包体需要手环提供什么；其他资源类型不写。 */
+    canopus?: ManifestCanopusMeta;
 }
 
 export interface ManifestUpdateLogEntry {
@@ -43,6 +48,7 @@ export interface ManifestDownloadInfo {
     file_name: string;
     versionCode?: number;
     updatelogs?: ManifestUpdateLogEntry[];
+    canopus?: ManifestCanopusMeta;
 }
 
 export interface ManifestBundledResource {
@@ -169,6 +175,7 @@ export interface DownloadAssetDescriptor extends AssetDescriptor {
     encryptOnUpload?: boolean;
     versionCode?: number;
     updatelogs?: ManifestUpdateLogEntry[];
+    canopus?: ManifestCanopusMeta;
 }
 
 export interface ManifestBuildResult {
@@ -200,6 +207,9 @@ function buildDownloadsObject(
             }
             if (current.updatelogs?.length) {
                 entry.updatelogs = current.updatelogs;
+            }
+            if (current.canopus) {
+                entry.canopus = current.canopus;
             }
             acc[current.platformId] = entry;
             return acc;
@@ -337,6 +347,7 @@ function buildDownloadAssets(
                 encryptOnUpload: allowEncrypt ? row.encryptOnUpload : false,
                 versionCode: normalizeVersionCode(row.versionCode),
                 updatelogs: normalizeUpdateLogs(row.updatelogs),
+                canopus: row.canopus,
             };
         });
 }

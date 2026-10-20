@@ -178,6 +178,7 @@ import {
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
+  rowsWithoutCanopusMeta,
 } from "~/logic/publish/pre-publish-checks";
 import { fetchPublishedBaselinesForResourceId } from "~/logic/publish/published-baseline";
 import {
@@ -1379,6 +1380,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     packageIdentity?: string;
     packageIdentityKind?: DownloadInput["packageIdentityKind"];
     packageWritable?: boolean;
+    canopus?: DownloadInput["canopus"];
   }) => {
     log.info("download/row", "一键填充下载配置", {
       data: {
@@ -1406,6 +1408,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        canopus: template.canopus,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
           : undefined,
@@ -1493,6 +1496,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     packageIdentity?: string;
     packageIdentityKind?: DownloadInput["packageIdentityKind"];
     packageWritable?: boolean;
+    canopus?: DownloadInput["canopus"];
   }) => {
     log.info("download/trial/row", "一键填充试用下载配置", {
       data: {
@@ -1516,6 +1520,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        canopus: template.canopus,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
           : undefined,
@@ -1581,6 +1586,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleNextFromDownloadConfig = () => {
+    const withoutCanopus = rowsWithoutCanopusMeta(
+      [...downloads, ...trialDownloads],
+      resourceType,
+    );
+    if (withoutCanopus.length > 0) {
+      toast.error(
+        `不是有效的 .canopus 模块包（${withoutCanopus
+          .map(
+            (d) =>
+              sortedDeviceOptions.find((opt) => opt.id === d.platformId)?.name ||
+              d.platformId ||
+              "未选设备",
+          )
+          .join("、")}），请用 canopus package 重新打包后导入。`,
+      );
+      return;
+    }
     const identityMismatch = rowsWithIdentityMismatch(
       [...downloads, ...trialDownloads],
       itemId,
@@ -2596,6 +2618,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             packageIdentity: info.identity,
             packageIdentityKind: info.identityKind,
             packageWritable: info.writable,
+            canopus: info.canopus,
           };
         }),
       ),
