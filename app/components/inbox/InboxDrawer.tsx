@@ -7,7 +7,9 @@ import { ScrollArea, Skeleton } from "@radix-ui/themes";
 import { toast } from "sonner";
 import { InboxApi } from "~/api/astrobox/inbox";
 import {
+  isBetaFeedbackMetadata,
   isCcNoticeMetadata,
+  isCreatorInboxMessage,
   type InboxNotification,
 } from "~/logic/inbox/types";
 import { useInbox } from "~/logic/inbox/use-inbox";
@@ -60,9 +62,9 @@ export default function InboxDrawer({
     enabled: hasOpenedOnce && Boolean(token),
     refetchOnWindowFocus: false,
   });
-  // 信箱只展示资源审核通知，其余类型（评论回复等）由 AstroBox 端负责。
+  // 信箱只展示资源审核通知与测试反馈，其余类型（评论回复等）由 AstroBox 端负责。
   const items = useMemo(
-    () => (inboxData?.items ?? []).filter((m) => m.kind === "cc-notice"),
+    () => (inboxData?.items ?? []).filter(isCreatorInboxMessage),
     [inboxData],
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -237,6 +239,19 @@ export default function InboxDrawer({
 
   const handleOpenResource = useCallback(
     (message: InboxNotification) => {
+      if (isBetaFeedbackMetadata(message.metadata)) {
+        const { programId, threadId } = message.metadata;
+        const replaceHistory = historyEntryActiveRef.current;
+        if (replaceHistory) {
+          historyEntryActiveRef.current = false;
+        }
+        onClose();
+        navigate(
+          `/beta/detail?id=${encodeURIComponent(programId)}&tab=feedback&thread=${encodeURIComponent(threadId)}`,
+          replaceHistory ? { replace: true } : undefined,
+        );
+        return;
+      }
       const meta = isCcNoticeMetadata(message.metadata)
         ? message.metadata
         : null;
@@ -311,7 +326,7 @@ export default function InboxDrawer({
             </div>
           ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm opacity-45">
-              暂无审核通知
+              暂无审核或测试反馈通知
             </div>
           ) : (
             <>

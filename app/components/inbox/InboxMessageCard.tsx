@@ -15,9 +15,15 @@ import { cardExpandTransition } from "./styles";
 import type { PendingAction } from "./types";
 import {
   CC_NOTICE_BADGES,
+  isBetaFeedbackMetadata,
   isCcNoticeMetadata,
   type InboxNotification,
 } from "~/logic/inbox/types";
+
+const BETA_FEEDBACK_BADGE = {
+  label: "测试反馈",
+  className: "bg-sky-500/15 text-sky-100",
+};
 import { renderInboxMarkdownHtml } from "~/logic/inbox/markdown";
 
 interface InboxMessageCardProps {
@@ -44,7 +50,12 @@ export default function InboxMessageCard({
   const busy = !!pendingAction;
   const unread = !message.readAt;
   const meta = isCcNoticeMetadata(message.metadata) ? message.metadata : null;
-  const badge = meta ? CC_NOTICE_BADGES[meta.subtype] : null;
+  const betaFeedback = isBetaFeedbackMetadata(message.metadata);
+  const badge = meta
+    ? CC_NOTICE_BADGES[meta.subtype]
+    : betaFeedback
+      ? BETA_FEEDBACK_BADGE
+      : null;
   const expandedRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const [expandedHeight, setExpandedHeight] = useState(0);
@@ -202,14 +213,14 @@ export default function InboxMessageCard({
           >
             {expandedContent}
             <div className="mt-3 flex flex-col gap-2">
-              {onOpenResource && meta && (
+              {onOpenResource && (meta || betaFeedback) && (
                 <PanelButton
                   fullWidth
                   disabled={busy}
                   onClick={() => onOpenResource(message)}
                 >
                   <PackageIcon size={16} />
-                  查看资源
+                  {betaFeedback ? "查看反馈" : "查看资源"}
                 </PanelButton>
               )}
               {meta?.prUrl && (

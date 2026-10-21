@@ -51,6 +51,39 @@ export interface InboxNotification {
   readAt: string | null;
 }
 
+export interface BetaFeedbackMetadata {
+  action: "beta-feedback";
+  programId: string;
+  threadId: string;
+  /** 收件人在这条反馈里的身份 */
+  role: "author" | "tester";
+}
+
+export function isBetaFeedbackMetadata(
+  metadata: unknown,
+): metadata is BetaFeedbackMetadata {
+  if (typeof metadata !== "object" || metadata === null) return false;
+  const value = metadata as Record<string, unknown>;
+  return (
+    value.action === "beta-feedback" &&
+    typeof value.programId === "string" &&
+    typeof value.threadId === "string"
+  );
+}
+
+/**
+ * CC 信箱只展示创作者相关的通知：资源审核（cc-notice）与作为作者收到的测试反馈。
+ * 评论回复、测试邀请等由 AstroBox 端负责。
+ */
+export function isCreatorInboxMessage(message: InboxNotification) {
+  if (message.kind === "cc-notice") return true;
+  return (
+    message.kind === "beta-feedback" &&
+    isBetaFeedbackMetadata(message.metadata) &&
+    message.metadata.role === "author"
+  );
+}
+
 export interface InboxListResponse {
   items: InboxNotification[];
   hasMore: boolean;

@@ -27,6 +27,8 @@ import AdminAccountDeletionPage from "~/routes/admin/account-deletion";
 import AdminFeedPage from "~/routes/admin/feed";
 import ResourceReviewPage from "~/routes/resreview/page";
 import ExplorePageManager from "~/routes/explorepage";
+import BetaProgramsPage from "~/routes/beta/page";
+import BetaProgramDetailPage from "~/routes/beta/detail";
 import LoginCallback from "./pages/callback";
 import LoginPage from "./routes/login";
 import Welcome from "~/routes/welcome";
@@ -67,6 +69,8 @@ const router = createBrowserRouter([
       { path: "encrypt", element: <ResourceEncrypt /> },
       { path: "manage-resources", element: <ManageResourcesPage /> },
       { path: "manage-resources/detail", element: <ManageResourceDetailPage /> },
+      { path: "beta", element: <BetaProgramsPage /> },
+      { path: "beta/detail", element: <BetaProgramDetailPage /> },
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "resreview", element: <ResourceReviewPage /> },
