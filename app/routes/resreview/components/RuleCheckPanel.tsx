@@ -369,6 +369,7 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
               <span className="ml-1 text-white/45">
                 {pkg.detectedType}（{pkg.effectiveCategory === "watchface" ? "表盘" : pkg.effectiveCategory === "quick_app" ? "快应用" : "其他"}）
               </span>
+              {pkg.decrypted && <span className="ml-1 text-sky-300">已解密</span>}
             </>
           )}
         </span>
@@ -417,7 +418,10 @@ function PackageCheckRow({ pkg }: { pkg: PackageCheckResult }) {
           </span>
         )}
         {pkg.encrypted ? (
-          <span className="text-sky-300/80">已加密，跳过内容校验</span>
+          <span className="text-sky-300/80">
+            已加密，跳过内容校验
+            {pkg.decryptError ? `（无法解密：${pkg.decryptError}）` : ""}
+          </span>
         ) : pkg.skipped ? (
           <span className="text-amber-300/80">包体过大，已跳过内容校验</span>
         ) : null}

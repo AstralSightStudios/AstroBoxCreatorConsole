@@ -515,6 +515,23 @@ export const AdminApi = {
         "GET",
       ),
   },
+  review: {
+    /**
+     * 按密文 SHA-256 取加密包体的密钥（admin / moderator / pr-reviewer）。
+     * 服务端没登记这份密文时返回 404；每次取出都会记进管理审计。
+     */
+    resourceFileKey: (body: {
+      resourceId: string;
+      encryptedFileHash: string;
+      deviceId?: string;
+    }) =>
+      sendApiRequest<{ deviceId: string; key: string }>(
+        "/admin/review/resource-file-key",
+        "POST",
+        undefined,
+        body,
+      ),
+  },
   accountDeletion: {
     list: (query: {
       status?: AccountDeletionTicketStatus;

@@ -60,6 +60,7 @@ import {
   ngPluginDisplayName,
 } from "~/logic/publish/plugin-repo";
 import { AdminApi } from "~/api/astrobox/admin";
+import { decryptReviewPackage } from "./package-decrypt";
 import {
   checkPaidFreeRatioForAuthor,
   isPaidEntry,
@@ -117,6 +118,10 @@ export interface PackageCheckResult {
   encrypted?: boolean;
   /** 加密判定依据是完整内容哈希精确匹配（true）还是「头部非已知包体」兜底（false）。 */
   encryptedByHash?: boolean;
+  /** 加密包体已由审核员权限取密钥解开，下面的各项校验针对的是明文。 */
+  decrypted?: boolean;
+  /** 认出是加密包体但没能解开的原因（没有审核角色、密钥对不上等）。 */
+  decryptError?: string;
   /** 快应用 rpk 的 debug 调试包判定结论；非快应用包体不产出。 */
   debugVerdict?: RpkDebugVerdict;
   /** 包内实际展示名（快应用 name / 表盘名 / 资源包 name）。 */
@@ -2003,8 +2008,15 @@ export async function runResourceRuleChecks(options: {
         // 无法算全量哈希时，再按“该设备已登记加密密钥且头部非已知包体”兜底。
         let encrypted = false;
         let encryptedByHash = false;
-        if (encryptedHashSet.size > 0 && !result.skipped) {
-          const hash = await computePackageHash(new Blob([bytes as BlobPart]));
+        // 没有管理员角色时查不到加密配置（encryptedDeviceSet 为 null），认不出的包体也去
+        // 服务端按哈希问一次密钥：没登记就是普通包体。
+        const askServerForKey =
+          Boolean(astroboxToken && cryptoResourceId) &&
+          encryptedDeviceSet === null &&
+          result.detectedType === "binary";
+        let hash: string | undefined;
+        if ((encryptedHashSet.size > 0 || askServerForKey) && !result.skipped) {
+          hash = await computePackageHash(new Blob([bytes as BlobPart]));
           encrypted = encryptedHashSet.has(hash);
           encryptedByHash = encrypted;
         }
@@ -2015,6 +2027,24 @@ export async function runResourceRuleChecks(options: {
           pkg.devices.some((device) => encryptedDeviceSet!.has(device))
         ) {
           encrypted = true;
+        }
+        // 审核员可以直接解密：解开后按明文照常跑下面的全部校验。超大包只取了头部，解不了。
+        if ((encrypted || askServerForKey) && !result.skipped && cryptoResourceId) {
+          hash ??= await computePackageHash(new Blob([bytes as BlobPart]));
+          const outcome = await decryptReviewPackage(bytes, cryptoResourceId, hash);
+          if (outcome.status === "decrypted") {
+            bytes = outcome.bytes;
+            fetchedBytes = bytes;
+            encrypted = false;
+            result.decrypted = true;
+            result.detectedType = await detectPackageType(bytes, pkg.fileName, bytes.length);
+          } else if (encrypted) {
+            // 只是顺带问一下的认不出的包体，问不到也不能说它是加密的
+            result.decryptError =
+              outcome.status === "failed"
+                ? outcome.reason
+                : "服务端没有这份密文的密钥（可能换了包体却没重新登记）";
+          }
         }
         if (encrypted) {
           result.encrypted = true;
@@ -2152,6 +2182,7 @@ export async function runResourceRuleChecks(options: {
       (p) => p.typeMatch === "inconclusive" && !p.encrypted,
     );
     const encryptedCount = packageChecks.filter((p) => p.encrypted).length;
+    const decryptedCount = packageChecks.filter((p) => p.decrypted).length;
     checks.push({
       title: "包体类型与资源类别匹配",
       status:
@@ -2166,6 +2197,7 @@ export async function runResourceRuleChecks(options: {
         restype === "canopus"
           ? "模块（canopus）包体不做类型强校验"
           : (typeInconclusive.length > 0 ? "部分包体类型无法确认，需要人工复核。" : "") +
+            (decryptedCount > 0 ? `${decryptedCount} 个加密包体已解密后校验。` : "") +
             (encryptedCount > 0 ? `${encryptedCount} 个包体已加密，跳过内容校验。` : "") +
             (typeMismatch.length > 0
               ? `${typeMismatch.length} 个包体类型与资源类别不匹配。`
