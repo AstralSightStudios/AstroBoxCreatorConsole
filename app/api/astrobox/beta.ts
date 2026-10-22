@@ -25,6 +25,10 @@ export interface BetaBuildFile {
     fileName: string;
     size: number;
     sha256: string;
+    /** 包体自己的版本与标识，发版时从包里读出 */
+    packageVersion?: string;
+    packageVersionCode?: number | null;
+    packageId?: string | null;
 }
 
 export interface BetaBuild {
@@ -75,6 +79,8 @@ export interface BetaOverview {
 export interface BetaAuthorProgram {
     program: BetaProgram;
     builds: BetaBuild[];
+    /** 已发布过的最大 versionCode，新版本必须大于它 */
+    topVersionCode?: number;
     testerLimit: number;
     tier: BetaTier | null;
 }
@@ -194,8 +200,15 @@ export const BetaApi = {
     createBuild: (input: {
         programId: string;
         version: string;
+        versionCode: number;
         changelog?: string;
-        files: Array<{ fileId: string; devices: string[] }>;
+        files: Array<{
+            fileId: string;
+            devices: string[];
+            packageVersion?: string;
+            packageVersionCode?: number | null;
+            packageId?: string | null;
+        }>;
         notify?: boolean;
     }) => post<BetaBuild>("author/build/create", input),
     updateBuild: (buildId: string, input: { version?: string; changelog?: string }) =>

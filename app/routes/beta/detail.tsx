@@ -201,6 +201,7 @@ export default function BetaProgramDetailPage() {
                 restype={program.restype}
                 deviceOptions={deviceOptions}
                 previous={builds.find((build) => build.status === "active") ?? null}
+                topVersionCode={data.topVersionCode ?? Math.max(0, ...builds.map((build) => build.versionCode))}
                 maxPackageBytes={DEFAULT_PACKAGE_LIMIT}
                 onCreated={() => void load()}
             />
@@ -258,7 +259,7 @@ function BuildsList({
                     <div key={build.id} className={`flex flex-col gap-2.5 rounded-[14px] bg-nav-item p-3.5 ${expired ? "opacity-60" : ""}`}>
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="text-base font-medium text-white">{build.version}</span>
-                            <span className="text-xs text-white/40">#{build.versionCode}</span>
+                            <span className="text-xs text-white/40">versionCode {build.versionCode}</span>
                             {index === 0 && !expired && (
                                 <Badge color="green" variant="soft" size="1">
                                     最新

@@ -25,6 +25,11 @@ import {
 } from "~/components/ScaleAwareThemes";
 import type { DeviceOption } from "~/logic/devices/catalog";
 import { pickFiles } from "~/logic/publish/file-picker";
+import {
+    formatPackageVersion,
+    readPackageVersion,
+    type PackageVersionInfo,
+} from "~/logic/publish/package-version";
 import DeviceMultiSelect from "./DeviceMultiSelect";
 import { describeBetaError } from "./shared";
 
@@ -42,6 +47,8 @@ type PackageRow = {
     progress: number;
     uploadedId: string | null;
     error: string;
+    /** 从包体里读出的版本；还没选文件或正在读时为 null */
+    info: PackageVersionInfo | null;
 };
 
 function newRow(devices: string[] = []): PackageRow {
@@ -52,7 +59,12 @@ function newRow(devices: string[] = []): PackageRow {
         progress: 0,
         uploadedId: null,
         error: "",
+        info: null,
     };
+}
+
+function parseCode(text: string) {
+    return /^\d+$/.test(text.trim()) ? Number(text.trim()) : undefined;
 }
 
 export default function BuildComposerDialog({
@@ -62,6 +74,7 @@ export default function BuildComposerDialog({
     restype,
     deviceOptions,
     previous,
+    topVersionCode,
     maxPackageBytes,
     onCreated,
 }: {
@@ -72,10 +85,15 @@ export default function BuildComposerDialog({
     deviceOptions: DeviceOption[];
     /** 上一个版本，用来预填设备分配 */
     previous: BetaBuild | null;
+    /** 已发布过的最大 versionCode */
+    topVersionCode: number;
     maxPackageBytes: number;
     onCreated: (build: BetaBuild) => void;
 }) {
     const [version, setVersion] = useState("");
+    const [versionEdited, setVersionEdited] = useState(false);
+    // 包里读不出 versionCode 时才手填
+    const [manualCode, setManualCode] = useState("");
     const [changelog, setChangelog] = useState("");
     const [notify, setNotify] = useState(true);
     const [rows, setRows] = useState<PackageRow[]>(() => [newRow()]);
@@ -84,6 +102,8 @@ export default function BuildComposerDialog({
 
     const reset = () => {
         setVersion("");
+        setVersionEdited(false);
+        setManualCode("");
         setChangelog("");
         setNotify(true);
         // 沿用上个版本的设备分配，一般只是换个包
@@ -121,26 +141,41 @@ export default function BuildComposerDialog({
             toast.error(`包体不能超过 ${formatBytes(maxPackageBytes)}`);
             return;
         }
-        updateRow(key, { file, uploadedId: null, progress: 0, error: "" });
+        updateRow(key, { file, uploadedId: null, progress: 0, error: "", info: null });
+        const info = await readPackageVersion(file);
+        // 读的过程中换了文件就丢掉旧结果
+        setRows((current) => current.map((row) => (row.key === key && row.file === file ? { ...row, info } : row)));
+        if (info.version && !versionEdited) setVersion(info.version);
     };
+
+    // 检查更新比较的是包体自己的 versionCode，所以一律以包为准，读不出才用手填的
+    const packageCodes = Array.from(
+        new Set(rows.flatMap((row) => (row.info?.versionCode !== undefined ? [row.info.versionCode] : []))),
+    );
+    const versionCode = packageCodes.length === 1 ? packageCodes[0] : packageCodes.length === 0 ? parseCode(manualCode) : undefined;
+    const reading = rows.some((row) => row.file && !row.info);
 
     const problems = useMemo(() => {
         const list: string[] = [];
         if (!version.trim()) list.push("填写版本号");
+        if (reading) list.push("正在读取包体版本");
+        else if (packageCodes.length > 1) list.push(`各包体的 versionCode 不一致（${packageCodes.join(" / ")}）`);
+        else if (versionCode === undefined || versionCode < 1) list.push("填写 versionCode");
+        else if (versionCode <= topVersionCode) list.push(`versionCode 需大于 ${topVersionCode}`);
         if (rows.length === 0) list.push("至少添加一个包体");
         rows.forEach((row, index) => {
             if (!row.file) list.push(`包体 ${index + 1} 还没选择文件`);
             if (row.devices.length === 0) list.push(`包体 ${index + 1} 还没选择设备`);
         });
         return list;
-    }, [rows, version]);
+    }, [packageCodes.length, reading, rows, topVersionCode, version, versionCode]);
 
     const submit = async () => {
-        if (busyRef.current || problems.length > 0) return;
+        if (busyRef.current || problems.length > 0 || versionCode === undefined) return;
         busyRef.current = true;
         setSubmitting(true);
         try {
-            const uploaded: Array<{ fileId: string; devices: string[] }> = [];
+            const uploaded: Parameters<typeof BetaApi.createBuild>[0]["files"] = [];
             for (const row of rows) {
                 let fileId = row.uploadedId;
                 if (!fileId) {
@@ -155,11 +190,18 @@ export default function BuildComposerDialog({
                         throw error;
                     }
                 }
-                uploaded.push({ fileId, devices: row.devices });
+                uploaded.push({
+                    fileId,
+                    devices: row.devices,
+                    packageVersion: row.info?.version,
+                    packageVersionCode: row.info?.versionCode ?? null,
+                    packageId: row.info?.identity ?? null,
+                });
             }
             const build = await BetaApi.createBuild({
                 programId,
                 version: version.trim(),
+                versionCode,
                 changelog: changelog.trim(),
                 files: uploaded,
                 notify,
@@ -184,18 +226,35 @@ export default function BuildComposerDialog({
 
                 <div className="mt-4 flex flex-col gap-4">
                     <div className="grid gap-3 sm:grid-cols-[200px_1fr]">
-                        <label className="flex flex-col gap-1.5">
-                            <Text size="2" weight="medium">
-                                版本号
-                            </Text>
-                            <TextField.Root
-                                value={version}
-                                placeholder="如 1.2.0-beta.1"
-                                maxLength={40}
-                                disabled={submitting}
-                                onChange={(event) => setVersion(event.target.value)}
-                            />
-                        </label>
+                        <div className="flex flex-col gap-3">
+                            <label className="flex flex-col gap-1.5">
+                                <Text size="2" weight="medium">
+                                    版本号
+                                </Text>
+                                <TextField.Root
+                                    value={version}
+                                    placeholder="如 1.2.0-beta.1"
+                                    maxLength={40}
+                                    disabled={submitting}
+                                    onChange={(event) => {
+                                        setVersion(event.target.value);
+                                        setVersionEdited(true);
+                                    }}
+                                />
+                            </label>
+                            <label className="flex flex-col gap-1.5">
+                                <Text size="2" weight="medium">
+                                    versionCode
+                                </Text>
+                                <TextField.Root
+                                    value={packageCodes.length > 0 ? packageCodes.join(" / ") : manualCode}
+                                    inputMode="numeric"
+                                    placeholder={`> ${topVersionCode}`}
+                                    disabled={submitting || packageCodes.length > 0}
+                                    onChange={(event) => setManualCode(event.target.value.replace(/\D/g, ""))}
+                                />
+                            </label>
+                        </div>
                         <label className="flex flex-col gap-1.5">
                             <Text size="2" weight="medium">
                                 测试说明
@@ -262,6 +321,20 @@ export default function BuildComposerDialog({
                                         </Button>
                                     )}
                                 </div>
+                                {row.info && (
+                                    <Text
+                                        size="1"
+                                        color={row.info.versionCode === undefined ? "amber" : "gray"}
+                                        className="truncate px-0.5"
+                                    >
+                                        {row.info.versionCode !== undefined
+                                            ? formatPackageVersion(row.info)
+                                            : row.info.readable
+                                              ? "包内没有 versionCode"
+                                              : (row.info.reason ?? "无法读取版本")}
+                                        {row.info.identity ? ` · ${row.info.identity}` : ""}
+                                    </Text>
+                                )}
                                 <DeviceMultiSelect
                                     options={deviceOptions}
                                     value={row.devices}
