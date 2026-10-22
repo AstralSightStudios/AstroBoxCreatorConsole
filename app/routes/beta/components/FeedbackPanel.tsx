@@ -502,7 +502,7 @@ function Composer({
                 rows={3}
                 maxLength={4000}
                 disabled={sending}
-                placeholder="回复测试者（Ctrl/⌘ + Enter 发送）"
+                placeholder="回复（Ctrl/⌘ + Enter 发送）"
                 onChange={(event) => setBody(event.target.value)}
                 onKeyDown={(event) => {
                     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -521,15 +521,10 @@ function Composer({
                     <ImageIcon size={16} />
                     图片
                 </Button>
-                <div className="flex items-center gap-2">
-                    <Text size="1" color="gray">
-                        对方会在 AstroBox 信箱收到提醒
-                    </Text>
-                    <Button loading={sending} disabled={!canSend} onClick={() => void send()}>
-                        <PaperPlaneRightIcon size={15} />
-                        发送
-                    </Button>
-                </div>
+                <Button loading={sending} disabled={!canSend} onClick={() => void send()}>
+                    <PaperPlaneRightIcon size={15} />
+                    发送
+                </Button>
             </div>
         </div>
     );

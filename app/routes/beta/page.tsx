@@ -54,7 +54,6 @@ export default function BetaProgramsPage() {
             <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
                 <PageHeader
                     title="测试分发"
-                    description="把测试版发给指定用户，收集带截图的反馈"
                     icon={<FlaskIcon size={25} className="text-purple-300" />}
                     action={
                         eligible ? (
@@ -68,7 +67,7 @@ export default function BetaProgramsPage() {
 
                 <div className="mx-auto flex w-full max-w-6xl flex-col gap-3.5">
                     {!account.hasAstrobox ? (
-                        <SectionCard title="请先登录" description="测试分发需要登录 AstroBox 账号" className={BETA_CARD_CLASS}>
+                        <SectionCard title="请先登录 AstroBox 账号" className={BETA_CARD_CLASS}>
                             <span />
                         </SectionCard>
                     ) : loading ? (
@@ -87,30 +86,22 @@ export default function BetaProgramsPage() {
                     ) : (
                         <>
                             {!eligible && (
-                                <SectionCard
-                                    title="测试分发暂不可用"
-                                    description="CreatorPlus 每个测试最多 50 位测试者，CreatorPro 最多 200 位"
-                                    className={BETA_CARD_CLASS}
-                                >
-                                    <div className="flex items-center gap-2 px-1.5 pb-1.5 text-sm text-amber-200">
-                                        <WarningOctagonIcon size={16} weight="fill" />
-                                        {programs.length > 0
-                                            ? "会员已过期：已有测试仍可被测试者安装，但无法发布新版本或邀请新测试者。"
-                                            : "当前账号未开通 CreatorPlus 及更高会员。"}
-                                    </div>
-                                </SectionCard>
+                                <div className="flex items-center gap-2 rounded-[12px] bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+                                    <WarningOctagonIcon size={16} weight="fill" />
+                                    {programs.length > 0 ? "会员已过期，无法发布新版本或邀请测试者" : "需要 CreatorPlus 或更高会员"}
+                                </div>
                             )}
 
                             {limits && overview && (
                                 <div className="grid gap-2.5 sm:grid-cols-3">
-                                    <QuotaCard label="会员档位" value={overview.tier ?? "--"} hint={`每个测试最多 ${limits.testersPerProgram} 位测试者`} />
+                                    <QuotaCard label="会员档位" value={overview.tier ?? "--"} hint={`测试者上限 ${limits.testersPerProgram}`} />
                                     <QuotaCard
                                         label="测试包存储"
                                         value={`${formatBytes(overview.storageUsedBytes)} / ${formatBytes(limits.storageBytes)}`}
                                         progress={overview.storageUsedBytes / limits.storageBytes}
-                                        hint={`版本 ${limits.buildTtlDays} 天后过期并释放空间`}
+                                        hint={`版本保留 ${limits.buildTtlDays} 天`}
                                     />
-                                    <QuotaCard label="测试项目" value={`${programs.length} / ${limits.programs}`} hint={`单个包体不超过 ${formatBytes(limits.packageBytes)}`} />
+                                    <QuotaCard label="测试项目" value={`${programs.length} / ${limits.programs}`} hint={`单包上限 ${formatBytes(limits.packageBytes)}`} />
                                 </div>
                             )}
 
@@ -118,12 +109,7 @@ export default function BetaProgramsPage() {
                                 eligible && (
                                     <div className="flex flex-col items-center gap-3 rounded-[14px] bg-nav-item px-6 py-14 text-center">
                                         <FlaskIcon size={36} weight="duotone" className="text-purple-200/80" />
-                                        <div>
-                                            <p className="text-base font-medium text-white">还没有测试项目</p>
-                                            <p className="mt-1 text-sm text-white/50">
-                                                新建一个测试，上传测试包，再用链接或信箱邀请测试者。
-                                            </p>
-                                        </div>
+                                        <p className="text-base font-medium text-white">还没有测试项目</p>
                                         <Button onClick={() => setCreating(true)}>
                                             <PlusIcon size={15} />
                                             新建测试
@@ -254,11 +240,8 @@ function CreateProgramDialog({
 
     return (
         <Dialog.Root open={open} onOpenChange={(next) => !submitting && onOpenChange(next)}>
-            <Dialog.Content maxWidth="520px">
+            <Dialog.Content maxWidth="520px" aria-describedby={undefined}>
                 <Dialog.Title>新建测试</Dialog.Title>
-                <Dialog.Description size="2" color="gray">
-                    测试者会在 AstroBox 的「参与的测试」里看到它。
-                </Dialog.Description>
                 <div className="mt-4 flex flex-col gap-3">
                     <label className="flex flex-col gap-1.5">
                         <Text size="2" weight="medium">
@@ -289,12 +272,9 @@ function CreateProgramDialog({
                             <TextField.Root
                                 value={watchfaceId}
                                 maxLength={16}
-                                placeholder="留空则使用包内自带的 ID"
+                                placeholder="留空使用包内 ID"
                                 onChange={(event) => setWatchfaceId(event.target.value)}
                             />
-                            <Text size="1" color="gray">
-                                固定 ID 后，测试者安装新版本会直接覆盖旧版本。
-                            </Text>
                         </label>
                     )}
                     <label className="flex flex-col gap-1.5">
@@ -305,7 +285,6 @@ function CreateProgramDialog({
                             value={description}
                             rows={3}
                             maxLength={4000}
-                            placeholder="告诉测试者这是什么、需要注意什么"
                             onChange={(event) => setDescription(event.target.value)}
                         />
                     </label>

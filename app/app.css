@@ -190,8 +190,11 @@ body,
  * Dialog/AlertDialog 遮罩（.rt-BaseDialogOverlay，fixed 且无 z-index）与内容
  * （z-index: 1）会被压在 Drawer 之下，导致 Drawer 内打开的确认对话框不可见、
  * 不可交互。这里把对话框遮罩提升到 Drawer 之上。
- * 对话框内部再打开的 Select/DropdownMenu 等 popper 浮层（同样无 z-index）
- * 需要盖过对话框遮罩，再提升一级；账号菜单 Popover 自带 z-999。
+ * 对话框内部再打开的 Select/DropdownMenu/Popover 等 popper 浮层需要盖过对话框
+ * 遮罩，再提升一级。必须 !important：Radix Popper 会把内容元素的计算 z-index
+ * 抄成包装层的内联 z-index，Radix Themes 的浮层内容没有 z-index，于是内联写的
+ * 是 auto，不加 !important 这条规则永远不生效，对话框里的下拉会开在遮罩底下
+ * （看起来就是点了没反应）。
  *
  * 本宿主内 z-index 最高的是 toast：sonner 的 [data-sonner-toaster] 自带
  * z-index: 999999999，且它的 <Toaster> 由 root.tsx 的 ToastHost 显式 portal
@@ -202,7 +205,7 @@ body,
 }
 
 .ui-scale-portal-host [data-radix-popper-content-wrapper] {
-    z-index: 70;
+    z-index: 70 !important;
 }
 
 .ui-safe-area-probe {

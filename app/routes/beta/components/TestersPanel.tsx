@@ -181,7 +181,7 @@ export default function TestersPanel({
         return (
             <div className="flex items-center gap-2 py-8 text-sm text-white/60">
                 <Spinner size="2" />
-                正在加载测试者...
+                正在加载...
             </div>
         );
     }
@@ -202,11 +202,7 @@ export default function TestersPanel({
 
     return (
         <div className="flex flex-col gap-3.5">
-            <SectionCard
-                title="测试名额"
-                description="邀请中和已加入的测试者都占名额；对方拒绝、退出或被移出后名额自动归还。"
-                className={BETA_CARD_CLASS}
-            >
+            <SectionCard title="测试名额" className={BETA_CARD_CLASS}>
                 <div className="flex flex-col gap-2 px-1.5 pb-1.5">
                     <div className="flex items-baseline justify-between">
                         <span className="text-2xl font-semibold text-white">
@@ -227,7 +223,6 @@ export default function TestersPanel({
                             按用户 ID 邀请
                         </span>
                     }
-                    description="邀请会发到对方的 AstroBox 信箱，对方接受后即可安装。"
                     className={BETA_CARD_CLASS}
                 >
                     <div className="flex flex-col gap-2 px-1.5 pb-1.5">
@@ -235,14 +230,14 @@ export default function TestersPanel({
                             value={inviteInput}
                             rows={3}
                             disabled={closed || inviting}
-                            placeholder="填写用户 ID，多个用逗号或换行分隔（一次最多 50 个）"
+                            placeholder="用户 ID，逗号或换行分隔"
                             onChange={(event) => setInviteInput(event.target.value)}
                         />
                         <TextField.Root
                             value={inviteNote}
                             maxLength={300}
                             disabled={closed || inviting}
-                            placeholder="附言（可选），会显示在邀请里"
+                            placeholder="附言（可选）"
                             onChange={(event) => setInviteNote(event.target.value)}
                         />
                         <div className="flex justify-end">
@@ -277,7 +272,6 @@ export default function TestersPanel({
                             公开邀请链接
                         </span>
                     }
-                    description="任何拿到链接的 AstroBox 用户都能直接加入，名额满了就无法再加入。"
                     className={BETA_CARD_CLASS}
                 >
                     <div className="flex flex-col gap-2 px-1.5 pb-1.5">
@@ -300,11 +294,6 @@ export default function TestersPanel({
                                 生成
                             </Button>
                         </div>
-                        {activeLinks.length === 0 && (
-                            <Text size="1" color="gray" className="px-1 py-2">
-                                还没有有效的邀请链接
-                            </Text>
-                        )}
                         {activeLinks.map((link) => (
                             <div
                                 key={link.code}
@@ -340,7 +329,7 @@ export default function TestersPanel({
                 <div className="flex flex-col px-1 pb-1">
                     {testers.length === 0 && (
                         <Text size="2" color="gray" className="px-1.5 py-6 text-center">
-                            还没有测试者，先发出邀请吧
+                            暂无测试者
                         </Text>
                     )}
                     {testers.map((tester) => {
@@ -387,7 +376,7 @@ export default function TestersPanel({
                 <AlertDialog.Content maxWidth="420px">
                     <AlertDialog.Title>移出测试者</AlertDialog.Title>
                     <AlertDialog.Description size="2">
-                        {removing ? `${displayNameOf(removing)} 将无法再下载测试版，也不能通过公开链接重新加入（你之后仍可重新邀请）。` : ""}
+                        {removing ? displayNameOf(removing) : ""}
                     </AlertDialog.Description>
                     <div className="mt-4 flex justify-end gap-2">
                         <AlertDialog.Cancel>

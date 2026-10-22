@@ -117,7 +117,7 @@ export default function BetaProgramDetailPage() {
             <Page>
                 <div className="flex items-center gap-2 p-6 text-sm text-white/60">
                     <Spinner size="2" />
-                    正在加载测试...
+                    正在加载...
                 </div>
             </Page>
         );
@@ -153,7 +153,7 @@ export default function BetaProgramDetailPage() {
                 <div className="mx-auto w-full max-w-6xl">
                     {!data.tier && (
                         <div className="mb-3 rounded-[12px] bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-                            会员已过期：测试者仍可安装未过期的版本，但你暂时无法发布新版本或邀请测试者。
+                            会员已过期，无法发布新版本或邀请测试者
                         </div>
                     )}
                     <Tabs.Root value={tab} onValueChange={setTab}>
@@ -240,10 +240,7 @@ function BuildsList({
         return (
             <div className="flex flex-col items-center gap-3 rounded-[14px] bg-nav-item px-6 py-14 text-center">
                 <PackageIcon size={34} weight="duotone" className="text-white/50" />
-                <div>
-                    <p className="text-base font-medium text-white">还没有测试版本</p>
-                    <p className="mt-1 text-sm text-white/50">上传包体并选择支持的设备，测试者就能在 AstroBox 里安装。</p>
-                </div>
+                <p className="text-base font-medium text-white">还没有测试版本</p>
                 <Button disabled={!canPublish} onClick={onCompose}>
                     <CloudArrowUpIcon size={16} />
                     发布第一个版本
@@ -320,9 +317,7 @@ function BuildsList({
             <AlertDialog.Root open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
                 <AlertDialog.Content maxWidth="420px">
                     <AlertDialog.Title>删除版本 {deleting?.version}</AlertDialog.Title>
-                    <AlertDialog.Description size="2">
-                        测试者将无法再安装这个版本，包体会从服务器删除，已安装到设备上的不受影响。
-                    </AlertDialog.Description>
+                    <AlertDialog.Description size="2">此操作无法撤销。</AlertDialog.Description>
                     <div className="mt-4 flex justify-end gap-2">
                         <AlertDialog.Cancel>
                             <Button variant="soft" color="gray">
@@ -459,7 +454,7 @@ function SettingsPanel({
                             <TextField.Root
                                 value={watchfaceId}
                                 maxLength={16}
-                                placeholder="留空则使用包内自带的 ID"
+                                placeholder="留空使用包内 ID"
                                 onChange={(event) => setWatchfaceId(event.target.value)}
                             />
                         </label>
@@ -478,15 +473,7 @@ function SettingsPanel({
                 </div>
             </SectionCard>
 
-            <SectionCard
-                title={program.status === "active" ? "关闭测试" : "重新开放测试"}
-                description={
-                    program.status === "active"
-                        ? "关闭后测试者无法再安装或提交反馈，邀请链接失效；随时可以重新开放。"
-                        : "重新开放后测试者可以继续安装未过期的版本。"
-                }
-                className={BETA_CARD_CLASS}
-            >
+            <SectionCard title={program.status === "active" ? "关闭测试" : "重新开放测试"} className={BETA_CARD_CLASS}>
                 <div className="px-1.5 pb-1.5">
                     <Button variant="soft" color={program.status === "active" ? "amber" : "green"} loading={togglingStatus} onClick={() => void toggleStatus()}>
                         <FlaskIcon size={15} />
@@ -495,7 +482,7 @@ function SettingsPanel({
                 </div>
             </SectionCard>
 
-            <SectionCard title="删除测试" description="所有版本、包体、测试者和反馈都会被永久删除。" className={BETA_CARD_CLASS}>
+            <SectionCard title="删除测试" className={BETA_CARD_CLASS}>
                 <div className="px-1.5 pb-1.5">
                     <Button variant="soft" color="red" onClick={() => setConfirmDelete(true)}>
                         <TrashIcon size={15} />

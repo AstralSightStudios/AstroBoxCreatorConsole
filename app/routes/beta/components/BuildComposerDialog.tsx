@@ -179,11 +179,8 @@ export default function BuildComposerDialog({
 
     return (
         <Dialog.Root open={open} onOpenChange={handleOpenChange}>
-            <Dialog.Content maxWidth="640px">
+            <Dialog.Content maxWidth="640px" aria-describedby={undefined}>
                 <Dialog.Title>发布测试版本</Dialog.Title>
-                <Dialog.Description size="2" color="gray">
-                    包体上传到 AstroBox 服务器，只有你邀请的测试者能下载；版本 90 天后自动过期。
-                </Dialog.Description>
 
                 <div className="mt-4 flex flex-col gap-4">
                     <div className="grid gap-3 sm:grid-cols-[200px_1fr]">
@@ -205,7 +202,6 @@ export default function BuildComposerDialog({
                             </Text>
                             <TextArea
                                 value={changelog}
-                                placeholder="这个版本改了什么、希望测试者重点测哪里"
                                 maxLength={4000}
                                 rows={3}
                                 disabled={submitting}
@@ -230,9 +226,6 @@ export default function BuildComposerDialog({
                                 添加包体
                             </Button>
                         </div>
-                        <Text size="1" color="gray">
-                            不同设备需要不同包体时分别添加；一台设备只能对应一个包体。
-                        </Text>
                         {rows.map((row, index) => (
                             <div
                                 key={row.key}
@@ -291,7 +284,7 @@ export default function BuildComposerDialog({
 
                     <label className="flex items-center gap-2">
                         <Checkbox checked={notify} disabled={submitting} onCheckedChange={(value) => setNotify(value === true)} />
-                        <Text size="2">通知所有测试者（信箱 + 推送）</Text>
+                        <Text size="2">通知测试者</Text>
                     </label>
                 </div>
 
