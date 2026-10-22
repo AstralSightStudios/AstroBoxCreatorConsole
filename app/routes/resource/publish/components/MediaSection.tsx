@@ -10,8 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
-import { pickFiles } from "~/logic/publish/file-picker";
-import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
+import { Dialog } from "~/components/ScaleAwareThemes";
+import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
@@ -23,12 +23,12 @@ interface MediaSectionProps {
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
-  onPreviewUpload: (files: File[]) => void;
+  onPreviewUpload: (files: File[]) => void | Promise<void>;
   onRemovePreview: (id: string) => void;
   onReorderPreview: (fromId: string, toId: string) => void;
   onMovePreviewToSlot: (fromIndex: number, slot: number) => void;
-  onIconUpload: (files: File[]) => void;
-  onCoverUpload: (files: File[]) => void;
+  onIconUpload: (files: File[]) => void | Promise<void>;
+  onCoverUpload: (files: File[]) => void | Promise<void>;
   onRemoveIcon: () => void;
   onRemoveCover: () => void;
   onMediaDimensions: (
@@ -55,6 +55,7 @@ function MediaTile({
   mediaClassName,
   imageClassName,
   fieldKey,
+  dropActive,
   onPick,
   onRemove,
 }: {
@@ -67,13 +68,15 @@ function MediaTile({
   imageClassName?: string;
   /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
   fieldKey?: PublishFieldKey;
+  dropActive?: boolean;
   onPick: () => void;
   onRemove: () => void;
 }) {
   return (
     <div
       data-publish-field={fieldKey}
-      className="relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3"
+      data-media-drop-target={fieldKey}
+      className={`relative flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 ${dropActive ? "ring-2 ring-blue-400 bg-blue-400/10" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div>
@@ -122,8 +125,13 @@ function MediaTile({
           onClick={onPick}
         >
           <UploadSimpleIcon size={24} weight="duotone" />
-          选择文件
+          点击选择或拖入图片
         </button>
+      )}
+      {dropActive && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/70 text-sm font-medium text-blue-200" aria-live="polite">
+          松开以{media ? "替换" : "导入"}{label}
+        </div>
       )}
     </div>
   );
@@ -162,7 +170,7 @@ function PreviewCard({
   width: number;
   showProgress: boolean;
   onGripPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onOpen: () => void;
+  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
   onLoad?: (width: number, height: number) => void;
@@ -294,6 +302,19 @@ export function MediaSection({
   const dropTimerRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const {
+    rootRef: mediaDropRef,
+    activeTarget: mediaDropTarget,
+    pickMediaFiles,
+  } = useMediaFileDrop({
+    onPreviewUpload,
+    onIconUpload,
+    onCoverUpload,
+    previewUploading,
+    iconUploading,
+    disabled: lightboxIndex !== null,
+  });
   const [showInfo, setShowInfo] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [edgePad, setEdgePad] = useState(0);
@@ -307,39 +328,8 @@ export function MediaSection({
   const [activeIndex, setActiveIndex] = useState(0);
   moveToSlotRef.current = onMovePreviewToSlot;
 
-  const pickPreview = async () => {
-    const files = await pickFiles({
-      multiple: true,
-      accept: PUBLISH_IMAGE_ACCEPT,
-      title: "选择预览图",
-    });
-    if (files.length > 0) onPreviewUpload(files);
-  };
-
-  const pickIcon = async () => {
-    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择图标" });
-    if (files.length > 0) onIconUpload(files);
-  };
-
-  const pickCover = async () => {
-    const files = await pickFiles({ accept: PUBLISH_IMAGE_ACCEPT, title: "选择封面" });
-    if (files.length > 0) onCoverUpload(files);
-  };
-
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
-
-  useEffect(() => {
-    if (lightboxIndex == null) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setLightboxIndex(null);
-        setShowInfo(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightboxIndex]);
 
   useEffect(() => {
     const node = previewScrollerRef.current;
@@ -717,35 +707,46 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description="上传或导入预览图组、应用图标与封面。相同文件会自动复用，无需重复上传。"
+      description="点击选择或将图片拖入对应区域：图标与封面各一张，预览图支持多张。相同文件会自动复用，无需重复上传。"
     >
-      <div className="flex flex-col gap-4">
+      <div ref={mediaDropRef} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
             hint="宽高比 1:1"
             fieldKey="icon"
+            dropActive={mediaDropTarget === "icon"}
             media={icon}
             uploading={iconUploading}
             emptyClassName="aspect-square max-md:aspect-[3/1]"
             mediaClassName="aspect-square max-md:aspect-[3/1]"
             imageClassName="max-h-full max-w-full object-contain"
-            onPick={() => void pickIcon()}
+            onPick={() => void pickMediaFiles("icon")}
             onRemove={onRemoveIcon}
           />
           <MediaTile
             label="封面"
             hint="宽高比严格 3:2"
             fieldKey="cover"
+            dropActive={mediaDropTarget === "cover"}
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
-            onPick={() => void pickCover()}
+            onPick={() => void pickMediaFiles("cover")}
             onRemove={onRemoveCover}
           />
         </div>
 
-        <div data-publish-field="previews" className="flex flex-col gap-2">
+        <div
+          data-publish-field="previews"
+          data-media-drop-target="previews"
+          className={`relative flex flex-col gap-2 rounded-xl ${mediaDropTarget === "previews" ? "ring-2 ring-blue-400 bg-blue-400/10" : ""}`}
+        >
+          {mediaDropTarget === "previews" && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-black/70 text-sm font-medium text-blue-200" aria-live="polite">
+              松开以添加预览图
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-white">预览图</p>
@@ -777,7 +778,7 @@ export function MediaSection({
                 type="button"
                 variant="soft"
                 disabled={previewUploading}
-                onClick={() => void pickPreview()}
+                onClick={() => void pickMediaFiles("previews")}
               >
                 <UploadSimpleIcon size={15} weight="bold" />
                 {previewUploading ? "处理中..." : "添加预览图"}
@@ -789,10 +790,10 @@ export function MediaSection({
             <button
               type="button"
               className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-              onClick={() => void pickPreview()}
+              onClick={() => void pickMediaFiles("previews")}
             >
               <ImagesSquareIcon size={28} weight="duotone" />
-              尚未上传预览图，点击选择文件
+              点击选择或拖入预览图，支持多张图片
             </button>
           ) : (
             <>
@@ -824,7 +825,8 @@ export function MediaSection({
                     width={previewWidthFor(item)}
                     showProgress={item.id === previewProcessingId}
                     onGripPointerDown={(event) => startGripDrag(event, item.id, index)}
-                    onOpen={() => {
+                    onOpen={(event) => {
+                      lightboxTriggerRef.current = event.currentTarget;
                       setShowInfo(false);
                       setLightboxIndex(index);
                     }}
@@ -844,7 +846,7 @@ export function MediaSection({
               <button
                 type="button"
                 className="flex min-h-[180px] w-[200px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] text-center text-sm text-white/55 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] hover:text-white/85"
-                onClick={() => void pickPreview()}
+                onClick={() => void pickMediaFiles("previews")}
               >
                 <UploadSimpleIcon size={24} weight="duotone" />
                 {previewUploading ? "处理中..." : "添加预览图"}
@@ -912,69 +914,91 @@ export function MediaSection({
       </div>
 
       {lightboxIndex != null && lightboxItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
-          <div className="absolute right-4 top-4 flex items-center gap-2">
-            <button
-              type="button"
-              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
-              onClick={() => setShowInfo((prev) => !prev)}
-              aria-label="查看图片信息"
-            >
-              <InfoIcon size={18} weight="bold" />
-            </button>
-            <button
-              type="button"
-              className="grid size-10 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
-              onClick={() => {
-                setLightboxIndex(null);
-                setShowInfo(false);
-              }}
-              aria-label="关闭"
-            >
-              <XIcon size={18} weight="bold" />
-            </button>
-          </div>
-
-          <img
-            src={lightboxItem.url}
-            alt={lightboxItem.name}
-            className="max-h-[calc(var(--ui-viewport-height)-2rem)] max-w-[calc(var(--ui-viewport-width)-2rem)] rounded-xl object-contain"
-          />
-
-          {showInfo && (
-            <div className="absolute right-0 top-0 flex h-full w-[min(88%,360px)] flex-col border-l border-white/15 bg-[#111] p-5 shadow-2xl">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-white">图片信息</h2>
-                <button
+        <Dialog.Root
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setLightboxIndex(null);
+              setShowInfo(false);
+            }
+          }}
+        >
+          <Dialog.Content
+            maxWidth="min(1100px, calc(var(--ui-viewport-width, 100vw) - 2rem))"
+            aria-describedby={undefined}
+            className="flex flex-col gap-3 !rounded-[14px] !bg-black/50 !p-4 !shadow-none backdrop-blur-[40px]"
+            style={{ height: "calc(var(--ui-viewport-height, 100vh) - 6rem)" }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              lightboxTriggerRef.current?.focus();
+            }}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 pb-3">
+              <Dialog.Title mb="0" size="4" weight="medium">图片预览</Dialog.Title>
+              <div className="flex items-center gap-2">
+                <Button
                   type="button"
-                  className="grid size-9 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setShowInfo(false)}
-                  aria-label="关闭信息"
+                  variant="soft"
+                  color="gray"
+                  className="!rounded-lg"
+                  onClick={() => setShowInfo((prev) => !prev)}
+                  aria-label="查看图片信息"
+                  aria-expanded={showInfo}
                 >
-                  <XIcon size={17} />
-                </button>
-              </div>
-              <div className="mt-5 flex flex-col gap-3 text-sm text-white/75">
-                <div className="break-all">
-                  <div className="text-xs text-white/45">文件名</div>
-                  <div>{lightboxItem.name}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/45">分辨率</div>
-                  <div>
-                    {lightboxItem.width && lightboxItem.height
-                      ? `${lightboxItem.width} × ${lightboxItem.height}`
-                      : "-"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-white/45">体积</div>
-                  <div>{formatFileSize(lightboxItem.file.size)}</div>
-                </div>
+                  <InfoIcon size={18} weight="bold" />
+                </Button>
+                <Dialog.Close>
+                  <Button type="button" variant="soft" color="gray" className="!rounded-lg">
+                    <XIcon size={18} weight="bold" />
+                    关闭
+                  </Button>
+                </Dialog.Close>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-black/20">
+              <img
+                src={lightboxItem.url}
+                alt={lightboxItem.name}
+                className="max-h-full max-w-full object-contain"
+              />
+
+              {showInfo && (
+                <div className="absolute inset-y-0 right-0 flex w-[min(88%,360px)] flex-col overflow-y-auto bg-black/50 p-4 backdrop-blur-[40px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-white">图片信息</h2>
+                    <button
+                      type="button"
+                      className="grid size-9 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setShowInfo(false)}
+                      aria-label="关闭信息"
+                    >
+                      <XIcon size={17} />
+                    </button>
+                  </div>
+                  <div className="mt-5 flex flex-col gap-3 text-sm text-white/75">
+                    <div className="break-all">
+                      <div className="text-xs text-white/45">文件名</div>
+                      <div>{lightboxItem.name}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/45">分辨率</div>
+                      <div>
+                        {lightboxItem.width && lightboxItem.height
+                          ? `${lightboxItem.width} × ${lightboxItem.height}`
+                          : "-"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/45">体积</div>
+                      <div>{formatFileSize(lightboxItem.file.size)}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Dialog.Content>
+        </Dialog.Root>
       )}
     </SectionCard>
   );

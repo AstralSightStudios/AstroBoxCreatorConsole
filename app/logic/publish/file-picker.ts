@@ -4,14 +4,17 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import { isTauriRuntime } from "~/logic/update/update-checker";
 import { isSvgContent } from "./pre-publish-checks";
 
-/** 从 content:// 或绝对路径中提取文件名（兼容带查询参数与 URL 编码）。 */
+/** URI 先剥离参数并解码；原生文件路径中的 # ? % 都是文件名的一部分。 */
 export function basenameFromPath(path: string): string {
-  const clean = path.split("?")[0].split("#")[0];
-  let decoded = clean;
-  try {
-    decoded = decodeURIComponent(clean);
-  } catch {
-    // 编码非法时退回原始字符串
+  let decoded = path;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
+    const clean = path.split("?")[0].split("#")[0];
+    decoded = clean;
+    try {
+      decoded = decodeURIComponent(clean);
+    } catch {
+      // 编码非法时退回原始字符串
+    }
   }
   const segments = decoded.split(/[\\/]/);
   for (let i = segments.length - 1; i >= 0; i -= 1) {
@@ -125,7 +128,7 @@ async function resolvePickedFileName(
  * 构造浏览器 File 对象。Android WebView 无法用 FileReader 直接读取
  * content:// URI（报 NotFoundError），必须先经 ContentResolver 读到字节。
  */
-async function pathToFile(path: string): Promise<File> {
+export async function pathToFile(path: string): Promise<File> {
   const bytes = await readFile(path);
   const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const name = await resolvePickedFileName(path, buffer);
