@@ -31,6 +31,21 @@ export const COVER_COMPRESS_TARGET_BYTES = COVER_MAX_BYTES;
 /** 预览图压缩目标字节数（无硬性上限，仅按此目标压缩）。 */
 export const PREVIEW_COMPRESS_TARGET_BYTES = 500 * 1024;
 
+/**
+ * 预览图数量下限。
+ *
+ * 单张或少量的预览图无法展示资源的主界面、功能页与设置项，用户只能凭封面
+ * 猜测实际效果，商店页的信息量也不足以支撑下载决策。发布页提交前与审核页
+ * 自动检查共用这一下限，避免两边口径漂移。
+ */
+export const PUBLISH_PREVIEWS_MIN = 3;
+
+/** 预览图数量检查：达到下限返回 null，否则返回给创作者看的文案。 */
+export function checkPreviewCount(count: number): string | null {
+  if (count >= PUBLISH_PREVIEWS_MIN) return null;
+  return `请至少上传 ${PUBLISH_PREVIEWS_MIN} 张预览图。预览图是用户判断资源效果的主要依据，少于 ${PUBLISH_PREVIEWS_MIN} 张无法展示足够的界面与功能细节。`;
+}
+
 /** 尺寸可缺失：读取失败时 width/height 为空，判定函数会给出「无法读取」。 */
 export interface ImageDimensions {
   width?: number;

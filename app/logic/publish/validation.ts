@@ -3,6 +3,7 @@ import {
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  checkPreviewCount,
   isBannedImageName,
 } from "./pre-publish-checks";
 import type { ResourceType } from "./resource-type";
@@ -91,6 +92,7 @@ export interface PublishValidationInput {
 export {
   COVER_RATIO,
   COVER_MAX_BYTES,
+  PUBLISH_PREVIEWS_MIN,
 } from "./pre-publish-checks";
 
 export interface PublishValidationResult {
@@ -298,7 +300,8 @@ export function validatePublish(
   // 格式硬拦截放在尺寸/体积之前：SVG 无论规格是否合规都不能提交，
   // 让创作者先换格式，再去调宽高比。
   issues.push(...validateBannedImageFormats(input));
-  if (input.previews.length === 0) push("previews", "请至少上传一张预览图。");
+  const previewCountError = checkPreviewCount(input.previews.length);
+  if (previewCountError) push("previews", previewCountError);
   const hasCover = input.usePreviewAsCover
     ? input.coverPreviewId
       ? input.previews.some((preview) => preview.id === input.coverPreviewId)

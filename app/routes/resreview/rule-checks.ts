@@ -38,6 +38,7 @@ import {
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   PREVIEW_COMPRESS_TARGET_BYTES,
+  PUBLISH_PREVIEWS_MIN,
   SVG_SNIFF_BYTES,
   hasExactCoverRatio,
   isBannedImageName,
@@ -1013,6 +1014,23 @@ export async function runResourceRuleChecks(options: {
     title: "cover 链接可访问且为 Raw，且非私有域名",
     status: coverCheck.ok ? "pass" : "fail",
     detail: coverCheck.reason,
+  });
+
+  // --- check: 预览图数量下限 ---
+  // 与发布页共用 PUBLISH_PREVIEWS_MIN：发布页在提交前拦截，这里在合入前兜底。
+  // manifest 缺失时预览图数量必然为 0，但根因是 manifest 没解析出来，
+  // manifest 存在性检查已经判失败，这里只给警告，避免同一问题重复标红。
+  const previewCount = preview.previewUrls.filter((url) => url.trim()).length;
+  const previewCountMissing = previewCount < PUBLISH_PREVIEWS_MIN;
+  checks.push({
+    title: `预览图不少于 ${PUBLISH_PREVIEWS_MIN} 张`,
+    status: !manifest ? "warn" : previewCountMissing ? "fail" : "pass",
+    detail: !manifest
+      ? "manifest 未解析，无法确认预览图数量"
+      : previewCountMissing
+        ? `manifest 仅声明 ${previewCount} 张预览图，发布要求至少 ${PUBLISH_PREVIEWS_MIN} 张`
+        : `manifest 声明 ${previewCount} 张预览图`,
+    anchor: manifest && previewCountMissing ? "images" : undefined,
   });
 
   // --- check: 资源目标仓库真实存在 ---

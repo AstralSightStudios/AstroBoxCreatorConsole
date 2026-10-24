@@ -11,7 +11,7 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
-import { PUBLISH_IMAGE_ACCEPT } from "~/logic/publish/pre-publish-checks";
+import { PUBLISH_IMAGE_ACCEPT, PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
@@ -717,7 +717,7 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description="上传或导入预览图组、应用图标与封面。相同文件会自动复用，无需重复上传。"
+      description={`上传或导入预览图组（至少 ${PUBLISH_PREVIEWS_MIN} 张）、应用图标与封面。相同文件会自动复用，无需重复上传。`}
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
@@ -750,10 +750,21 @@ export function MediaSection({
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-white">预览图</p>
               <Badge color="gray" variant="soft">
-                支持多选
+                至少 {PUBLISH_PREVIEWS_MIN} 张
               </Badge>
               {previews.length > 0 && (
-                <span className="text-xs text-white/45">共 {previews.length} 张</span>
+                <span
+                  className={`text-xs ${
+                    previews.length < PUBLISH_PREVIEWS_MIN
+                      ? "text-amber-300/80"
+                      : "text-white/45"
+                  }`}
+                >
+                  共 {previews.length} 张
+                  {previews.length < PUBLISH_PREVIEWS_MIN
+                    ? `（还需 ${PUBLISH_PREVIEWS_MIN - previews.length} 张）`
+                    : ""}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-1.5">
@@ -792,7 +803,7 @@ export function MediaSection({
               onClick={() => void pickPreview()}
             >
               <ImagesSquareIcon size={28} weight="duotone" />
-              尚未上传预览图，点击选择文件
+              尚未上传预览图，点击选择文件（至少 {PUBLISH_PREVIEWS_MIN} 张）
             </button>
           ) : (
             <>

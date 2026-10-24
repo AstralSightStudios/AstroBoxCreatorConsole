@@ -11,20 +11,25 @@ import {
   createUploadItem,
   sanitizeFileName,
 } from "../../app/routes/resource/publish/components/uploadUtils";
-import { COVER_MAX_BYTES } from "../../app/logic/publish/pre-publish-checks";
+import { COVER_MAX_BYTES, PUBLISH_PREVIEWS_MIN } from "../../app/logic/publish/pre-publish-checks";
 
 const image = { file: new Blob(), width: 100, height: 100 };
 const coverImage = { file: new Blob(), width: 150, height: 100 };
+const validPreviews = [
+  { ...coverImage, id: "preview-1" },
+  { ...coverImage, id: "preview-2" },
+  { ...coverImage, id: "preview-3" },
+];
 const validInput = {
   itemId: "com.example.app",
   itemName: "Example",
   description: "一个示例资源，用于演示各项功能。",
   tags: ["tool", "demo", "sample"],
-  previews: [{ ...coverImage, id: "preview" }],
+  previews: validPreviews,
   icon: image,
   cover: null,
   usePreviewAsCover: true,
-  coverPreviewId: "preview",
+  coverPreviewId: "preview-1",
   downloads: [{ platformId: "device", version: "1.0", file: image }],
   trialDownloads: [],
   links: [],
@@ -62,6 +67,25 @@ describe("publish validation", () => {
     ).toEqual([]);
     // 去掉 c 后只剩 2 个有效标签，应拦截
     expect(validatePushQuality("简介", ["a", " ", "b", ""])).toHaveLength(1);
+  });
+
+  test("预览图少于下限时拦截发布", () => {
+    expect(PUBLISH_PREVIEWS_MIN).toBe(3);
+    for (const count of [0, 1, 2]) {
+      const previews = Array.from({ length: count }, (_, index) => ({
+        ...coverImage,
+        id: `preview-${index + 1}`,
+      }));
+      const issues = validatePublish({
+        ...validInput,
+        previews,
+        coverPreviewId: previews[0]?.id ?? null,
+      }).issues;
+      const previewIssue = issues.find((issue) => issue.field === "previews");
+      expect(previewIssue?.message).toContain(`至少上传 ${PUBLISH_PREVIEWS_MIN} 张预览图`);
+    }
+    // 恰好 3 张通过
+    expect(validatePublish(validInput).errors).toEqual([]);
   });
 
   test("简介与标签同时不合规时两条错误都给出", () => {
@@ -252,7 +276,12 @@ describe("publish validation", () => {
   test("rejects cover with wrong aspect ratio or over the size limit", () => {
     const wrongRatioPreview = validatePublish({
       ...validInput,
-      previews: [{ ...image, id: "preview" }],
+      previews: [
+        { ...image, id: "preview" },
+        { ...coverImage, id: "preview-2" },
+        { ...coverImage, id: "preview-3" },
+      ],
+      coverPreviewId: "preview",
     });
     expect(wrongRatioPreview.errors.join(" ")).toContain("3:2");
 
@@ -328,7 +357,9 @@ describe("publish validation", () => {
       previews: [
         { ...coverImage, id: "p1", name: "media/shot-1.png" },
         { ...coverImage, id: "p2", name: "media/shot-2.svg" },
+        { ...coverImage, id: "p3", name: "media/shot-3.png" },
       ],
+      coverPreviewId: "p1",
     });
     expect(svgPreview.errors.join(" ")).toContain("预览图 2「media/shot-2.svg」");
     expect(svgPreview.errors.join(" ")).not.toContain("shot-1.png");
@@ -340,7 +371,11 @@ describe("publish validation", () => {
       validatePublish({
         ...validInput,
         icon: { ...image, name: "media/icon.png" },
-        previews: [{ ...coverImage, id: "p1", name: "media/shot-1.png" }],
+        previews: [
+          { ...coverImage, id: "p1", name: "media/shot-1.png" },
+          { ...coverImage, id: "p2", name: "media/shot-2.png" },
+          { ...coverImage, id: "p3", name: "media/shot-3.png" },
+        ],
         coverPreviewId: "p1",
       }).errors,
     ).toEqual([]);
@@ -352,6 +387,7 @@ describe("publish validation", () => {
       previews: [
         { ...coverImage, id: "p1", name: "20260817111124#2.png" },
         { ...coverImage, id: "p2", name: "clean.png" },
+        { ...coverImage, id: "p3", name: "clean-2.png" },
       ],
       downloads: [
         { platformId: "device", version: "1.0", file: image, existingFileName: "pkg?1.bin" },
@@ -365,7 +401,11 @@ describe("publish validation", () => {
 
     const clean = validatePublish({
       ...validInput,
-      previews: [{ ...coverImage, id: "p2", name: "clean.png" }],
+      previews: [
+        { ...coverImage, id: "p2", name: "clean.png" },
+        { ...coverImage, id: "p3", name: "clean-2.png" },
+        { ...coverImage, id: "p4", name: "clean-3.png" },
+      ],
       cover: null,
       usePreviewAsCover: true,
       coverPreviewId: "p2",

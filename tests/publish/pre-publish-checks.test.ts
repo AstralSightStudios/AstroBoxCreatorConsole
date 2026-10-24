@@ -5,11 +5,13 @@ import {
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
   ICON_MAX_DIMENSION,
+  PUBLISH_PREVIEWS_MIN,
   applyPublishedBaseline,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
   checkImageFormat,
+  checkPreviewCount,
   hasExactCoverRatio,
   isBannedImageName,
   isSvgContent,
@@ -18,6 +20,17 @@ import {
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
 } from "../../app/logic/publish/pre-publish-checks";
+
+describe("pre-publish checks: checkPreviewCount", () => {
+  test("requires at least PUBLISH_PREVIEWS_MIN previews", () => {
+    expect(PUBLISH_PREVIEWS_MIN).toBe(3);
+    expect(checkPreviewCount(0)).toContain("至少上传 3 张");
+    expect(checkPreviewCount(1)).toContain("至少上传 3 张");
+    expect(checkPreviewCount(2)).toContain("至少上传 3 张");
+    expect(checkPreviewCount(3)).toBeNull();
+    expect(checkPreviewCount(5)).toBeNull();
+  });
+});
 
 describe("pre-publish checks: checkIconDimensions", () => {
   test("accepts a square icon within the size limit", () => {
