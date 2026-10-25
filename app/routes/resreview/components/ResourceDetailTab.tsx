@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useAccountState } from "~/logic/account/store";
 import { AstroboxLinkIcon } from "~/components/phosphor-icon";
@@ -69,47 +69,80 @@ function renderTextWithLinks(value: string): string {
 
 export function ResourceDetailTab({
   resources,
+  focusResourceId,
   imageHighlight,
   onImageHighlightHandled,
 }: {
   resources: PrResourcePreview[];
+  /** 回查资源 ID：多资源 PR 默认切到目标行，并在标签上标记回查目标。 */
+  focusResourceId?: string | null;
   /** 自动检查 Tab 传下来的待高亮图片标签（icon / cover / preview N）。 */
   imageHighlight?: string | null;
   onImageHighlightHandled?: () => void;
 }) {
-  const [activeIdx, setActiveIdx] = useState(0);
+  const focusIndex = useMemo(() => {
+    const needle = focusResourceId?.trim().toLowerCase();
+    if (!needle) return -1;
+    return resources.findIndex((item) =>
+      [item.entry.id, item.originalId, item.request?.originalId].some(
+        (value) => value?.trim().toLowerCase() === needle,
+      ),
+    );
+  }, [focusResourceId, resources]);
+  const [activeIdx, setActiveIdx] = useState(focusIndex >= 0 ? focusIndex : 0);
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, resources.length - 1));
   const resource = resources[safeActiveIdx];
+  const focusMissing = Boolean(focusResourceId?.trim() && focusIndex < 0);
+
+  useEffect(() => {
+    if (focusIndex >= 0) setActiveIdx(focusIndex);
+  }, [focusIndex]);
 
   if (!resource) {
     return <p className="text-sm text-white/45">没有从目录 diff 中识别到资源条目。</p>;
   }
 
+  const focusWarning = focusMissing ? (
+    <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+      PR 中未找到资源 ID「{focusResourceId}」，以下展示 PR 的全部资源。
+    </div>
+  ) : null;
+
   if (resources.length === 1) {
     return (
-      <ResourceDetailView
-        resource={resource}
-        imageHighlight={imageHighlight}
-        onImageHighlightHandled={onImageHighlightHandled}
-      />
+      <div className="flex flex-col gap-3">
+        {focusWarning}
+        <ResourceDetailView
+          resource={resource}
+          imageHighlight={imageHighlight}
+          onImageHighlightHandled={onImageHighlightHandled}
+        />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
+      {focusWarning}
       <div className="flex flex-wrap gap-1">
         {resources.map((r, i) => (
           <button
             type="button"
             key={r.entry.id}
+            aria-current={i === safeActiveIdx ? "true" : undefined}
             onClick={() => setActiveIdx(i)}
-            className={`rounded-md px-3 py-1.5 text-sm transition ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition ${
               i === safeActiveIdx
                 ? "bg-white/15 text-white"
                 : "bg-white/[0.04] text-white/55 hover:bg-white/10 hover:text-white/80"
-            }`}
+            } ${i === focusIndex ? "ring-1 ring-blue-300/50" : ""}`}
           >
             {r.manifest?.item?.name || r.entry.name || r.entry.id}
+            {i === focusIndex && (
+              <span className="rounded-full bg-blue-400/15 px-1.5 py-0.5 text-[10px] text-blue-100">
+                回查目标
+              </span>
+            )}
           </button>
         ))}
       </div>

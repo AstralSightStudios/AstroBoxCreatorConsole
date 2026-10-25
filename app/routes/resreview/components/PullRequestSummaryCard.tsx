@@ -8,6 +8,7 @@ import { formatTime } from "../utils";
 import { UserCircle, GithubLogo } from "@phosphor-icons/react";
 
 interface PullRequestSummaryCardProps {
+  auditMode?: boolean;
   openPull: GithubPullRequest | null;
   openStatus: ReturnType<typeof deriveReviewStatus>;
   onApprove: () => void;
@@ -15,13 +16,20 @@ interface PullRequestSummaryCardProps {
   merging: boolean;
   closing: boolean;
   refusing: boolean;
+  rollingBack: boolean;
+  canRollback: boolean;
+  rollbackDisabledReason?: string;
+  rollbackTargetLabel: string;
+  rollbackScopeLabel: string;
   canMerge: boolean;
   onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
+  onRollback: () => void;
 }
 
 export function PullRequestSummaryCard({
+  auditMode,
   openPull,
   openStatus,
   onApprove,
@@ -29,16 +37,23 @@ export function PullRequestSummaryCard({
   merging,
   closing,
   refusing,
+  rollingBack,
+  canRollback,
+  rollbackDisabledReason,
+  rollbackTargetLabel,
+  rollbackScopeLabel,
   canMerge,
   onApproveAndMerge,
   onClose,
   onRefuse,
+  onRollback,
 }: PullRequestSummaryCardProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
   const [refuseDialogOpen, setRefuseDialogOpen] = useState(false);
   const [refuseReason, setRefuseReason] = useState("");
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
   if (!openPull) return null;
   const badgeState: "open" | "closed" | "merged" =
     openPull.state === "closed"
@@ -92,37 +107,50 @@ export function PullRequestSummaryCard({
           >
             <GithubLogo size={16} weight="duotone" />
           </Button>
-          {canMerge ? (
+          {auditMode ? (
             <Button
-              color="blue"
-              onClick={() => setMergeDialogOpen(true)}
-              disabled={approving || merging}
+              color="purple"
+              disabled={rollingBack || !canRollback}
+              title={rollbackDisabledReason || "回退到 PR 合入前的目录行"}
+              onClick={() => setRollbackDialogOpen(true)}
             >
-              {approving ? "批准中..." : merging ? "合入中..." : "批准并合入"}
+              {rollingBack ? "回退中..." : rollbackTargetLabel}
             </Button>
           ) : (
-            <Button color="green" onClick={onApprove} disabled={approving}>
-              {approving ? "通过中..." : "通过"}
-            </Button>
-          )}
-          {openPull.state === "open" && (
-            <Button
-              color="red"
-              variant="soft"
-              disabled={closing}
-              onClick={() => setCloseDialogOpen(true)}
-            >
-              {closing ? "关闭中..." : "关闭"}
-            </Button>
-          )}
-          {openPull.state === "open" && (
-            <Button
-              color="red"
-              disabled={refusing}
-              onClick={() => setRefuseDialogOpen(true)}
-            >
-              {refusing ? "拒绝中..." : "拒绝"}
-            </Button>
+            <>
+              {canMerge ? (
+                <Button
+                  color="blue"
+                  onClick={() => setMergeDialogOpen(true)}
+                  disabled={approving || merging}
+                >
+                  {approving ? "批准中..." : merging ? "合入中..." : "批准并合入"}
+                </Button>
+              ) : (
+                <Button color="green" onClick={onApprove} disabled={approving}>
+                  {approving ? "通过中..." : "通过"}
+                </Button>
+              )}
+              {openPull.state === "open" && (
+                <Button
+                  color="red"
+                  variant="soft"
+                  disabled={closing}
+                  onClick={() => setCloseDialogOpen(true)}
+                >
+                  {closing ? "关闭中..." : "关闭"}
+                </Button>
+              )}
+              {openPull.state === "open" && (
+                <Button
+                  color="red"
+                  disabled={refusing}
+                  onClick={() => setRefuseDialogOpen(true)}
+                >
+                  {refusing ? "拒绝中..." : "拒绝"}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -243,6 +271,46 @@ export function PullRequestSummaryCard({
               }}
             >
               {refusing ? "拒绝中..." : "确认拒绝"}
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={rollbackDialogOpen}
+        onOpenChange={(open) => {
+          if (!rollingBack) setRollbackDialogOpen(open);
+        }}
+      >
+        <Dialog.Content className="max-w-[460px]">
+          <Dialog.Title>回退 PR #{openPull.number}</Dialog.Title>
+          <Dialog.Description size="2" className="text-white/60">
+            将把 {rollbackScopeLabel} 在 index_v2.csv 中恢复到 PR
+            合入前的状态。回退会直接写入默认分支，不会修改 PR 本身。
+          </Dialog.Description>
+          {rollbackDisabledReason && (
+            <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              {rollbackDisabledReason}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button
+              variant="soft"
+              color="gray"
+              disabled={rollingBack}
+              onClick={() => setRollbackDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              color="purple"
+              disabled={rollingBack || !canRollback}
+              onClick={() => {
+                setRollbackDialogOpen(false);
+                onRollback();
+              }}
+            >
+              {rollingBack ? "回退中..." : "确认回退"}
             </Button>
           </div>
         </Dialog.Content>

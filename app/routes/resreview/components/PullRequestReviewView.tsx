@@ -1,6 +1,12 @@
 import { Tabs } from "@radix-ui/themes";
 import { useState, useCallback } from "react";
-import { Chats, GitDiff, Info, SealCheck } from "@phosphor-icons/react";
+import {
+  Chats,
+  ClockCounterClockwise,
+  GitDiff,
+  Info,
+  SealCheck,
+} from "@phosphor-icons/react";
 import type { GithubIssueComment, GithubPullRequest, GithubPullFile } from "~/api/github/pr-review";
 import { useAccountState } from "~/logic/account/store";
 import type { CcNoticeDeliveryStatus } from "~/logic/inbox/send";
@@ -17,6 +23,9 @@ import { LoadingIndicator } from "./LoadingIndicator";
 import type { PrResourcePreview, RepoFileChangeInfo } from "../types";
 
 export interface PullRequestReviewViewProps {
+  auditMode?: boolean;
+  auditBaselineError?: string;
+  focusResourceId?: string | null;
   openPull: GithubPullRequest | null;
   openStatus: ReturnType<typeof deriveReviewStatus>;
   openComments: GithubIssueComment[];
@@ -44,16 +53,25 @@ export interface PullRequestReviewViewProps {
   merging: boolean;
   closing: boolean;
   refusing: boolean;
+  rollingBack: boolean;
+  canRollback: boolean;
+  rollbackDisabledReason?: string;
+  rollbackTargetLabel: string;
+  rollbackScopeLabel: string;
   canMerge: boolean;
   onApprove: () => void;
   onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
+  onRollback: () => void;
   summaryCardRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function PullRequestReviewView(props: PullRequestReviewViewProps) {
   const {
+    auditMode,
+    auditBaselineError,
+    focusResourceId,
     openPull,
     openStatus,
     openComments,
@@ -81,11 +99,17 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     merging,
     closing,
     refusing,
+    rollingBack,
+    canRollback,
+    rollbackDisabledReason,
+    rollbackTargetLabel,
+    rollbackScopeLabel,
     canMerge,
     onApprove,
     onApproveAndMerge,
     onClose,
     onRefuse,
+    onRollback,
     summaryCardRef,
   } = props;
 
@@ -123,8 +147,33 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
 
   return (
     <>
+      {auditMode && (
+        <div className="flex items-start gap-2 rounded-[12px] border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-sm text-blue-100">
+          <ClockCounterClockwise
+            size={18}
+            weight="duotone"
+            className="mt-0.5 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <div>
+              <span className="font-medium">提交回查模式</span>
+              <span className="text-blue-100/70">
+                {" "}
+                · 仅展示历史提交，可把资源行回退到合入前状态。
+              </span>
+            </div>
+            {auditBaselineError && (
+              <div className="mt-1 break-words text-xs text-amber-200/90">
+                合入前目录读取失败：{auditBaselineError}
+                。回退时会重新读取基线。
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div ref={setRef}>
         <PullRequestSummaryCard
+          auditMode={auditMode}
           openPull={openPull}
           openStatus={openStatus}
           onApprove={onApprove}
@@ -132,10 +181,16 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           merging={merging}
           closing={closing}
           refusing={refusing}
+          rollingBack={rollingBack}
+          canRollback={canRollback}
+          rollbackDisabledReason={rollbackDisabledReason}
+          rollbackTargetLabel={rollbackTargetLabel}
+          rollbackScopeLabel={rollbackScopeLabel}
           canMerge={canMerge}
           onApproveAndMerge={onApproveAndMerge}
           onClose={onClose}
           onRefuse={onRefuse}
+          onRollback={onRollback}
         />
       </div>
 
@@ -179,6 +234,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
               ) : (
                 <ResourceDetailTab
                   resources={resourcePreviews}
+                  focusResourceId={focusResourceId}
                   imageHighlight={imageHighlight}
                   onImageHighlightHandled={clearImageHighlight}
                 />

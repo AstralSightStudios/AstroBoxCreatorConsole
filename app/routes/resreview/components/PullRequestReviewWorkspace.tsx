@@ -8,6 +8,10 @@ import { PullRequestSwitcher } from "./PullRequestSwitcher";
 
 interface PullRequestReviewWorkspaceProps {
   isDesktop: boolean;
+  auditMode?: boolean;
+  auditBaselineError?: string;
+  showSwitcher?: boolean;
+  focusResourceId?: string | null;
   pulls: GithubPullRequest[];
   openNumber: number;
   openPull: GithubPullRequest | null;
@@ -30,6 +34,11 @@ interface PullRequestReviewWorkspaceProps {
   merging: boolean;
   closing: boolean;
   refusing: boolean;
+  rollingBack: boolean;
+  canRollback: boolean;
+  rollbackDisabledReason?: string;
+  rollbackTargetLabel: string;
+  rollbackScopeLabel: string;
   canMerge: boolean;
   onToggleSwitcher: () => void;
   onSelectPull: (pull: GithubPullRequest) => void;
@@ -48,13 +57,14 @@ interface PullRequestReviewWorkspaceProps {
   onApproveAndMerge: () => void;
   onClose: (reason: string) => void;
   onRefuse: (reason: string) => void;
+  onRollback: () => void;
 }
 
 export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProps) {
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex min-h-0 flex-1 gap-4">
-        {props.isDesktop && (
+        {props.isDesktop && props.showSwitcher !== false && (
           <PullRequestSwitcher
             pulls={props.pulls}
             openNumber={props.openNumber}
@@ -69,6 +79,9 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar">
           <PullRequestReviewView
             key={props.openNumber}
+            auditMode={props.auditMode}
+            auditBaselineError={props.auditBaselineError}
+            focusResourceId={props.focusResourceId}
             openPull={props.openPull}
             openStatus={props.openStatus}
             openComments={props.openComments}
@@ -87,6 +100,12 @@ export function PullRequestReviewWorkspace(props: PullRequestReviewWorkspaceProp
             closing={props.closing}
             refusing={props.refusing}
             canMerge={props.canMerge}
+            rollingBack={props.rollingBack}
+            canRollback={props.canRollback}
+            rollbackDisabledReason={props.rollbackDisabledReason}
+            rollbackTargetLabel={props.rollbackTargetLabel}
+            rollbackScopeLabel={props.rollbackScopeLabel}
+            onRollback={props.onRollback}
             onGeneralCommentChange={props.onGeneralCommentChange}
             onSubmitComment={props.onSubmitComment}
             onReply={props.onReply}

@@ -309,6 +309,29 @@ async function updateFile(
     );
 }
 
+/** 直接把纯文本内容写到指定分支（内部负责 base64 编码），用于目录行回退等修正操作。 */
+export async function writeRepoFile(params: {
+    token: string;
+    owner: string;
+    repo: string;
+    path: string;
+    branch: string;
+    content: string;
+    sha: string;
+    message: string;
+}) {
+    return updateFile(
+        params.token,
+        params.owner,
+        params.repo,
+        params.path,
+        params.branch,
+        ensureBase64(params.content),
+        params.sha,
+        params.message,
+    );
+}
+
 function appendOrReplaceCsvRow(
     existingCsv: string,
     entry: CatalogEntry,

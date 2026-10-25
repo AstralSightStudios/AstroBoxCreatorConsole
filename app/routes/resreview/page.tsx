@@ -1,8 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, Dialog, Select, TextArea } from "~/components/ScaleAwareThemes";
+import { Button, Dialog, DropdownMenu, Select, TextArea } from "~/components/ScaleAwareThemes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { ArrowClockwiseIcon, CheckSquare, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  ArrowLeft,
+  CheckSquare,
+  DotsThree,
+  MagnifyingGlass,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
@@ -62,7 +69,12 @@ import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import ReviewersDrawer from "./components/ReviewersDrawer";
 import BatchNoticeFailuresDrawer from "./components/BatchNoticeFailuresDrawer";
+import { AuditLookupDialog } from "./components/AuditLookupDialog";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
+import {
+  loadCatalogRollbackBaseline,
+  rollbackCatalogRowsForPr,
+} from "~/logic/publish/catalog-rollback";
 import {
   buildCcNoticeCheckPlan,
   loadPrResourcePreviews,
@@ -157,6 +169,14 @@ export default function ResourceReviewPage() {
   const [commentsByPr, setCommentsByPr] = useState<Record<number, import("~/api/github/pr-review").GithubIssueComment[]>>({});
   const prParam = searchParams.get("pr");
   const openNumber = prParam && /^\d+$/.test(prParam) ? Number(prParam) : null;
+  const auditMode = searchParams.get("audit") === "1" && openNumber !== null;
+  const auditResourceId = auditMode
+    ? searchParams.get("resource")?.trim() || null
+    : null;
+  const [detailPull, setDetailPull] = useState<GithubPullRequest | null>(null);
+  const [detailError, setDetailError] = useState("");
+  const [auditBaselineError, setAuditBaselineError] = useState("");
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [files, setFiles] = useState<import("~/api/github/pr-review").GithubPullFile[]>([]);
   const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
@@ -184,6 +204,7 @@ export default function ResourceReviewPage() {
   const [merging, setMerging] = useState(false);
   const [closing, setClosing] = useState(false);
   const [refusing, setRefusing] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedNumbers, setSelectedNumbers] = useState<Set<number>>(new Set());
   const [bulkClosing, setBulkClosing] = useState(false);
@@ -198,10 +219,25 @@ export default function ResourceReviewPage() {
   const loadDetailRef = useRef<number>(0);
 
   const canReview = hasCommunityRepoManagePermission(permission);
-  const isInitialLoading = checkingPermission || (loadingPulls && pulls.length === 0);
-  const openPull = pulls.find((pull) => pull.number === openNumber) || null;
+  const isInitialLoading =
+    checkingPermission ||
+    (!auditMode && loadingPulls && pulls.length === 0);
+  const listedPull =
+    pulls.find((pull) => pull.number === openNumber) || null;
+  const openPull =
+    listedPull ??
+    (detailPull?.number === openNumber ? detailPull : null);
   const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];
   const openStatus = deriveReviewStatus(openComments);
+  const rollbackPreviews = useMemo(() => {
+    if (!auditResourceId) return resourcePreviews;
+    const needle = auditResourceId.trim().toLowerCase();
+    return resourcePreviews.filter((preview) =>
+      [preview.entry.id, preview.originalId, preview.request?.originalId].some(
+        (value) => value?.trim().toLowerCase() === needle,
+      ),
+    );
+  }, [auditResourceId, resourcePreviews]);
 
   const reviewModeForOpenPr =
     publishMode === "staging" || hasSubmissionFiles(files)
@@ -322,27 +358,51 @@ export default function ResourceReviewPage() {
   const loadDetail = async (number: number) => {
     const callId = ++loadDetailRef.current;
     setLoadingDetail(true);
+    setDetailError("");
+    setAuditBaselineError("");
     setFiles([]);
     setResourcePreviews([]);
     try {
-      const detailPull =
-        openPull ??
-        (await getPullRequest(number).catch(() => null));
-      if (callId !== loadDetailRef.current) return;
-      const [nextComments, nextFiles] = await Promise.all([
+      let pull =
+        pulls.find((item) => item.number === number) ??
+        (detailPull?.number === number ? detailPull : null);
+      if (!pull) {
+        pull = await getPullRequest(number);
+        if (callId !== loadDetailRef.current) return;
+        setDetailPull(pull);
+      }
+
+      // 回查模式要还原 PR 合入前的目录状态；普通模式仍然看当前默认分支。
+      const baselinePromise =
+        auditMode && pull
+          ? loadCatalogRollbackBaseline(pull).catch((err) => {
+              if (callId === loadDetailRef.current) {
+                setAuditBaselineError(getErrorMessage(err));
+              }
+              return null;
+            })
+          : Promise.resolve(null);
+      const [nextComments, nextFiles, baseline] = await Promise.all([
         listPullRequestTimeline(number).then((comments) =>
-          filterReviewTagComments(comments, orgMembers, detailPull?.user?.login),
+          filterReviewTagComments(comments, orgMembers, pull?.user?.login),
         ),
         listPullRequestFiles(number),
+        baselinePromise,
       ]);
       if (callId !== loadDetailRef.current) return;
       const nextResourcePreviews =
-        detailPull &&
+        pull &&
         (publishMode === "staging" || hasSubmissionFiles(nextFiles))
           ? await loadStagingPrResourcePreviews(
               nextFiles,
               accountState.github?.token || "",
-              detailPull,
+              pull,
+              auditMode
+                ? {
+                    baseEntries: baseline?.entries ?? [],
+                    allowDefaultBase: false,
+                  }
+                : undefined,
             )
           : await loadPrResourcePreviews(
               nextFiles,
@@ -352,39 +412,46 @@ export default function ResourceReviewPage() {
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
-      const refuseComment = nextComments.find((comment) =>
-        /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
-      );
-      if (refuseComment) {
-        const fresh = await getPullRequest(number);
-        if (fresh.state === "open") {
-          await closePullRequest(number);
-          toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
-          await loadPulls();
-          navigate("/resreview", { replace: true });
-        }
-      } else {
-        // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
-        // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
-        const latestAction = resolveLatestTagAction(nextComments);
-        if (latestAction) {
+
+      // 回查只读取历史提交，不能因为历史评论里的 REFUSE/CLOSE/REOPEN 标签
+      // 再次改变 PR 状态；这些副作用只在普通审核模式执行。
+      if (!auditMode) {
+        const refuseComment = nextComments.find((comment) =>
+          /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+        );
+        if (refuseComment) {
           const fresh = await getPullRequest(number);
-          if (latestAction === "reopen") {
-            if (fresh.state === "closed" && !fresh.merged_at) {
-              await reopenPullRequest(number);
-              toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+          if (fresh.state === "open") {
+            await closePullRequest(number);
+            toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
+            await loadPulls();
+            navigate("/resreview", { replace: true });
+          }
+        } else {
+          // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
+          // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
+          const latestAction = resolveLatestTagAction(nextComments);
+          if (latestAction) {
+            const fresh = await getPullRequest(number);
+            if (latestAction === "reopen") {
+              if (fresh.state === "closed" && !fresh.merged_at) {
+                await reopenPullRequest(number);
+                toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+                await loadPulls();
+              }
+            } else if (fresh.state === "open") {
+              await closePullRequest(number);
+              toast.success("检测到 CLOSE 标签，PR 已关闭。");
               await loadPulls();
             }
-          } else if (fresh.state === "open") {
-            await closePullRequest(number);
-            toast.success("检测到 CLOSE 标签，PR 已关闭。");
-            await loadPulls();
           }
         }
       }
     } catch (err) {
       if (callId === loadDetailRef.current) {
-        toast.error(getErrorMessage(err));
+        const message = getErrorMessage(err);
+        setDetailError(message);
+        toast.error(message);
       }
     } finally {
       if (callId === loadDetailRef.current) {
@@ -398,15 +465,17 @@ export default function ResourceReviewPage() {
   }, []);
 
   useEffect(() => {
-    if (!canReview) return;
+    // 回查只需要目标 PR，不加载开放 PR 列表，避免无谓请求与列表状态干扰。
+    if (!canReview || auditMode) return;
     void loadPulls();
-  }, [canReview, refreshTick, orgMembers]);
+  }, [canReview, refreshTick, orgMembers, auditMode]);
 
   useEffect(() => {
     setGeneralComment("");
     setReplyTarget(null);
     setEditingTarget(null);
     setNoticeDraft(null);
+    setDetailError("");
     if (openNumber) {
       // 等待 orgMembers 加载完成，避免评论过滤失效
       if (orgMembers.size === 0) {
@@ -422,11 +491,14 @@ export default function ResourceReviewPage() {
       }
     } else {
       loadDetailRef.current += 1;
+      setDetailPull(null);
+      setAuditBaselineError("");
       setFiles([]);
       setResourcePreviews([]);
       setLoadingDetail(false);
     }
-  }, [openNumber, openPull, accountState.github?.token, publishMode, orgMembers]);
+    // detailPull 由 loadDetail 自己维护；依赖它会让详情加载再次触发自身。
+  }, [openNumber, accountState.github?.token, publishMode, orgMembers, auditMode]);
 
   // 检测当前 PR 的审核通知（NEEDFIX / 关闭 / 拒绝）是否送达 AstroBox 信箱，
   // 结果按评论回填：送达状态与重发入口都挂在对应评论上，PR 概览不再单独展示。
@@ -674,6 +746,65 @@ export default function ResourceReviewPage() {
     } finally {
       setMerging(false);
     }
+  };
+
+  const rollback = async () => {
+    if (!openPull || rollingBack) return;
+    if (rollbackPreviews.length === 0) {
+      toast.error(
+        auditResourceId
+          ? `当前 PR 未包含资源 ID「${auditResourceId}」，无法回退。`
+          : "没有解析到可回退的资源行。",
+      );
+      return;
+    }
+    setRollingBack(true);
+    try {
+      const result = await rollbackCatalogRowsForPr({
+        pull: openPull,
+        previews: rollbackPreviews,
+        resourceId: auditResourceId ?? undefined,
+      });
+      if (result.plan.changes.length === 0) {
+        toast.message("目录已处于回退后的状态，无需写入。");
+      } else {
+        toast.success(
+          `已回退 ${result.plan.changes.length} 个资源行`,
+          {
+            description: result.commitUrl || undefined,
+            duration: 6000,
+          },
+        );
+      }
+      if (openNumber) await loadDetail(openNumber);
+    } catch (err) {
+      toast.error(getErrorMessage(err), { duration: 8000 });
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
+  const openAuditPull = (number: number, resourceId?: string) => {
+    const nextResourceId = resourceId?.trim() || null;
+    const sameAuditTarget =
+      auditMode &&
+      number === openNumber &&
+      nextResourceId === auditResourceId;
+    const params = new URLSearchParams({
+      pr: String(number),
+      audit: "1",
+    });
+    if (nextResourceId) params.set("resource", nextResourceId);
+    setAuditDialogOpen(false);
+
+    // 同一个 PR 再查一次时 URL 不变，路由 effect 不会重跑；显式重新加载。
+    if (sameAuditTarget) {
+      setDetailError("");
+      setResourcePreviews([]);
+      void loadDetail(number);
+      return;
+    }
+    navigate(`/resreview/detail?${params.toString()}`);
   };
 
   // 批准与合入合并为单一步骤：先提交 GitHub Approve，成功后再执行合入。
@@ -1063,6 +1194,28 @@ export default function ResourceReviewPage() {
   };
 
   const topbarActions = null;
+  const rollbackDisabledReason = !openPull
+    ? "PR 尚未加载完成。"
+    : !openPull.merged_at
+      ? "仅已合入的 PR 支持回退。"
+      : loadingDetail
+        ? "正在解析资源行。"
+        : rollbackPreviews.length === 0
+          ? auditResourceId
+            ? `当前 PR 未包含资源 ID「${auditResourceId}」。`
+            : "没有解析到可回退的资源行。"
+          : "";
+  const rollbackTargetLabel = auditResourceId
+    ? "回退该资源"
+    : rollbackPreviews.length > 1
+      ? "回退全部"
+      : "回退";
+  const rollbackScopeLabel = auditResourceId
+    ? `资源 ID ${auditResourceId}`
+    : `${rollbackPreviews.length} 个资源行`;
+  const showDetailError = Boolean(
+    openNumber && !openPull && !loadingDetail && detailError,
+  );
 
   useLayoutEffect(() => {
     setHeaderActions(topbarActions);
@@ -1105,51 +1258,97 @@ export default function ResourceReviewPage() {
             key="workbench"
             className="absolute inset-0 px-2 pb-3"
           >
-            <LayoutGroup>
-              <PullRequestReviewWorkspace
-                isDesktop={isDesktop}
-                pulls={visiblePulls}
-                openNumber={openNumber!}
-                openPull={openPull}
-                openComments={openComments}
-                openStatus={openStatus}
-                files={files}
-                resourcePreviews={resourcePreviews}
-                repoFileChanges={repoFileChanges}
-                loadingDetail={loadingDetail}
-                loadingPulls={loadingPulls}
-                commentsByPr={commentsByPr}
-                generalComment={generalComment}
-                replyTarget={replyTarget}
-                editingTarget={editingTarget}
-                isSwitcherCollapsed={isWorkbenchSidebarCollapsed}
-                submittingComment={submittingComment}
-                approving={approving}
-                merging={merging}
-                closing={closing}
-                refusing={refusing}
-                canMerge={reviewModeForOpenPr === "staging"}
-                onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
-                onSelectPull={handleSelectSidebar}
-                onRefreshList={handleRefreshList}
-                onGeneralCommentChange={setGeneralComment}
-                onSubmitComment={submitComment}
-                 onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
-                 onCancelReply={() => setReplyTarget(null)}
-                 onCancelEdit={() => { setEditingTarget(null); setNoticeDraft(null); }}
-                 onDeleteComment={deleteComment}
-                 onEditComment={editComment}
+            {showDetailError ? (
+              <div className="grid h-full place-items-center px-4">
+                <div className="w-full max-w-lg rounded-[14px] border border-red-400/20 bg-nav-item p-5 text-center">
+                  <WarningCircle
+                    size={28}
+                    weight="duotone"
+                    className="mx-auto text-red-300"
+                  />
+                  <h2 className="mt-2 text-lg font-semibold text-white">
+                    无法打开 PR #{openNumber}
+                  </h2>
+                  <p className="mt-2 break-words text-sm text-white/60">
+                    {detailError}
+                  </p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <Button variant="soft" color="gray" onClick={refreshDetail}>
+                      重试
+                    </Button>
+                    <Button
+                      variant="soft"
+                      color="gray"
+                      onClick={() => navigate("/resreview")}
+                    >
+                      <ArrowLeft size={15} />
+                      返回审核列表
+                    </Button>
+                    {auditMode && (
+                      <Button onClick={() => setAuditDialogOpen(true)}>
+                        重新回查
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <LayoutGroup>
+                <PullRequestReviewWorkspace
+                  isDesktop={isDesktop}
+                  auditMode={auditMode}
+                  auditBaselineError={auditBaselineError}
+                  showSwitcher={!auditMode}
+                  focusResourceId={auditResourceId}
+                  pulls={visiblePulls}
+                  openNumber={openNumber!}
+                  openPull={openPull}
+                  openComments={openComments}
+                  openStatus={openStatus}
+                  files={files}
+                  resourcePreviews={resourcePreviews}
+                  repoFileChanges={repoFileChanges}
+                  loadingDetail={loadingDetail}
+                  loadingPulls={loadingPulls}
+                  commentsByPr={commentsByPr}
+                  generalComment={generalComment}
+                  replyTarget={replyTarget}
+                  editingTarget={editingTarget}
+                  isSwitcherCollapsed={isWorkbenchSidebarCollapsed}
+                  submittingComment={submittingComment}
+                  approving={approving}
+                  merging={merging}
+                  closing={closing}
+                  refusing={refusing}
+                  rollingBack={rollingBack}
+                  canRollback={!rollbackDisabledReason}
+                  rollbackDisabledReason={rollbackDisabledReason}
+                  rollbackTargetLabel={rollbackTargetLabel}
+                  rollbackScopeLabel={rollbackScopeLabel}
+                  canMerge={reviewModeForOpenPr === "staging"}
+                  onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
+                  onSelectPull={handleSelectSidebar}
+                  onRefreshList={handleRefreshList}
+                  onGeneralCommentChange={setGeneralComment}
+                  onSubmitComment={submitComment}
+                  onReply={(comment) => { setReplyTarget({ comment }); setEditingTarget(null); }}
+                  onCancelReply={() => setReplyTarget(null)}
+                  onCancelEdit={() => { setEditingTarget(null); setNoticeDraft(null); }}
+                  onDeleteComment={deleteComment}
+                  onEditComment={editComment}
                   onRetryNotice={retryCcNotice}
                   noticeStatusByCommentId={noticeStatusByCommentId}
                   checkingNoticeStatus={checkingNoticeStatus}
                   noticeDraft={noticeDraft}
                   onNoticeDraftChange={setNoticeDraft}
-                onApprove={approve}
-                onApproveAndMerge={approveAndMerge}
-                onClose={closePr}
-                onRefuse={refusePr}
-              />
-            </LayoutGroup>
+                  onApprove={approve}
+                  onApproveAndMerge={approveAndMerge}
+                  onClose={closePr}
+                  onRefuse={refusePr}
+                  onRollback={rollback}
+                />
+              </LayoutGroup>
+            )}
           </motion.div>
         ) : (
           <motion.div
@@ -1227,16 +1426,37 @@ export default function ResourceReviewPage() {
                         </motion.div>
                         刷新
                       </Button>
-                      <Button
-                        variant="soft"
-                        color="gray"
-                        className="shrink-0"
-                        disabled={visiblePulls.length === 0}
-                        onClick={enterSelectMode}
-                      >
-                        <CheckSquare size={15} />
-                        批量管理
-                      </Button>
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger>
+                          <Button
+                            variant="soft"
+                            color="gray"
+                            className="shrink-0 px-2!"
+                            aria-label="更多操作"
+                            title="更多操作"
+                          >
+                            <DotsThree size={18} weight="bold" />
+                          </Button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Content align="end">
+                          <DropdownMenu.Item
+                            className="gap-2"
+                            onSelect={() => setAuditDialogOpen(true)}
+                          >
+                            <MagnifyingGlass size={15} />
+                            提交回查
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Separator />
+                          <DropdownMenu.Item
+                            className="gap-2"
+                            disabled={visiblePulls.length === 0}
+                            onSelect={enterSelectMode}
+                          >
+                            <CheckSquare size={15} />
+                            批量管理
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Root>
                     </>
                   )}
                 </div>
@@ -1358,6 +1578,11 @@ export default function ResourceReviewPage() {
           </div>
         </Dialog.Content>
       </Dialog.Root>
+      <AuditLookupDialog
+        open={auditDialogOpen}
+        onOpenChange={setAuditDialogOpen}
+        onOpenPull={openAuditPull}
+      />
     </div>
   );
 }

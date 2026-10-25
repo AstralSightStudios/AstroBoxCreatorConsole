@@ -21,6 +21,7 @@ import { MAIN_RESOURCE_BRANCH } from "~/logic/publish/branch";
 import { getRepoFile, isGithubStatus } from "~/logic/publish/github-actions";
 import {
   decodeCatalogContent,
+  findCatalogEntryById,
   getFileContent,
   parseCatalogCsv,
   type CatalogEntry,
@@ -467,10 +468,18 @@ export async function loadPrResourcePreviews(
   );
 }
 
+export interface StagingPreviewOptions {
+  /** 指定目录基线；回查模式传入 PR 合入前的目录行。传空数组表示明确没有基线。 */
+  baseEntries?: CatalogEntry[];
+  /** 没有显式 baseEntries 时是否回退到默认分支当前目录。 */
+  allowDefaultBase?: boolean;
+}
+
 export async function loadStagingPrResourcePreviews(
   files: GithubPullFile[],
   token: string,
   openPull: GithubPullRequest,
+  options?: StagingPreviewOptions,
 ): Promise<PrResourcePreview[]> {
   const submissionPaths = Array.from(
     new Set(
@@ -481,51 +490,86 @@ export async function loadStagingPrResourcePreviews(
   );
   if (submissionPaths.length === 0) return [];
 
-  // 基准行取目标仓库默认分支上「最新」的 index_v2.csv：合入时 Action 应用的是
-  // 当前目录，而非 PR 创建时刻的 base.sha；这样仅改标签等目录字段的提交也能
-  // 与将要被替换的那一行做逐字段对比。
-  let baseEntries: CatalogEntry[] = [];
-  try {
-    const baseFile = await getFileContent(
-      token,
-      PUBLISH_CONFIG.targetPrRepoOwner,
-      PUBLISH_CONFIG.targetPrRepoName,
-      PUBLISH_CONFIG.catalogFilePath,
-      PUBLISH_CONFIG.defaultBranch,
-    );
-    baseEntries = parseCatalogCsv(decodeCatalogContent(baseFile.content));
-  } catch {
+  // 普通模式基准行取目标仓库默认分支上「最新」的 index_v2.csv：合入时 Action
+  // 应用的是当前目录，而非 PR 创建时刻的 base.sha；回查模式则由调用方传入
+  // PR 合入前的基线，避免把后续状态误当成提交前状态。
+  let baseEntries: CatalogEntry[];
+  if (options?.baseEntries) {
+    baseEntries = options.baseEntries;
+  } else if (options?.allowDefaultBase === false) {
     baseEntries = [];
+  } else {
+    baseEntries = [];
+    try {
+      const baseFile = await getFileContent(
+        token,
+        PUBLISH_CONFIG.targetPrRepoOwner,
+        PUBLISH_CONFIG.targetPrRepoName,
+        PUBLISH_CONFIG.catalogFilePath,
+        PUBLISH_CONFIG.defaultBranch,
+      );
+      baseEntries = parseCatalogCsv(decodeCatalogContent(baseFile.content));
+    } catch {
+      baseEntries = [];
+    }
   }
 
   const headOwner = openPull.head.repo?.owner?.login || "";
   const headRepo = openPull.head.repo?.name || "";
-  const headRef = openPull.head.ref;
+  // PR 合入后 head 分支可能被删除；优先用不可变的 head.sha 读取提交文件。
+  const headRef = openPull.head.sha?.trim() || openPull.head.ref;
+  const fallbackRef = openPull.merge_commit_sha?.trim();
+  const fallbackOwner = PUBLISH_CONFIG.targetPrRepoOwner;
+  const fallbackRepo = PUBLISH_CONFIG.targetPrRepoName;
+
+  const readSubmissionFile = async (path: string) => {
+    const candidates: Array<{ owner: string; repo: string; ref: string }> = [];
+    if (headOwner && headRepo && headRef) {
+      candidates.push({ owner: headOwner, repo: headRepo, ref: headRef });
+    }
+    // fork 被删除时，合入提交仍保存在目标仓库历史里，可以从中读取 tmp 文件。
+    if (fallbackRef) {
+      candidates.push({
+        owner: fallbackOwner,
+        repo: fallbackRepo,
+        ref: fallbackRef,
+      });
+    }
+
+    let lastError: unknown;
+    for (const candidate of candidates) {
+      try {
+        return await getFileContent(
+          token,
+          candidate.owner,
+          candidate.repo,
+          path,
+          candidate.ref,
+        );
+      } catch (error) {
+        lastError = error;
+        if (!isGithubStatus(error, 404, 409, 422)) throw error;
+      }
+    }
+    throw lastError ?? new Error("无法读取 PR 提交文件，且没有可用的合入提交兜底。");
+  };
 
   return runWithConcurrency(
     submissionPaths,
     4,
     async (submissionPath) => {
-      const csvFile = await getFileContent(
-        token,
-        headOwner,
-        headRepo,
+      const csvFile = await readSubmissionFile(
         submissionCsvPath(submissionPath),
-        headRef,
       );
-      const requestFile = await getFileContent(
-        token,
-        headOwner,
-        headRepo,
+      const requestFile = await readSubmissionFile(
         submissionRequestPath(submissionPath),
-        headRef,
       );
       const entry = parseSubmissionCsv(decodeCatalogContent(csvFile.content));
       const request = parseSubmissionRequestJson(
         decodeCatalogContent(requestFile.content),
       );
       const baseEntry = request.original_id
-        ? baseEntries.find((item) => item.id === request.original_id)
+        ? findCatalogEntryById(baseEntries, request.original_id)
         : undefined;
       const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
 

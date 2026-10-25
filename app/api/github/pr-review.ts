@@ -8,6 +8,8 @@ export interface GithubPullRequest {
   html_url: string;
   state?: "open" | "closed";
   merged_at?: string;
+  /** 合入后在默认分支上产生的提交；回退时以它的父提交作为目录行基线。 */
+  merge_commit_sha?: string | null;
   user?: {
     login: string;
     avatar_url?: string;
@@ -91,9 +93,9 @@ function getGithubAuth() {
   return account;
 }
 
-function headers() {
+function headers(tokenOverride?: string) {
   return {
-    Authorization: `Bearer ${getGithubAuth().token}`,
+    Authorization: `Bearer ${tokenOverride ?? getGithubAuth().token}`,
     "Content-Type": "application/json",
   };
 }
@@ -427,6 +429,64 @@ export async function compareCommits(
   return githubFetch<{ files: GithubPullFile[] }>(
     `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
     { headers: headers() },
+  );
+}
+
+export interface GithubCommitInfo {
+  sha: string;
+  html_url?: string;
+  commit: {
+    message?: string;
+    author?: {
+      name?: string;
+      email?: string;
+      date?: string;
+    };
+  };
+  parents: Array<{ sha: string }>;
+  /** 单提交详情接口会返回文件 patch；搜索接口通常不返回。 */
+  files?: GithubPullFile[];
+}
+
+export interface GithubCommitSearchResult {
+  total_count: number;
+  incomplete_results?: boolean;
+  items: GithubCommitInfo[];
+}
+
+/** 读取单个提交（含父提交与文件 patch），用于定位 PR 合入前的目录状态。 */
+export async function getRepoCommit(
+  owner: string,
+  repo: string,
+  ref: string,
+  token?: string,
+) {
+  return githubFetch<GithubCommitInfo>(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
+    { headers: headers(token) },
+  );
+}
+
+/**
+ * 定向搜索提交信息。资源 ID 反查只依赖这里返回的少量候选，不遍历目录历史。
+ * `term` 请传入已经加引号的搜索词，避免仓库名被 GitHub 搜索语法拆开。
+ */
+export async function searchRepoCommits(
+  owner: string,
+  repo: string,
+  term: string,
+  perPage = 8,
+  token?: string,
+) {
+  const params = new URLSearchParams({
+    q: `repo:${owner}/${repo} ${term}`,
+    sort: "committer-date",
+    order: "desc",
+    per_page: String(perPage),
+  });
+  return githubFetch<GithubCommitSearchResult>(
+    `https://api.github.com/search/commits?${params.toString()}`,
+    { headers: headers(token) },
   );
 }
 
