@@ -33,7 +33,6 @@ export interface GithubPullRequest {
   changed_files?: number;
   additions?: number;
   deletions?: number;
-  created_at?: string;
   updated_at?: string;
 }
 

@@ -42,7 +42,6 @@ import {
   deriveNeedFixAuthors,
   filterReviewTagComments,
   resolveLatestTagAction,
-  sortReviewPullRequests,
 } from "~/logic/publish/review-status";
 import {
   getCurrentGithubPermission,
@@ -556,7 +555,7 @@ export default function ResourceReviewPage() {
   ]);
 
   const visiblePulls = useMemo(() => {
-    const list = sortReviewPullRequests(pulls, commentsByPr);
+    let list = pulls;
     if (stateFilter === "all") return list;
     return list.filter((pull) => {
       const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
