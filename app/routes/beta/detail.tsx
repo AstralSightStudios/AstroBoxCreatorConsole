@@ -32,6 +32,7 @@ import {
 } from "~/components/ScaleAwareThemes";
 import Page from "~/layout/page";
 import { pickFiles } from "~/logic/publish/file-picker";
+import { filterDeviceOptionsByResourceType } from "~/logic/publish/resource-type";
 import { SectionCard } from "~/routes/resource/publish/components/shared";
 import BuildComposerDialog from "./components/BuildComposerDialog";
 import FeedbackPanel from "./components/FeedbackPanel";
@@ -126,6 +127,11 @@ export default function BetaProgramDetailPage() {
     const { program, builds } = data;
     const closed = program.status === "closed";
     const canPublish = Boolean(data.tier) && !closed;
+    // 资源包与模块只支持小米设备，测试包分发同样不能选 vivo。
+    const supportedDeviceOptions = filterDeviceOptionsByResourceType(
+        deviceOptions,
+        program.restype,
+    );
 
     return (
         <Page>
@@ -199,7 +205,7 @@ export default function BetaProgramDetailPage() {
                 onOpenChange={setComposerOpen}
                 programId={program.id}
                 restype={program.restype}
-                deviceOptions={deviceOptions}
+                deviceOptions={supportedDeviceOptions}
                 previous={builds.find((build) => build.status === "active") ?? null}
                 topVersionCode={data.topVersionCode ?? Math.max(0, ...builds.map((build) => build.versionCode))}
                 maxPackageBytes={DEFAULT_PACKAGE_LIMIT}

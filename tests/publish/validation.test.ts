@@ -250,6 +250,63 @@ describe("publish validation", () => {
     ).toContain("仅支持");
   });
 
+  test("资源包与模块类型只接受小米设备", () => {
+    const vivoRow = {
+      platformId: "vivowgt2",
+      version: "1.0.0",
+      file: image,
+      vendor: "vivo",
+    };
+    const xiaomiRow = {
+      platformId: "xmb10",
+      version: "1.0.0",
+      file: image,
+      vendor: "xiaomi",
+    };
+
+    for (const resourceType of ["res_pack", "canopus"] as const) {
+      const vivoResult = validatePublish({
+        ...validInput,
+        resourceType,
+        itemId: resourceType === "res_pack" ? "my-theme" : "bluetooth",
+        downloads: [vivoRow],
+      });
+      expect(vivoResult.errors.join()).toContain("仅支持小米设备");
+      expect(vivoResult.errors.join()).toContain("vivowgt2");
+
+      expect(
+        validatePublish({
+          ...validInput,
+          resourceType,
+          itemId: resourceType === "res_pack" ? "my-theme" : "bluetooth",
+          downloads: [xiaomiRow],
+        }).errors,
+      ).toEqual([]);
+    }
+
+    // 快应用与表盘仍然允许 vivo。
+    expect(
+      validatePublish({
+        ...validInput,
+        resourceType: "quick_app",
+        downloads: [vivoRow],
+      }).errors,
+    ).toEqual([]);
+  });
+
+  test("试用下载里的非小米设备同样被拦截", () => {
+    const result = validatePublish({
+      ...validInput,
+      resourceType: "res_pack",
+      itemId: "my-theme",
+      trialDownloads: [
+        { platformId: "vivowgt2", version: "1.0.0", file: image, vendor: "vivo" },
+      ],
+    });
+    expect(result.issues.map((issue) => issue.field)).toContain("trialDownloads");
+    expect(result.errors.join()).toContain("试用下载");
+  });
+
   test("未指定资源类型时不对 ID 做格式校验", () => {
     expect(validatePublish(validInput).errors).toEqual([]);
   });

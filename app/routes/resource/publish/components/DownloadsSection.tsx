@@ -3,6 +3,7 @@ import {
   PlusIcon,
   MinusIcon,
   WarningDiamondIcon,
+  InfoIcon,
   ListChecksIcon,
   CopyIcon,
   ChecksIcon,
@@ -117,6 +118,8 @@ interface DownloadsSectionProps {
   allowEncryption?: boolean;
   /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
   fileAccept?: string;
+  /** 当前资源类型对设备厂商的限制说明。 */
+  deviceNotice?: string;
   validateFile?: (file: File) => Promise<ValidatedPackage>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
@@ -157,6 +160,7 @@ export function DownloadsSection({
   resourceId,
   allowEncryption = true,
   fileAccept,
+  deviceNotice,
   validateFile,
   onAddRow,
   onRemoveRow,
@@ -421,6 +425,14 @@ export function DownloadsSection({
             <WarningDiamondIcon size={18} weight="fill" />
           </Callout.Icon>
           <Callout.Text>设备列表不可用，请稍后重试</Callout.Text>
+        </Callout.Root>
+      )}
+      {deviceNotice && (
+        <Callout.Root color="gray">
+          <Callout.Icon>
+            <InfoIcon size={18} weight="fill" />
+          </Callout.Icon>
+          <Callout.Text>{deviceNotice}</Callout.Text>
         </Callout.Root>
       )}
       <div className="flex flex-col gap-3 max-w-full">

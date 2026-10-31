@@ -50,7 +50,13 @@ export type DownloadInput = {
     canopus?: ManifestCanopusMeta;
 };
 
-export type DeviceOption = { id: string; name: string; vendor?: string };
+export type DeviceOption = {
+    id: string;
+    name: string;
+    vendor?: string;
+    /** 设备库里的机型号，manifest 的 downloads key 可能直接用它。 */
+    aliases?: string[];
+};
 
 /**
  * 包体导入结果。`file` 是真正要落库的那份：包内 ID 与资源 ID 不一致时，

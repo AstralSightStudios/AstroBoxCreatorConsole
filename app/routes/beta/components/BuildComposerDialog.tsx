@@ -100,6 +100,13 @@ export default function BuildComposerDialog({
     const [submitting, setSubmitting] = useState(false);
     const busyRef = useRef(false);
 
+    // 父组件已按资源类型过滤；这里再兜底一遍，避免旧版本的设备分配
+    // 把 vivo 等不支持的设备带进新包。
+    const allowedDeviceIds = useMemo(
+        () => new Set(deviceOptions.map((device) => device.id)),
+        [deviceOptions],
+    );
+
     const reset = () => {
         setVersion("");
         setVersionEdited(false);
@@ -107,7 +114,17 @@ export default function BuildComposerDialog({
         setChangelog("");
         setNotify(true);
         // 沿用上个版本的设备分配，一般只是换个包
-        setRows(previous && previous.files.length > 0 ? previous.files.map((file) => newRow(file.devices)) : [newRow()]);
+        const previousRows =
+            previous && previous.files.length > 0
+                ? previous.files.map((file) =>
+                      newRow(
+                          deviceOptions.length === 0
+                              ? file.devices
+                              : file.devices.filter((id) => allowedDeviceIds.has(id)),
+                      ),
+                  )
+                : [newRow()];
+        setRows(previousRows);
     };
 
     // 每次打开都从干净的表单开始
@@ -166,9 +183,13 @@ export default function BuildComposerDialog({
         rows.forEach((row, index) => {
             if (!row.file) list.push(`包体 ${index + 1} 还没选择文件`);
             if (row.devices.length === 0) list.push(`包体 ${index + 1} 还没选择设备`);
+            const unsupported = row.devices.filter((id) => !allowedDeviceIds.has(id));
+            if (unsupported.length > 0) {
+                list.push(`包体 ${index + 1} 含不支持的设备：${unsupported.join("、")}`);
+            }
         });
         return list;
-    }, [packageCodes.length, reading, rows, topVersionCode, version, versionCode]);
+    }, [allowedDeviceIds, packageCodes.length, reading, rows, topVersionCode, version, versionCode]);
 
     const submit = async () => {
         if (busyRef.current || problems.length > 0 || versionCode === undefined) return;

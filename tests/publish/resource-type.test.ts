@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  filterDeviceOptionsByResourceType,
   formatResourceType,
   getRepoTopicsForResourceType,
+  isDeviceVendorSupportedByResourceType,
   isResourceType,
+  isXiaomiOnlyResourceType,
   normalizeResourceType,
 } from "../../app/logic/publish/resource-type";
 
@@ -27,5 +30,36 @@ describe("resource type labels", () => {
       "astrobox-resource",
       "res-pack",
     ]);
+  });
+
+  test("resource pack and canopus only accept Xiaomi devices", () => {
+    expect(isXiaomiOnlyResourceType("res_pack")).toBe(true);
+    expect(isXiaomiOnlyResourceType("canopus")).toBe(true);
+    expect(isXiaomiOnlyResourceType("quick_app")).toBe(false);
+    expect(isXiaomiOnlyResourceType("watchface")).toBe(false);
+
+    expect(isDeviceVendorSupportedByResourceType("res_pack", "xiaomi")).toBe(true);
+    expect(isDeviceVendorSupportedByResourceType("res_pack", "Xiaomi")).toBe(true);
+    expect(isDeviceVendorSupportedByResourceType("canopus", "vivo")).toBe(false);
+    expect(isDeviceVendorSupportedByResourceType("quick_app", "vivo")).toBe(true);
+
+    const devices = [
+      { id: "xmb10", vendor: "xiaomi" },
+      { id: "vivowgt2", vendor: "vivo" },
+      { id: "unknown" },
+    ];
+    expect(
+      filterDeviceOptionsByResourceType(devices, "res_pack").map(
+        (device) => device.id,
+      ),
+    ).toEqual(["xmb10"]);
+    expect(
+      filterDeviceOptionsByResourceType(devices, "canopus").map(
+        (device) => device.id,
+      ),
+    ).toEqual(["xmb10"]);
+    expect(filterDeviceOptionsByResourceType(devices, "quick_app")).toHaveLength(
+      3,
+    );
   });
 });

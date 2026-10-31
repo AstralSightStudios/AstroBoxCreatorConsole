@@ -34,6 +34,11 @@ import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import { canopusEntryProblems } from "~/logic/publish/canopus-package";
 import {
+  formatResourceType,
+  isDeviceVendorSupportedByResourceType,
+  isXiaomiOnlyResourceType,
+} from "~/logic/publish/resource-type";
+import {
   BANNED_IMAGE_NOTICE,
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
@@ -1455,6 +1460,39 @@ export async function runResourceRuleChecks(options: {
           ? "设备标识均可识别（支持机型号 / 规范化 id）"
           : `未知设备标识：${unknownTokens.join(", ")}`,
   });
+
+  // --- check: 小米专属资源类型的设备厂商 ---
+  // 资源包（CRPack）与模块（Canopus）只有小米设备消费，vivo 设备行必须拦下。
+  if (isXiaomiOnlyResourceType(restype)) {
+    const unsupported: string[] = [];
+    for (const token of allDeviceTokens) {
+      const vendor = vendorByCanonicalId.get(resolver(token) ?? token);
+      if (
+        vendor &&
+        !isDeviceVendorSupportedByResourceType(restype, vendor)
+      ) {
+        unsupported.push(`${token}（${vendor}）`);
+      }
+    }
+    const csvVendors = entry.device_vendors
+      .split(";")
+      .map((vendor) => vendor.trim())
+      .filter(Boolean);
+    for (const vendor of new Set(csvVendors)) {
+      if (!isDeviceVendorSupportedByResourceType(restype, vendor)) {
+        unsupported.push(`CSV device_vendors（${vendor}）`);
+      }
+    }
+    const unique = Array.from(new Set(unsupported));
+    checks.push({
+      title: "资源类型仅支持小米设备",
+      status: unique.length === 0 ? "pass" : "fail",
+      detail:
+        unique.length === 0
+          ? `${formatResourceType(restype)}仅支持小米设备，未检测到其他厂商设备`
+          : `${formatResourceType(restype)}仅支持小米设备，检测到不支持的设备：${unique.join("、")}`,
+    });
+  }
 
   // --- check: manifest downloads 文件存在性 ---
   const referencedFiles = getManifestReferencedFiles(manifest);

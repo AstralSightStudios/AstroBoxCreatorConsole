@@ -10,7 +10,12 @@ import {
   isBannedImageName,
 } from "./pre-publish-checks";
 import type { ImageMeta } from "./image-meta";
-import type { ResourceType } from "./resource-type";
+import {
+  formatResourceType,
+  isDeviceVendorSupportedByResourceType,
+  isXiaomiOnlyResourceType,
+  type ResourceType,
+} from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
 import { validateResPackIdFormat } from "./res-pack-id";
 import { validateWatchfaceIdFormat } from "./watchface-id";
@@ -31,6 +36,8 @@ export interface ValidationDownloadInput {
   file: ValidationUploadItem | null;
   existingFileName?: string;
   encryptOnUpload?: boolean;
+  /** 设备厂商（来自 devices_v2.json），用于校验资源类型是否支持该设备。 */
+  vendor?: string;
 }
 
 export interface ValidationLinkInput {
@@ -153,6 +160,36 @@ function validateDownloadRows(
       ? [{ field, message: `${label}第 ${index + 1} 行缺少${missing.join("、")}。` }]
       : [];
   });
+}
+
+/**
+ * 资源包（CRPack）与模块（Canopus）只支持小米设备。
+ *
+ * 设备厂商可能因为设备库尚未加载而为空，此时不在这里拦截；界面侧已经
+ * 把非小米设备从下拉里过滤掉，这里只兜底草稿、编辑回填与旧数据。
+ */
+function validateDownloadDeviceVendors(
+  rows: ValidationDownloadInput[],
+  resourceType: ResourceType | undefined,
+  label: string,
+  field: PublishFieldKey,
+): PublishValidationIssue[] {
+  if (!isXiaomiOnlyResourceType(resourceType)) return [];
+  const unsupported = rows.filter(
+    (row) =>
+      row.platformId.trim() &&
+      row.vendor !== undefined &&
+      !isDeviceVendorSupportedByResourceType(resourceType, row.vendor),
+  );
+  if (unsupported.length === 0) return [];
+  return [
+    {
+      field,
+      message: `${formatResourceType(resourceType)}类型仅支持小米设备，${label}中以下设备的包体不受支持：${unsupported
+        .map((row) => `${row.vendor || "未知厂商"}（${row.platformId.trim()}）`)
+        .join("、")}。请删除这些下载行或改用小米设备。`,
+    },
+  ];
 }
 
 /** 列出启用了加密上传的正式下载设备标识。试用包体不支持加密上传，不参与判断。 */
@@ -371,6 +408,22 @@ export function validatePublish(
   if (input.downloads.length === 0) push("downloads", "请至少添加一个正式下载设备。");
   issues.push(...validateDownloadRows(input.downloads, "正式下载", "downloads"));
   issues.push(...validateDownloadRows(input.trialDownloads, "试用下载", "trialDownloads"));
+  issues.push(
+    ...validateDownloadDeviceVendors(
+      input.downloads,
+      input.resourceType,
+      "正式下载",
+      "downloads",
+    ),
+  );
+  issues.push(
+    ...validateDownloadDeviceVendors(
+      input.trialDownloads,
+      input.resourceType,
+      "试用下载",
+      "trialDownloads",
+    ),
+  );
   // 加密上传的包体必须同时开启 ext.enableAstroBoxCreatorFeatures：
   // 客户端依据该开关决定是否请求 purchase_info 与加密文件密钥，
   // 开关关闭时密文不会被解密，类型嗅探失败后安装直接报错。

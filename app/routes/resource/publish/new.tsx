@@ -121,6 +121,10 @@ import {
 } from "~/logic/publish/crpack-validate";
 import { BasicInfoSection } from "./components/BasicInfoSection";
 import {
+  filterDeviceOptionsByResourceType,
+  formatResourceType,
+  isDeviceVendorSupportedByResourceType,
+  isXiaomiOnlyResourceType,
   normalizeResourceType,
   type ResourceType,
 } from "~/logic/publish/resource-type";
@@ -745,13 +749,33 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
+  /** 资源包与模块只允许小米设备，其他类型保持完整设备列表。 */
+  const supportedDeviceOptions = useMemo(
+    () => filterDeviceOptionsByResourceType(deviceOptions, resourceType),
+    [deviceOptions, resourceType],
+  );
   const sortedDeviceOptions = useMemo(
     () =>
-      [...deviceOptions].sort((a, b) =>
+      [...supportedDeviceOptions].sort((a, b) =>
         a.name.localeCompare(b.name, "zh-Hans", { sensitivity: "base" }),
       ),
-    [deviceOptions],
+    [supportedDeviceOptions],
   );
+  // manifest 的 downloads key 可能是规范化 id，也可能是机型号，两者都要能查厂商。
+  // 统一转小写，避免旧数据里 M2345B1 / m2345b1 这类大小写差异导致漏检。
+  const deviceVendorById = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    for (const option of deviceOptions) {
+      map.set(option.id.trim().toLowerCase(), option.vendor);
+      for (const alias of option.aliases ?? []) {
+        map.set(alias.trim().toLowerCase(), option.vendor);
+      }
+    }
+    return map;
+  }, [deviceOptions]);
+  const deviceVendorNotice = isXiaomiOnlyResourceType(resourceType)
+    ? `${formatResourceType(resourceType)}只支持小米设备，其他厂商设备不会出现在下拉列表中。`
+    : undefined;
 
   const [downloads, setDownloads] =
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
@@ -947,7 +971,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, []);
 
   useEffect(() => {
-    if (deviceOptions.length === 0) return;
+    if (sortedDeviceOptions.length === 0) return;
     setDownloads((prev) => {
       if (prev.length === 0) {
         return [];
@@ -959,7 +983,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           used.add(item.platformId);
           return item;
         }
-        const fallback = deviceOptions.find((opt) => !used.has(opt.id));
+        const fallback = sortedDeviceOptions.find((opt) => !used.has(opt.id));
         if (fallback) {
           changed = true;
           used.add(fallback.id);
@@ -969,7 +993,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       });
       return changed ? next : prev;
     });
-  }, [deviceOptions]);
+  }, [sortedDeviceOptions]);
 
   useEffect(() => {
     let active = true;
@@ -1021,9 +1045,50 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         next === "res_pack" ? normalizeResPackIdInput(itemName) : "";
       setItemId(cached !== undefined ? cached : suggested);
       setResourceType(next);
+      // 切到小米专属类型时清掉已选的非小米设备行。厂商未知（设备库尚未
+      // 加载完）的行先保留，提交前还有一层校验兜底。
+      if (isXiaomiOnlyResourceType(next)) {
+        const prune = (rows: DownloadInput[]) =>
+          rows.filter((row) => {
+            if (!row.platformId) return true;
+            const vendor = deviceVendorById.get(
+              row.platformId.trim().toLowerCase(),
+            );
+            return (
+              vendor === undefined ||
+              isDeviceVendorSupportedByResourceType(next, vendor)
+            );
+          });
+        const nextDownloads = prune(downloads);
+        const nextTrialDownloads = prune(trialDownloads);
+        if (nextDownloads.length !== downloads.length) {
+          setDownloads(nextDownloads);
+        }
+        if (nextTrialDownloads.length !== trialDownloads.length) {
+          setTrialDownloads(nextTrialDownloads);
+        }
+        const removed =
+          downloads.length -
+          nextDownloads.length +
+          (trialDownloads.length - nextTrialDownloads.length);
+        if (removed > 0) {
+          toast.warning(
+            `${formatResourceType(next)}仅支持小米设备，已移除 ${removed} 个非小米设备的下载配置。`,
+          );
+        }
+      }
       invalidateUploadedAssets("资源类型已变更");
     },
-    [resourceType, isEditing, canEditIdentity, itemName, invalidateUploadedAssets],
+    [
+      resourceType,
+      isEditing,
+      canEditIdentity,
+      itemName,
+      deviceVendorById,
+      downloads,
+      trialDownloads,
+      invalidateUploadedAssets,
+    ],
   );
 
   const handleItemIdChange = useCallback(
@@ -1378,8 +1443,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         cover,
         usePreviewAsCover: false,
         coverPreviewId: null,
-        downloads,
-        trialDownloads,
+        downloads: downloads.map((row) => ({
+          ...row,
+          vendor: deviceVendorById.get(row.platformId.trim().toLowerCase()),
+        })),
+        trialDownloads: trialDownloads.map((row) => ({
+          ...row,
+          vendor: deviceVendorById.get(row.platformId.trim().toLowerCase()),
+        })),
         links,
         enableAstroBoxCreatorFeatures,
         hasPaidPlatformMapping,
@@ -1395,6 +1466,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       cover,
       downloads,
       trialDownloads,
+      deviceVendorById,
       links,
       enableAstroBoxCreatorFeatures,
       hasPaidPlatformMapping,
@@ -2205,12 +2277,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error(pushIssues.map((issue) => issue.message).join("；"));
       }
 
-      const deviceMap = new Map(deviceOptions.map((d) => [d.id, d]));
       const selectedDevices = downloads
         .filter((d) => d.platformId.trim())
         .map((d) => ({
           id: d.platformId.trim(),
-          vendor: deviceMap.get(d.platformId)?.vendor,
+          vendor: deviceVendorById.get(d.platformId.trim().toLowerCase()),
         }));
 
       const manifestForCatalog = lastManifest ?? manifestResult;
@@ -3248,6 +3319,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
+                deviceNotice={deviceVendorNotice}
                 fileAccept={
                   resourceType === "res_pack"
                     ? "crpack,zip,rpk,mwz,bin,face"
@@ -3278,6 +3350,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
+                deviceNotice={deviceVendorNotice}
                 allowEncryption={false}
                 validateFile={validateSelectedPackage}
                 onAddRow={addTrialDownloadRow}
