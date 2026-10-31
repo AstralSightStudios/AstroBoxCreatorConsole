@@ -81,14 +81,17 @@ import {
   VersionIncrementWarningDialog,
 } from "./components/ComposerDialogs";
 import {
+  compressIconImage,
   compressImageFile,
   createExistingUploadItem,
   createImageUploadItem,
   createUploadItem,
   getImageDimensions,
+  normalizeImageFile,
   partitionAllowedImages,
   revokeUrl,
 } from "./components/uploadUtils";
+import { inspectImageFile, type ImageMeta } from "~/logic/publish/image-meta";
 import {
   type AuthorInput,
   type BundledResourceInput,
@@ -163,10 +166,12 @@ import {
   BANNED_IMAGE_NOTICE,
   COVER_COMPRESS_TARGET_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
+  ICON_MAX_DIMENSION,
   PREVIEW_COMPRESS_TARGET_BYTES,
+  checkAnimatedPreview,
   checkCoverFileSize,
   checkCoverRatio,
-  checkIconDimensions,
+  checkIconShape,
   checkImageFormat,
 } from "~/logic/publish/pre-publish-checks";
 import {
@@ -364,17 +369,57 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               ),
             );
           }, 160);
-          const processed = await compressImageFile(file, PREVIEW_COMPRESS_TARGET_BYTES);
+          const meta = await inspectImageFile(file);
+          let processed: File;
+          let finalMeta: ImageMeta;
+          if (meta.animated) {
+            const issue = checkAnimatedPreview(meta, file.size);
+            if (issue?.level === "fail") {
+              if (progressTimer != null) window.clearInterval(progressTimer);
+              setPreviewProcessingId((prev) => (prev === itemId ? null : prev));
+              const rejectedItem = initialItems[index];
+              if (rejectedItem) revokeUrl(rejectedItem);
+              setPreviews((prev) => prev.filter((old) => old.id !== itemId));
+              log.warn("media/preview", `动图超过限制，已跳过: ${file.name}`, {
+                data: { name: file.name, size: file.size, issue },
+              });
+              toast.error(`动图 ${file.name}：${issue.message}`);
+              continue;
+            }
+            processed = await normalizeImageFile(file, meta);
+            finalMeta = meta;
+            if (issue?.level === "warn") {
+              toast.warning(`动图 ${file.name}：${issue.message}`);
+            }
+            log.info("media/preview", "动图预览已保留，不做 canvas 压缩", {
+              data: {
+                name: file.name,
+                size: file.size,
+                format: meta.format,
+                frames: meta.frames,
+                durationMs: meta.durationMs,
+                peakFps: meta.peakFps,
+              },
+            });
+          } else {
+            processed = await compressImageFile(file, PREVIEW_COMPRESS_TARGET_BYTES);
+            finalMeta = await inspectImageFile(processed);
+          }
           log.debug("media/preview", "读取预览图尺寸", {
             data: { name: file.name, compressedSize: processed.size },
           });
           const item = await createImageUploadItem(processed);
+          item.imageMeta = finalMeta;
           log.info("media/preview", "预览图就绪", {
             data: {
               name: item.name,
               width: item.width,
               height: item.height,
               size: processed.size,
+              format: finalMeta.format,
+              animated: finalMeta.animated,
+              frames: finalMeta.frames,
+              peakFps: finalMeta.peakFps,
             },
           });
           if (progressTimer != null) window.clearInterval(progressTimer);
@@ -424,8 +469,27 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("media/icon", "导入图标", {
       data: { name: file.name, size: file.size, type: file.type },
     });
-    const originalDims = await getImageDimensions(file);
-    const iconError = checkIconDimensions(originalDims);
+    const iconMeta = await inspectImageFile(file);
+    if (iconMeta.animated) {
+      log.warn("media/icon", "图标不支持动图，已拒绝", {
+        data: { name: file.name, format: iconMeta.format },
+      });
+      toast.error("图标不支持动图，请使用静态 PNG / JPEG / WebP。");
+      return;
+    }
+    let originalDims: { width: number; height: number };
+    try {
+      originalDims = await getImageDimensions(file);
+    } catch {
+      log.warn("media/icon", "图标尺寸读取失败，已拒绝", {
+        data: { name: file.name },
+      });
+      toast.error("图标无法读取，请重新上传。");
+      return;
+    }
+    // 只拦软件修不好的情况：读不出尺寸或不是 1:1。
+    // 超过 512px 交给 compressIconImage 等比缩放，不再让创作者自己改图。
+    const iconError = checkIconShape(originalDims);
     if (iconError) {
       log.warn("media/icon", "图标规格不符，已拒绝", {
         data: {
@@ -438,33 +502,68 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       toast.error(iconError);
       return;
     }
+    const oversized =
+      Math.max(originalDims.width, originalDims.height) > ICON_MAX_DIMENSION;
     setIconUploading(true);
     try {
       let processed = file;
       try {
-        processed = await compressImageFile(file, ICON_COMPRESS_TARGET_BYTES);
-        log.debug("media/icon", "图标压缩完成", {
+        processed = await compressIconImage(
+          file,
+          ICON_COMPRESS_TARGET_BYTES,
+          ICON_MAX_DIMENSION,
+        );
+        log.debug("media/icon", "图标处理完成", {
           data: {
             name: file.name,
+            originalWidth: originalDims.width,
+            originalHeight: originalDims.height,
             originalSize: file.size,
             compressedSize: processed.size,
           },
         });
+        if (oversized) {
+          log.info("media/icon", "图标超过尺寸上限，已自动缩放", {
+            data: {
+              name: file.name,
+              originalWidth: originalDims.width,
+              originalHeight: originalDims.height,
+              maxDimension: ICON_MAX_DIMENSION,
+            },
+          });
+        }
       } catch (err) {
+        // 超限图缩不下来时不能回退原图：提交阶段仍会判定超限。
+        if (oversized) {
+          toast.error("图标处理失败，请更换图片后重试。");
+          log.warn("media/icon", "图标缩放失败，已放弃导入", {
+            data: { name: file.name, error: err },
+          });
+          return;
+        }
         toast.error("图标处理失败，将使用原图");
         log.warn("media/icon", "图标压缩失败，使用原图", {
           data: { name: file.name, error: err },
         });
+        // 即使压缩失败，也不能让 PNG 继续顶着 .webp 后缀进入 manifest。
+        processed = await normalizeImageFile(file).catch(() => file);
       }
       const next = await createImageUploadItem(processed).catch(() =>
         createUploadItem(processed),
       );
+      next.imageMeta = await inspectImageFile(processed);
+      if (next.imageMeta.animated) {
+        toast.error("图标不支持动图，请使用静态图片。");
+        revokeUrl(next);
+        return;
+      }
       log.info("media/icon", "图标导入完成", {
         data: {
           name: next.name,
           width: next.width,
           height: next.height,
           size: next.file.size,
+          format: next.imageMeta.format,
         },
       });
       setIcon((prev) => {
@@ -493,6 +592,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("media/cover", "导入封面", {
       data: { name: file.name, size: file.size, type: file.type },
     });
+    const coverMeta = await inspectImageFile(file);
+    if (coverMeta.animated) {
+      log.warn("media/cover", "封面不支持动图，已拒绝", {
+        data: { name: file.name, format: coverMeta.format },
+      });
+      toast.error("封面不支持动图，请使用静态图片。");
+      return;
+    }
     const originalDims = await getImageDimensions(file);
     const coverRatioError = checkCoverRatio(originalDims);
     if (coverRatioError) {
@@ -522,10 +629,18 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       log.warn("media/cover", "封面压缩失败，使用原图", {
         data: { name: file.name, error: err },
       });
+      // 保持后缀与实际内容一致，避免压缩失败时把错名文件带进仓库。
+      processed = await normalizeImageFile(file).catch(() => file);
     }
     const next = await createImageUploadItem(processed).catch(() =>
       createUploadItem(processed),
     );
+    next.imageMeta = await inspectImageFile(processed);
+    if (next.imageMeta.animated) {
+      toast.error("封面不支持动图，请使用静态图片。");
+      revokeUrl(next);
+      return;
+    }
     const coverSizeError = checkCoverFileSize(next.file.size);
     if (coverSizeError) {
       log.warn("media/cover", "封面体积过大，已拒绝", {

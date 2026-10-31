@@ -1,11 +1,15 @@
 import {
   BANNED_IMAGE_NOTICE,
+  checkAnimatedPreview,
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
   checkPreviewCount,
+  checkPreviewTotalSize,
+  checkStaticPreviewSize,
   isBannedImageName,
 } from "./pre-publish-checks";
+import type { ImageMeta } from "./image-meta";
 import type { ResourceType } from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
 import { validateResPackIdFormat } from "./res-pack-id";
@@ -17,6 +21,8 @@ export interface ValidationUploadItem {
   width?: number;
   height?: number;
   skipUpload?: boolean;
+  /** 上传阶段识别的内容信息；动图按动图阈值校验。 */
+  imageMeta?: ImageMeta;
 }
 
 export interface ValidationDownloadInput {
@@ -265,6 +271,41 @@ function validateBannedImageFormats(
   ];
 }
 
+/**
+ * 预览图逐张体积校验。
+ *
+ * 静态图走压缩目标（500KB/1MB）；动图不经过 canvas，按 2MB 建议值 / 4MB
+ * 硬上限判定。没有 imageMeta 的存量/远端素材跳过逐张判定，由审核页兜底。
+ */
+function validatePreviewMedia(
+  previews: ValidationUploadItem[],
+): PublishValidationIssue[] {
+  const issues: PublishValidationIssue[] = [];
+  let totalBytes = 0;
+
+  previews.forEach((item, index) => {
+    const size = item.file?.size ?? 0;
+    if (size > 0) totalBytes += size;
+    if (!item.imageMeta) return;
+
+    const issue = item.imageMeta.animated
+      ? checkAnimatedPreview(item.imageMeta, size)
+      : checkStaticPreviewSize(size);
+    if (issue) {
+      issues.push({
+        field: "previews",
+        message: `预览图 ${index + 1}：${issue.message}`,
+      });
+    }
+  });
+
+  const totalIssue = checkPreviewTotalSize(totalBytes);
+  if (totalIssue) {
+    issues.push({ field: "previews", message: totalIssue.message });
+  }
+  return issues;
+}
+
 export function validatePublish(
   input: PublishValidationInput,
 ): PublishValidationResult {
@@ -302,6 +343,7 @@ export function validatePublish(
   issues.push(...validateBannedImageFormats(input));
   const previewCountError = checkPreviewCount(input.previews.length);
   if (previewCountError) push("previews", previewCountError);
+  issues.push(...validatePreviewMedia(input.previews));
   const hasCover = input.usePreviewAsCover
     ? input.coverPreviewId
       ? input.previews.some((preview) => preview.id === input.coverPreviewId)
@@ -315,6 +357,9 @@ export function validatePublish(
         input.previews[0])
       : input.cover;
     if (coverItem) {
+      if (coverItem.imageMeta?.animated) {
+        push("cover", "封面不支持动图，请另选静态预览或上传静态封面。");
+      }
       const ratioError = checkCoverRatio(coverItem);
       if (ratioError) push("cover", ratioError);
       if (coverItem.file) {

@@ -4,10 +4,12 @@
  * 图标/封面规格同时被上传时与 validatePublish 使用，故规则只定义一次。
  * 下载行判定一律返回「有问题的行」而非文案，调用方据此滚动定位并高亮。
  *
- * compressImageFile 使用 alwaysKeepResolution，压缩不改变像素尺寸，
- * 因此这里判定过一次之后压缩产物与原图结论一致，无需区分阶段。
+ * 图标在上传阶段就会按 ICON_MAX_DIMENSION 自动缩放，进入表单的图标一定是
+ * 合规尺寸；这里保留上限判定是为了兜住草稿恢复等绕过上传路径的素材。
+ * 封面压缩使用 alwaysKeepResolution，不改变像素尺寸，压缩前后结论一致。
  */
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
+import type { ImageMeta } from "./image-meta";
 import type { ResourceType } from "./resource-type";
 
 /**
@@ -22,14 +24,144 @@ const COVER_RATIO_DEN = 2;
 export const COVER_RATIO = COVER_RATIO_NUM / COVER_RATIO_DEN; // 1.5，仅供文案展示
 export const COVER_MAX_BYTES = 600 * 1024;
 
-/** 图标必须为正方形，边长上限 500px。 */
-export const ICON_MAX_DIMENSION = 500;
+/**
+ * 图标必须为正方形，边长上限 512px。
+ *
+ * 超过 512px 的图标由上传流程自动等比缩放，不再拒绝并让创作者自己改图。
+ */
+export const ICON_MAX_DIMENSION = 512;
 /** 图标压缩目标字节数。 */
 export const ICON_COMPRESS_TARGET_BYTES = 100 * 1024;
 /** 封面压缩目标即体积上限，压缩后仍超标则拒绝。 */
 export const COVER_COMPRESS_TARGET_BYTES = COVER_MAX_BYTES;
-/** 预览图压缩目标字节数（无硬性上限，仅按此目标压缩）。 */
+/** 静态预览图压缩目标字节数（无硬性上限，仅按此目标压缩）。 */
 export const PREVIEW_COMPRESS_TARGET_BYTES = 500 * 1024;
+
+/**
+ * 动图预览不经过 canvas 压缩，必须单独设阈值。
+ *
+ * 144fps 是峰值硬上限（任一帧间隔 < 1000/144ms 即超限）；2MB 是建议优化线，
+ * 4MB 是硬上限——客户端内联图片上限也是 4MB，超过会回退 GitHub raw。
+ */
+export const PREVIEW_ANIMATED_WARN_BYTES = 2 * 1024 * 1024;
+export const PREVIEW_ANIMATED_MAX_BYTES = 4 * 1024 * 1024;
+export const PREVIEW_TOTAL_WARN_BYTES = 8 * 1024 * 1024;
+export const PREVIEW_TOTAL_MAX_BYTES = 12 * 1024 * 1024;
+export const PREVIEW_ANIMATED_WARN_FPS = 120;
+export const PREVIEW_ANIMATED_MAX_FPS = 144;
+export const PREVIEW_ANIMATED_WARN_FRAMES = 300;
+export const PREVIEW_ANIMATED_MAX_FRAMES = 600;
+export const PREVIEW_ANIMATED_WARN_DURATION_MS = 5_000;
+export const PREVIEW_ANIMATED_MAX_DURATION_MS = 10_000;
+
+export interface PreviewIssue {
+    level: "warn" | "fail";
+    message: string;
+}
+
+function formatPreviewBytes(bytes: number): string {
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+/** 动图的体积/帧率/帧数/时长问题。返回全部命中项，调用方自行决定展示哪些。 */
+export function getAnimatedPreviewIssues(meta: ImageMeta, sizeBytes: number): PreviewIssue[] {
+    if (!meta.animated) return [];
+    const issues: PreviewIssue[] = [];
+
+    if (sizeBytes > PREVIEW_ANIMATED_MAX_BYTES) {
+        issues.push({
+            level: "fail",
+            message: `动图体积 ${formatPreviewBytes(sizeBytes)} 超过上限 ${formatPreviewBytes(PREVIEW_ANIMATED_MAX_BYTES)}`,
+        });
+    } else if (sizeBytes > PREVIEW_ANIMATED_WARN_BYTES) {
+        issues.push({
+            level: "warn",
+            message: `动图体积 ${formatPreviewBytes(sizeBytes)} 超过建议值 ${formatPreviewBytes(PREVIEW_ANIMATED_WARN_BYTES)}`,
+        });
+    }
+
+    // 文件被截断（例如超过 4MB 只读了头部）时帧数/时长不完整，不能据此判 fail。
+    // 体积仍然可靠，由上面的体积/审核详情负责。
+    if (!meta.partial) {
+        if (meta.peakFps != null && meta.peakFps > PREVIEW_ANIMATED_MAX_FPS + 0.001) {
+            issues.push({
+                level: "fail",
+                message: `峰值帧率 ${meta.peakFps.toFixed(1)}fps 超过上限 ${PREVIEW_ANIMATED_MAX_FPS}fps`,
+            });
+        } else if (meta.peakFps != null && meta.peakFps > PREVIEW_ANIMATED_WARN_FPS) {
+            issues.push({
+                level: "warn",
+                message: `峰值帧率 ${meta.peakFps.toFixed(1)}fps 偏高（建议 ≤${PREVIEW_ANIMATED_WARN_FPS}fps）`,
+            });
+        }
+
+        if (meta.frames != null && meta.frames > PREVIEW_ANIMATED_MAX_FRAMES) {
+            issues.push({
+                level: "fail",
+                message: `动图 ${meta.frames} 帧，超过上限 ${PREVIEW_ANIMATED_MAX_FRAMES} 帧`,
+            });
+        } else if (meta.frames != null && meta.frames > PREVIEW_ANIMATED_WARN_FRAMES) {
+            issues.push({
+                level: "warn",
+                message: `动图 ${meta.frames} 帧，超过建议值 ${PREVIEW_ANIMATED_WARN_FRAMES} 帧`,
+            });
+        }
+
+        if (meta.durationMs != null && meta.durationMs > PREVIEW_ANIMATED_MAX_DURATION_MS) {
+            issues.push({
+                level: "fail",
+                message: `动图时长 ${(meta.durationMs / 1000).toFixed(1)}s，超过上限 ${PREVIEW_ANIMATED_MAX_DURATION_MS / 1000}s`,
+            });
+        } else if (meta.durationMs != null && meta.durationMs > PREVIEW_ANIMATED_WARN_DURATION_MS) {
+            issues.push({
+                level: "warn",
+                message: `动图时长 ${(meta.durationMs / 1000).toFixed(1)}s，超过建议值 ${PREVIEW_ANIMATED_WARN_DURATION_MS / 1000}s`,
+            });
+        }
+    }
+
+    return issues;
+}
+
+/** 发布页只提示最严重的一条；审核页用 getAnimatedPreviewIssues 展示全部。 */
+export function checkAnimatedPreview(meta: ImageMeta, sizeBytes: number): PreviewIssue | null {
+    const issues = getAnimatedPreviewIssues(meta, sizeBytes);
+    return issues.find((issue) => issue.level === "fail") ?? issues[0] ?? null;
+}
+
+/** 静态预览体积。压缩目标 500KB，硬上限 1MB。 */
+export function checkStaticPreviewSize(sizeBytes: number): PreviewIssue | null {
+    if (sizeBytes > PREVIEW_COMPRESS_TARGET_BYTES * 2) {
+        return {
+            level: "fail",
+            message: `静态预览 ${formatPreviewBytes(sizeBytes)} 超过上限 ${formatPreviewBytes(PREVIEW_COMPRESS_TARGET_BYTES * 2)}`,
+        };
+    }
+    if (sizeBytes > PREVIEW_COMPRESS_TARGET_BYTES) {
+        return {
+            level: "warn",
+            message: `静态预览 ${formatPreviewBytes(sizeBytes)} 超过建议值 ${formatPreviewBytes(PREVIEW_COMPRESS_TARGET_BYTES)}`,
+        };
+    }
+    return null;
+}
+
+/** 所有预览图加起来的体积上限。 */
+export function checkPreviewTotalSize(totalBytes: number): PreviewIssue | null {
+    if (totalBytes > PREVIEW_TOTAL_MAX_BYTES) {
+        return {
+            level: "fail",
+            message: `预览图总体积 ${formatPreviewBytes(totalBytes)} 超过上限 ${formatPreviewBytes(PREVIEW_TOTAL_MAX_BYTES)}`,
+        };
+    }
+    if (totalBytes > PREVIEW_TOTAL_WARN_BYTES) {
+        return {
+            level: "warn",
+            message: `预览图总体积 ${formatPreviewBytes(totalBytes)} 超过建议值 ${formatPreviewBytes(PREVIEW_TOTAL_WARN_BYTES)}`,
+        };
+    }
+    return null;
+}
 
 /**
  * 预览图数量下限。
@@ -144,11 +276,24 @@ export function isSvgContent(bytes: Uint8Array): boolean {
   return /<svg[\s>]/i.test(head);
 }
 
-/** 图标规格检查。返回错误文案，通过则返回 null。 */
-export function checkIconDimensions(dims: ImageDimensions): string | null {
+/**
+ * 图标形状校验：只判可读性与 1:1。
+ *
+ * 上传阶段先过这一关，再对超限图片自动缩放并压缩体积；边长上限不在此拦截，
+ * 否则「软件能自动修好」的图会被提前退回给创作者手工处理。
+ */
+export function checkIconShape(dims: ImageDimensions): string | null {
   if (!dims.width || !dims.height) return "图标无法读取，请重新上传。";
   if (dims.width !== dims.height) return "图标必须为正方形（1:1）。";
-  if (dims.width > ICON_MAX_DIMENSION || dims.height > ICON_MAX_DIMENSION)
+  return null;
+}
+
+/** 图标规格检查。返回错误文案，通过则返回 null。 */
+export function checkIconDimensions(dims: ImageDimensions): string | null {
+  const shapeError = checkIconShape(dims);
+  if (shapeError) return shapeError;
+  const longestSide = Math.max(dims.width ?? 0, dims.height ?? 0);
+  if (longestSide > ICON_MAX_DIMENSION)
     return `图标尺寸过大（边长需小于等于 ${ICON_MAX_DIMENSION}px）。`;
   return null;
 }

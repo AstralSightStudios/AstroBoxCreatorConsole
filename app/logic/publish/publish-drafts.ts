@@ -1,4 +1,5 @@
 import type { AuthorInput, BundledResourceInput, DownloadInput, LinkInput } from "~/routes/resource/publish/components/types";
+import type { ImageMeta } from "./image-meta";
 import type { ResourceType } from "./resource-type";
 
 const DB_NAME = "abcc-publish-drafts";
@@ -24,6 +25,7 @@ export interface DraftMediaItem {
   source?: "upload" | "existing";
   width?: number;
   height?: number;
+  imageMeta?: ImageMeta;
 }
 
 export interface DraftWallpaperAsset {

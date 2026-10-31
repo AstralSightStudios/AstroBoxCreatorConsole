@@ -37,13 +37,26 @@ import {
   BANNED_IMAGE_NOTICE,
   COVER_MAX_BYTES,
   ICON_COMPRESS_TARGET_BYTES,
+  PREVIEW_ANIMATED_MAX_BYTES,
+  PREVIEW_ANIMATED_WARN_BYTES,
   PREVIEW_COMPRESS_TARGET_BYTES,
+  PREVIEW_TOTAL_MAX_BYTES,
+  PREVIEW_TOTAL_WARN_BYTES,
   PUBLISH_PREVIEWS_MIN,
   SVG_SNIFF_BYTES,
+  checkPreviewTotalSize,
+  getAnimatedPreviewIssues,
   hasExactCoverRatio,
   isBannedImageName,
   isSvgContent,
 } from "~/logic/publish/pre-publish-checks";
+import {
+  extensionForFormat,
+  imageExtension,
+  inspectImageBytes,
+  normalizeImageExtension,
+  type ImageFormat,
+} from "~/logic/publish/image-meta";
 import {
   WATCHFACE_MAGIC,
   ZIP_MAGIC,
@@ -154,6 +167,19 @@ export interface ImageSizeInfo {
   ratioValid?: boolean;
   /** 命中禁用格式（SVG）。审核明细行据此标红，跳转按钮也会亮起。 */
   bannedFormat?: boolean;
+  /** 按文件头识别的真实格式。 */
+  format?: ImageFormat;
+  /** 动图标记与容器内的帧信息。 */
+  animated?: boolean;
+  frames?: number;
+  durationMs?: number;
+  peakFps?: number;
+  /** 文件被截断后解析，帧数/时长可能不完整。 */
+  partial?: boolean;
+  /** 扩展名与实际内容不一致（例如 PNG 装 .webp）。 */
+  formatMismatch?: boolean;
+  /** 动图帧率/帧数/时长超限。 */
+  timingLimit?: "warn" | "fail";
 }
 
 export interface ResourceRuleCheckResult {
@@ -787,13 +813,20 @@ export function formatBytes(bytes?: number): string {
 
 // 传入的是带序号的展示 label（如 `preview 3`），因此这里按 icon / cover
 // 前缀判定，不再依赖「剩下的就是 preview」这种隐式兜底。
-function imageSizeOverLimit(label: string, size: number): "warn" | "fail" | undefined {
+function imageSizeOverLimit(
+  label: string,
+  size: number,
+  animated = false,
+): "warn" | "fail" | undefined {
   if (label === "icon") {
     if (size > ICON_FAIL) return "fail";
     if (size > ICON_WARN) return "warn";
   } else if (label === "cover") {
     if (size > COVER_FAIL) return "fail";
     if (size > COVER_WARN) return "warn";
+  } else if (animated) {
+    if (size > PREVIEW_ANIMATED_MAX_BYTES) return "fail";
+    if (size > PREVIEW_ANIMATED_WARN_BYTES) return "warn";
   } else {
     if (size > PREVIEW_FAIL) return "fail";
     if (size > PREVIEW_WARN) return "warn";
@@ -1631,9 +1664,7 @@ export async function runResourceRuleChecks(options: {
     })(),
   });
 
-  // --- check: 图片体积合理 ---
   const imageSizes: ImageSizeInfo[] = [];
-  const imageOverLimits: Array<{ label: string; over: "warn" | "fail" }> = [];
 
   // label 同时是「明细」跳转的高亮锚点：ResourceImagesSection 用
   // /^preview\s+(\d+)$/ 解析预览图序号，缺序号会落进 else 分支被当成 cover。
@@ -1645,16 +1676,13 @@ export async function runResourceRuleChecks(options: {
   ) => {
     if (!path && !url) return;
     const size = lookupSize(sizeMap, path || url);
-    const over = size != null ? imageSizeOverLimit(label, size) : undefined;
     imageSizes.push({
       label,
       path,
       url,
       sizeBytes: size,
-      overLimit: over,
       bannedFormat: isBannedImageName(path),
     });
-    if (over) imageOverLimits.push({ label, over });
   };
 
   collectImage("icon", manifestItem?.icon || entry.icon, preview.iconUrl);
@@ -1662,38 +1690,6 @@ export async function runResourceRuleChecks(options: {
   preview.previewUrls.forEach((url, i) => {
     const path = manifestItem?.preview?.[i] ?? "";
     collectImage(`preview ${i + 1}`, path, url);
-  });
-
-  const hasFailImage = imageOverLimits.some((i) => i.over === "fail");
-  const hasWarnImage = imageOverLimits.some((i) => i.over === "warn");
-  const missingImageSize = imageSizes.some((i) => i.sizeBytes == null);
-  const overFailed = imageSizes.filter((i) => i.overLimit === "fail");
-  const overWarned = imageSizes.filter((i) => i.overLimit === "warn");
-  checks.push({
-    title: `图片体积合理（icon ≤ ${formatBytes(ICON_WARN)} / cover ≤ ${formatBytes(COVER_WARN)} / preview ≤ ${formatBytes(PREVIEW_WARN)}）`,
-    status: hasFailImage
-      ? "fail"
-      : hasWarnImage
-        ? "warn"
-        : missingImageSize
-          ? "warn"
-          : "pass",
-    // 逐张图片的体积见面板底部「图片体积与宽高比」容器，这里只给汇总结论。
-    detail: (() => {
-      const parts: string[] = [];
-      if (overFailed.length > 0)
-        parts.push(
-          `${overFailed.length} 张超出上限（${Array.from(new Set(overFailed.map((i) => i.label))).join("、")}）`,
-        );
-      if (overWarned.length > 0)
-        parts.push(
-          `${overWarned.length} 张偏大（${Array.from(new Set(overWarned.map((i) => i.label))).join("、")}）`,
-        );
-      if (missingImageSize) parts.push("部分图片未取到体积");
-      return parts.length > 0 ? parts.join("；") : "所有图片体积均在发布流程上限内";
-    })(),
-    anchor: overFailed[0]?.label ? "images" : undefined,
-    anchorLabel: overFailed[0]?.label,
   });
 
   // --- check: 图片宽高比 ---
@@ -1741,42 +1737,48 @@ export async function runResourceRuleChecks(options: {
     anchorLabel: ratioInvalid[0]?.label,
   });
 
-  // --- check: 图片未使用 SVG ---
+  // --- check: 图片内容识别（格式 / SVG / 动图） ---
   // 宿主横跨 WebKit / Chromium / 各家 WebView，SVG 渲染差异很大，资源图片禁用
-  // SVG（与发布页 pre-publish-checks 的 BANNED_IMAGE_EXTENSIONS 同一份规则）。
-  // 这里独立于发布流程再拦一次：绕过 ABCC 直接改仓库、或历史资源里遗留的 SVG，
-  // 都要在合并前被发现。
+  // SVG；同时这里也按 magic 识别真实格式，抓“PNG 装 .webp”这种压缩链路事故。
   //
-  // 后缀之外还要读内容：把 logo.svg 改名成 logo.png 能骗过后缀判定与宽高比
-  // 校验（<img> 照样解码得出尺寸），只有嗅探文件头才认得出。每张只取前
-  // SVG_SNIFF_BYTES 字节，与 loadImageDimensions 走同一条鉴权取字节通道。
-  const svgImages = imageSizes.filter((img) => img.bannedFormat);
-  const sniffTargets = imageSizes.filter(
-    (img) => !img.bannedFormat && Boolean(img.url),
-  );
-  const sniffedSvg = (
-    await Promise.all(
-      sniffTargets.map(async (img) => {
-        try {
-          const bytes = await fetchResourceBytes(
-            img.url,
-            token,
-            SVG_SNIFF_BYTES,
-          );
-          return isSvgContent(bytes) ? img : null;
-        } catch {
-          // 取不到字节不误判：该图尺寸/体积检查会各自给出「未取到」的提示。
-          return null;
-        }
-      }),
-    )
-  ).filter((img): img is ImageSizeInfo => img !== null);
-  for (const img of sniffedSvg) {
-    // 回填到 imageSizes，明细面板里也会标红并可点击定位。
-    const target = imageSizes.find((item) => item.label === img.label);
-    if (target) target.bannedFormat = true;
+  // 预览图读取上限用动图硬上限（4MB）：超过 4MB 的动图本来就会被体积检查拦下，
+  // 不需要为了帧率再拉完整文件。icon/cover 只需要头部，用 SVG_SNIFF_BYTES。
+  const sniffTargets = imageSizes.filter((img) => Boolean(img.url));
+  for (const img of sniffTargets) {
+    const maxBytes = img.label.startsWith("preview")
+      ? PREVIEW_ANIMATED_MAX_BYTES
+      : Math.max(SVG_SNIFF_BYTES, 64 * 1024);
+    try {
+      const bytes = await fetchResourceBytes(img.url, token, maxBytes);
+      const meta = inspectImageBytes(bytes);
+      img.format = meta.format;
+      img.animated = meta.animated;
+      img.frames = meta.frames;
+      img.durationMs = meta.durationMs;
+      img.peakFps = meta.peakFps;
+      img.partial = meta.partial;
+
+      if (meta.format === "svg" || isSvgContent(bytes)) {
+        img.bannedFormat = true;
+      }
+
+      const actualExtension = extensionForFormat(meta.format);
+      const declaredExtension = normalizeImageExtension(
+        imageExtension(img.path || img.url),
+      );
+      if (
+        actualExtension &&
+        declaredExtension &&
+        actualExtension !== declaredExtension
+      ) {
+        img.formatMismatch = true;
+      }
+    } catch {
+      // 取不到字节不误判：体积/宽高比检查会各自给出「未取到」的提示。
+    }
   }
-  const allSvgImages = [...svgImages, ...sniffedSvg];
+
+  const allSvgImages = imageSizes.filter((img) => img.bannedFormat);
   checks.push({
     title: "图片未使用 SVG 矢量图",
     status: allSvgImages.length > 0 ? "fail" : "pass",
@@ -1786,10 +1788,142 @@ export async function runResourceRuleChecks(options: {
             .map((img) => `${img.label}（${img.path || img.url}）`)
             .join("、")}。${BANNED_IMAGE_NOTICE}请要求创作者换成 PNG / JPEG 后重新提交。`
         : sniffTargets.length > 0
-          ? `icon、cover 与 ${sniffTargets.length} 张预览图均已按后缀与文件内容确认非 SVG`
+          ? `icon、cover 与预览图共 ${sniffTargets.length} 张，均已按后缀与文件内容确认非 SVG`
           : "icon、cover 与预览图均为位图格式",
     anchor: allSvgImages[0]?.label ? "images" : undefined,
     anchorLabel: allSvgImages[0]?.label,
+  });
+
+  // --- check: 扩展名与实际内容一致 ---
+  // 典型事故：WebKit 的 canvas 不能编码 WebP，动图/静态 WebP 被压成 PNG 却仍叫
+  // .webp。客户端 <img> 能显示，所以肉眼只看到“不动”或“图正常”，必须靠 magic 拦。
+  const mismatchedImages = imageSizes.filter((img) => img.formatMismatch);
+  checks.push({
+    title: "图片扩展名与实际内容一致",
+    status: mismatchedImages.length > 0 ? "fail" : "pass",
+    detail:
+      mismatchedImages.length > 0
+        ? `${mismatchedImages.length} 张后缀与内容不一致：${mismatchedImages
+            .map((img) => {
+              const declared = imageExtension(img.path || img.url) || "无后缀";
+              const actual = extensionForFormat(img.format ?? "unknown") || "未知";
+              return `${img.label}（.${declared} → ${actual.toUpperCase()}）`;
+            })
+            .join("、")}。可能是发布时被压缩链路转码，请要求创作者重传原始文件。`
+        : "所有图片的扩展名均与文件头一致",
+    anchor: mismatchedImages[0]?.label ? "images" : undefined,
+    anchorLabel: mismatchedImages[0]?.label,
+  });
+
+  // --- check: 图片体积合理（静态与动图分开） ---
+  const imageOverLimits: Array<{ label: string; over: "warn" | "fail" }> = [];
+  for (const img of imageSizes) {
+    img.overLimit = img.sizeBytes != null
+      ? imageSizeOverLimit(img.label, img.sizeBytes, img.animated)
+      : undefined;
+    if (img.overLimit) {
+      imageOverLimits.push({ label: img.label, over: img.overLimit });
+    }
+  }
+  const hasFailImage = imageOverLimits.some((i) => i.over === "fail");
+  const hasWarnImage = imageOverLimits.some((i) => i.over === "warn");
+  const missingImageSize = imageSizes.some((i) => i.sizeBytes == null);
+  const overFailed = imageSizes.filter((i) => i.overLimit === "fail");
+  const overWarned = imageSizes.filter((i) => i.overLimit === "warn");
+  checks.push({
+    title: `图片体积合理（icon ≤ ${formatBytes(ICON_WARN)} / cover ≤ ${formatBytes(COVER_WARN)} / 静态 preview ≤ ${formatBytes(PREVIEW_WARN)} / 动图 preview ≤ ${formatBytes(PREVIEW_ANIMATED_MAX_BYTES)}）`,
+    status: hasFailImage
+      ? "fail"
+      : hasWarnImage
+        ? "warn"
+        : missingImageSize
+          ? "warn"
+          : "pass",
+    detail: (() => {
+      const parts: string[] = [];
+      if (overFailed.length > 0)
+        parts.push(
+          `${overFailed.length} 张超出上限（${Array.from(new Set(overFailed.map((i) => i.label))).join("、")}）`,
+        );
+      if (overWarned.length > 0)
+        parts.push(
+          `${overWarned.length} 张偏大（${Array.from(new Set(overWarned.map((i) => i.label))).join("、")}）`,
+        );
+      if (missingImageSize) parts.push("部分图片未取到体积");
+      return parts.length > 0 ? parts.join("；") : "所有图片体积均在发布流程上限内";
+    })(),
+    anchor: overFailed[0]?.label ? "images" : undefined,
+    anchorLabel: overFailed[0]?.label,
+  });
+
+  // --- check: 动图预览（峰值帧率 / 帧数 / 时长） ---
+  const animatedImages = imageSizes.filter((img) => img.animated);
+  const animatedProblems: Array<{ img: ImageSizeInfo; level: "warn" | "fail"; message: string }> = [];
+  for (const img of animatedImages) {
+    const issues = getAnimatedPreviewIssues(
+      {
+        format: img.format ?? "unknown",
+        animated: true,
+        frames: img.frames,
+        durationMs: img.durationMs,
+        peakFps: img.peakFps,
+        partial: img.partial,
+      },
+      0, // 体积由上面的“图片体积合理”统一判定，避免重复报错
+    );
+    for (const issue of issues) {
+      animatedProblems.push({ img, level: issue.level, message: issue.message });
+      if (issue.level === "fail" || img.timingLimit !== "fail") {
+        img.timingLimit = issue.level;
+      }
+    }
+  }
+  const animatedFail = animatedProblems.filter((item) => item.level === "fail");
+  const animatedWarn = animatedProblems.filter((item) => item.level === "warn");
+  checks.push({
+    title: "动图预览（峰值帧率 ≤ 144fps / 帧数 / 时长）",
+    status:
+      animatedFail.length > 0
+        ? "fail"
+        : animatedWarn.length > 0
+          ? "warn"
+          : "pass",
+    detail: (() => {
+      if (animatedImages.length === 0) return "未检测到动图预览";
+      const summaries = animatedImages.map((img) => {
+        const format = img.animated && img.format === "png"
+          ? "APNG"
+          : (img.format ?? "unknown").toUpperCase();
+        if (img.partial) {
+          return `${img.label}（${format} · 文件较大，帧率/帧数未完整解析 · ${formatBytes(img.sizeBytes)}）`;
+        }
+        const peakFps = img.peakFps != null ? `峰值 ${img.peakFps.toFixed(1)}fps` : "帧率未知";
+        const frames = img.frames != null ? `${img.frames} 帧` : "帧数未知";
+        const duration = img.durationMs != null ? `${(img.durationMs / 1000).toFixed(1)}s` : "时长未知";
+        return `${img.label}（${format} · ${peakFps} · ${frames} · ${duration} · ${formatBytes(img.sizeBytes)}）`;
+      });
+      const problems = animatedProblems.map(
+        (item) => `${item.img.label}：${item.message}`,
+      );
+      return [summaries.join("；"), ...problems].join("；");
+    })(),
+    anchor: (animatedFail[0] ?? animatedWarn[0])?.img.label
+      ? "images"
+      : undefined,
+    anchorLabel: (animatedFail[0] ?? animatedWarn[0])?.img.label,
+  });
+
+  // --- check: 预览图总体积 ---
+  const totalPreviewBytes = imageSizes
+    .filter((img) => img.label.startsWith("preview"))
+    .reduce((sum, img) => sum + (img.sizeBytes ?? 0), 0);
+  const totalPreviewIssue = checkPreviewTotalSize(totalPreviewBytes);
+  checks.push({
+    title: `预览图总体积（建议 ≤ ${formatBytes(PREVIEW_TOTAL_WARN_BYTES)} / 上限 ${formatBytes(PREVIEW_TOTAL_MAX_BYTES)}）`,
+    status: totalPreviewIssue?.level ?? "pass",
+    detail: totalPreviewIssue
+      ? totalPreviewIssue.message
+      : `当前预览图总体积 ${formatBytes(totalPreviewBytes)}`,
   });
 
   // --- check: 外部链接 links 完整且 icon 合法 ---

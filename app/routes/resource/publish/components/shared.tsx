@@ -1,4 +1,5 @@
 import { UploadSimpleIcon, XCircleIcon } from "@phosphor-icons/react";
+import type { ImageMeta } from "~/logic/publish/image-meta";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import { COVER_RATIO, hasExactCoverRatio } from "~/logic/publish/pre-publish-checks";
 
@@ -85,6 +86,8 @@ export interface UploadItem {
   source?: "upload" | "existing";
   width?: number;
   height?: number;
+  /** 文件内容识别结果（格式/动图/帧率），用于发布校验与动图标注。 */
+  imageMeta?: ImageMeta;
   processing?: boolean;
   progress?: number;
 }

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
 import { ScrollArea } from "~/components/scroll-area";
-import { useProxiedMediaUrl } from "~/logic/media-proxy";
+import { fetchProxiedMediaUrl, useProxiedMediaUrl } from "~/logic/media-proxy";
+import { inspectImageFile, type ImageMeta as ImageContentMeta } from "~/logic/publish/image-meta";
 import type { PrResourcePreview } from "../types";
 
 interface ImageMeta {
@@ -25,9 +26,18 @@ function DimensionTrackedImage({
   return <img src={proxiedUrl} alt={alt} className={className} onLoad={onLoad} loading="lazy" />;
 }
 
-function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+function PreviewLightbox({
+  url,
+  animated,
+  onClose,
+}: {
+  url: string;
+  animated?: boolean;
+  onClose: () => void;
+}) {
   const proxiedUrl = useProxiedMediaUrl(url);
   const [actual, setActual] = useState(false);
+  const [replayKey, setReplayKey] = useState(0);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -50,8 +60,9 @@ function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void })
       <ScrollArea horizontal className="h-full w-full overscroll-contain">
         <div className="grid min-h-full min-w-full place-items-center p-6">
           <img
+            key={replayKey}
             src={proxiedUrl}
-            alt="预览大图"
+            alt={animated ? "动图预览" : "预览大图"}
             onClick={(event) => {
               event.stopPropagation();
               setActual((value) => !value);
@@ -64,6 +75,18 @@ function PreviewLightbox({ url, onClose }: { url: string; onClose: () => void })
           />
         </div>
       </ScrollArea>
+      {animated && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setReplayKey((value) => value + 1);
+          }}
+          className="fixed bottom-5 left-1/2 z-10 -translate-x-1/2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs text-white/80 transition hover:bg-white/20"
+        >
+          重播动图
+        </button>
+      )}
       <button
         type="button"
         onClick={onClose}
@@ -142,6 +165,24 @@ export function ResourceImagesSection({
     isIconRatioValid,
     isCoverRatioValid,
   } = useImageMeta();
+  const [contentMetaMap, setContentMetaMap] = useState<Record<string, ImageContentMeta>>({});
+  const inspectedUrlsRef = useRef(new Set<string>());
+  const inspectPreviewMeta = useCallback(async (url: string) => {
+    if (inspectedUrlsRef.current.has(url)) return;
+    inspectedUrlsRef.current.add(url);
+    try {
+      // 图片已经通过 useProxiedMediaUrl 加载过，这里读的是同一个 blob 缓存，
+      // 不会再发一次 GitHub 请求。
+      const proxied = await fetchProxiedMediaUrl(url);
+      const blob = await (await fetch(proxied)).blob();
+      const meta = await inspectImageFile(blob);
+      setContentMetaMap((previous) =>
+        previous[url] ? previous : { ...previous, [url]: meta },
+      );
+    } catch {
+      // 取不到内容不影响图片展示；审核仍可从 rule-checks 的 magic 结果判断。
+    }
+  }, []);
   const [previewActiveIndex, setPreviewActiveIndex] = useState(0);
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -240,8 +281,11 @@ export function ResourceImagesSection({
     [handleImageLoad, resource.coverUrl],
   );
   const handlePreviewLoad = useCallback(
-    (url: string) => (event: React.SyntheticEvent<HTMLImageElement>) => handleImageLoad(url, event),
-    [handleImageLoad],
+    (url: string) => (event: React.SyntheticEvent<HTMLImageElement>) => {
+      handleImageLoad(url, event);
+      void inspectPreviewMeta(url);
+    },
+    [handleImageLoad, inspectPreviewMeta],
   );
 
   return (
@@ -284,7 +328,16 @@ export function ResourceImagesSection({
           {resource.previewUrls.length > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-white/55">预览图（{resource.previewUrls.length} 张）</div>
+                <div className="text-xs text-white/55">
+                  预览图（{resource.previewUrls.length} 张
+                  {(() => {
+                    const animatedCount = resource.previewUrls.filter(
+                      (url) => contentMetaMap[url]?.animated,
+                    ).length;
+                    return animatedCount > 0 ? `，${animatedCount} 张动图` : "";
+                  })()}
+                  ）
+                </div>
                 {resource.previewUrls.length > 1 && (
                   <div className="inline-flex items-center gap-1">
                     <button type="button" aria-label="上一张预览图" onClick={() => scrollPreviewTo(Math.max(0, previewActiveIndex - 1))} disabled={previewActiveIndex === 0} className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-white/60 hover:bg-white/10 disabled:opacity-30 transition">
@@ -300,14 +353,31 @@ export function ResourceImagesSection({
                 <div className="flex flex-nowrap gap-2 snap-x snap-mandatory sm:gap-3" style={{ minWidth: "min-content", paddingLeft: previewEdgeWidths.first ? `calc(50% - ${previewEdgeWidths.first / 2}px)` : "calc(50% - 160px)", paddingRight: previewEdgeWidths.last ? `calc(50% - ${previewEdgeWidths.last / 2}px)` : "calc(50% - 160px)" }}>
                   {resource.previewUrls.map((url, index) => {
                     const meta = imageMetaMap[url];
+                    const contentMeta = contentMetaMap[url];
                     const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0;
                     const cap = previewAvailWidth ? `${previewAvailWidth - 32}px` : "calc(var(--ui-viewport-width) - 64px)";
+                    const formatLabel = contentMeta?.animated && contentMeta.format === "png"
+                      ? "APNG"
+                      : (contentMeta?.format ?? "").toUpperCase();
                     return (
                       <div key={url} data-preview-slide="1" className={`shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2`}>
-                        <button type="button" onClick={() => setLightboxUrl(url)} className="inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, ${logicalHeight * 0.4 * ratio}px, ${cap})` } : undefined}>
+                        <button type="button" onClick={() => setLightboxUrl(url)} className="relative inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, ${logicalHeight * 0.4 * ratio}px, ${cap})` } : undefined}>
                           <DimensionTrackedImage rawUrl={url} alt={`Preview ${index + 1}`} className="block h-auto w-full" onLoad={handlePreviewLoad(url)} />
+                          {contentMeta?.animated && (
+                            <span className="absolute left-1.5 top-1.5 rounded border border-sky-300/30 bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+                              动图
+                            </span>
+                          )}
                         </button>
                         <div className="mt-2 break-all text-xs text-white/45">{url.split("/").pop() || `预览 ${index + 1}`}</div>
+                        {contentMeta?.animated && (
+                          <div className="mt-1 text-[10px] text-sky-300/80">
+                            {formatLabel}
+                            {contentMeta.partial
+                              ? " · 文件较大，帧率未完整解析"
+                              : ` · 峰值 ${contentMeta.peakFps != null ? `${contentMeta.peakFps.toFixed(1)}fps` : "未知"} · ${contentMeta.frames != null ? `${contentMeta.frames} 帧` : "帧数未知"}${contentMeta.durationMs != null ? ` · ${(contentMeta.durationMs / 1000).toFixed(2)}s` : ""}`}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -326,7 +396,13 @@ export function ResourceImagesSection({
           )}
         </div>
       </div>
-      {lightboxUrl && <PreviewLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightboxUrl && (
+        <PreviewLightbox
+          url={lightboxUrl}
+          animated={Boolean(contentMetaMap[lightboxUrl]?.animated)}
+          onClose={() => setLightboxUrl(null)}
+        />
+      )}
     </>
   );
 }

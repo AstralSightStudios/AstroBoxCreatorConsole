@@ -11,7 +11,11 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { pickFiles } from "~/logic/publish/file-picker";
-import { PUBLISH_IMAGE_ACCEPT, PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
+import {
+  ICON_MAX_DIMENSION,
+  PUBLISH_IMAGE_ACCEPT,
+  PUBLISH_PREVIEWS_MIN,
+} from "~/logic/publish/pre-publish-checks";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { UploadItem } from "./shared";
 import { SectionCard } from "./shared";
@@ -192,6 +196,11 @@ function PreviewCard({
             }
           }}
         />
+        {item.imageMeta?.animated && (
+          <span className="absolute left-2 top-2 rounded border border-sky-300/30 bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+            动图
+          </span>
+        )}
         {item.processing && (
           <>
             <div className="absolute inset-0 bg-black/55" />
@@ -246,6 +255,14 @@ function PreviewCard({
           <XCircleIcon size={15} weight="fill" />
         </button>
       </div>
+      {item.imageMeta?.animated && (
+        <div className="mt-1 px-1 text-[10px] text-sky-300/80">
+          {(item.imageMeta.format === "png" ? "APNG" : item.imageMeta.format.toUpperCase())}
+          {item.imageMeta.peakFps != null ? ` · 峰值 ${item.imageMeta.peakFps.toFixed(1)}fps` : ""}
+          {item.imageMeta.frames != null ? ` · ${item.imageMeta.frames} 帧` : ""}
+          {item.imageMeta.durationMs != null ? ` · ${(item.imageMeta.durationMs / 1000).toFixed(2)}s` : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -717,13 +734,13 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description={`上传或导入预览图组（至少 ${PUBLISH_PREVIEWS_MIN} 张）、应用图标与封面。相同文件会自动复用，无需重复上传。`}
+      description={`上传或导入预览图组（至少 ${PUBLISH_PREVIEWS_MIN} 张）、应用图标与封面。相同文件会自动复用，无需重复上传。静态预览自动压到 500KB；动图保留原始动画，建议 ≤2MB、硬上限 4MB、峰值帧率 ≤144fps。`}
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
-            hint="宽高比 1:1"
+            hint={`宽高比 1:1 · 超出 ${ICON_MAX_DIMENSION}px 自动压缩`}
             fieldKey="icon"
             media={icon}
             uploading={iconUploading}

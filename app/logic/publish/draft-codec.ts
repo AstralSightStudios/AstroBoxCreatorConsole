@@ -64,6 +64,7 @@ export async function serializeMediaItem(
       source: "existing",
       width: item.width,
       height: item.height,
+      imageMeta: item.imageMeta,
     };
   }
   return {
@@ -75,6 +76,7 @@ export async function serializeMediaItem(
     source: "upload",
     width: item.width,
     height: item.height,
+    imageMeta: item.imageMeta,
   };
 }
 
@@ -88,6 +90,7 @@ export function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null
       pathOverride: item.pathOverride,
       width: item.width,
       height: item.height,
+      imageMeta: item.imageMeta,
     };
   }
   return {
@@ -100,6 +103,7 @@ export function restoreMediaItem(item: DraftMediaItem | null): UploadItem | null
     source: "existing",
     width: item.width,
     height: item.height,
+    imageMeta: item.imageMeta,
   };
 }
 

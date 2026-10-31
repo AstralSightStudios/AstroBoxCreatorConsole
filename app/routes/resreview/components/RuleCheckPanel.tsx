@@ -484,6 +484,20 @@ function MatchBadge({
   return <span className="ml-1 text-white/45">未知</span>;
 }
 
+function formatDurationMs(durationMs?: number): string {
+  if (durationMs == null) return "时长未知";
+  return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function imageFormatLabel(img: {
+  format?: string;
+  animated?: boolean;
+}): string {
+  if (img.animated && img.format === "png") return "APNG";
+  if (!img.format) return "未知";
+  return img.format.toUpperCase();
+}
+
 /** 逐张图片一行摘要；点击整行跳到「资源信息」Tab 并高亮对应图片。 */
 function ImageSizesBlock({
   imageSizes,
@@ -499,16 +513,28 @@ function ImageSizesBlock({
     height?: number;
     ratio?: number;
     ratioValid?: boolean;
+    format?: string;
+    animated?: boolean;
+    frames?: number;
+    durationMs?: number;
+    peakFps?: number;
+    partial?: boolean;
+    formatMismatch?: boolean;
+    timingLimit?: "warn" | "fail";
   }>;
   onLocate: (label: string) => void;
 }) {
   const problemCount = imageSizes.filter(
-    (img) => img.overLimit || img.ratioValid === false,
+    (img) =>
+      img.overLimit ||
+      img.ratioValid === false ||
+      img.formatMismatch ||
+      img.timingLimit,
   ).length;
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
       <div className="mb-2 flex flex-wrap items-center gap-x-2 text-xs font-semibold text-white/55">
-        <span>图片体积与宽高比</span>
+        <span>图片体积、格式与宽高比</span>
         {problemCount > 0 && (
           <span className="font-normal text-white/40">
             {problemCount} 张有问题，点击可定位到资源信息
@@ -517,7 +543,11 @@ function ImageSizesBlock({
       </div>
       <div className="flex flex-col gap-1">
         {imageSizes.map((img, i) => {
-          const hasProblem = Boolean(img.overLimit) || img.ratioValid === false;
+          const hasProblem =
+            Boolean(img.overLimit) ||
+            img.ratioValid === false ||
+            Boolean(img.formatMismatch) ||
+            Boolean(img.timingLimit);
           const name = img.path || img.url.split("/").pop() || "";
           return (
             <button
@@ -548,6 +578,27 @@ function ImageSizesBlock({
               {img.overLimit === "fail" && <span className="text-red-400">过大</span>}
               {img.overLimit === "warn" && <span className="text-amber-400">偏大</span>}
               {img.sizeBytes == null && <span className="text-white/35">未取到体积</span>}
+              {img.animated && (
+                <span className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+                  动图
+                </span>
+              )}
+              {img.animated && (
+                <span className="text-sky-300/80">
+                  {imageFormatLabel(img)}
+                  {img.partial
+                    ? " · 文件较大，帧率/帧数未完整解析"
+                    : ` · 峰值 ${img.peakFps != null ? `${img.peakFps.toFixed(1)}fps` : "未知"} · ${img.frames != null ? `${img.frames} 帧` : "帧数未知"} · ${formatDurationMs(img.durationMs)}`}
+                </span>
+              )}
+              {img.formatMismatch && (
+                <span className="text-red-400">后缀/内容不一致</span>
+              )}
+              {img.timingLimit && (
+                <span className={img.timingLimit === "fail" ? "text-red-400" : "text-amber-400"}>
+                  {img.timingLimit === "fail" ? "帧率/帧数超限" : "帧率/帧数偏高"}
+                </span>
+              )}
               {(img.label === "icon" || img.label === "cover") && (
                 <span
                   className={
