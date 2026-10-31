@@ -7,48 +7,7 @@ import {
 import { readPackageVersion } from "../../app/logic/publish/package-version";
 import { buildManifest } from "../../app/logic/publish/manifest";
 import { rowsWithoutCanopusMeta } from "../../app/logic/publish/pre-publish-checks";
-
-function octal(value: number, width: number): string {
-  return value.toString(8).padStart(width - 1, "0") + "\0";
-}
-
-function tar(entries: Array<[string, Uint8Array]>): Uint8Array {
-  const parts: Uint8Array[] = [];
-  const text = new TextEncoder();
-  for (const [name, data] of entries) {
-    const header = new Uint8Array(512);
-    header.set(text.encode(name), 0);
-    header.set(text.encode(octal(0o644, 8)), 100);
-    header.set(text.encode(octal(data.length, 12)), 124);
-    header.set(text.encode("        "), 148);
-    header[156] = "0".charCodeAt(0);
-    header.set(text.encode("ustar\0" + "00"), 257);
-    let sum = 0;
-    for (const b of header) sum += b;
-    header.set(text.encode(octal(sum, 7) + " "), 148);
-    parts.push(header, data, new Uint8Array((512 - (data.length % 512)) % 512));
-  }
-  parts.push(new Uint8Array(1024));
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-}
-
-function pack(manifest: Record<string, unknown>): Uint8Array {
-  return tar([["manifest.json", new TextEncoder().encode(JSON.stringify(manifest))]]);
-}
-
-const base = {
-  schema: 1,
-  module_id: "hello_portable",
-  version: "1.2.0",
-  version_code: 12,
-  canopus_abi: "1",
-};
+import { CANOPUS_BASE as base, pack, tar } from "./canopus-fixtures";
 
 const portable = pack({
   ...base,

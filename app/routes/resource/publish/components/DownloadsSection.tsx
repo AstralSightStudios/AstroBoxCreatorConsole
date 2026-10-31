@@ -60,6 +60,7 @@ import {
   computePackageHash,
   type PackageVersionInfo,
 } from "~/logic/publish/package-version";
+import { resolveImportedPackage } from "~/logic/publish/package-import";
 
 const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   {
@@ -78,7 +79,8 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
   {
     label: "包体文件",
-    description: "上传该设备的资源包体（RPK 等），编辑已有资源时可沿用仓库中的旧包。",
+    description:
+      "上传该设备的资源包体（RPK、表盘 bin / mwz、CRPack 资源包、.canopus 模块包等），编辑已有资源时可沿用仓库中的旧包。",
   },
   {
     label: "加密上传",
@@ -282,49 +284,50 @@ export function DownloadsSection({
     try {
       // validateFile 可能就地改写过包内 ID，必须用它返回的那份，
       // 否则行里存的是改写前的包体，发布时又会被改一次。
-      const validated = await validateFile?.(file);
-      const info = validated?.info;
-      const resolved = validated?.file ?? file;
+      const {
+        info,
+        file: resolved,
+      } = await resolveImportedPackage(file, validateFile);
       const uploadItem = createUploadItem(resolved);
       const packageHash = await computePackageHash(resolved);
-      const readable = Boolean(info?.readable);
+      const readable = info.readable;
       onUpdateRow(uid, (row) => ({
         ...row,
         file: uploadItem,
         existingFileName: undefined,
         versionLocked: readable ? true : row.versionLocked,
         versionSource: readable ? "package" : row.versionSource,
-        ...(readable && info?.version ? { version: info.version } : {}),
-        ...(readable && info?.versionCode !== undefined
+        ...(readable && info.version ? { version: info.version } : {}),
+        ...(readable && info.versionCode !== undefined
           ? { versionCode: info.versionCode }
           : {}),
         packageHash,
-        packageIdentity: info?.identity,
-        packageIdentityKind: info?.identityKind,
-        packageWritable: info?.writable,
-        canopus: info?.canopus,
+        packageIdentity: info.identity,
+        packageIdentityKind: info.identityKind,
+        packageWritable: info.writable,
+        canopus: info.canopus,
       }));
       log.info("download/file", "包体校验完成", {
         data: {
           name: file.name,
           size: file.size,
-          source: info?.source ?? null,
-          version: info?.version ?? null,
-          versionCode: info?.versionCode ?? null,
-          identity: info?.identity ?? null,
+          source: info.source,
+          version: info.version ?? null,
+          versionCode: info.versionCode ?? null,
+          identity: info.identity ?? null,
           readable,
         },
       });
       const current = downloads.find((d) => d.uid === uid);
       const previousVersionCode = current?.previousVersionCode;
       const mismatch =
-        info?.identityKind === "package" &&
-        Boolean(info?.identity) &&
+        info.identityKind === "package" &&
+        Boolean(info.identity) &&
         Boolean(resourceId?.trim()) &&
-        info?.identity !== resourceId?.trim();
+        info.identity !== resourceId?.trim();
       if (
         readable &&
-        info?.versionCode !== undefined &&
+        info.versionCode !== undefined &&
         previousVersionCode !== undefined &&
         info.versionCode <= previousVersionCode &&
         !mismatch
@@ -358,7 +361,7 @@ export function DownloadsSection({
       // 而「已锁定」是静默状态，行内版本列已经能看到读到的值。
       if (!readable) {
         toast.warning(
-          `无法从该包体解析版本${info?.reason ? `：${info.reason}` : ""}，请手动填写。`,
+          `无法从该包体解析版本${info.reason ? `：${info.reason}` : ""}，请手动填写。`,
         );
       }
     } catch (error) {

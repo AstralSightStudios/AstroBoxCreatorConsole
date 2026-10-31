@@ -26,13 +26,13 @@ const AFDIAN_USER_AGENT: &str =
 const AFDIAN_SESSION_FILE_NAME: &str = "afdian-session.json";
 const LOGIN_AES_IV: &[u8; 16] = b"7brVHncu7wIDAQAB";
 const LOGIN_PUBLIC_KEY: &str = r#"-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4Top/Mt2ofZeAIMh9AHw
-4d6Q+iyBxXbou+1mbhclLsB3YSMbFD+X6QnlAY1vMHO7fteKevn25iVIELBXsmcQ
-S5/oA2hO3VHi9uTG3XmYVcrw94cK5ppODeBOV0hV0dFS/NOT66pqPAuLW6HgRrnt
-gznl4ju6ttOddDNJ7e97RH9qrZEpzjl9GqVZQ2sFdmmw4dNET9fP9HWq8VlfW+BF
-G7TuxzEjZNcxAgrG/f41Z0+G3RxAccF8LOxu4Ztk1ZDdv5xukdx2ukoEhgdmKUkD
-v/W5r3HPj1uX+buzDi/UsumMblWXb0Bys7ENhZ/n4+naZ3b3rJ32DnTF7brVHncu
-7wIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv9Z7+OayuwjtWfLscvch
+F+UTndAbY2ze0ZFcUtEBQL+3E8uAPynSLyzZYG76gQzEzwQjDDorqnPB48losz9i
+skFfhjK+utpCgZ9wAGPxfmPT1Lmje4O4BxSyJ+8c5rnoWsda/X05Z1J+BcvyMJut
+J9m679/mzYn3g6wc46E/qfqTwYc5cgABEWuOdehg/mk0/ztFB1kP4dNZOIT64e8t
+Ha41bnNugFYNlM1DQE3qOTR/ttkcBsxF4VeXrCC+pXQtbx24Xx/HoFdi/l3tKx77
+kw09jqKbRLOmIxOjX9onmdM3/3PTjKqrRuxVoln8TOExNPnzEj8eH4fv9GMarg3E
+qQIDAQAB
 -----END PUBLIC KEY-----"#;
 
 type Aes256CbcEncryptor = CbcEncryptor<Aes256>;
