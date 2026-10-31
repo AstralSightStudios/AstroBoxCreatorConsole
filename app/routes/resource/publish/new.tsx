@@ -279,6 +279,20 @@ async function findExistingResourceManifest(
 
 const DEFAULT_DOWNLOADS: DownloadInput[] = [];
 
+/**
+ * 包体选择器的候选扩展名，按资源类型给出。只影响原生对话框的过滤列表，
+ * 真实格式识别一律靠包体魔数（见 package-version.ts），选错格式会在导入时被拦下。
+ * 除 res_pack 与 canopus 外沿用同一份列表，避免突然缩窄创作者已习惯的可选项。
+ * canopus 资源必须能选中原生 `.canopus` 模块包：商店条目的 canopus 元数据只能
+ * 从包内 manifest 读出，选不到该后缀就没法走通发布流程。
+ */
+const PACKAGE_ACCEPT: Record<ResourceType, string> = {
+  quick_app: "zip,rpk,mwz,bin,face",
+  watchface: "zip,rpk,mwz,bin,face",
+  canopus: "canopus,zip,rpk,mwz,bin,face",
+  res_pack: "crpack,zip,rpk,mwz,bin,face",
+};
+
 const REQUIRE_ASTROBOX_LOGIN = !import.meta.env.DEV;
 
 function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
@@ -3133,11 +3147,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
-                fileAccept={
-                  resourceType === "res_pack"
-                    ? "crpack,zip,rpk,mwz,bin,face"
-                    : "zip,rpk,mwz,bin,face"
-                }
+                fileAccept={PACKAGE_ACCEPT[resourceType]}
                 validateFile={
                   resourceType === "quick_app" ||
                   resourceType === "watchface" ||
@@ -3164,6 +3174,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 allowEncryption={false}
+                fileAccept={PACKAGE_ACCEPT[resourceType]}
                 validateFile={validateSelectedPackage}
                 onAddRow={addTrialDownloadRow}
                 onRemoveRow={removeTrialDownloadRow}

@@ -77,7 +77,8 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
   {
     label: "包体文件",
-    description: "上传该设备的资源包体（RPK 等），编辑已有资源时可沿用仓库中的旧包。",
+    description:
+      "上传该设备的资源包体（RPK、表盘 bin / mwz、CRPack 资源包、.canopus 模块包等），编辑已有资源时可沿用仓库中的旧包。",
   },
   {
     label: "加密上传",
