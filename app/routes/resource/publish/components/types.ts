@@ -1,5 +1,5 @@
 import type { ManifestCanopusMeta, ManifestUpdateLogEntry } from "~/logic/publish/manifest";
-import type { PackageVersionInfo } from "~/logic/publish/package-version";
+import type { ImportedPackage } from "~/logic/publish/package-import";
 import type { UploadItem } from "./shared";
 
 export type AuthorInput = { name: string; bindABAccount: boolean };
@@ -56,7 +56,4 @@ export type DeviceOption = { id: string; name: string; vendor?: string };
  * 包体导入结果。`file` 是真正要落库的那份：包内 ID 与资源 ID 不一致时，
  * 导入阶段就已完成改写，行里存的是改写后的包体，发布时无需再动。
  */
-export interface ValidatedPackage {
-  info: PackageVersionInfo;
-  file: File;
-}
+export type ValidatedPackage = ImportedPackage;
