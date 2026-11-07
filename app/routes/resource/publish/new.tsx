@@ -2231,11 +2231,16 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       // 目录 ID 占用校验：所有资源类型都查（表盘原来就有；其余类型在
       // 「改 ID 后重传」场景同样可能撞上目录里已合入的资源）。自身的
       // 原 ID 不算冲突，这样已发布资源正常更新不会被误拦。
+      //
+      // 每次上传前都重新拉一次 index_v2.csv（githubFetch 已对 GET 禁用
+      // HTTP 缓存），不复用组件挂载时的 existingCatalogIds 状态——创作者
+      // 可能长时间停留在页面上，期间目录里的资源被删掉后，旧缓存会误判
+      // 成仍被占用。这份数据随后也用于判断同名仓库是不是历史残留。
       const nextId = itemId.trim();
+      const catalogIds = await fetchExistingCatalogIds(token);
+      setExistingCatalogIds(catalogIds);
       if (nextId) {
-        const ids = await fetchExistingCatalogIds(token);
-        setExistingCatalogIds(ids);
-        const existingName = ids.get(nextId);
+        const existingName = catalogIds.get(nextId);
         if (existingName && nextId !== editContext?.catalog.entry.id.trim()) {
           throw new Error(
             `资源 ID "${nextId}" 已被「${existingName}」占用，请更换一个。`,
@@ -2253,10 +2258,25 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           repoName,
         );
         if (existingManifest) {
+          const occupiedId = existingManifest.id?.trim() ?? "";
+          // 仓库里的 manifest 只是历史残留：资源已经从 index_v2.csv
+          // 删除后，同名仓库不应再拦新资源。没有 id 无法核对时保守拦截。
+          const stillIndexed = occupiedId
+            ? Array.from(catalogIds.keys()).some(
+                (id) => id.toLowerCase() === occupiedId.toLowerCase(),
+              )
+            : true;
+          if (stillIndexed) {
           const label = formatOccupiedResourceLabel(existingManifest);
           throw new RepoOccupiedError(
             `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${label}」占用，请更换仓库名。`,
             { id: existingManifest.id, name: existingManifest.name },
+          );
+          }
+          log.info(
+            "upload/repo",
+            `仓库 ${repoName} 的旧资源 ${occupiedId} 已不在索引中，允许复用`,
+            { data: { repoName, occupiedId } },
           );
         }
         const repo = await flowSpan("upload/repo", "创建仓库并上传 manifest 与资产", () =>
@@ -3446,6 +3466,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onItemIdChange={(value) => {
                   handleItemIdChange(value);
                   logFieldChange("itemId", "资源 ID", value);
+                }}
+                onItemIdBlur={() => {
+                  const token = loadAccountState().github?.token;
+                  if (!token) return;
+                  // 失焦时刷新一次目录占用数据：页面可能已停留很久，
+                  // 期间资源被删除后旧缓存会把 ID 误报成仍被占用。
+                  void fetchExistingCatalogIds(token)
+                    .then((ids) => setExistingCatalogIds(ids))
+                    .catch(() => {});
                 }}
                 onItemNameChange={(value) => {
                   setItemName(value);

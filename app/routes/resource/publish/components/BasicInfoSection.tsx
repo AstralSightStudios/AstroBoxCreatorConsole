@@ -138,6 +138,8 @@ interface BasicInfoSectionProps {
   /** 本次提交会把已上架资源换到新 ID */
   idMigration?: { fromId: string; toId: string } | null;
   onItemIdChange: (value: string) => void;
+  /** ID 输入失焦时刷新一次目录占用数据，避免长时间停留导致缓存过期误报。 */
+  onItemIdBlur?: () => void;
   onItemNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onAddTag: () => void;
@@ -164,6 +166,7 @@ export function BasicInfoSection({
   listedIdLocked,
   idMigration,
   onItemIdChange,
+  onItemIdBlur,
   onItemNameChange,
   onDescriptionChange,
   onAddTag,
@@ -298,6 +301,7 @@ export function BasicInfoSection({
                     }
                   }}
                   inputMode={resourceType === "watchface" ? "numeric" : "text"}
+                  onBlur={onItemIdBlur}
                   maxLength={
                     resourceType === "watchface" ? 12 : undefined
                   }
