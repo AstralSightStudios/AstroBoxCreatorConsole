@@ -41,6 +41,12 @@ const AUTHOR_FIELD_HELP: FieldHelpItem[] = [
         icon: <UserIcon size={16} weight="duotone" />,
         description:
             "请填 AstroBox 用户名（username，不是显示名）。第一个作者默认填入当前登录的 AstroBox 用户名；第二个作者及以后可直接按用户名搜索创作者并选择。",
+        links: [
+            {
+                label: "发布免费资源 · 填写作者与外链",
+                href: "https://abox.run/docs/creator-tools/resource-management/free-resources#3-%E5%A1%AB%E5%86%99%E4%BD%9C%E8%80%85%E4%B8%8E%E5%A4%96%E9%93%BE",
+            },
+        ],
     },
     {
         group: "署名",
@@ -101,7 +107,7 @@ export function AuthorsSection({
     return (
         <SectionCard
             title="作者"
-            description="作者会自动填入当前 AstroBox 账号；第一个作者代表你自己，尽量不要改名或移除。第二个作者起请填 AstroBox 用户名，可直接搜索创作者。"
+            description="第一个作者代表你自己，其他作者请填 AstroBox 用户名。点击右上角问号查看完整说明。"
             fieldKey="authors"
             headerExtra={
                 <div className="flex shrink-0 items-center gap-1.5">

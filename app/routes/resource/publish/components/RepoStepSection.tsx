@@ -104,7 +104,7 @@ export function RepoStepSection({
       description={
         isEdit
           ? "更新已有仓库中的 manifest_v2.json 与资源文件。"
-          : "自动在你的 GitHub 账号下创建仓库并上传 manifest_v2.json 与所有资源文件；输入名称时可从已有仓库中选择。"
+          : "自动在你的 GitHub 账号下创建仓库，并上传 manifest_v2.json 与全部资源文件。"
       }
       className="p-0!"
       padding={false}

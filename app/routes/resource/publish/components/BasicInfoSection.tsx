@@ -109,6 +109,12 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
       icon: <CurrencyCircleDollarIcon size={16} weight="duotone" />,
       description:
         "免费：可直接使用。付费：可先体验部分功能，购买后解锁完整功能。强制付费：不购买则无法使用。",
+      links: [
+        {
+          label: "资源标准 · 资源比例要求",
+          href: "https://abox.run/docs/creator-tools/resource-std/rate",
+        },
+      ],
     },
   ];
 }

@@ -3531,7 +3531,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               {resourceType === "watchface" && (
                 <SectionCard
                   title="壁纸编辑器"
-                  description="为表盘配置可编辑壁纸（可选）。在独立页面中设计图层与可调参数，配置会随资源一起发布。"
+                  description="为表盘配置可编辑壁纸（可选），配置会随资源一起发布。"
                 >
                   <div className="flex items-center justify-between gap-3 px-2 pt-1">
                     <div className="flex flex-col gap-0.5">
