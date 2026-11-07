@@ -1,18 +1,34 @@
 import {
   ArrowClockwiseIcon,
+  ArrowSquareOutIcon,
   CheckCircleIcon,
   ClockIcon,
+  CopyIcon,
   FileArrowUpIcon,
   ListMagnifyingGlassIcon,
   PencilSimpleIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
-import { AlertDialog, Button, Table, Callout, Spinner } from "~/components/ScaleAwareThemes";
+import {
+  AlertDialog,
+  Badge,
+  Button,
+  Callout,
+  SegmentedControl,
+  Spinner,
+  Table,
+} from "~/components/ScaleAwareThemes";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
+import { useListViewMode } from "~/logic/ui/list-view-mode";
+import { indexItemIconUrl } from "~/logic/catalog/index-v2";
+import {
+  openExternal,
+  ResourceIcon,
+} from "~/routes/manage-resources/components/ResourceVisuals";
 import {
   createPullRequestComment,
   getPullRequest,
@@ -63,6 +79,50 @@ function useInProgressResources(refreshTick: number) {
   return { data, loading, error };
 }
 
+function statusRender(resource: PublishingResource) {
+  if (resource.refused) {
+    return (
+      <span className="flex items-center gap-1 text-purple-300">
+        <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
+        <span className="text-xs text-white/35">（点击查看原因）</span>
+      </span>
+    );
+  }
+  if (resource.prState === "merged") {
+    return (
+      <span className="flex items-center gap-1 text-white/45">
+        <CheckCircleIcon size={18} weight="fill" /> 已合入
+      </span>
+    );
+  }
+  if (resource.prState === "closed") {
+    return (
+      <span className="flex items-center gap-1 text-red-300">
+        <WarningOctagonIcon size={18} weight="fill" /> 已关闭
+      </span>
+    );
+  }
+  if (resource.status === "changes_requested") {
+    return (
+      <span className="flex items-center gap-1 text-amber-300">
+        <PencilSimpleIcon size={18} weight="fill" /> 需要修改
+      </span>
+    );
+  }
+  if (resource.status === "fixed_waiting") {
+    return (
+      <span className="flex items-center gap-1 text-emerald-300">
+        <CheckCircleIcon size={18} weight="fill" /> 已修复，等待审核
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1">
+      <ClockIcon size={18} weight="fill" /> 等待审核
+    </span>
+  );
+}
+
 export default function ResourcePublish() {
   const navigate = useNavigate();
   const [refreshTick, setRefreshTick] = useState(0);
@@ -72,50 +132,7 @@ export default function ResourcePublish() {
     null,
   );
   const { data, loading, error } = useInProgressResources(refreshTick);
-
-  const statusRender = (resource: PublishingResource) => {
-    if (resource.refused) {
-      return (
-        <span className="flex items-center gap-1 text-purple-300">
-          <WarningOctagonIcon size={18} weight="fill" /> 已拒绝
-          <span className="text-xs text-white/35">（点击查看原因）</span>
-        </span>
-      );
-    }
-    if (resource.prState === "merged") {
-      return (
-        <span className="flex items-center gap-1 text-white/45">
-          <CheckCircleIcon size={18} weight="fill" /> 已合入
-        </span>
-      );
-    }
-    if (resource.prState === "closed") {
-      return (
-        <span className="flex items-center gap-1 text-red-300">
-          <WarningOctagonIcon size={18} weight="fill" /> 已关闭
-        </span>
-      );
-    }
-    if (resource.status === "changes_requested") {
-      return (
-        <span className="flex items-center gap-1 text-amber-300">
-          <PencilSimpleIcon size={18} weight="fill" /> 需要修改
-        </span>
-      );
-    }
-    if (resource.status === "fixed_waiting") {
-      return (
-        <span className="flex items-center gap-1 text-emerald-300">
-          <CheckCircleIcon size={18} weight="fill" /> 已修复，等待审核
-        </span>
-      );
-    }
-    return (
-      <span className="flex items-center gap-1">
-        <ClockIcon size={18} weight="fill" /> 等待审核
-      </span>
-    );
-  };
+  const viewMode = useListViewMode("resource-publish-review-view");
 
   const handleSelect = async (resource: PublishingResource) => {
     if (resource.refused) {
@@ -252,70 +269,8 @@ export default function ResourcePublish() {
         </p>
       );
     }
-    return (
-      <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-        <Table.Root className="pt-1.5 min-w-max">
-          <Table.Header>
-            <Table.Row>
-              <Table.ColumnHeaderCell>唯一标识</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>提交日期</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {data.map((item) => (
-                <Table.Row
-                  key={`${item.prNumber}-${item.id}`}
-                className={
-                  item.prState !== "merged"
-                    ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
-                    : ""
-                }
-                onClick={() => void handleSelect(item)}
-              >
-                <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
-                <Table.Cell>{item.name}</Table.Cell>
-                <Table.Cell>{formatResourceType(item.restype)}</Table.Cell>
-                <Table.Cell className="flex flex-row gap-1 items-center">
-                  {statusRender(item)}
-                </Table.Cell>
-                <Table.Cell>
-                  {item.createdAt
-                    ? new Date(item.createdAt).toLocaleDateString("zh-CN")
-                    : "--"}
-                </Table.Cell>
-                <Table.Cell>
-                  {selectingPr === item.prNumber ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-white/50">
-                      <Spinner size="1" /> 载入中...
-                    </span>
-                  ) : null}
-                  {item.prState === "closed" && !item.refused ? (
-                    <Button
-                      size="1"
-                      variant="soft"
-                      color="blue"
-                      disabled={reopening === item.prNumber}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleReopen(item);
-                      }}
-                    >
-                      <ArrowClockwiseIcon size={14} weight="bold" />
-                      {reopening === item.prNumber ? "重新打开中..." : "重新打开"}
-                    </Button>
-                  ) : null}
-                </Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
-      </div>
-    );
-  }, [data, error, handleSelect, loading]);
+    return null;
+  }, [data.length, error, loading]);
 
   return (
     <Page>
@@ -359,17 +314,254 @@ export default function ResourcePublish() {
           description="查看你已上传资源的审核状态"
           icon={<ListMagnifyingGlassIcon size={25} className="text-purple-300" />}
           action={
-            <Button variant="soft" onClick={() => navigate("/new-resource")}>
-              <FileArrowUpIcon size={15} weight="fill" />
-              发布资源
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {!viewMode.mobile && (
+                <SegmentedControl.Root
+                  value={viewMode.mode === "table" ? "table" : "card"}
+                  onValueChange={(value) =>
+                    viewMode.setMode(value as "table" | "card")
+                  }
+                  size="1"
+                  variant="surface"
+                  radius="large"
+                >
+                  <SegmentedControl.Item
+                    value="table"
+                    className="cursor-pointer px-3 py-1.5 text-xs"
+                  >
+                    表格
+                  </SegmentedControl.Item>
+                  <SegmentedControl.Item
+                    value="card"
+                    className="cursor-pointer px-3 py-1.5 text-xs"
+                  >
+                    卡片
+                  </SegmentedControl.Item>
+                </SegmentedControl.Root>
+              )}
+              <Button variant="soft" onClick={() => navigate("/new-resource")}>
+                <FileArrowUpIcon size={15} weight="fill" />
+                发布资源
+              </Button>
+            </div>
           }
         />
 
-        <div className="mx-auto w-full max-w-6xl rounded-xl bg-nav-item p-0.5">
+        <div className="mx-auto w-full max-w-6xl">
           {content}
+          {!loading && !error && data.length > 0 && viewMode.resolved === "table" && (
+            <div className="w-full overflow-x-auto rounded-xl bg-nav-item p-0.5 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+              <Table.Root className="pt-1.5 min-w-max">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeaderCell>唯一标识</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>提交日期</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {data.map((item) => (
+                    <Table.Row
+                      key={`${item.prNumber}-${item.id}`}
+                      className={
+                        item.prState !== "merged"
+                          ? "hover:bg-neutral-700 active:bg-neutral-700 cursor-pointer"
+                          : ""
+                      }
+                      onClick={() => void handleSelect(item)}
+                    >
+                      <Table.RowHeaderCell>{item.id}</Table.RowHeaderCell>
+                      <Table.Cell>{item.name}</Table.Cell>
+                      <Table.Cell>{formatResourceType(item.restype)}</Table.Cell>
+                      <Table.Cell className="flex flex-row gap-1 items-center">
+                        {statusRender(item)}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {item.createdAt
+                          ? new Date(item.createdAt).toLocaleDateString("zh-CN")
+                          : "--"}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {selectingPr === item.prNumber ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-white/50">
+                            <Spinner size="1" /> 载入中...
+                          </span>
+                        ) : null}
+                        {item.prState === "closed" && !item.refused ? (
+                          <Button
+                            size="1"
+                            variant="soft"
+                            color="blue"
+                            disabled={reopening === item.prNumber}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleReopen(item);
+                            }}
+                          >
+                            <ArrowClockwiseIcon size={14} weight="bold" />
+                            {reopening === item.prNumber
+                              ? "重新打开中..."
+                              : "重新打开"}
+                          </Button>
+                        ) : null}
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          )}
+          {!loading && !error && data.length > 0 && viewMode.resolved === "card" && (
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+              {data.map((item) => (
+                <PublishResourceCard
+                  key={`${item.prNumber}-${item.id}`}
+                  item={item}
+                  selecting={selectingPr === item.prNumber}
+                  reopening={reopening === item.prNumber}
+                  onSelect={() => void handleSelect(item)}
+                  onReopen={() => void handleReopen(item)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * 手机/卡片视图：名称是主要辨识依据，ID 次要；状态与 PR 号放在下方。
+ * 已合入的卡片不可点击，已关闭的卡片提供「重新打开」。
+ */
+function PublishResourceCard({
+  item,
+  selecting,
+  reopening,
+  onSelect,
+  onReopen,
+}: {
+  item: PublishingResource;
+  selecting: boolean;
+  reopening: boolean;
+  onSelect: () => void;
+  onReopen: () => void;
+}) {
+  const merged = item.prState === "merged";
+  const entry = item.catalog.entry;
+
+  return (
+    <div
+      role="button"
+      tabIndex={merged ? -1 : 0}
+      aria-disabled={merged || undefined}
+      onClick={merged ? undefined : onSelect}
+      onKeyDown={(event) => {
+        if (merged) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`h-full rounded-xl border border-white/10 bg-nav-item px-3.5 py-3 outline-none transition-colors ${
+        merged
+          ? "cursor-default opacity-75"
+          : "cursor-pointer hover:bg-nav-item-hover focus-visible:ring-2 focus-visible:ring-purple-400/60"
+      } ${selecting ? "pointer-events-none opacity-60" : ""}`}
+    >
+      <div className="flex items-start gap-3">
+        <ResourceIcon
+          rawUrl={indexItemIconUrl(entry)}
+          className="size-10 rounded-full border border-white/10"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="line-clamp-2 min-w-0 text-sm font-semibold leading-5 text-white">
+              {item.name}
+            </p>
+            <Badge color="gray" variant="soft" className="shrink-0">
+              {formatResourceType(item.restype)}
+            </Badge>
+          </div>
+
+          <div className="mt-1 flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate font-mono text-xs text-white/45">
+              {item.id}
+            </span>
+            <button
+              type="button"
+              aria-label="复制资源 ID"
+              title="复制资源 ID"
+              className="shrink-0 rounded p-0.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70"
+              onClick={(event) => {
+                event.stopPropagation();
+                void navigator.clipboard.writeText(item.id).then(
+                  () => toast.success("已复制"),
+                  () => toast.error("复制失败"),
+                );
+              }}
+            >
+              <CopyIcon size={13} />
+            </button>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            {statusRender(item)}
+            {selecting ? (
+              <span className="inline-flex items-center gap-1 text-xs text-white/50">
+                <Spinner size="1" /> 载入中...
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/40">
+            {item.prUrl ? (
+              <button
+                type="button"
+                title="在 GitHub 查看该 PR"
+                className="inline-flex items-center gap-0.5 text-sky-300 underline underline-offset-2 transition hover:text-sky-200"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openExternal(item.prUrl!);
+                }}
+              >
+                PR #{item.prNumber}
+                <ArrowSquareOutIcon size={11} weight="bold" />
+              </button>
+            ) : (
+              <span>PR #{item.prNumber}</span>
+            )}
+            <span>
+              提交于{" "}
+              {item.createdAt
+                ? new Date(item.createdAt).toLocaleDateString("zh-CN")
+                : "--"}
+            </span>
+          </div>
+
+          {item.prState === "closed" && !item.refused ? (
+            <div className="mt-2 flex justify-end">
+              <Button
+                size="1"
+                variant="soft"
+                color="blue"
+                disabled={reopening}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onReopen();
+                }}
+              >
+                <ArrowClockwiseIcon size={14} weight="bold" />
+                {reopening ? "重新打开中..." : "重新打开"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
