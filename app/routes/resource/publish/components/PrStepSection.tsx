@@ -135,7 +135,7 @@ export function PrStepSection({
           radius="large"
         />
         <p className="px-1.5 text-xs text-white/60">
-          欢迎加入{" "}
+          如果你在创作、上传或发布资源的过程中遇到任何问题，或者希望与其他创作者交流经验、寻找合作，欢迎加入{" "}
           <a
             href="https://qm.qq.com/q/4YVntKbEMo"
             target="_blank"
@@ -144,6 +144,7 @@ export function PrStepSection({
           >
             AstroBox 资源开发者官方 QQ 群
           </a>
+          。
         </p>
       </div>
       <div className="flex flex-row max-lg:flex-col justify-between gap-2 p-2 bg-black/25 border-t border-white/10 rounded-b-[14px]">
