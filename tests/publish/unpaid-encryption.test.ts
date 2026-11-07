@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { findUnprotectedEncryptedDevices } from "../../app/logic/publish/unpaid-encryption";
+import {
+  combineProtection,
+  findUnprotectedEncryptedDevices,
+} from "../../app/logic/publish/unpaid-encryption";
 
 function sku(overrides: Record<string, unknown> = {}) {
   return {
@@ -56,5 +59,41 @@ describe("findUnprotectedEncryptedDevices", () => {
 
   test("deduplicates and trims device ids", () => {
     expect(check({ encryptedDeviceIds: [" xmb10 ", "xmb10", ""] })).toEqual(["xmb10"]);
+  });
+});
+
+describe("combineProtection", () => {
+  test("counts the old ID's paid config when the resource moves to a new ID", () => {
+    // 表盘换成模块：SKU 和自有网站授权还在旧 ID 上，合入后服务端会搬到新 ID
+    const combined = combineProtection(
+      "my_module",
+      { skus: [], externalAuthorizations: [] },
+      {
+        skus: [sku({ resourceId: "979881091817", deviceId: "xmb10" })],
+        externalAuthorizations: [{ resourceId: "979881091817", deviceId: "xmb11" }],
+      },
+    );
+    expect(
+      findUnprotectedEncryptedDevices({
+        resourceId: "my_module",
+        encryptedDeviceIds: ["xmb10", "xmb11", "xmb12"],
+        ...combined,
+      }),
+    ).toEqual(["xmb12"]);
+  });
+
+  test("still ignores free and owner-rejected SKUs on the old ID", () => {
+    const combined = combineProtection(
+      "my_module",
+      { skus: [], externalAuthorizations: [] },
+      { skus: [sku({ isPaid: false }), sku({ deviceId: "xmb11", validationStatus: "rejected_resource_owner" })], externalAuthorizations: [] },
+    );
+    expect(
+      findUnprotectedEncryptedDevices({
+        resourceId: "my_module",
+        encryptedDeviceIds: ["xmb10", "xmb11"],
+        ...combined,
+      }),
+    ).toEqual(["xmb10", "xmb11"]);
   });
 });

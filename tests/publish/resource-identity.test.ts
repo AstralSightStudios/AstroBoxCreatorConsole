@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { canEditResourceIdentity } from "../../app/logic/publish/resources";
+import {
+    canEditResourceIdentity,
+    listedResourceIdOf,
+    resolveIdMigration,
+    resolveIdentityLocks,
+} from "../../app/logic/publish/resources";
 import type { ResourceEditContext } from "../../app/logic/publish/resources";
 
 function buildContext(id: string): ResourceEditContext {
@@ -86,5 +91,87 @@ describe("canEditResourceIdentity", () => {
                 catalogIds: renamed,
             }),
         ).toBe(true);
+    });
+});
+
+function catalogContext(id: string): ResourceEditContext {
+    return { ...buildContext(id), mode: "catalog" } as ResourceEditContext;
+}
+
+function inProgressContext(rowId: string, request: { mode: "create" | "edit"; original_id: string | null }): ResourceEditContext {
+    return {
+        ...buildContext(rowId),
+        mode: "in_progress",
+        submission: {
+            path: "tmp/someone/repo",
+            request: {
+                schema_version: 1,
+                mode: request.mode,
+                original_id: request.original_id,
+                base_entry_digest: null,
+                base_catalog_commit: null,
+                client: null,
+            },
+        },
+    } as ResourceEditContext;
+}
+
+describe("listedResourceIdOf", () => {
+    test("目录模式取目录行的 ID", () => {
+        expect(listedResourceIdOf(catalogContext("979805910591"))).toBe("979805910591");
+    });
+
+    test("继续编辑「更新」PR 时取 original_id，而不是 PR 里已经改掉的目录行", () => {
+        expect(
+            listedResourceIdOf(inProgressContext("my_module", { mode: "edit", original_id: "979805910591" })),
+        ).toBe("979805910591");
+    });
+
+    test("全新发布和首次提交的 PR 不算已上架", () => {
+        expect(listedResourceIdOf(null)).toBeNull();
+        expect(
+            listedResourceIdOf(inProgressContext("new-one", { mode: "create", original_id: null })),
+        ).toBeNull();
+    });
+});
+
+describe("resolveIdMigration", () => {
+    test("已上架资源换了 ID 才需要迁移", () => {
+        expect(
+            resolveIdMigration({ editContext: catalogContext("979805910591"), itemId: " my_module " }),
+        ).toEqual({ fromId: "979805910591", toId: "my_module" });
+        expect(
+            resolveIdMigration({ editContext: catalogContext("979805910591"), itemId: "979805910591" }),
+        ).toBeNull();
+        expect(resolveIdMigration({ editContext: catalogContext("979805910591"), itemId: "  " })).toBeNull();
+        expect(resolveIdMigration({ editContext: null, itemId: "my_module" })).toBeNull();
+    });
+});
+
+describe("resolveIdentityLocks", () => {
+    const listed = { isEditing: true, canEditIdentity: false, listedType: "watchface" };
+
+    test("未合入目录时类型和 ID 都能改", () => {
+        expect(
+            resolveIdentityLocks({ ...listed, canEditIdentity: true, resourceType: "watchface" }),
+        ).toEqual({ typeLocked: false, idLocked: false });
+        expect(
+            resolveIdentityLocks({ ...listed, isEditing: false, resourceType: "watchface" }),
+        ).toEqual({ typeLocked: false, idLocked: false });
+    });
+
+    test("已上架资源：类型能改，ID 只有改了类型才放开", () => {
+        expect(resolveIdentityLocks({ ...listed, resourceType: "watchface" })).toEqual({
+            typeLocked: false,
+            idLocked: true,
+        });
+        expect(resolveIdentityLocks({ ...listed, resourceType: "canopus" })).toEqual({
+            typeLocked: false,
+            idLocked: false,
+        });
+    });
+
+    test("目录行没有类型时保守锁定 ID", () => {
+        expect(resolveIdentityLocks({ ...listed, listedType: "", resourceType: "canopus" }).idLocked).toBe(true);
     });
 });

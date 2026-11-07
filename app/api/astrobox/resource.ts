@@ -38,3 +38,22 @@ export function registerVersionResetIntent(body: RegisterVersionResetIntentBody)
     body,
   );
 }
+
+export interface RegisterIdMigrationIntentBody {
+  fromId: string;
+  /** 为空或等于 fromId 即撤销 */
+  toId: string;
+}
+
+/**
+ * 已上架资源连类型一起换 ID 时，提交 PR 前登记。PR 合入、目录里旧 ID 换成新 ID 后，
+ * 服务端把旧 ID 上的下载量、评分、评论、付费配置与购买记录等搬到新 ID。
+ */
+export function registerIdMigrationIntent(body: RegisterIdMigrationIntentBody) {
+  return sendApiRequest<{ pending: boolean }>(
+    "/resource/id_migration/intent",
+    "POST",
+    undefined,
+    body,
+  );
+}

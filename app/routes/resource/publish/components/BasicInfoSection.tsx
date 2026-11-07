@@ -1,11 +1,12 @@
 import {
   Button,
+  Callout,
   Select,
   TextArea,
   TextField,
   SegmentedControl,
 } from "~/components/ScaleAwareThemes";
-import { DiceFiveIcon } from "@phosphor-icons/react";
+import { DiceFiveIcon, WarningDiamondIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Field,
@@ -27,7 +28,7 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
     return {
       label: "资源 ID（快应用）",
       description:
-        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。未合入目录前可修改，修改后需用新包名重新打包再上传；合入目录后不可改动。",
+        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。未合入目录前可修改，修改后需用新包名重新打包再上传；合入目录后只有改资源类型时才能连 ID 一起换。",
       links: [
         {
           label: "Oracle Java 语言规范 · 包命名",
@@ -44,19 +45,19 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
     return {
       label: "资源 ID（表盘）",
       description:
-        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，合入目录后不要改动；未合入前可修改，修改后重新上传包体会自动改写。",
+        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，合入目录后只有改资源类型时才能连 ID 一起换；未合入前可修改，修改后重新上传包体会自动改写。",
     };
   }
   if (resourceType === "res_pack") {
     return {
       label: "资源 ID（资源包）",
-      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。合入目录后不要改动，否则设备上会出现两个主题目录；未合入前可修改，修改后重新上传包体会自动改写。`,
+      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。合入目录后不要改动，否则设备上会出现两个主题目录（只有改资源类型时才能连 ID 一起换）；未合入前可修改，修改后重新上传包体会自动改写。`,
     };
   }
   return {
     label: "资源 ID（模块）",
     description:
-      "模块的唯一标识，直接填写模块名称即可。仅支持字母、数字、下划线和中划线，且以字母或数字开头，合入目录后不要改动；未合入前可修改，修改后重新上传 manifest 即可。",
+      "模块的唯一标识，直接填写模块名称即可。须以小写字母开头，只含小写字母、数字和下划线，最长 16 个字符。合入目录后只有改资源类型时才能连 ID 一起换；未合入前可修改，修改后重新上传 manifest 即可。",
   };
 }
 
@@ -65,7 +66,7 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
     {
       label: "资源类型",
       description:
-        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源包与模块目前仅支持小米设备。资源一旦合入目录（发布上线）就不可再修改；尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改，修改后需重新上传包体与 manifest 才能提交。",
+        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源包与模块目前仅支持小米设备。尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改。已合入目录（发布上线）的资源也可以改类型，例如表盘改成模块；类型的 ID 格式不同时要连 ID 一起换，PR 合入后下载量、评分、评论、付费配置与购买记录会迁移到新 ID。修改后需重新上传包体与 manifest 才能提交。",
     },
     {
       label: "资源名称",
@@ -101,6 +102,12 @@ interface BasicInfoSectionProps {
   idError?: string;
   idGenerating?: boolean;
   idReadOnly?: boolean;
+  /** 资源类型不可修改 */
+  typeReadOnly?: boolean;
+  /** 已上架资源、类型没变，ID 因此锁定（提示改类型后才能换 ID） */
+  listedIdLocked?: boolean;
+  /** 本次提交会把已上架资源换到新 ID */
+  idMigration?: { fromId: string; toId: string } | null;
   onItemIdChange: (value: string) => void;
   onItemNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
@@ -124,6 +131,9 @@ export function BasicInfoSection({
   idError,
   idGenerating,
   idReadOnly,
+  typeReadOnly,
+  listedIdLocked,
+  idMigration,
   onItemIdChange,
   onItemNameChange,
   onDescriptionChange,
@@ -164,7 +174,7 @@ export function BasicInfoSection({
           size="2"
           radius="large"
           variant="surface"
-          disabled={idReadOnly}
+          disabled={typeReadOnly}
         >
           <SegmentedControl.Item
             value="quick_app"
@@ -246,7 +256,7 @@ export function BasicInfoSection({
                 ? "12位纯数字，以9798开头"
                 : resourceType === "res_pack"
                   ? "小写字母、数字、下划线或连字符，将写入 themeId"
-                  : "仅支持字母、数字、下划线和中划线"
+                  : "小写字母开头，只含小写字母、数字和下划线"
           }
         >
           <div className="flex w-full gap-2 items-start">
@@ -282,6 +292,11 @@ export function BasicInfoSection({
               {idError && (
                 <p className="text-xs text-red-400 mt-1">{idError}</p>
               )}
+              {listedIdLocked && (
+                <p className="text-xs text-white/45 mt-1">
+                  已上架资源的 ID 不能单独修改；改了资源类型后可以连 ID 一起换。
+                </p>
+              )}
             </div>
             {resourceType === "watchface" && onGenerateId && !idReadOnly && (
               <Button
@@ -300,6 +315,19 @@ export function BasicInfoSection({
           </div>
         </Field>
       </div>
+      {idMigration && (
+        <Callout.Root color="amber" size="1">
+          <Callout.Icon>
+            <WarningDiamondIcon size={16} weight="fill" />
+          </Callout.Icon>
+          <Callout.Text>
+            资源 ID 将从「{idMigration.fromId}」换成「{idMigration.toId}」。PR
+            合入后，旧 ID 上的下载量、评分、评论、合集、付费配置与购买记录会自动迁移到新
+            ID；用户设备上已安装的旧资源不会自动更新成新资源。提交前请勿修改第一作者，
+            否则迁移会被拒绝。
+          </Callout.Text>
+        </Callout.Root>
+      )}
       <Field label="资源简介" fieldKey="description" hint="参与算法与推流，必填">
         <TextArea
           ref={descriptionRef}

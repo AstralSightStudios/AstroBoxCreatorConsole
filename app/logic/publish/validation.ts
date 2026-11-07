@@ -343,6 +343,20 @@ function validatePreviewMedia(
   return issues;
 }
 
+/** 资源 ID 是否符合该资源类型的格式；快应用的包名没有固定格式，交给包体比对去拦。 */
+export function resourceIdFormatError(
+  resourceType: PublishValidationInput["resourceType"],
+  id: string,
+): string | null {
+  return resourceType === "watchface"
+    ? validateWatchfaceIdFormat(id)
+    : resourceType === "canopus"
+      ? validateCanopusIdFormat(id)
+      : resourceType === "res_pack"
+        ? validateResPackIdFormat(id)
+        : null;
+}
+
 export function validatePublish(
   input: PublishValidationInput,
 ): PublishValidationResult {
@@ -356,14 +370,7 @@ export function validatePublish(
   } else {
     // 资源 ID 会写进包体（表盘 12 位 ID、模块名称、资源包 themeId），
     // 因此格式不合规必须在这里拦住，而不是发布时静默改写。
-    const idError =
-      input.resourceType === "watchface"
-        ? validateWatchfaceIdFormat(trimmedId)
-        : input.resourceType === "canopus"
-          ? validateCanopusIdFormat(trimmedId)
-          : input.resourceType === "res_pack"
-            ? validateResPackIdFormat(trimmedId)
-            : null;
+    const idError = resourceIdFormatError(input.resourceType, trimmedId);
     if (idError) push("itemId", idError);
   }
   // 放在 ID 之后、媒体规格之前：这两条是推流质量问题，优先级高于配图，

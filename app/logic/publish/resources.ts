@@ -101,6 +101,61 @@ export function canEditResourceIdentity(options: {
 }
 
 /**
+ * 编辑的若是已上架资源，返回它在目录里的 ID：目录模式就是目录行；继续编辑「更新」PR 时
+ * 目录里的 ID 记在提交请求的 original_id 里（PR 的目录行可能已经换成了新 ID）。
+ * 全新发布、首次提交的 PR 返回 null。
+ */
+export function listedResourceIdOf(
+    editContext: Pick<ResourceEditContext, "mode" | "catalog" | "submission"> | null | undefined,
+): string | null {
+    if (!editContext) return null;
+    if (editContext.mode === "catalog") {
+        return editContext.catalog.entry.id.trim() || null;
+    }
+    const request = editContext.submission?.request;
+    if (request?.mode !== "edit") return null;
+    return request.original_id?.trim() || null;
+}
+
+/**
+ * 本次提交是否把已上架资源换到了新 ID（只有改资源类型时才允许，例如表盘改成模块）。
+ * 换 ID 时要在提交 PR 前向服务端登记，合入后服务端才会把旧 ID 上的数据搬到新 ID。
+ */
+export function resolveIdMigration(options: {
+    editContext: Pick<ResourceEditContext, "mode" | "catalog" | "submission"> | null | undefined;
+    itemId: string;
+}): { fromId: string; toId: string } | null {
+    const fromId = listedResourceIdOf(options.editContext);
+    const toId = options.itemId.trim();
+    if (!fromId || !toId || toId === fromId) return null;
+    return { fromId, toId };
+}
+
+/**
+ * 资源类型与资源 ID 输入框是否锁定。
+ * - 未合入目录（canEditIdentity 为 true）：都可以改；
+ * - 已合入目录：类型可以改；ID 只有在类型改成别的之后才能改。不同类型的 ID 格式不同
+ *   （表盘是 9798 开头的 12 位数字，模块是小写字母开头的名称），换类型往往只能连 ID 一起换，
+ *   服务端会在合入后把旧 ID 上的数据搬过去；类型不变时没有理由换 ID，继续锁定。
+ */
+export function resolveIdentityLocks(options: {
+    isEditing: boolean;
+    canEditIdentity: boolean;
+    /** 目录行里的资源类型（编辑会话加载时的类型） */
+    listedType: string | null | undefined;
+    resourceType: string;
+}): { typeLocked: boolean; idLocked: boolean } {
+    if (!options.isEditing || options.canEditIdentity) {
+        return { typeLocked: false, idLocked: false };
+    }
+    const listedType = (options.listedType ?? "").trim();
+    return {
+        typeLocked: false,
+        idLocked: !listedType || options.resourceType === listedType,
+    };
+}
+
+/**
  * 依据旧 PR 标题推导出更新后的标题：保留原来的
  * 「[ABCC] Add new resource / Update resource」动作前缀，仅刷新资源名称部分。
  * 旧标题缺失或不是 ABCC 生成格式时，退回标准的「Update resource」格式。

@@ -13,6 +13,8 @@ import { fetchManifestForCatalogEntry } from "./manifest-loader";
 import type { PublishedDownloadBaseline } from "./pre-publish-checks";
 
 export interface PublishedBaselines {
+    /** 已合入版本的资源类型；PR 改了类型时旧类型的版本号不能当基线 */
+    restype?: string;
     downloads?: Record<string, PublishedDownloadBaseline>;
     trialDownloads?: Record<string, PublishedDownloadBaseline>;
 }
@@ -60,6 +62,7 @@ export async function fetchPublishedBaselinesForResourceId(params: {
     });
     const ext = manifest.ext;
     return {
+        restype: entry.restype,
         downloads: toBaselineRecord(manifest.downloads),
         trialDownloads: toBaselineRecord(ext?.trialDownloads),
     };

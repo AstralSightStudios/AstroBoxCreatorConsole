@@ -149,8 +149,14 @@ import {
   type ResourceEditContext,
   buildResourcePrTitle,
   canEditResourceIdentity,
+  listedResourceIdOf,
+  resolveIdMigration,
+  resolveIdentityLocks,
 } from "~/logic/publish/resources";
-import { registerVersionResetIntent } from "~/api/astrobox/resource";
+import {
+  registerIdMigrationIntent,
+  registerVersionResetIntent,
+} from "~/api/astrobox/resource";
 import {
   DEFAULT_VERSION_RESET_OPTIONS,
   canOfferVersionReset,
@@ -159,6 +165,7 @@ import {
 } from "~/logic/publish/version-reset";
 import {
   encryptedDownloadDevices,
+  resourceIdFormatError,
   validatePublish,
   validatePushQuality,
 } from "~/logic/publish/validation";
@@ -317,6 +324,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     "quick_app",
   );
   const idsByTypeRef = useRef<Partial<Record<ResourceType, string>>>({});
+  // 已上架资源切到别的类型时收起来的 previousVersionCode（按行 uid），切回原类型时放回
+  const versionBaselinesRef = useRef<Map<string, number | undefined> | null>(
+    null,
+  );
   const itemIdRef = useRef(itemId);
   itemIdRef.current = itemId;
   const [itemName, setItemName] = useState("");
@@ -941,6 +952,23 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     editContext,
     catalogIds: existingCatalogIds,
   });
+  // 已合入目录的资源可以改类型；ID 只有改了类型才放开（表盘、模块等的 ID 格式不同，
+  // 换类型往往只能连 ID 一起换）。换了 ID 的提交在 PR 前登记迁移，合入后服务端搬数据。
+  const listedResourceId = listedResourceIdOf(editContext);
+  const listedType =
+    isEditing && !canEditIdentity && editContext?.catalog.entry.restype
+      ? normalizeResourceType(editContext.catalog.entry.restype)
+      : null;
+  const identityLocks = resolveIdentityLocks({
+    isEditing,
+    canEditIdentity,
+    listedType,
+    resourceType,
+  });
+  const idMigration = useMemo(
+    () => resolveIdMigration({ editContext, itemId }),
+    [editContext, itemId],
+  );
   const missingEditContext = isEditMode && !editContext;
 
   useEffect(() => {
@@ -1052,13 +1080,53 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const handleResourceTypeChange = useCallback(
     (next: ResourceType) => {
-      if ((isEditing && !canEditIdentity) || next === resourceType) return;
+      if (identityLocks.typeLocked || next === resourceType) return;
       idsByTypeRef.current[resourceType] = itemIdRef.current;
       const cached = idsByTypeRef.current[next];
+      // 已上架资源换类型时，原 ID 也符合新类型的格式就先沿用：不换 ID 就不用迁移数据。
+      const keptListedId =
+        isEditing &&
+        !canEditIdentity &&
+        listedResourceId &&
+        !resourceIdFormatError(next, listedResourceId)
+          ? listedResourceId
+          : undefined;
       const suggested =
         next === "res_pack" ? normalizeResPackIdInput(itemName) : "";
-      setItemId(cached !== undefined ? cached : suggested);
+      setItemId(
+        cached !== undefined ? cached : (keptListedId ?? suggested),
+      );
       setResourceType(next);
+      // 已上架资源离开目录里的类型：旧类型包体的 versionCode 不能当新包体的基线
+      // （表盘的版本号和新模块的毫无关系），先收起来，切回原类型时再放回去。
+      let baseDownloads = downloads;
+      let baseTrialDownloads = trialDownloads;
+      if (listedType && resourceType === listedType) {
+        const saved = new Map<string, number | undefined>();
+        const strip = (rows: DownloadInput[]) =>
+          rows.map((row) => {
+            saved.set(row.uid, row.previousVersionCode);
+            return { ...row, previousVersionCode: undefined };
+          });
+        baseDownloads = strip(downloads);
+        baseTrialDownloads = strip(trialDownloads);
+        versionBaselinesRef.current = saved;
+      } else if (listedType && next === listedType && versionBaselinesRef.current) {
+        const saved = versionBaselinesRef.current;
+        const restore = (rows: DownloadInput[]) =>
+          rows.map((row) =>
+            saved.has(row.uid)
+              ? { ...row, previousVersionCode: saved.get(row.uid) }
+              : row,
+          );
+        baseDownloads = restore(downloads);
+        baseTrialDownloads = restore(trialDownloads);
+        versionBaselinesRef.current = null;
+      }
+      if (baseDownloads !== downloads) setDownloads(baseDownloads);
+      if (baseTrialDownloads !== trialDownloads) {
+        setTrialDownloads(baseTrialDownloads);
+      }
       // 切到小米专属类型时清掉已选的非小米设备行。厂商未知（设备库尚未
       // 加载完）的行先保留，提交前还有一层校验兜底。
       if (isXiaomiOnlyResourceType(next)) {
@@ -1073,8 +1141,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               isDeviceVendorSupportedByResourceType(next, vendor)
             );
           });
-        const nextDownloads = prune(downloads);
-        const nextTrialDownloads = prune(trialDownloads);
+        const nextDownloads = prune(baseDownloads);
+        const nextTrialDownloads = prune(baseTrialDownloads);
         if (nextDownloads.length !== downloads.length) {
           setDownloads(nextDownloads);
         }
@@ -1097,6 +1165,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       resourceType,
       isEditing,
       canEditIdentity,
+      identityLocks.typeLocked,
+      listedResourceId,
+      listedType,
       itemName,
       deviceVendorById,
       downloads,
@@ -1107,14 +1178,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
 
   const handleItemIdChange = useCallback(
     (value: string) => {
-      if (isEditing && !canEditIdentity) return;
+      if (identityLocks.idLocked) return;
       // 资源 ID 不做任何自动改写：创作者填什么就存什么，不合规只提示。
       // 自动替换非法字符会打断输入法组字（拼音中间的组字符会被替成 '-'），
       // 也会让 CSV id 与包内 themeId 悄悄分叉。
       setItemId(value);
       invalidateUploadedAssets("资源 ID 已变更");
     },
-    [isEditing, canEditIdentity, invalidateUploadedAssets],
+    [identityLocks.idLocked, invalidateUploadedAssets],
   );
 
   useEffect(() => {
@@ -1275,10 +1346,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             editContext.submission?.request.original_id?.trim() ||
             catalogEntry.id;
           try {
-            const baselines = await fetchPublishedBaselinesForResourceId({
+            const published = await fetchPublishedBaselinesForResourceId({
               token,
               resourceId: baselineResourceId,
             });
+            // 这个 PR 改了资源类型（例如表盘改成模块）：旧类型包体的版本号与新包体无关，不当基线
+            const baselines =
+              published?.restype &&
+              normalizeResourceType(published.restype) !==
+                normalizeResourceType(catalogEntry.restype)
+                ? undefined
+                : published;
             downloadRows = applyPublishedBaseline(
               downloadRows,
               baselines?.downloads,
@@ -1787,6 +1865,26 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleNextFromDownloadConfig = () => {
+    // 已上架资源换了类型：旧类型的包体不能沿用到新类型上，每个设备都要重新导入。
+    if (listedType && resourceType !== listedType) {
+      const stale = [...downloads, ...trialDownloads].filter((row) =>
+        Boolean(row.existingFileName),
+      );
+      if (stale.length > 0) {
+        toast.error(
+          `资源类型已从「${formatResourceType(listedType)}」改为「${formatResourceType(resourceType)}」，旧类型的包体不能沿用，请重新导入（${stale
+            .map(
+              (d) =>
+                sortedDeviceOptions.find((opt) => opt.id === d.platformId)
+                  ?.name ||
+                d.platformId ||
+                "未选设备",
+            )
+            .join("、")}）。`,
+        );
+        return;
+      }
+    }
     const withoutCanopus = rowsWithoutCanopusMeta(
       [...downloads, ...trialDownloads],
       resourceType,
@@ -2065,6 +2163,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         const unpaid = await checkUnpaidEncryption(
           itemId,
           encryptedDownloadDevices(downloads),
+          { migratingFromId: idMigration?.fromId },
         );
         if (unpaid.status !== "ok") {
           log.warn("upload/repo", "加密包体未配置 SKU，等待确认", {
@@ -2189,7 +2288,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     try {
       await flowSpan("pr/version-reset", "登记新版本选项", () =>
         registerVersionResetIntent({
-          id: itemId.trim(),
+          // 换了 ID 时登记在旧 ID 上：新 ID 合入前服务端还认不出作者，
+          // 合入后这条登记会随迁移一起搬到新 ID。
+          id: idMigration?.fromId ?? itemId.trim(),
           commitSha,
           resetRatings: versionReset.resetRatings,
           foldComments: versionReset.foldComments,
@@ -2319,6 +2420,20 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         ),
         paid_type: effectivePaidType?.trim() ?? "",
       };
+
+      // 已上架资源换了 ID：先在服务端登记，PR 合入后旧 ID 上的下载量、评分、评论、付费配置
+      // 与购买记录才会搬到新 ID。登记不上就不提交，免得合入后这些数据全留在旧 ID 上。
+      if (idMigration) {
+        try {
+          await flowSpan("pr/id-migration", "登记资源 ID 迁移", () =>
+            registerIdMigrationIntent(idMigration),
+          );
+        } catch (error) {
+          throw new Error(
+            `资源 ID 迁移登记失败（${idMigration.fromId} → ${idMigration.toId}）：${(error as Error).message}`,
+          );
+        }
+      }
 
       if (mode === "in_progress") {
         const prHead = editContext?.prHead;
@@ -3272,7 +3387,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 resourceType={resourceType}
                 idError={idError}
                 idGenerating={idGenerating}
-                idReadOnly={isEditing && !canEditIdentity}
+                idReadOnly={identityLocks.idLocked}
+                typeReadOnly={identityLocks.typeLocked}
+                listedIdLocked={
+                  isEditing && !canEditIdentity && identityLocks.idLocked
+                }
+                idMigration={idMigration}
                 onItemIdChange={(value) => {
                   handleItemIdChange(value);
                   logFieldChange("itemId", "资源 ID", value);

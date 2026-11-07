@@ -5,6 +5,8 @@
  * 同一个资源 ID 下该设备有没有付费 SKU（或自有网站授权）。只上传了密钥、
  * 没配 SKU 时，服务端会把它当成免费资源，任何用户无需购买即可拿到密钥下载。
  * 换过资源 ID、SKU 还留在旧 ID 上也是同样的结果，所以必须按本次提交的 ID 查。
+ * 例外是已上架资源随类型一起换 ID（migratingFromId）：提交前登记了迁移，服务端在新 ID
+ * 第一次被访问时就先把旧 ID 上的付费配置搬过来，旧 ID 上的配置也算数。
  */
 import {
   listExternalAuthorizations,
@@ -54,26 +56,63 @@ export function findUnprotectedEncryptedDevices(input: {
   return Array.from(encrypted).filter((deviceId) => !protectedDevices.has(deviceId));
 }
 
+type Protection = {
+  skus: Pick<SellerResourceSku, "resourceId" | "deviceId" | "isPaid" | "validationStatus">[];
+  externalAuthorizations: Array<{ resourceId: string; deviceId: string }>;
+};
+
+/** 换 ID 迁移时旧 ID 上的付费配置合入后会落到新 ID 上，按新 ID 计入。 */
+export function combineProtection(
+  resourceId: string,
+  current: Protection,
+  inherited: Protection | null,
+): Protection {
+  const asCurrent = <T extends { resourceId: string }>(items: T[]) =>
+    items.map((item) => ({ ...item, resourceId }));
+  return {
+    skus: [...current.skus, ...asCurrent(inherited?.skus ?? [])],
+    externalAuthorizations: [
+      ...current.externalAuthorizations,
+      ...asCurrent(inherited?.externalAuthorizations ?? []),
+    ],
+  };
+}
+
+async function listProtection(resourceId: string): Promise<Protection> {
+  const [resourceConfigs, externalConfigs] = await Promise.all([
+    listSellerResourceConfigs({ resourceId }),
+    // 自有网站授权是可选功能，列表拿不到时只按 SKU 判断
+    listExternalAuthorizations({ resourceId })
+      .then((result) => result.configs)
+      .catch(() => []),
+  ]);
+  return {
+    skus: resourceConfigs.skus,
+    externalAuthorizations: [
+      ...externalConfigs,
+      ...listExternalAuthorizationDrafts(resourceId),
+    ],
+  };
+}
+
 export async function checkUnpaidEncryption(
   resourceId: string,
   encryptedDeviceIds: string[],
+  options: { migratingFromId?: string | null } = {},
 ): Promise<UnpaidEncryptionCheck> {
   const id = resourceId.trim();
   if (!id || encryptedDeviceIds.length === 0) return { status: "ok" };
+  const fromId = options.migratingFromId?.trim() ?? "";
 
   try {
-    const [resourceConfigs, externalConfigs] = await Promise.all([
-      listSellerResourceConfigs({ resourceId: id }),
-      // 自有网站授权是可选功能，列表拿不到时只按 SKU 判断
-      listExternalAuthorizations({ resourceId: id })
-        .then((result) => result.configs)
-        .catch(() => []),
+    const [current, inherited] = await Promise.all([
+      listProtection(id),
+      fromId && fromId !== id ? listProtection(fromId) : null,
     ]);
     const deviceIds = findUnprotectedEncryptedDevices({
       resourceId: id,
       encryptedDeviceIds,
-      skus: resourceConfigs.skus,
-      externalAuthorizations: [...externalConfigs, ...listExternalAuthorizationDrafts(id)],
+      ...combineProtection(id, current, inherited),
     });
     return deviceIds.length > 0
       ? { status: "unprotected", resourceId: id, deviceIds }
