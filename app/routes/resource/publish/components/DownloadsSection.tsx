@@ -3,7 +3,6 @@ import {
   PlusIcon,
   MinusIcon,
   WarningDiamondIcon,
-  InfoIcon,
   ListChecksIcon,
   CopyIcon,
   ChecksIcon,
@@ -84,7 +83,7 @@ const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
   },
   {
     label: "加密上传",
-    description: "会员功能，开启后包体加密上传，用户需要激活才能使用。",
+    description: "开启后包体加密上传，用户需要激活才能使用。",
   },
   {
     label: "更新日志",
@@ -110,9 +109,10 @@ interface DownloadsSectionProps {
   /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
   fieldKey?: PublishFieldKey;
   emptyMessage?: string;
-  helperText?: string;
   downloads: DownloadInput[];
   sortedDeviceOptions: DeviceOption[];
+  /** 下拉里展示的全部设备（含当前资源类型不支持的厂商）；缺省等同 sortedDeviceOptions。 */
+  allDeviceOptions?: DeviceOption[];
   isDeviceLoading: boolean;
   deviceError: string;
   isVip: boolean;
@@ -120,8 +120,8 @@ interface DownloadsSectionProps {
   allowEncryption?: boolean;
   /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
   fileAccept?: string;
-  /** 当前资源类型对设备厂商的限制说明。 */
-  deviceNotice?: string;
+  /** 当前资源类型不支持某些厂商时，禁用项悬浮显示的系统气泡文案。 */
+  disabledDeviceTitle?: string;
   validateFile?: (file: File) => Promise<ValidatedPackage>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
@@ -153,16 +153,16 @@ export function DownloadsSection({
   description = "为不同设备提供不同的资源包体",
   fieldKey = "downloads",
   emptyMessage = "还未添加任何设备",
-  helperText = "应最少添加一个设备才能发布资源。",
   downloads,
   sortedDeviceOptions,
+  allDeviceOptions,
   isDeviceLoading,
   deviceError,
   isVip,
   resourceId,
   allowEncryption = true,
   fileAccept,
-  deviceNotice,
+  disabledDeviceTitle,
   validateFile,
   onAddRow,
   onRemoveRow,
@@ -202,6 +202,17 @@ export function DownloadsSection({
     () => new Set(downloads.map((d) => d.platformId).filter(Boolean)),
     [downloads],
   );
+
+  /** 当前资源类型允许选择的设备 id，用于区分下拉里需要置灰的选项。 */
+  const supportedDeviceIds = useMemo(
+    () => new Set(sortedDeviceOptions.map((option) => option.id)),
+    [sortedDeviceOptions],
+  );
+  /**
+   * 受限厂商的设备不从下拉里藏掉：选项凭空消失会让人以为设备库没同步，
+   * 只能反复切资源类型去猜。保留选项、置灰，悬浮时用系统 title 气泡说明原因。
+   */
+  const selectDeviceOptions = allDeviceOptions ?? sortedDeviceOptions;
 
   const vendorGroups = useMemo(() => {
     const groups = new Map<string, DeviceOption[]>();
@@ -430,14 +441,6 @@ export function DownloadsSection({
           <Callout.Text>设备列表不可用，请稍后重试</Callout.Text>
         </Callout.Root>
       )}
-      {deviceNotice && (
-        <Callout.Root color="gray">
-          <Callout.Icon>
-            <InfoIcon size={18} weight="fill" />
-          </Callout.Icon>
-          <Callout.Text>{deviceNotice}</Callout.Text>
-        </Callout.Root>
-      )}
       <div className="flex flex-col gap-3 max-w-full">
         <div className="flex items-center gap-1.5 px-1">
           {onBatchSetDevices && (
@@ -561,16 +564,30 @@ export function DownloadsSection({
                           className="w-full whitespace-normal"
                         />
                         <Select.Content position="popper">
-                          {sortedDeviceOptions.map((opt) => {
+                          {selectDeviceOptions.map((opt) => {
                             const usedElsewhere = downloads.some(
                               (row, idx) =>
                                 idx !== index && row.platformId === opt.id,
                             );
+                            // 没有禁用文案时不拦截，避免“灰着又不说为什么”。
+                            const vendorRestricted =
+                              Boolean(disabledDeviceTitle) &&
+                              !supportedDeviceIds.has(opt.id);
                             return (
                               <Select.Item
                                 key={opt.id}
                                 value={opt.id}
-                                disabled={usedElsewhere}
+                                disabled={usedElsewhere || vendorRestricted}
+                                title={
+                                  vendorRestricted
+                                    ? disabledDeviceTitle
+                                    : undefined
+                                }
+                                className={
+                                  vendorRestricted
+                                    ? "cursor-not-allowed!"
+                                    : undefined
+                                }
                               >
                                 {opt.name}
                                 {usedElsewhere ? "（已使用）" : ""}
@@ -905,10 +922,6 @@ export function DownloadsSection({
         title={`${title}字段说明`}
         items={DOWNLOAD_FIELD_HELP}
       />
-
-      <div className="flex flex-col px-1.5 py-1 w-full">
-        {helperText && <p className="text-xs text-white/60">{helperText}</p>}
-      </div>
     </SectionCard>
   );
 }

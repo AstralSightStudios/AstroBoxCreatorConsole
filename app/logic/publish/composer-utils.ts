@@ -78,6 +78,30 @@ export function extractCustomExt(ext: ManifestExtObject | undefined): ManifestEx
   return next;
 }
 
+/**
+ * 目录 CSV 的 devices / device_vendors 覆盖资源支持的全部设备。
+ *
+ * manifest 里正式包体在 downloads、试用包体在 ext.trialDownloads，两者都是
+ * 资源可运行的设备；只取 downloads 会把「只提供试用包」的设备漏出目录，
+ * 客户端会误判该资源不支持这些设备（见 AstroBox-Repo PR #1846）。
+ */
+export function collectCatalogDevices(
+  rowGroups: ReadonlyArray<ReadonlyArray<{ platformId?: string }>>,
+  vendorById: ReadonlyMap<string, string | undefined>,
+): Array<{ id: string; vendor?: string }> {
+  const devices = new Map<string, { id: string; vendor?: string }>();
+  for (const rows of rowGroups) {
+    for (const row of rows) {
+      const id = row.platformId?.trim();
+      if (!id) continue;
+      const key = id.toLowerCase();
+      if (devices.has(key)) continue;
+      devices.set(key, { id, vendor: vendorById.get(key) });
+    }
+  }
+  return Array.from(devices.values());
+}
+
 /** 标签输入框以中英文分号或逗号分隔。 */
 export function parseTagText(raw: string): string[] {
     return raw

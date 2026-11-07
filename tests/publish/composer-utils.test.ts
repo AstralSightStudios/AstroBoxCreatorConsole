@@ -1,11 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildDownloadInputsFromManifest,
+  collectCatalogDevices,
   extractCustomExt,
   isManifestExtObject,
   parseTagText,
 } from "../../app/logic/publish/composer-utils";
 import { restoreDownloadInput } from "../../app/logic/publish/draft-codec";
+
+describe("composer utils: collectCatalogDevices", () => {
+  const vendorById = new Map<string, string | undefined>([
+    ["xmb9p", "xiaomi"],
+    ["vivowgt2", "vivo"],
+  ]);
+
+  test("includes trial-only devices in the catalog device list", () => {
+    expect(
+      collectCatalogDevices(
+        [
+          [{ platformId: "xmb9p" }],
+          [{ platformId: "vivowgt2" }],
+        ],
+        vendorById,
+      ),
+    ).toEqual([
+      { id: "xmb9p", vendor: "xiaomi" },
+      { id: "vivowgt2", vendor: "vivo" },
+    ]);
+  });
+
+  test("dedupes across download groups case-insensitively and skips blanks", () => {
+    expect(
+      collectCatalogDevices(
+        [
+          [{ platformId: " xmb9p " }, { platformId: "" }],
+          [{ platformId: "XMB9P" }],
+        ],
+        vendorById,
+      ),
+    ).toEqual([{ id: "xmb9p", vendor: "xiaomi" }]);
+  });
+});
 
 describe("composer utils: parseTagText", () => {
   test("splits on both half and full width separators and trims", () => {

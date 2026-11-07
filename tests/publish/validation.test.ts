@@ -350,7 +350,16 @@ describe("publish validation", () => {
     });
     expect(wrongRatioUpload.errors.join(" ")).toContain("3:2");
 
-    // 3:2 零容差：差一个像素也要拦下，旧的 ±0.02 容差会让这张图通过。
+    // 两位小数口径：1499×1000 比值 1.499，四舍五入后为 1.50，允许提交。
+    const roundedCover = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { ...coverImage, width: 1499, height: 1000 },
+    });
+    expect(roundedCover.errors).toEqual([]);
+
+    // 但 151×100 比值 1.51，第二位小数已经偏离，仍要拦下。
     const nearMiss = validatePublish({
       ...validInput,
       usePreviewAsCover: false,
@@ -384,6 +393,23 @@ describe("publish validation", () => {
       cover: { file: new Blob() },
     });
     expect(unreadable.errors.join(" ")).toContain("无法读取");
+  });
+
+  test("rejects animated icon and cover", () => {
+    const animatedMeta = { format: "gif" as const, animated: true };
+    const animatedIcon = validatePublish({
+      ...validInput,
+      icon: { ...image, imageMeta: animatedMeta },
+    });
+    expect(animatedIcon.errors.join(" ")).toContain("图标不支持动图");
+
+    const animatedCover = validatePublish({
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover: { ...coverImage, imageMeta: animatedMeta },
+    });
+    expect(animatedCover.errors.join(" ")).toContain("封面不支持动图");
   });
 
   test("reports invalid links without blocking publishing", () => {

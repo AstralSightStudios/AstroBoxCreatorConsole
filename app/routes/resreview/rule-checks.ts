@@ -51,7 +51,7 @@ import {
   SVG_SNIFF_BYTES,
   checkPreviewTotalSize,
   getAnimatedPreviewIssues,
-  hasExactCoverRatio,
+  hasCoverRatio,
   isBannedImageName,
   isSvgContent,
 } from "~/logic/publish/pre-publish-checks";
@@ -168,7 +168,7 @@ export interface ImageSizeInfo {
   width?: number;
   height?: number;
   ratio?: number;
-  /** icon 应为 1:1，cover 应为 3:2（1.5）；preview 无固定要求故为 undefined。 */
+  /** icon 应为 1:1，cover 应为 3:2（两位小数 1.50）；preview 无固定要求故为 undefined。 */
   ratioValid?: boolean;
   /** 命中禁用格式（SVG）。审核明细行据此标红，跳转按钮也会亮起。 */
   bannedFormat?: boolean;
@@ -1745,9 +1745,9 @@ export async function runResourceRuleChecks(options: {
         if (img.label === "icon") {
           img.ratioValid = Math.abs(img.ratio - 1) <= 0.01;
         } else if (img.label === "cover") {
-          // 与发布页共用同一判定（严格 3:2，零容差）：此处原为 0.01 容差，
-          // 会把发布页已经拒绝的 2560×1707 判成合格。
-          img.ratioValid = hasExactCoverRatio(img.width, img.height);
+          // 与发布页共用同一判定（宽/高四舍五入到两位小数需为 1.50）：此处原为
+          // 0.01 容差，会把发布页已经拒绝的图片判成合格。
+          img.ratioValid = hasCoverRatio(img.width, img.height);
         }
       }),
   );
@@ -1894,8 +1894,29 @@ export async function runResourceRuleChecks(options: {
     anchorLabel: overFailed[0]?.label,
   });
 
+  // --- check: icon / cover 不使用动图 ---
+  // 客户端只把预览图当动图播；icon/cover 在列表和详情页按静态渲染，
+  // 动图只会显示首帧。发布端画布也会拒绝上传，这里兜底旧数据与人工提交。
+  const animatedNonPreview = imageSizes.filter(
+    (img) => img.animated && !img.label.startsWith("preview"),
+  );
+  checks.push({
+    title: "icon 与 cover 不使用动图",
+    status: animatedNonPreview.length > 0 ? "fail" : "pass",
+    detail:
+      animatedNonPreview.length > 0
+        ? `${animatedNonPreview
+            .map((img) => img.label)
+            .join("、")} 是动图。图标与封面只支持静态图片，请要求创作者改用静态图，或把动画放进预览图。`
+        : "icon 与 cover 均为静态图片",
+    anchor: animatedNonPreview[0]?.label ? "images" : undefined,
+    anchorLabel: animatedNonPreview[0]?.label,
+  });
+
   // --- check: 动图预览（峰值帧率 / 帧数 / 时长） ---
-  const animatedImages = imageSizes.filter((img) => img.animated);
+  const animatedImages = imageSizes.filter(
+    (img) => img.animated && img.label.startsWith("preview"),
+  );
   const animatedProblems: Array<{ img: ImageSizeInfo; level: "warn" | "fail"; message: string }> = [];
   for (const img of animatedImages) {
     const issues = getAnimatedPreviewIssues(

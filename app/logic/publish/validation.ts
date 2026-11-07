@@ -379,6 +379,11 @@ export function validatePublish(
   if (!input.icon) {
     push("icon", "请上传图标。");
   } else {
+    // 图标在列表与详情页都按静态图渲染，动图只剩首帧；上传阶段已拦，
+    // 这里兜底草稿、编辑回填与旧数据。
+    if (input.icon.imageMeta?.animated) {
+      push("icon", "图标不支持动图，请使用静态图片。");
+    }
     const iconError = checkIconDimensions(input.icon);
     if (iconError) push("icon", iconError);
   }

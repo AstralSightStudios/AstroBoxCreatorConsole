@@ -17,8 +17,8 @@ import {
 } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
-import type { UploadItem } from "./shared";
-import { SectionCard } from "./shared";
+import type { FieldHelpItem, UploadItem } from "./shared";
+import { FieldHelpButton, FieldHelpDialog, SectionCard } from "./shared";
 
 interface MediaSectionProps {
   previews: UploadItem[];
@@ -42,6 +42,44 @@ interface MediaSectionProps {
     height: number,
   ) => void;
 }
+
+const MEDIA_FIELD_HELP: FieldHelpItem[] = [
+  {
+    label: "上传方式",
+    description:
+      "点击选择或将图片拖入对应区域。同一文件会自动复用，无需重复上传。",
+  },
+  {
+    label: "文件格式",
+    description: "使用 PNG / JPEG / WebP 位图；SVG 矢量图会导致渲染不一致，不支持。",
+  },
+  {
+    label: "只有预览图支持动图",
+    description:
+      "图标与封面必须是静态图片，上传动图会被直接拒绝；需要动画效果时请放进预览图。",
+  },
+  {
+    label: "动图大小与限制",
+    description:
+      "动图保留原始动画，不经过压缩；建议 ≤2MB、硬上限 4MB、峰值帧率 ≤144fps。静态预览会自动压到 500KB。",
+  },
+  {
+    label: "预览图",
+    description: `至少 ${PUBLISH_PREVIEWS_MIN} 张；图标与封面各需一张。`,
+  },
+  {
+    label: "图标",
+    description: `宽高比 1:1，超出 ${ICON_MAX_DIMENSION}px 会自动压缩；不支持动图。`,
+  },
+  {
+    label: "封面",
+    description: "宽高比 3:2（保留两位小数为 1.50）；不支持动图。",
+  },
+  {
+    label: "动态表盘",
+    description: "建议提供一张动图预览，直观展示表盘的动画效果。",
+  },
+];
 
 function formatFileSize(size?: number): string {
   if (size == null || !Number.isFinite(size)) return "-";
@@ -333,6 +371,7 @@ export function MediaSection({
     disabled: lightboxIndex !== null,
   });
   const [showInfo, setShowInfo] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [edgePad, setEdgePad] = useState(0);
   const [dropping, setDropping] = useState(false);
@@ -724,7 +763,13 @@ export function MediaSection({
   return (
     <SectionCard
       title="媒体素材"
-      description={`点击选择或将图片拖入对应区域；预览图至少 ${PUBLISH_PREVIEWS_MIN} 张，图标与封面各一张。相同文件会自动复用，无需重复上传。静态预览自动压到 500KB；动图保留原始动画，建议 ≤2MB、硬上限 4MB、峰值帧率 ≤144fps。`}
+      description="图标、封面与预览图。具体尺寸与上传要求见右上角说明。"
+      headerExtra={
+        <FieldHelpButton
+          onClick={() => setHelpOpen(true)}
+          title="媒体素材字段说明"
+        />
+      }
     >
       <div ref={mediaDropRef} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
@@ -743,7 +788,7 @@ export function MediaSection({
           />
           <MediaTile
             label="封面"
-            hint="宽高比严格 3:2"
+            hint="宽高比 3:2（保留两位小数为 1.50）"
             fieldKey="cover"
             dropActive={mediaDropTarget === "cover"}
             media={cover}
@@ -1028,6 +1073,13 @@ export function MediaSection({
           </Dialog.Content>
         </Dialog.Root>
       )}
+
+      <FieldHelpDialog
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title="媒体素材字段说明"
+        items={MEDIA_FIELD_HELP}
+      />
     </SectionCard>
   );
 }

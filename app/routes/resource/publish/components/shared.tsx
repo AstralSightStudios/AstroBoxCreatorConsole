@@ -1,7 +1,7 @@
 import { UploadSimpleIcon, XCircleIcon } from "@phosphor-icons/react";
 import type { ImageMeta } from "~/logic/publish/image-meta";
 import type { PublishFieldKey } from "~/logic/publish/validation";
-import { COVER_RATIO, hasExactCoverRatio } from "~/logic/publish/pre-publish-checks";
+import { COVER_RATIO_TEXT, hasCoverRatio } from "~/logic/publish/pre-publish-checks";
 
 export function SectionCard({
   title,
@@ -114,13 +114,13 @@ export function UploadSlot({
   onDimensions?: (width: number, height: number) => void;
 }) {
   const ratio = media?.width && media.height ? media.width / media.height : null;
-  // 与提交校验共用同一判定（严格 3:2，零容差）：这里曾是写死的 0.02 容差，
-  // 会出现红框没亮、点下一步却被拦下的情况。
+  // 与提交校验共用同一判定（宽/高四舍五入到两位小数需为 1.50）：这里曾是
+  // 写死的 0.02 容差，会出现红框没亮、点下一步却被拦下的情况。
   const ratioWarning =
     showRatio &&
     media?.width != null &&
     media.height != null &&
-    !hasExactCoverRatio(media.width, media.height);
+    !hasCoverRatio(media.width, media.height);
   const sizeWarning = Boolean(
     recommendedMaxSize &&
       media?.width &&
@@ -160,7 +160,7 @@ export function UploadSlot({
                 ? `建议不超过 ${recommendedMaxSize}×${recommendedMaxSize}，当前 ${media.width}×${media.height}；不影响提交`
                 : ratio !== null
                   ? ratioWarning
-                    ? `必须严格 3:2（${COVER_RATIO}），当前 ${media.width}×${media.height}；不满足将无法提交`
+                    ? `宽高比需为 3:2（保留两位小数为 ${COVER_RATIO_TEXT}），当前 ${media.width}×${media.height}；不满足将无法提交`
                     : `${media.width}×${media.height} · 比例 ${ratio.toFixed(2)}`
                   : "已就绪"}
             </span>

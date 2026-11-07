@@ -13,15 +13,17 @@ import type { ImageMeta } from "./image-meta";
 import type { ResourceType } from "./resource-type";
 
 /**
- * 封面必须严格为 3:2 宽高比，且文件大小不得超过 COVER_MAX_BYTES。
+ * 封面宽高比需为 3:2，且文件大小不得超过 COVER_MAX_BYTES。
  *
- * 判定只认整数比值（宽 × 2 === 高 × 3），不设任何浮点容差：3:2 的整数倍
- * （1500×1000、1200×800）能精确命中，而 2560×1707 这类「相机导出凑整」的
- * 尺寸会被明确拒绝，不再靠 0.02 容差蒙混过关。
+ * 宽高比只看两位小数：宽 / 高四舍五入后等于 1.50 即通过。3:2 的整数倍
+ * （1500×1000、1200×800）自然命中，2560×1707 这类「相机导出凑整」的尺寸
+ * 也不再被误伤；1.49、1.51 这种肉眼可辨的偏差仍会被拒绝。
  */
 const COVER_RATIO_NUM = 3;
 const COVER_RATIO_DEN = 2;
-export const COVER_RATIO = COVER_RATIO_NUM / COVER_RATIO_DEN; // 1.5，仅供文案展示
+export const COVER_RATIO = COVER_RATIO_NUM / COVER_RATIO_DEN; // 1.5，仅供展示与兼容既有导入
+/** 两位小数口径下的目标值，判定与文案共用，保证「界面显示 1.50 即可提交」。 */
+export const COVER_RATIO_TEXT = "1.50";
 export const COVER_MAX_BYTES = 600 * 1024;
 
 /**
@@ -299,21 +301,23 @@ export function checkIconDimensions(dims: ImageDimensions): string | null {
 }
 
 /**
- * 尺寸是否严格等于 3:2。整数乘法判定，不引入容差。
+ * 宽高比四舍五入到两位小数后是否等于 1.50。
  *
  * 发布页实时红框（shared.tsx 的 UploadSlot）与审核页（rule-checks）都复用它，
  * 三处曾各自写死 0.02 / 0.01 容差，同一张图在发布页能过、审核页判不过。
+ * 判定与界面上 `ratio.toFixed(2)` 的展示同一口径：显示 1.50 就能提交，
+ * 允许区间约为 [1.495, 1.505)。
  */
-export function hasExactCoverRatio(width: number, height: number): boolean {
-  return width * COVER_RATIO_DEN === height * COVER_RATIO_NUM;
+export function hasCoverRatio(width: number, height: number): boolean {
+  return (width / height).toFixed(2) === COVER_RATIO_TEXT;
 }
 
-/** 封面宽高比检查：严格 3:2，不容差。 */
+/** 封面宽高比检查：四舍五入到两位小数需为 1.50。 */
 export function checkCoverRatio(dims: ImageDimensions): string | null {
   if (!dims.width || !dims.height) return "封面无法读取，请重新上传。";
-  if (hasExactCoverRatio(dims.width, dims.height)) return null;
+  if (hasCoverRatio(dims.width, dims.height)) return null;
   const ratio = dims.width / dims.height;
-  return `封面必须严格为 3:2 宽高比（宽 = 高 × ${COVER_RATIO}），当前 ${dims.width}×${dims.height}（${ratio.toFixed(2)}）。`;
+  return `封面宽高比需为 3:2（保留两位小数应为 ${COVER_RATIO_TEXT}），当前 ${dims.width}×${dims.height}（${ratio.toFixed(2)}）。`;
 }
 
 /**

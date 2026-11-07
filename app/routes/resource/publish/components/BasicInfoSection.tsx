@@ -246,31 +246,19 @@ export function BasicInfoSection({
             radius="large"
           />
         </Field>
-        <Field
-          label="资源 ID"
-          fieldKey="itemId"
-          hint={
-            resourceType === "quick_app"
-              ? "填写快应用包名"
-              : resourceType === "watchface"
-                ? "12位纯数字，以9798开头"
-                : resourceType === "res_pack"
-                  ? "小写字母、数字、下划线或连字符，将写入 themeId"
-                  : "小写字母开头，只含小写字母、数字和下划线"
-          }
-        >
+        <Field label="资源 ID" fieldKey="itemId">
           <div className="flex w-full gap-2 items-start">
             <div className="flex-1 min-w-0 w-full">
               <div className="flex w-full items-stretch">
                 <TextField.Root
                   placeholder={
                     resourceType === "quick_app"
-                      ? "com.example.quickapp"
+                      ? "快应用包名，如 com.example.quickapp"
                       : resourceType === "watchface"
-                        ? "9798XXXXXXXX"
+                        ? "12 位纯数字，以 9798 开头，如 9798XXXXXXXX"
                         : resourceType === "res_pack"
-                          ? "my-theme"
-                          : "模块名称"
+                          ? "小写字母、数字、下划线或连字符，如 my-theme"
+                          : "小写字母开头，只含小写字母、数字和下划线，最长 16 字符"
                   }
                   value={itemId}
                   onChange={(e) => {

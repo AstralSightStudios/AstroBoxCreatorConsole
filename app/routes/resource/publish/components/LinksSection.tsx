@@ -43,7 +43,8 @@ const LINK_FIELD_HELP: FieldHelpItem[] = [
     },
     {
         label: "标题",
-        description: "链接的显示名称，例如「项目主页」「使用文档」「交流群」。",
+        description:
+            "链接的显示名称，例如「项目主页」「使用文档」「交流群」；建议不超过 8 个字。",
     },
     {
         label: "网址",

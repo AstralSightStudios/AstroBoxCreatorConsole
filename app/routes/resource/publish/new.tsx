@@ -232,6 +232,7 @@ import {
 } from "~/logic/publish/draft-codec";
 import {
   buildDownloadInputsFromManifest,
+  collectCatalogDevices,
   extractCustomExt,
   isManifestExtObject,
   parseTagText,
@@ -632,7 +633,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     const originalDims = await getImageDimensions(file);
     const coverRatioError = checkCoverRatio(originalDims);
     if (coverRatioError) {
-      log.warn("media/cover", "封面宽高比必须为 3:2，已拒绝", {
+      log.warn("media/cover", "封面宽高比保留两位小数不为 1.50，已拒绝", {
         data: {
           name: file.name,
           width: originalDims.width,
@@ -774,18 +775,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
-  /** 资源包与模块只允许小米设备，其他类型保持完整设备列表。 */
-  const supportedDeviceOptions = useMemo(
-    () => filterDeviceOptionsByResourceType(deviceOptions, resourceType),
-    [deviceOptions, resourceType],
-  );
-  const sortedDeviceOptions = useMemo(
+  /** 全部设备按名称排序，下拉里完整展示；受限厂商置灰而不是直接隐藏。 */
+  const allSortedDeviceOptions = useMemo(
     () =>
-      [...supportedDeviceOptions].sort((a, b) =>
+      [...deviceOptions].sort((a, b) =>
         a.name.localeCompare(b.name, "zh-Hans", { sensitivity: "base" }),
       ),
-    [supportedDeviceOptions],
+    [deviceOptions],
   );
+  /** 资源包与模块只允许小米设备，其他类型保持完整设备列表。 */
+  const supportedDeviceOptions = useMemo(
+    () =>
+      filterDeviceOptionsByResourceType(allSortedDeviceOptions, resourceType),
+    [allSortedDeviceOptions, resourceType],
+  );
+  const sortedDeviceOptions = supportedDeviceOptions;
   // manifest 的 downloads key 可能是规范化 id，也可能是机型号，两者都要能查厂商。
   // 统一转小写，避免旧数据里 M2345B1 / m2345b1 这类大小写差异导致漏检。
   const deviceVendorById = useMemo(() => {
@@ -798,8 +802,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
     return map;
   }, [deviceOptions]);
-  const deviceVendorNotice = isXiaomiOnlyResourceType(resourceType)
-    ? `${formatResourceType(resourceType)}只支持小米设备，其他厂商设备不会出现在下拉列表中。`
+  /** 受限资源类型下，下拉里保留非小米设备但置灰，悬浮时用系统气泡说明原因。 */
+  const disabledDeviceTitle = isXiaomiOnlyResourceType(resourceType)
+    ? `${formatResourceType(resourceType)}只支持 Vela 设备`
     : undefined;
 
   const [downloads, setDownloads] =
@@ -2392,12 +2397,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         throw new Error(pushIssues.map((issue) => issue.message).join("；"));
       }
 
-      const selectedDevices = downloads
-        .filter((d) => d.platformId.trim())
-        .map((d) => ({
-          id: d.platformId.trim(),
-          vendor: deviceVendorById.get(d.platformId.trim().toLowerCase()),
-        }));
+      // 试用包体也代表资源支持的设备，必须一起写进目录 CSV 的 devices；
+      // 只取正式下载会把只在试用包里出现的设备漏掉。
+      const selectedDevices = collectCatalogDevices(
+        [downloads, trialDownloads],
+        deviceVendorById,
+      );
 
       const manifestForCatalog = lastManifest ?? manifestResult;
       const useStaging = true;
@@ -3453,7 +3458,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
-                deviceNotice={deviceVendorNotice}
+                allDeviceOptions={allSortedDeviceOptions}
+                disabledDeviceTitle={disabledDeviceTitle}
                 fileAccept={PACKAGE_ACCEPT[resourceType]}
                 validateFile={
                   resourceType === "quick_app" ||
@@ -3472,15 +3478,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               <DownloadsSection
                 title="试用版下载配置"
                 fieldKey="trialDownloads"
-                description="可选。结构与下载配置一致，但不允许加密上传。如不提供试用包，可保持为空。试用版文件会默认上传到 downloads/trial/ 目录。"
+                description="可选。结构与下载配置一致，但不允许加密上传。如不提供试用包，可保持为空。"
                 emptyMessage="还未添加任何试用下载设备"
-                helperText=""
                 downloads={trialDownloads}
                 sortedDeviceOptions={sortedDeviceOptions}
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
-                deviceNotice={deviceVendorNotice}
+                allDeviceOptions={allSortedDeviceOptions}
+                disabledDeviceTitle={disabledDeviceTitle}
                 allowEncryption={false}
                 fileAccept={PACKAGE_ACCEPT[resourceType]}
                 validateFile={validateSelectedPackage}
