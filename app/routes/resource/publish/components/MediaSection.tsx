@@ -1,9 +1,15 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  CropIcon,
   DotsSixVerticalIcon,
+  FileImageIcon,
+  FilmStripIcon,
+  GifIcon,
   ImagesSquareIcon,
   InfoIcon,
+  PlayCircleIcon,
+  SquareIcon,
   UploadSimpleIcon,
   XCircleIcon,
   XIcon,
@@ -45,38 +51,54 @@ interface MediaSectionProps {
 
 const MEDIA_FIELD_HELP: FieldHelpItem[] = [
   {
+    group: "上传",
     label: "上传方式",
+    icon: <UploadSimpleIcon size={16} weight="duotone" />,
     description:
       "点击选择或将图片拖入对应区域。同一文件会自动复用，无需重复上传。",
   },
   {
+    group: "上传",
     label: "文件格式",
+    icon: <FileImageIcon size={16} weight="duotone" />,
     description: "使用 PNG / JPEG / WebP 位图；SVG 矢量图会导致渲染不一致，不支持。",
   },
   {
+    group: "动图",
     label: "只有预览图支持动图",
+    icon: <GifIcon size={16} weight="duotone" />,
     description:
       "图标与封面必须是静态图片，上传动图会被直接拒绝；需要动画效果时请放进预览图。",
   },
   {
+    group: "动图",
     label: "动图大小与限制",
+    icon: <FilmStripIcon size={16} weight="duotone" />,
     description:
       "动图保留原始动画，不经过压缩；建议 ≤2MB、硬上限 4MB、峰值帧率 ≤144fps。静态预览会自动压到 500KB。",
   },
   {
+    group: "规格",
     label: "预览图",
+    icon: <ImagesSquareIcon size={16} weight="duotone" />,
     description: `至少 ${PUBLISH_PREVIEWS_MIN} 张；图标与封面各需一张。`,
   },
   {
+    group: "规格",
     label: "图标",
+    icon: <SquareIcon size={16} weight="duotone" />,
     description: `宽高比 1:1，超出 ${ICON_MAX_DIMENSION}px 会自动压缩；不支持动图。`,
   },
   {
+    group: "规格",
     label: "封面",
+    icon: <CropIcon size={16} weight="duotone" />,
     description: "宽高比 3:2（保留两位小数为 1.50）；不支持动图。",
   },
   {
+    group: "规格",
     label: "动态表盘",
+    icon: <PlayCircleIcon size={16} weight="duotone" />,
     description: "建议提供一张动图预览，直观展示表盘的动画效果。",
   },
 ];

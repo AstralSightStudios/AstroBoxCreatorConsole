@@ -9,10 +9,15 @@ import {
   NotebookIcon,
   TrashIcon,
   LockSimpleIcon,
+  LockIcon,
   PencilSimpleLineIcon,
   DotsSixVerticalIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  DeviceMobileIcon,
+  TagIcon,
+  HashIcon,
+  FileArrowUpIcon,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -40,7 +45,13 @@ import {
   type ValidatedPackage,
 } from "./types";
 import type { PublishFieldKey } from "~/logic/publish/validation";
-import { type UploadItem, FieldHelpButton, FieldHelpDialog, SectionCard } from "./shared";
+import {
+  type FieldHelpItem,
+  type UploadItem,
+  FieldHelpButton,
+  FieldHelpDialog,
+  SectionCard,
+} from "./shared";
 import { EncryptConfigDialog } from "./EncryptConfigDialog";
 import { VersionEditorDialog } from "./VersionEditorDialog";
 import { toast } from "sonner";
@@ -61,37 +72,51 @@ import {
 } from "~/logic/publish/package-version";
 import { resolveImportedPackage } from "~/logic/publish/package-import";
 
-const DOWNLOAD_FIELD_HELP: { label: string; description: string }[] = [
+const DOWNLOAD_FIELD_HELP: FieldHelpItem[] = [
   {
+    group: "基础配置",
     label: "设备",
+    icon: <DeviceMobileIcon size={16} weight="duotone" />,
     description: "选择该包体对应的设备型号，同一设备只能配置一个包体。",
   },
   {
+    group: "基础配置",
     label: "版本号",
+    icon: <TagIcon size={16} weight="duotone" />,
     description:
       "展示用版本名称，导入包体后自动读取并锁定。普通包体可点「修改版本」改写；已签名的 rpk 无法在控制台内改写，需在构建工具链改好 manifest.json 后重新打包导入。",
   },
   {
+    group: "基础配置",
     label: "versionCode",
+    icon: <HashIcon size={16} weight="duotone" />,
     description:
       "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定。同样地，rpk 需要在构建工具链里改 manifest.json 的 versionCode 后重新打包导入。",
   },
   {
+    group: "基础配置",
     label: "包体文件",
+    icon: <FileArrowUpIcon size={16} weight="duotone" />,
     description:
       "上传该设备的资源包体（RPK、表盘 bin / mwz、CRPack 资源包、.canopus 模块包等），编辑已有资源时可沿用仓库中的旧包。",
   },
   {
+    group: "附加选项",
     label: "加密上传",
+    icon: <LockIcon size={16} weight="duotone" />,
     description: "开启后包体加密上传，用户需要激活才能使用。",
   },
   {
+    group: "附加选项",
     label: "更新日志",
+    icon: <NotebookIcon size={16} weight="duotone" />,
     description:
       "按版本记录本次更新内容，用户更新资源时会看到这些说明。同一包体里版本号不能重复；新添加的一条默认填入当前导入包的版本。可拖动或点上下箭头调整顺序，越靠上越先显示。",
   },
   {
+    group: "附加选项",
     label: "批量选择设备 / 一键填充",
+    icon: <ListChecksIcon size={16} weight="duotone" />,
     description:
       "多设备资源可批量添加设备行，或将第一行的配置快速复制到其他设备行。",
   },

@@ -8,7 +8,9 @@ import {
   TextField,
 } from "~/components/ScaleAwareThemes";
 import {
+  LockKeyIcon,
   MagnifyingGlassIcon,
+  PackageIcon,
   PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -75,12 +77,16 @@ function ProxiedIcon({ url }: { url: string }) {
 
 const EXT_FIELD_HELP: FieldHelpItem[] = [
   {
+    group: "创作者功能",
     label: "启用购买与资源加密相关功能",
+    icon: <LockKeyIcon size={16} weight="duotone" />,
     description:
       "使用加密上传，或通过 AstroBox 配置付费相关功能时必须开启，否则客户端不解密包体。",
   },
   {
+    group: "捆绑资源",
     label: "捆绑项的两种安装方式",
+    icon: <PackageIcon size={16} weight="duotone" />,
     description:
       "必需：用户安装本资源时必须一并安装；推荐：安装时展示可勾选项，由用户自行决定。点击已添加捆绑项上的「必需 / 推荐」徽章即可切换。",
   },

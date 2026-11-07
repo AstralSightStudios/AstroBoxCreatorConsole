@@ -6,7 +6,16 @@ import {
   TextField,
   SegmentedControl,
 } from "~/components/ScaleAwareThemes";
-import { DiceFiveIcon, WarningDiamondIcon } from "@phosphor-icons/react";
+import {
+  CurrencyCircleDollarIcon,
+  DiceFiveIcon,
+  FingerprintIcon,
+  SquaresFourIcon,
+  TagIcon,
+  TextAlignLeftIcon,
+  TextTIcon,
+  WarningDiamondIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Field,
@@ -64,26 +73,40 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
 function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
   return [
     {
+      group: "基本信息",
       label: "资源类型",
+      icon: <SquaresFourIcon size={16} weight="duotone" />,
       description:
         "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源包与模块目前仅支持小米设备。尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改。已合入目录（发布上线）的资源也可以改类型，例如表盘改成模块；类型的 ID 格式不同时要连 ID 一起换，PR 合入后下载量、评分、评论、付费配置与购买记录会迁移到新 ID。修改后需重新上传包体与 manifest 才能提交。",
     },
     {
+      group: "基本信息",
       label: "资源名称",
+      icon: <TextTIcon size={16} weight="duotone" />,
       description: "展示在资源列表和详情页的名称，建议简短直观。",
     },
-    describeItemId(resourceType),
     {
+      group: "基本信息",
+      icon: <FingerprintIcon size={16} weight="duotone" />,
+      ...describeItemId(resourceType),
+    },
+    {
+      group: "展示与分类",
       label: "资源简介",
+      icon: <TextAlignLeftIcon size={16} weight="duotone" />,
       description:
         "必填。参与算法与推流，描述不准或内容单薄会让资源难以被目标用户看到，同时也是审核参考。请准确说明实际功能与适用场景。",
     },
     {
+      group: "展示与分类",
       label: "标签",
+      icon: <TagIcon size={16} weight="duotone" />,
       description: `必填，至少 ${PUBLISH_TAGS_MIN} 个。参与搜索与推流，是资源被用户找到的重要途径。请填写与资源功能贴合的标签，建议不超过 ${PUBLISH_TAGS_SUGGESTED_MAX} 个。`,
     },
     {
+      group: "付费",
       label: "付费类型",
+      icon: <CurrencyCircleDollarIcon size={16} weight="duotone" />,
       description:
         "免费：可直接使用。付费：可先体验部分功能，购买后解锁完整功能。强制付费：不购买则无法使用。",
     },

@@ -1,7 +1,11 @@
 import {
+    CheckSquareIcon,
+    ImageIcon,
+    LinkIcon,
     MagnifyingGlassIcon,
     MinusIcon,
     PlusIcon,
+    TextAaIcon,
 } from "@phosphor-icons/react";
 import {
     Button,
@@ -32,22 +36,30 @@ import { logFieldChange } from "~/logic/logging/publish-flow";
 
 const LINK_FIELD_HELP: FieldHelpItem[] = [
     {
-        label: "图标、标题、网址",
+        group: "填写要求",
+        label: "三项必填",
+        icon: <CheckSquareIcon size={16} weight="duotone" />,
         description:
-            "三项都必须填写，缺任意一项都无法提交。只要填了其中任意一项，这一行就会参与校验；反过来，三项都留空的行会被自动忽略，不会写进资源。",
+            "图标、标题、网址三项都必须填写，缺任意一项都无法提交。只要填了其中任意一项，这一行就会参与校验；反过来，三项都留空的行会被自动忽略，不会写进资源。",
     },
     {
+        group: "字段说明",
         label: "图标",
+        icon: <ImageIcon size={16} weight="duotone" />,
         description:
             "从 Phosphor 图标库里挑一个代表该链接的图标，例如 github、globe、chat、book。未选择时按钮显示为虚线框，提交前必须补上。",
     },
     {
+        group: "字段说明",
         label: "标题",
+        icon: <TextAaIcon size={16} weight="duotone" />,
         description:
             "链接的显示名称，例如「项目主页」「使用文档」「交流群」；建议不超过 8 个字。",
     },
     {
+        group: "字段说明",
         label: "网址",
+        icon: <LinkIcon size={16} weight="duotone" />,
         description:
             "必须是有效的 HTTPS 地址。带反引号或尖括号包裹的内容会自动去除，可直接粘贴 Markdown 里的链接写法。QQ 群也可以作为链接：先获取 QQ 群邀请二维码，用手机扫码后即可得到群链接，再填进来。",
     },

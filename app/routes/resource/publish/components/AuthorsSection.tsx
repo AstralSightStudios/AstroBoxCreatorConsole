@@ -1,7 +1,10 @@
 import {
     ArrowCounterClockwiseIcon,
+    CrownIcon,
+    LinkSimpleIcon,
     MinusIcon,
     PlusIcon,
+    UserIcon,
     WarningDiamondIcon,
 } from "@phosphor-icons/react";
 import {
@@ -33,17 +36,23 @@ import type { AuthorSearchItem } from "~/api/astrobox/profile";
 
 const AUTHOR_FIELD_HELP: FieldHelpItem[] = [
     {
+        group: "署名",
         label: "作者名称",
+        icon: <UserIcon size={16} weight="duotone" />,
         description:
             "请填 AstroBox 用户名（username，不是显示名）。第一个作者默认填入当前登录的 AstroBox 用户名；第二个作者及以后可直接按用户名搜索创作者并选择。",
     },
     {
+        group: "署名",
         label: "关联 AstroBox 账号",
+        icon: <LinkSimpleIcon size={16} weight="duotone" />,
         description:
             "开启后该署名会关联到一个真实的 AstroBox 账号，用户点击可跳转到其主页。第一个作者固定关联当前账号，无法关闭。",
     },
     {
+        group: "资源归属",
         label: "第一个作者",
+        icon: <CrownIcon size={16} weight="duotone" />,
         description:
             "代表你自己，固定关联当前 AstroBox 账号。尽量不要改名或移除：资源归属、Creator Pro 权益与免费 / 付费比例全靠这条关联，一旦断开资源就归属不到任何账号，PR 审核也会被退回。至少需要保留一个作者。",
     },
