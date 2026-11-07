@@ -144,6 +144,7 @@ interface DownloadsSectionProps {
     packageIdentity?: string;
     packageIdentityKind?: DownloadIdentityKind;
     packageWritable?: boolean;
+    packageUnwritableReason?: string;
     canopus?: DownloadInput["canopus"];
   }) => void;
 }
@@ -249,6 +250,7 @@ export function DownloadsSection({
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        packageUnwritableReason: template.packageUnwritableReason,
         canopus: template.canopus,
       });
     }

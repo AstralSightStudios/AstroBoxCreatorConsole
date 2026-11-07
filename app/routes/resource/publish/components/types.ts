@@ -46,6 +46,8 @@ export type DownloadInput = {
     packageIdentityKind?: DownloadIdentityKind;
     /** 包体是否支持内置改写版本。 */
     packageWritable?: boolean;
+    /** 不可改写时的具体原因（rpk / .canopus / 未知格式各不相同）。 */
+    packageUnwritableReason?: string;
     /** 原生 Canopus 包体的 ABI 与目标固件，来自包内 manifest 或旧条目。 */
     canopus?: ManifestCanopusMeta;
 };
