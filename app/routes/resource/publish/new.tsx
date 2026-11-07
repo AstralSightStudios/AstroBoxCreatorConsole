@@ -3261,7 +3261,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       {versionIncrementWarningDialog}
       {unpaidEncryptionWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
-        <div className="flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:top-1.5 lg:left-0 h-fit select-none">
+        {/* sticky 偏移要和滚动内容预留的顶部空间一致（app.css 里 app-page-scroll-content
+            的 padding-top 为 52px + 0.5rem），否则吸顶后会钻进 Header 的渐进模糊区。 */}
+        <div className="publish-steps-sidebar flex flex-col items-start gap-3 lg:flex-none lg:min-w-64 lg:sticky lg:left-0 h-fit select-none">
           <div className="flex flex-col px-3 py-3.5">
             {!isEditing ? (
               <UploadIcon size={24} className="mb-2 text-blue-500" />

@@ -538,6 +538,16 @@ html[data-ui-narrow="false"] .app-page-scroll-content {
     padding-top: calc(52px + 0.5rem);
 }
 
+/* 发布页左侧步骤栏：吸顶偏移与滚动内容预留的 Header 空间保持一致，
+   否则吸顶后会钻进 Header 的渐进模糊区，顶部被盖住。 */
+.publish-steps-sidebar {
+    top: calc(52px + 0.5rem);
+}
+
+html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .publish-steps-sidebar {
+    top: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
+}
+
 html[data-ui-narrow="false"] .app-page-scroll-area[data-overlayscrollbars] > .os-scrollbar-vertical {
     top: calc(52px + 1rem);
 }
