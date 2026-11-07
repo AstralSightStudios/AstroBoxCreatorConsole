@@ -2,12 +2,15 @@ import { Button, Spinner, TextField } from "@radix-ui/themes";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RepoInfo } from "~/logic/publish/submission";
+import { matchesRepoOption } from "~/logic/publish/repo-options";
 import { Field, SectionCard } from "./shared";
 
 export interface ExistingRepoOption {
   name: string;
   updatedAt: string;
   description?: string;
+  /** 仓库 topic；用于优先排序、关键词筛选与下拉展示。 */
+  topics?: string[];
 }
 
 interface RepoStepSectionProps {
@@ -75,10 +78,9 @@ export function RepoStepSection({
   }, [uploadLogs]);
 
   const filteredRepos = useMemo(() => {
-    const keyword = repoNameInput.trim().toLowerCase();
-    if (!keyword) return existingRepos;
+    if (!repoNameInput.trim()) return existingRepos;
     return existingRepos.filter((repo) =>
-      repo.name.toLowerCase().includes(keyword),
+      matchesRepoOption(repo, repoNameInput),
     );
   }, [existingRepos, repoNameInput]);
 
@@ -198,6 +200,18 @@ export function RepoStepSection({
                                 {repo.description && (
                                   <span className="truncate text-[11px] text-white/40">
                                     {repo.description}
+                                  </span>
+                                )}
+                                {(repo.topics?.length ?? 0) > 0 && (
+                                  <span className="flex flex-wrap gap-1">
+                                    {repo.topics!.slice(0, 3).map((topic) => (
+                                      <span
+                                        key={topic}
+                                        className="rounded border border-sky-300/20 bg-sky-400/10 px-1 py-px text-[10px] text-sky-200"
+                                      >
+                                        {topic}
+                                      </span>
+                                    ))}
                                   </span>
                                 )}
                               </span>

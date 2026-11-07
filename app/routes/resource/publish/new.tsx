@@ -139,6 +139,7 @@ import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
 import { RepoStepSection, type ExistingRepoOption } from "./components/RepoStepSection";
+import { isAstroBoxResourceRepo } from "~/logic/publish/repo-options";
 import {
   getRepoFile,
   isGithubStatus,
@@ -2107,16 +2108,17 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (isEditing || activeStepIndex !== 1) return;
     if (userReposLoading || userRepos.length > 0) return;
     const token = loadAccountState().github?.token;
+    const username = loadAccountState().github?.username;
     if (!token) return;
     const fetchId = ++userReposFetchIdRef.current;
     setUserReposLoading(true);
-    listCurrentUserRepos(token)
+    listCurrentUserRepos(token, username)
       .then((repos) => {
         if (fetchId !== userReposFetchIdRef.current) return;
         setUserRepos(
           [...repos].sort((a, b) => {
-            const aResource = a.name.startsWith("astrobox-resource-") ? 0 : 1;
-            const bResource = b.name.startsWith("astrobox-resource-") ? 0 : 1;
+            const aResource = isAstroBoxResourceRepo(a) ? 0 : 1;
+            const bResource = isAstroBoxResourceRepo(b) ? 0 : 1;
             if (aResource !== bResource) return aResource - bResource;
             return b.updatedAt.localeCompare(a.updatedAt);
           }),

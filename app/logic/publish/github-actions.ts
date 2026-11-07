@@ -511,18 +511,65 @@ export interface UserRepoSummary {
     defaultBranch: string;
     updatedAt: string;
     description: string;
+    /** 仓库 topic；/user/repos 不返回，经 Search API 补齐，取不到时为空。 */
+    topics: string[];
+}
+
+/**
+ * 用 Search API 补齐资源仓库的 topic。
+ *
+ * `/user/repos` 列表端点不返回 topics，逐个查 `/repos/:owner/:repo/topics`
+ * 又会产生 N 次请求；这里只筛出带 `astrobox-resource` topic 的仓库，一次
+ * 搜索拿到名称与全部 topic。失败时静默返回空表，下拉退回名称前缀判断。
+ */
+async function fetchResourceRepoTopics(
+    username: string,
+    token: string,
+): Promise<Map<string, string[]>> {
+    try {
+        const query = encodeURIComponent(
+            `user:${username} topic:astrobox-resource`,
+        );
+        const data = await githubFetch<{
+            items?: Array<{ name?: string; topics?: string[] }>;
+        }>(
+            `https://api.github.com/search/repositories?q=${query}&per_page=100&sort=updated`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/vnd.github+json",
+                },
+            },
+            { timeoutMs: 10_000, retries: 1 },
+        );
+        const map = new Map<string, string[]>();
+        for (const item of data?.items ?? []) {
+            if (!item?.name) continue;
+            map.set(item.name, Array.isArray(item.topics) ? item.topics : []);
+        }
+        return map;
+    } catch (error) {
+        console.warn("[github] 获取仓库 topic 失败，回退到名称前缀判断", error);
+        return new Map();
+    }
 }
 
 export async function listCurrentUserRepos(
     tokenOverride?: string,
+    usernameOverride?: string,
 ): Promise<UserRepoSummary[]> {
     const token = tokenOverride ?? getGithubTokenOrThrow();
-    const data = await githubFetch<any[]>(
-        "https://api.github.com/user/repos?affiliation=owner&per_page=100&sort=pushed",
-        {
-            headers: { Authorization: `Bearer ${token}` },
-        },
-    );
+    const [data, topicsByName] = await Promise.all([
+        githubFetch<any[]>(
+            "https://api.github.com/user/repos?affiliation=owner&per_page=100&sort=pushed",
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        ),
+        usernameOverride
+            ? fetchResourceRepoTopics(usernameOverride, token)
+            : Promise.resolve(new Map<string, string[]>()),
+    ]);
     return (data || [])
         .filter((repo) => repo && repo.name)
         .map((repo) => ({
@@ -530,6 +577,7 @@ export async function listCurrentUserRepos(
             defaultBranch: (repo.default_branch as string) || MAIN_RESOURCE_BRANCH,
             updatedAt: (repo.pushed_at || repo.updated_at || "") as string,
             description: (repo.description as string) || "",
+            topics: topicsByName.get(repo.name) ?? [],
         }));
 }
 
