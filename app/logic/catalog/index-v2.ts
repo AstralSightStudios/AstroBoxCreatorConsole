@@ -95,7 +95,12 @@ export function indexItemAssetUrl(
   return `${base}/${value.replace(/^\/+/, "")}`;
 }
 
-export function indexItemIconUrl(entry: IndexV2Entry) {
+export function indexItemIconUrl(
+  entry: Pick<
+    IndexV2Entry,
+    "repo_owner" | "repo_name" | "repo_commit_hash" | "icon"
+  >,
+) {
   return indexItemAssetUrl(entry, entry.icon);
 }
 

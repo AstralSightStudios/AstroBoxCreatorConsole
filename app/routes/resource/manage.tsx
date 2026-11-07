@@ -1,13 +1,24 @@
 import {
   ArchiveIcon,
+  CopyIcon,
+  GithubLogoIcon,
   WarningOctagonIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
-import { Table, Callout, Spinner } from "@radix-ui/themes";
+import {
+  Table,
+  Callout,
+  Spinner,
+  Badge,
+  SegmentedControl,
+} from "~/components/ScaleAwareThemes";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
+import { useListViewMode } from "~/logic/ui/list-view-mode";
+import { indexItemIconUrl } from "~/logic/catalog/index-v2";
+import { ResourceIcon } from "~/routes/manage-resources/components/ResourceVisuals";
 import { loadAccountState } from "~/logic/account/store";
 import {
   loadOwnedCatalogResourcesForCurrentUser,
@@ -26,6 +37,7 @@ export default function ResourceManage() {
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
   const [selectingId, setSelectingId] = useState<string | null>(null);
+  const viewMode = useListViewMode("resource-manage-view");
 
   useEffect(() => {
     let active = true;
@@ -116,6 +128,32 @@ export default function ResourceManage() {
           title="已发布资源"
           description="管理已通过审核的资源"
           icon={<ArchiveIcon size={25} className="text-purple-300" />}
+          action={
+            viewMode.mobile ? undefined : (
+              <SegmentedControl.Root
+                value={viewMode.mode === "table" ? "table" : "card"}
+                onValueChange={(value) =>
+                  viewMode.setMode(value as "table" | "card")
+                }
+                size="1"
+                variant="surface"
+                radius="large"
+              >
+                <SegmentedControl.Item
+                  value="table"
+                  className="cursor-pointer px-3 py-1.5 text-xs"
+                >
+                  表格
+                </SegmentedControl.Item>
+                <SegmentedControl.Item
+                  value="card"
+                  className="cursor-pointer px-3 py-1.5 text-xs"
+                >
+                  卡片
+                </SegmentedControl.Item>
+              </SegmentedControl.Root>
+            )
+          }
         />
 
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
@@ -159,7 +197,7 @@ export default function ResourceManage() {
               </Callout.Text>
             </Callout.Root>
           )}
-          {!loading && !error && items.length > 0 && (
+          {!loading && !error && items.length > 0 && viewMode.resolved === "table" && (
             <div className="w-full overflow-x-auto rounded-xl bg-nav-item p-0.5 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
               <Table.Root className="min-w-max pt-1.5">
                 <Table.Header>
@@ -196,6 +234,18 @@ export default function ResourceManage() {
               </Table.Root>
             </div>
           )}
+          {!loading && !error && items.length > 0 && viewMode.resolved === "card" && (
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+              {items.map((item) => (
+                <ManageResourceCard
+                  key={item.entry.id}
+                  item={item}
+                  selecting={selectingId === item.entry.id}
+                  onSelect={() => void handleSelect(item)}
+                />
+              ))}
+            </div>
+          )}
           <p className="px-3.5 pt-1.5 text-xs text-white/60">
             旧版资源（LegacyItem）暂不支持在控制台编辑，您仍需要按照 v1
             操作方式修改它们。
@@ -203,5 +253,117 @@ export default function ResourceManage() {
         </div>
       </div>
     </Page>
+  );
+}
+
+function openRepoInExternal(repoUrl: string) {
+  void import("@tauri-apps/plugin-opener")
+    .then(({ openUrl }) => openUrl(repoUrl))
+    .catch(() => window.open(repoUrl, "_blank", "noopener,noreferrer"));
+}
+
+const PAID_TYPE_LABELS: Record<string, string> = {
+  free: "免费",
+  paid: "付费",
+  force_paid: "强制付费",
+};
+
+function paidTypeLabel(paidType: string): string {
+  const normalized = paidType.trim() || "free";
+  return PAID_TYPE_LABELS[normalized] ?? normalized;
+}
+
+/**
+ * 手机/卡片视图：名称是主要辨识依据，ID 次要；仓库与编辑入口靠后。
+ * 整卡点击进入编辑，内部按钮需要阻止冒泡。
+ */
+function ManageResourceCard({
+  item,
+  selecting,
+  onSelect,
+}: {
+  item: ResourceCatalogContext;
+  selecting: boolean;
+  onSelect: () => void;
+}) {
+  const entry = item.entry;
+  const repoLabel = `${entry.repo_owner}/${entry.repo_name}`;
+  const repoUrl = `https://github.com/${repoLabel}`;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`h-full cursor-pointer rounded-xl border border-white/10 bg-nav-item px-3.5 py-3 outline-none transition-colors hover:bg-nav-item-hover focus-visible:ring-2 focus-visible:ring-purple-400/60 ${
+        selecting ? "pointer-events-none opacity-60" : ""
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <ResourceIcon
+          rawUrl={indexItemIconUrl(entry)}
+          className="size-10 rounded-full border border-white/10"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="line-clamp-2 min-w-0 text-sm font-semibold leading-5 text-white">
+              {entry.name}
+            </p>
+            <button
+              type="button"
+              aria-label="打开仓库"
+              title="打开仓库"
+              className="mt-0.5 shrink-0 rounded p-0.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70"
+              onClick={(event) => {
+                event.stopPropagation();
+                openRepoInExternal(repoUrl);
+              }}
+            >
+              <GithubLogoIcon size={16} weight="duotone" />
+            </button>
+          </div>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Badge color="gray" variant="soft">
+              {formatResourceType(entry.restype)}
+            </Badge>
+            <Badge
+              color={entry.paid_type.trim() === "free" ? "gray" : "amber"}
+              variant="soft"
+            >
+              {paidTypeLabel(entry.paid_type)}
+            </Badge>
+            {selecting ? <Spinner size="1" /> : null}
+          </div>
+
+          <div className="mt-1 flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate font-mono text-xs text-white/45">
+              {entry.id}
+            </span>
+            <button
+              type="button"
+              aria-label="复制资源 ID"
+              title="复制资源 ID"
+              className="shrink-0 rounded p-0.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70"
+              onClick={(event) => {
+                event.stopPropagation();
+                void navigator.clipboard.writeText(entry.id).then(
+                  () => toast.success("已复制"),
+                  () => toast.error("复制失败"),
+                );
+              }}
+            >
+              <CopyIcon size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
