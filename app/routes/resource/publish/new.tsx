@@ -811,6 +811,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
   const [trialDownloads, setTrialDownloads] =
     useState<DownloadInput[]>(DEFAULT_DOWNLOADS);
+  /**
+   * 任意正式包体开启加密上传后，「启用购买与资源加密相关功能」必须同步打开：
+   * 客户端只有看到这个开关才会请求解密密钥，否则安装加密包体会失败。
+   * 只自动打开、不自动关闭，避免把付费映射等其它依赖一起关掉。
+   */
+  useEffect(() => {
+    if (!downloads.some((row) => row.encryptOnUpload)) return;
+    setEnableAstroBoxCreatorFeatures(true);
+  }, [downloads]);
 
   const [extRaw, setExtRaw] = useState("{}");
   const [bundledResources, setBundledResources] = useState<
