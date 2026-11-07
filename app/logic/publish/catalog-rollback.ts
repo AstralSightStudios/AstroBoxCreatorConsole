@@ -43,6 +43,11 @@ export interface CatalogRollbackTarget {
    * staging 请求有明确 mode，不启用该兜底。
    */
   matchByRepo?: boolean;
+  /**
+   * 当前行已经被目标 PR 之后的提交改过时，允许走“跨 PR 回退”。
+   * 是否真的跨了已知 PR、是否需要二次确认由预览层判断。
+   */
+  allowCrossPr?: boolean;
 }
 
 export interface CatalogRollbackChange {
@@ -50,6 +55,19 @@ export interface CatalogRollbackChange {
   id: string;
   previousId?: string;
   name: string;
+  /** 本次变更覆盖了目标 PR 之后对同一资源行的修改。 */
+  crossPr?: boolean;
+}
+
+export interface CatalogRollbackPlanItem {
+  currentId: string;
+  name: string;
+  status: "restore" | "remove" | "noop" | "conflict";
+  crossPr: boolean;
+  expected: CatalogEntry;
+  current?: CatalogEntry;
+  after?: CatalogEntry;
+  reason?: string;
 }
 
 export interface CatalogRollbackConflict {
@@ -69,6 +87,8 @@ export interface CatalogRollbackPlan {
   changes: CatalogRollbackChange[];
   conflicts: CatalogRollbackConflict[];
   unchanged: CatalogRollbackSkip[];
+  /** 每个目标的 before/after，用于回退影响预览。 */
+  items: CatalogRollbackPlanItem[];
 }
 
 export type CatalogRollbackBaselineSource =
@@ -224,6 +244,8 @@ export function planCatalogRollback(params: {
   currentCsv: string;
   baselineCsv: string;
   targets: ReadonlyArray<CatalogRollbackTarget>;
+  /** 全局允许跨 PR 回退；target.allowCrossPr 也可单独开启。 */
+  allowCrossPr?: boolean;
 }): CatalogRollbackPlan {
   const current = splitCsv(params.currentCsv);
   if (!current.header.trim()) {
@@ -253,6 +275,27 @@ export function planCatalogRollback(params: {
   const changes: CatalogRollbackChange[] = [];
   const conflicts: CatalogRollbackConflict[] = [];
   const unchanged: CatalogRollbackSkip[] = [];
+  const items: CatalogRollbackPlanItem[] = [];
+
+  const findCurrentRowIndex = (
+    rows: ReadonlyArray<CatalogRow>,
+    target: CatalogRollbackTarget,
+    currentId: string,
+    allowCrossPr: boolean,
+  ) => {
+    const direct = findRowIndex(rows, currentId);
+    if (direct >= 0 || !allowCrossPr) return direct;
+
+    // 后续 PR 改了资源 ID 时，尽量按发布仓库找到同一资源行。
+    const owner = normalizeId(target.expected.repo_owner).toLowerCase();
+    const repo = normalizeId(target.expected.repo_name).toLowerCase();
+    if (!owner || !repo) return -1;
+    return rows.findIndex(
+      (row) =>
+        normalizeId(row.entry.repo_owner).toLowerCase() === owner &&
+        normalizeId(row.entry.repo_name).toLowerCase() === repo,
+    );
+  };
 
   const resolved = params.targets.map((target) => {
     const currentId = normalizeId(target.currentId);
@@ -284,6 +327,7 @@ export function planCatalogRollback(params: {
       previousId,
       baselineIndex,
       baselineRow,
+      allowCrossPr: Boolean(params.allowCrossPr || target.allowCrossPr),
     };
   });
 
@@ -295,8 +339,13 @@ export function planCatalogRollback(params: {
     .sort((left, right) => left.baselineIndex - right.baselineIndex);
 
   for (const item of removals) {
-    const { target, currentId, previousId } = item;
-    const currentIndex = findRowIndex(working, currentId);
+    const { target, currentId, previousId, allowCrossPr } = item;
+    const currentIndex = findCurrentRowIndex(
+      working,
+      target,
+      currentId,
+      allowCrossPr,
+    );
 
     if (currentIndex < 0) {
       unchanged.push({
@@ -304,62 +353,142 @@ export function planCatalogRollback(params: {
         name: target.name,
         reason: "当前目录已不存在该资源行，无需回退。",
       });
-      continue;
-    }
-
-    const currentRow = working[currentIndex];
-    // 当前 ID 可能与 PR 里的写法大小写不同，比较内容前统一用目标行。
-    if (!rowsEqual(currentRow.entry, target.expected)) {
-      conflicts.push({
-        id: currentId,
+      items.push({
+        currentId,
         name: target.name,
-        reason: `目录中的资源 ID「${target.currentId}」与 PR 提交内容不一致，可能已被后续提交修改。`,
-      });
-      continue;
-    }
-
-    // currentId 与 previousId 不同说明 legacy diff 把更新误判成新增；
-    // 基线里没有该行时仍以「新增回退」处理，但保留 previousId 供提示。
-    working.splice(currentIndex, 1);
-    changes.push({
-      kind: "remove",
-      id: currentId,
-      previousId: previousId !== currentId ? previousId : undefined,
-      name: target.name,
-    });
-  }
-
-  for (const item of restores) {
-    const { target, currentId, previousId, baselineRow, baselineIndex } = item;
-    const currentIndex = findRowIndex(working, currentId);
-
-    if (currentIndex < 0) {
-      const alreadyRestored = findRowIndex(working, previousId) >= 0;
-      unchanged.push({
-        id: currentId,
-        name: target.name,
-        reason: alreadyRestored
-          ? "当前目录已是回退后的状态。"
-          : "当前目录已不存在该资源行，无需回退。",
+        status: "noop",
+        crossPr: false,
+        expected: target.expected,
+        after: undefined,
+        reason: "当前目录已不存在该资源行，无需回退。",
       });
       continue;
     }
 
     const currentRow = working[currentIndex];
     const matchesExpected = rowsEqual(currentRow.entry, target.expected);
-    const matchesBaseline = rowsEqual(currentRow.entry, baselineRow!.entry);
-    if (!matchesExpected && !matchesBaseline) {
+    if (!matchesExpected && !allowCrossPr) {
+      const reason =
+        `目录中的资源 ID「${target.currentId}」与 PR 提交内容不一致，可能已被后续提交修改。`;
       conflicts.push({
         id: currentId,
         name: target.name,
-        reason: `目录中的资源行在 PR 合入后又被修改过，无法安全回退。`,
+        reason,
+      });
+      items.push({
+        currentId,
+        name: target.name,
+        status: "conflict",
+        crossPr: false,
+        expected: target.expected,
+        current: currentRow.entry,
+        after: undefined,
+        reason,
       });
       continue;
     }
-    if (matchesBaseline) {
+
+    working.splice(currentIndex, 1);
+    changes.push({
+      kind: "remove",
+      id: currentId,
+      previousId: previousId !== currentId ? previousId : undefined,
+      name: target.name,
+      crossPr: !matchesExpected,
+    });
+    items.push({
+      currentId,
+      name: target.name,
+      status: "remove",
+      crossPr: !matchesExpected,
+      expected: target.expected,
+      current: currentRow.entry,
+      after: undefined,
+    });
+  }
+
+  for (const item of restores) {
+    const {
+      target,
+      currentId,
+      previousId,
+      baselineRow,
+      baselineIndex,
+      allowCrossPr,
+    } = item;
+    const currentIndex = findCurrentRowIndex(
+      working,
+      target,
+      currentId,
+      allowCrossPr,
+    );
+
+    if (currentIndex < 0) {
+      const alreadyRestored = findRowIndex(working, previousId) >= 0;
+      if (!allowCrossPr) {
+        const reason = alreadyRestored
+          ? "当前目录已是回退后的状态。"
+          : "当前目录已不存在该资源行，无需回退。";
+        unchanged.push({
+          id: currentId,
+          name: target.name,
+          reason,
+        });
+        items.push({
+          currentId,
+          name: target.name,
+          status: "noop",
+          crossPr: false,
+          expected: target.expected,
+          after: baselineRow!.entry,
+          reason,
+        });
+        continue;
+      }
+      // 跨 PR 回退时，当前行可能已被后续 PR 删除；这时要重新加入基线行。
+    }
+
+    const currentRow = currentIndex >= 0 ? working[currentIndex] : undefined;
+    const matchesExpected = currentRow
+      ? rowsEqual(currentRow.entry, target.expected)
+      : false;
+    const matchesBaseline = currentRow
+      ? rowsEqual(currentRow.entry, baselineRow!.entry)
+      : false;
+
+    if (currentRow && !matchesExpected && !matchesBaseline && !allowCrossPr) {
+      const reason = "目录中的资源行在 PR 合入后又被修改过，无法安全回退。";
+      conflicts.push({
+        id: currentId,
+        name: target.name,
+        reason,
+      });
+      items.push({
+        currentId,
+        name: target.name,
+        status: "conflict",
+        crossPr: false,
+        expected: target.expected,
+        current: currentRow.entry,
+        after: baselineRow!.entry,
+        reason,
+      });
+      continue;
+    }
+    if (currentRow && matchesBaseline) {
       unchanged.push({
         id: currentId,
         name: target.name,
+        reason: "当前目录已是回退后的状态。",
+      });
+      items.push({
+        currentId,
+        name: target.name,
+        status: "noop",
+        crossPr: false,
+        expected: target.expected,
+        current: currentRow.entry,
+        after: baselineRow!.entry,
         reason: "当前目录已是回退后的状态。",
       });
       continue;
@@ -367,17 +496,28 @@ export function planCatalogRollback(params: {
 
     if (previousId.toLowerCase() !== currentId.toLowerCase()) {
       const occupiedIndex = findRowIndex(working, previousId);
-      if (occupiedIndex >= 0) {
+      if (occupiedIndex >= 0 && occupiedIndex !== currentIndex) {
+        const reason = `旧资源 ID「${previousId}」已被目录中的另一行占用，无法恢复。`;
         conflicts.push({
           id: currentId,
           name: target.name,
-          reason: `旧资源 ID「${previousId}」已被目录中的另一行占用，无法恢复。`,
+          reason,
+        });
+        items.push({
+          currentId,
+          name: target.name,
+          status: "conflict",
+          crossPr: false,
+          expected: target.expected,
+          current: currentRow?.entry,
+          after: baselineRow!.entry,
+          reason,
         });
         continue;
       }
     }
 
-    working.splice(currentIndex, 1);
+    if (currentIndex >= 0) working.splice(currentIndex, 1);
     const insertIndex = resolveInsertIndex(working, baselineRows, baselineIndex);
     working.splice(insertIndex, 0, {
       line: baselineRow!.line,
@@ -388,6 +528,16 @@ export function planCatalogRollback(params: {
       id: currentId,
       previousId: previousId !== currentId ? previousId : undefined,
       name: target.name,
+      crossPr: !matchesExpected,
+    });
+    items.push({
+      currentId,
+      name: target.name,
+      status: "restore",
+      crossPr: !matchesExpected,
+      expected: target.expected,
+      current: currentRow?.entry,
+      after: baselineRow!.entry,
     });
   }
 
@@ -395,7 +545,7 @@ export function planCatalogRollback(params: {
   const trailingNewline = current.hasTrailingNewline || !params.currentCsv;
   const nextCsv = `${outputLines.join("\n")}${trailingNewline ? "\n" : ""}`;
 
-  return { nextCsv, changes, conflicts, unchanged };
+  return { nextCsv, changes, conflicts, unchanged, items };
 }
 
 /** 写入前再校验一次，避免回退产生重复 ID 或重复资源仓库。 */
@@ -502,16 +652,27 @@ export function loadCatalogRollbackBaseline(
  */
 export async function rollbackCatalogRowsForPr(params: {
   pull: GithubPullRequest;
-  previews: ReadonlyArray<RollbackPreviewInput>;
+  previews?: ReadonlyArray<RollbackPreviewInput>;
+  /** 预览阶段已经计算好的目标，保留每个目标的 allowCrossPr。 */
+  targets?: ReadonlyArray<CatalogRollbackTarget>;
   /** 资源 ID 回查时只回退这一行；缺省回退 PR 涉及的全部资源行。 */
   resourceId?: string;
+  /** 预览时当前目录文件的 sha；用于防止预览后目录被别人改动。 */
+  expectedCurrentSha?: string;
+  /** 本次跨 PR 回退覆盖的后续 PR，写入提交信息便于审计。 */
+  crossedPrNumbers?: number[];
 }): Promise<CatalogRollbackResult> {
   if (!params.pull.merged_at) {
     throw new Error("仅已合入的 PR 支持回退。");
   }
 
-  const allTargets = buildRollbackTargets(params.previews);
-  const targets = selectRollbackTargets(allTargets, params.resourceId);
+  let targets: CatalogRollbackTarget[];
+  if (params.targets) {
+    targets = [...params.targets];
+  } else {
+    const allTargets = buildRollbackTargets(params.previews ?? []);
+    targets = selectRollbackTargets(allTargets, params.resourceId);
+  }
   if (params.resourceId?.trim() && targets.length === 0) {
     throw new Error(
       `当前 PR 未包含资源 ID「${params.resourceId.trim()}」，无法回退。`,
@@ -533,6 +694,9 @@ export async function rollbackCatalogRowsForPr(params: {
   const currentCsv = decodeCatalogContent(file.content);
   const sha = file.sha as string | undefined;
   if (!sha) throw new Error("读取目录文件的 sha 失败，无法安全写入。");
+  if (params.expectedCurrentSha && params.expectedCurrentSha !== sha) {
+    throw new Error("目录在预览后发生了变化，请重新打开回退预览。");
+  }
 
   const plan = planCatalogRollback({
     currentCsv,
@@ -549,6 +713,16 @@ export async function rollbackCatalogRowsForPr(params: {
 
   validateRollbackCatalog(plan.nextCsv);
 
+  const crossed = Array.from(
+    new Set(params.crossedPrNumbers ?? []),
+  ).filter((number) => number !== params.pull.number);
+  const message =
+    crossed.length > 0
+      ? `Rollback resource rows from PR #${params.pull.number}\n\nCrosses later merged PRs: ${crossed
+          .map((number) => `#${number}`)
+          .join(", ")}`
+      : `Rollback resource rows from PR #${params.pull.number}`;
+
   const response = await writeRepoFile({
     token,
     owner,
@@ -557,7 +731,7 @@ export async function rollbackCatalogRowsForPr(params: {
     branch,
     content: plan.nextCsv,
     sha,
-    message: `Rollback resource rows from PR #${params.pull.number}`,
+    message,
   });
 
   const commit = (response as { commit?: { sha?: string; html_url?: string } })

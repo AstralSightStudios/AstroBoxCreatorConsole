@@ -1,6 +1,7 @@
 import { loadRepoEnvId } from "~/config/repoEnv";
 import { PUBLISH_CONFIG } from "~/config/publish";
 import {
+  getPullRequest,
   getRepoCommit,
   searchRepoCommits,
   type GithubCommitInfo,
@@ -34,6 +35,46 @@ export interface ResourceSubmissionLookupOptions {
   branch?: string;
   catalogPath?: string;
   maxCandidates?: number;
+}
+
+export interface ResourceSubmissionHistoryEntry {
+  number: number;
+  commitSha: string;
+  committedAt?: string;
+  title?: string;
+  url?: string;
+  mergedAt?: string;
+}
+
+export interface ResourceSubmissionHistory {
+  /** 按提交时间倒序，同一 PR 只保留最新一条。 */
+  entries: ResourceSubmissionHistoryEntry[];
+  /** false 表示到达分页上限，可能还有更早的记录没有取到。 */
+  complete: boolean;
+  searchedPages: number;
+}
+
+export interface ResourceSubmissionHistoryOptions {
+  token?: string;
+  owner?: string;
+  repo?: string;
+  /** 只关心晚于该时间的提交；用于从目标 PR 之后开始统计。 */
+  until?: string;
+  /** 找到该 PR 后，处理完当前页就停止继续翻页。 */
+  stopAfterPrNumber?: number;
+  maxPages?: number;
+  fetchTitles?: boolean;
+  maxTitleFetches?: number;
+}
+
+export interface ResourceSubmissionHistorySplit {
+  latest?: ResourceSubmissionHistoryEntry;
+  target?: ResourceSubmissionHistoryEntry;
+  /** 本次回查 PR 之前的上一个资源 PR，用于“回退后状态来源”展示。 */
+  targetSource?: ResourceSubmissionHistoryEntry;
+  /** 目标 PR 之后、当前最新之前已经合入的 PR。 */
+  crossedPrs: ResourceSubmissionHistoryEntry[];
+  targetIndex: number;
 }
 
 interface ResourceLookupCacheKeyParams {
@@ -251,6 +292,216 @@ export function lookupResourceSubmissionPr(
   return resolveResourceSubmissionPr(normalizedId, options);
 }
 
+const historyCache = new Map<
+  string,
+  { expiresAt: number; promise: Promise<ResourceSubmissionHistory> }
+>();
+const HISTORY_CACHE_TTL_MS = 60_000;
+
+async function mapWithConcurrency<T>(
+  items: ReadonlyArray<T>,
+  limit: number,
+  run: (item: T) => Promise<void>,
+) {
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(limit, items.length)) },
+    async () => {
+      for (;;) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= items.length) return;
+        await run(items[index]);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
+function historyCacheKey(params: {
+  owner: string;
+  repo: string;
+  term: string;
+  until?: string;
+  stopAfterPrNumber?: number;
+  maxPages: number;
+  fetchTitles: boolean;
+}) {
+  return [
+    loadRepoEnvId(),
+    params.owner.toLowerCase(),
+    params.repo.toLowerCase(),
+    params.term,
+    params.until ?? "",
+    String(params.stopAfterPrNumber ?? ""),
+    String(params.maxPages),
+    params.fetchTitles ? "titles" : "plain",
+  ].join("\u0000");
+}
+
+/**
+ * 获取一个资源仓库名下的资源提交 PR 历史，按时间倒序。
+ *
+ * 这里只查提交信息并用资源仓库名过滤，不读取整个 index_v2.csv 的历史。
+ * 调用方可传 `until`，只保留目标 PR 合入之后的提交。
+ */
+export function listResourceSubmissionHistory(
+  entry: CatalogEntry,
+  options?: ResourceSubmissionHistoryOptions,
+): Promise<ResourceSubmissionHistory> {
+  const token = options?.token ?? getGithubToken();
+  if (!token) return Promise.reject(new Error("请先登录 GitHub 账号。"));
+
+  const owner = options?.owner ?? PUBLISH_CONFIG.targetPrRepoOwner;
+  const repo = options?.repo ?? PUBLISH_CONFIG.targetPrRepoName;
+  const term = submissionSearchTerm(entry);
+  if (!term) {
+    return Promise.reject(
+      new Error(`资源「${entry.name || entry.id}」缺少资源仓库名，无法读取 PR 历史。`),
+    );
+  }
+
+  const maxPages = Math.max(1, Math.min(10, Math.trunc(options?.maxPages ?? 5)));
+  const fetchTitles = options?.fetchTitles !== false;
+  const maxTitleFetches = Math.max(
+    0,
+    Math.min(30, Math.trunc(options?.maxTitleFetches ?? 10)),
+  );
+  const key = historyCacheKey({
+    owner,
+    repo,
+    term,
+    until: options?.until,
+    stopAfterPrNumber: options?.stopAfterPrNumber,
+    maxPages,
+    fetchTitles,
+  });
+  const cached = historyCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const promise = (async () => {
+    const entries: ResourceSubmissionHistoryEntry[] = [];
+    const seen = new Set<number>();
+    let complete = true;
+    let searchedPages = 0;
+
+    for (let page = 1; page <= maxPages; page += 1) {
+      const result = await searchRepoCommits(
+        owner,
+        repo,
+        JSON.stringify(term),
+        100,
+        token,
+        page,
+      );
+      searchedPages = page;
+      const items = result.items ?? [];
+      if (items.length === 0) {
+        complete = true;
+        break;
+      }
+
+      let reachedUntil = false;
+      for (const item of items) {
+        const committedAt =
+          item.commit?.committer?.date || item.commit?.author?.date;
+        if (options?.until && committedAt && committedAt <= options.until) {
+          reachedUntil = true;
+          continue;
+        }
+        const number = extractPrNumberFromSubmissionCommitMessage(
+          item.commit?.message,
+        );
+        if (!number || seen.has(number)) continue;
+        seen.add(number);
+        entries.push({
+          number,
+          commitSha: item.sha,
+          committedAt,
+          url: `https://github.com/${owner}/${repo}/pull/${number}`,
+        });
+      }
+
+      if (reachedUntil) {
+        complete = true;
+        break;
+      }
+      if (
+        options?.stopAfterPrNumber &&
+        seen.has(options.stopAfterPrNumber)
+      ) {
+        complete = true;
+        break;
+      }
+      if (items.length < 100) {
+        complete = true;
+        break;
+      }
+      if (page === maxPages) complete = false;
+    }
+
+    entries.sort((left, right) =>
+      (right.committedAt ?? "").localeCompare(left.committedAt ?? ""),
+    );
+
+    if (fetchTitles && maxTitleFetches > 0) {
+      await mapWithConcurrency(
+        entries.slice(0, maxTitleFetches),
+        3,
+        async (entry) => {
+          try {
+            const pull = await getPullRequest(entry.number, undefined, token);
+            entry.title = pull.title;
+            entry.url = pull.html_url;
+            entry.mergedAt = pull.merged_at;
+          } catch {
+            // 标题只是展示信息，拉取失败不影响历史列表。
+          }
+        },
+      );
+    }
+
+    return { entries, complete, searchedPages };
+  })();
+
+  historyCache.set(key, {
+    expiresAt: Date.now() + HISTORY_CACHE_TTL_MS,
+    promise,
+  });
+  promise.catch(() => historyCache.delete(key));
+  return promise;
+}
+
+/** 将资源 PR 历史拆成当前最新、目标 PR 之前的来源、以及被越过的后续 PR。 */
+export function splitResourceSubmissionHistory(
+  history: ResourceSubmissionHistory,
+  targetPrNumber: number,
+  targetMergedAt?: string,
+): ResourceSubmissionHistorySplit {
+  const entries = history.entries;
+  const targetIndex = entries.findIndex(
+    (entry) => entry.number === targetPrNumber,
+  );
+  const target = targetIndex >= 0 ? entries[targetIndex] : undefined;
+  const latest = entries[0];
+  const crossedPrs =
+    targetIndex > 0
+      ? entries.slice(0, targetIndex)
+      : targetIndex < 0 && targetMergedAt
+        ? entries.filter(
+            (entry) =>
+              entry.committedAt &&
+              entry.committedAt > targetMergedAt &&
+              entry.number !== targetPrNumber,
+          )
+        : [];
+  const targetSource =
+    targetIndex >= 0 ? entries[targetIndex + 1] : undefined;
+
+  return { latest, target, targetSource, crossedPrs, targetIndex };
+}
+
 export function clearResourceSubmissionLookupCache() {
   lookupCache.clear();
+  historyCache.clear();
 }

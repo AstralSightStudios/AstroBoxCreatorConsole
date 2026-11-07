@@ -69,7 +69,13 @@ describe("planCatalogRollback", () => {
 
     expect(plan.conflicts).toHaveLength(0);
     expect(plan.changes).toEqual([
-      { kind: "remove", id: "fresh", previousId: undefined, name: "Fresh" },
+      {
+        kind: "remove",
+        id: "fresh",
+        previousId: undefined,
+        name: "Fresh",
+        crossPr: false,
+      },
     ]);
     expect(ids(plan.nextCsv)).toEqual(["anchor-a", "anchor-c"]);
   });
@@ -240,6 +246,103 @@ describe("planCatalogRollback", () => {
         targets: [{ currentId: "fresh", name: "Fresh", expected: fresh }],
       }),
     ).toThrow("当前目录存在无法解析的数据行");
+  });
+
+  test("允许跨 PR 回退时覆盖后续已合入修改并恢复基线", () => {
+    const oldRow = entry({ id: "demo", repo_commit_hash: "old1111" });
+    const prRow = entry({ id: "demo", repo_commit_hash: "pr2222" });
+    const laterRow = entry({ id: "demo", repo_commit_hash: "later333" });
+    const baseline = csv([anchorA, oldRow, anchorC]);
+    const current = csv([anchorA, laterRow, anchorC]);
+
+    const plan = planCatalogRollback({
+      currentCsv: current,
+      baselineCsv: baseline,
+      targets: [
+        {
+          currentId: "demo",
+          previousId: "demo",
+          name: "Demo",
+          expected: prRow,
+          allowCrossPr: true,
+        },
+      ],
+    });
+
+    expect(plan.conflicts).toHaveLength(0);
+    expect(plan.changes[0]).toMatchObject({
+      kind: "restore",
+      crossPr: true,
+    });
+    expect(plan.items[0]).toMatchObject({
+      status: "restore",
+      crossPr: true,
+      current: laterRow,
+      after: oldRow,
+    });
+    expect(parseCatalogCsv(plan.nextCsv)[1].repo_commit_hash).toBe("old1111");
+  });
+
+  test("跨 PR 回退时当前资源行已被删除则重新加入基线行", () => {
+    const oldRow = entry({ id: "demo", repo_commit_hash: "old1111" });
+    const prRow = entry({ id: "demo", repo_commit_hash: "pr2222" });
+    const baseline = csv([anchorA, oldRow, anchorC]);
+    const current = csv([anchorA, anchorC]);
+
+    const plan = planCatalogRollback({
+      currentCsv: current,
+      baselineCsv: baseline,
+      targets: [
+        {
+          currentId: "demo",
+          previousId: "demo",
+          name: "Demo",
+          expected: prRow,
+          allowCrossPr: true,
+        },
+      ],
+    });
+
+    expect(plan.conflicts).toHaveLength(0);
+    expect(ids(plan.nextCsv)).toEqual(["anchor-a", "demo", "anchor-c"]);
+    expect(plan.items[0]).toMatchObject({
+      status: "restore",
+      crossPr: true,
+      current: undefined,
+      after: oldRow,
+    });
+  });
+
+  test("跨 PR 回退新增资源时允许删除被后续修改的当前行", () => {
+    const prRow = entry({
+      id: "fresh",
+      name: "Fresh",
+      repo_name: "astrobox-resource-fresh",
+      repo_commit_hash: "pr2222",
+    });
+    const laterRow = entry({
+      ...prRow,
+      repo_commit_hash: "later333",
+    });
+    const baseline = csv([anchorA, anchorC]);
+    const current = csv([anchorA, anchorC, laterRow]);
+
+    const plan = planCatalogRollback({
+      currentCsv: current,
+      baselineCsv: baseline,
+      targets: [
+        {
+          currentId: "fresh",
+          name: "Fresh",
+          expected: prRow,
+          allowCrossPr: true,
+        },
+      ],
+    });
+
+    expect(plan.conflicts).toHaveLength(0);
+    expect(plan.changes[0]).toMatchObject({ kind: "remove", crossPr: true });
+    expect(ids(plan.nextCsv)).toEqual(["anchor-a", "anchor-c"]);
   });
 
   test("新增行已被后续修改时拒绝删除", () => {

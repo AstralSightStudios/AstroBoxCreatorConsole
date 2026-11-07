@@ -5,6 +5,7 @@ import {
   extractPrNumberFromSubmissionCommitMessage,
   findMatchingAddedCatalogEntry,
   lookupResourceSubmissionPr,
+  splitResourceSubmissionHistory,
   submissionSearchTerm,
 } from "../../app/logic/publish/resource-pr-lookup";
 import type { CatalogEntry } from "../../app/logic/publish/catalog";
@@ -187,6 +188,46 @@ describe("findMatchingAddedCatalogEntry", () => {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
 }
+
+describe("splitResourceSubmissionHistory", () => {
+  const history = {
+    complete: true,
+    searchedPages: 1,
+    entries: [
+      { number: 300, commitSha: "c300", committedAt: "2026-10-03T00:00:00Z" },
+      { number: 200, commitSha: "c200", committedAt: "2026-10-02T00:00:00Z" },
+      { number: 100, commitSha: "c100", committedAt: "2026-10-01T00:00:00Z" },
+    ],
+  };
+
+  test("选中最新 PR 时没有跨越项，来源是前一个 PR", () => {
+    const result = splitResourceSubmissionHistory(history, 300);
+    expect(result.latest?.number).toBe(300);
+    expect(result.target?.number).toBe(300);
+    expect(result.targetSource?.number).toBe(200);
+    expect(result.crossedPrs).toEqual([]);
+  });
+
+  test("选中中间 PR 时统计后续已合入 PR", () => {
+    const result = splitResourceSubmissionHistory(history, 200);
+    expect(result.latest?.number).toBe(300);
+    expect(result.target?.number).toBe(200);
+    expect(result.targetSource?.number).toBe(100);
+    expect(result.crossedPrs.map((entry) => entry.number)).toEqual([300]);
+  });
+
+  test("目标 PR 不在历史里时按合入时间兜底", () => {
+    const result = splitResourceSubmissionHistory(
+      history,
+      999,
+      "2026-10-01T12:00:00Z",
+    );
+    expect(result.target).toBeUndefined();
+    expect(
+      result.crossedPrs.map((entry) => entry.number),
+    ).toEqual([300, 200]);
+  });
+});
 
 describe("lookupResourceSubmissionPr", () => {
   test("按目录行定向搜索提交并返回 PR，不遍历提交历史", async () => {
