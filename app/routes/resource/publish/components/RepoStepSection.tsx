@@ -13,10 +13,70 @@ export interface ExistingRepoOption {
   topics?: string[];
 }
 
+export interface RepoOccupiedResource {
+  id?: string;
+  name?: string;
+}
+
+/**
+ * 占用资源的展示文案：名字（id）。缺名字或 id 时退化为有的那一项，
+ * 两者都没有时显示「未知」。
+ */
+export function formatOccupiedResourceLabel(
+  resource: RepoOccupiedResource,
+): string {
+  const name = resource.name?.trim() || "";
+  const id = resource.id?.trim() || "";
+  if (name && id) return `${name}（${id}）`;
+  return name || id || "未知";
+}
+
+function buildResourceOpenUrl(id: string): string {
+  return `https://abox.run/open?source=resv2&id=${encodeURIComponent(id)}&provider=OfficialV2`;
+}
+
+function openResourceInClient(id: string) {
+  const url = buildResourceOpenUrl(id);
+  void import("@tauri-apps/plugin-opener")
+    .then(({ openUrl }) => openUrl(url))
+    .catch(() => window.open(url, "_blank", "noopener,noreferrer"));
+}
+
+/**
+ * 仓库被已入索引的资源占用时，把消息里的资源标签替换为可点击链接，
+ * 点击直接用 AstroBox 打开该资源。
+ */
+function renderRepoMessage(
+  message: string,
+  resource: RepoOccupiedResource | null | undefined,
+) {
+  if (!resource) return message;
+  const id = resource.id?.trim();
+  if (!id) return message;
+  const label = formatOccupiedResourceLabel(resource);
+  const index = message.indexOf(label);
+  if (index < 0) return message;
+  return (
+    <>
+      {message.slice(0, index)}
+      <button
+        type="button"
+        onClick={() => openResourceInClient(id)}
+        title="在 AstroBox 中查看该资源"
+        className="text-sky-300 underline underline-offset-2 transition hover:text-sky-200"
+      >
+        {label}
+      </button>
+      {message.slice(index + label.length)}
+    </>
+  );
+}
+
 interface RepoStepSectionProps {
   repoNameInput: string;
   repoStatus: "idle" | "loading" | "success" | "error";
   repoMessage: string;
+  repoOccupiedResource?: RepoOccupiedResource | null;
   repoInfo: RepoInfo | null;
   uploadLogs: string[];
   existingRepos: ExistingRepoOption[];
@@ -55,6 +115,7 @@ export function RepoStepSection({
   repoNameInput,
   repoStatus,
   repoMessage,
+  repoOccupiedResource,
   repoInfo,
   uploadLogs,
   existingRepos,
@@ -240,7 +301,7 @@ export function RepoStepSection({
                 repoStatus === "error" ? "text-amber-400" : "text-white/70"
               }`}
             >
-              {repoMessage}
+              {renderRepoMessage(repoMessage, repoOccupiedResource)}
             </p>
           )}
           {repoStatus === "success" && repoInfo?.htmlUrl && (

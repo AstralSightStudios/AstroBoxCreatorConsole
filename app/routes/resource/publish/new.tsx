@@ -138,7 +138,11 @@ import {
 import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
-import { RepoStepSection, type ExistingRepoOption } from "./components/RepoStepSection";
+import {
+  RepoStepSection,
+  formatOccupiedResourceLabel,
+  type ExistingRepoOption,
+} from "./components/RepoStepSection";
 import { isAstroBoxResourceRepo } from "~/logic/publish/repo-options";
 import {
   getRepoFile,
@@ -239,6 +243,17 @@ import {
   isManifestExtObject,
   parseTagText,
 } from "~/logic/publish/composer-utils";
+
+/** 目标仓库已被软件索引里的资源占用；资源信息供错误提示渲染跳转链接。 */
+class RepoOccupiedError extends Error {
+  constructor(
+    message: string,
+    readonly resource: { id?: string; name?: string },
+  ) {
+    super(message);
+    this.name = "RepoOccupiedError";
+  }
+}
 
 async function findExistingResourceManifest(
   token: string,
@@ -832,6 +847,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [repoMessage, setRepoMessage] = useState("");
+  /** 仓库被已入索引的资源占用时记录该资源，供错误提示渲染可点击链接。 */
+  const [repoOccupiedResource, setRepoOccupiedResource] = useState<{
+    id?: string;
+    name?: string;
+  } | null>(null);
   const [prStatus, setPrStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >("idle");
@@ -1089,6 +1109,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       if (repoStatus !== "success") return;
       setRepoStatus("idle");
       setRepoMessage(`${reason}，请重新执行步骤 2 上传仓库文件后再提交 PR。`);
+      setRepoOccupiedResource(null);
       setLastManifest(null);
     },
     [repoStatus],
@@ -1877,6 +1898,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (target === 1) {
       setRepoStatus("idle");
       setRepoMessage("");
+      setRepoOccupiedResource(null);
       setUploadLogs([]);
     }
     setActiveStepIndex(target);
@@ -2148,6 +2170,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (missingEditContext) {
       setRepoStatus("error");
       setRepoMessage("缺少编辑上下文，请从资源列表重新进入。");
+      setRepoOccupiedResource(null);
       reportFailure("publish/upload", "缺少编辑上下文，请从资源列表重新进入。");
       return;
     }
@@ -2156,6 +2179,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     setRepoMessage(
       mode === "new" ? "正在创建仓库并上传文件..." : "正在更新仓库文件...",
     );
+    setRepoOccupiedResource(null);
     setUploadLogs([]);
     log.info("upload/repo", `开始${mode === "new" ? "创建仓库并上传" : "更新仓库文件"}`, {
       data: { itemId, itemName, resourceType },
@@ -2229,10 +2253,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           repoName,
         );
         if (existingManifest) {
-          throw new Error(
-            `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${
-              existingManifest.name || existingManifest.id || "未知"
-            }」占用，请更换仓库名。`,
+          const label = formatOccupiedResourceLabel(existingManifest);
+          throw new RepoOccupiedError(
+            `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${label}」占用，请更换仓库名。`,
+            { id: existingManifest.id, name: existingManifest.name },
           );
         }
         const repo = await flowSpan("upload/repo", "创建仓库并上传 manifest 与资产", () =>
@@ -2250,6 +2274,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setLastManifest(manifestResult);
         setRepoStatus("success");
         setRepoMessage("");
+        setRepoOccupiedResource(null);
         toast.success("仓库创建成功，文件已上传。");
         addLog(`仓库：${repo.owner}/${repo.name} @ ${repo.commitSha.slice(0, 7)}`);
         addLog(`仓库地址：${repo.htmlUrl}`);
@@ -2284,6 +2309,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setLastManifest(manifestResult);
       setRepoStatus("success");
       setRepoMessage("");
+      setRepoOccupiedResource(null);
       toast.success("仓库文件更新成功。");
       log.info("upload/repo", "仓库更新完成", {
         data: { owner: repo.owner, name: repo.name, commitSha: repo.commitSha },
@@ -2291,6 +2317,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     } catch (error) {
       setRepoStatus("error");
       setRepoMessage((error as Error).message);
+      setRepoOccupiedResource(
+        error instanceof RepoOccupiedError ? error.resource : null,
+      );
       reportFailure("publish/upload", `上传失败：${(error as Error).message}`, error, {
         data: { step: "uploadToRepo", itemId, resourceType },
       });
@@ -3578,6 +3607,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               repoNameInput={repoNameInput}
               repoStatus={repoStatus}
               repoMessage={repoMessage}
+              repoOccupiedResource={repoOccupiedResource}
               repoInfo={repoInfo}
               uploadLogs={uploadLogs}
               existingRepos={userRepos}
