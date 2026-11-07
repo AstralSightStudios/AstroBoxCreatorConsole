@@ -109,6 +109,17 @@ export interface PendingSubmissionConflict {
     samePath: boolean;
 }
 
+/** 重复提交守卫：携带冲突 PR 信息，发布页据此提供「继续编辑原 PR」入口。 */
+export class PendingSubmissionConflictError extends Error {
+    constructor(
+        message: string,
+        readonly conflict: PendingSubmissionConflict,
+    ) {
+        super(message);
+        this.name = "PendingSubmissionConflictError";
+    }
+}
+
 /**
  * 扫描所有开放 PR，检测与本次提交的冲突：
  * - B1 同路径：同一 tmp/{login}/{repo} 路径已有未处理请求（含解析失败兜底，
@@ -319,14 +330,16 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
     );
     if (conflict) {
         if (conflict.samePath) {
-            throw new Error(
-                `路径 ${submissionPath} 已有未处理请求（PR #${conflict.prNumber}），` +
-                `请等待处理或继续编辑原 PR。`,
+            throw new PendingSubmissionConflictError(
+                `路径 ${submissionPath} 已有未处理的提交（PR #${conflict.prNumber}）。` +
+                `请等待审核处理，或在发布页点击「继续编辑原 PR」更新该提交。`,
+                conflict,
             );
         }
-        throw new Error(
-            `资源 "${entry.id}" 已有进行中的提交 PR #${conflict.prNumber}《${conflict.prTitle}》，` +
-            `请等待其处理完成，或通过「管理」页在原 PR 上继续更新。`,
+        throw new PendingSubmissionConflictError(
+            `资源 "${entry.id}" 已有进行中的提交 PR #${conflict.prNumber}《${conflict.prTitle}》。` +
+            `请等待其处理完成，或联系该 PR 的作者。`,
+            conflict,
         );
     }
 

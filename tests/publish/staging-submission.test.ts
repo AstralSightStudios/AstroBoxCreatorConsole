@@ -184,7 +184,7 @@ describe("createSubmissionBranch 重复提交守卫", () => {
       await createSubmissionBranch(buildPayload({ mode: "create" }));
       throw new Error("should have thrown");
     } catch (error) {
-      expect(String(error)).toContain("已有未处理请求");
+      expect(String(error)).toContain("已有未处理的提交");
       expect(String(error)).toContain("PR #700");
     }
   });

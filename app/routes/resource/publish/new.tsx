@@ -59,6 +59,7 @@ import {
   updateCatalogEntryOnBranch,
 } from "~/logic/publish/catalog";
 import {
+  PendingSubmissionConflictError,
   createSubmissionBranch,
   createSubmissionPullRequest,
   updateSubmissionEntryOnBranch,
@@ -155,6 +156,7 @@ import {
   buildResourcePrTitle,
   canEditResourceIdentity,
   listedResourceIdOf,
+  buildInProgressEditContextFromPr,
   resolveIdMigration,
   resolveIdentityLocks,
 } from "~/logic/publish/resources";
@@ -856,6 +858,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [prMessage, setPrMessage] = useState("");
+  /** 重复提交守卫命中的开放 PR；用于在步骤 3 提供「继续编辑原 PR」入口。 */
+  const [pendingConflictPr, setPendingConflictPr] = useState<{
+    number: number;
+    title: string;
+    samePath: boolean;
+  } | null>(null);
   const [prBody, setPrBody] = useState("");
   const [versionReset, setVersionReset] = useState<VersionResetOptions>(
     DEFAULT_VERSION_RESET_OPTIONS,
@@ -2267,11 +2275,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               )
             : true;
           if (stillIndexed) {
-          const label = formatOccupiedResourceLabel(existingManifest);
-          throw new RepoOccupiedError(
-            `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${label}」占用，请更换仓库名。`,
-            { id: existingManifest.id, name: existingManifest.name },
-          );
+            const label = formatOccupiedResourceLabel(existingManifest);
+            throw new RepoOccupiedError(
+              `仓库 ${repoName} 已经在 AstroBox 的软件索引里，被资源「${label}」占用，请更换仓库名。`,
+              { id: existingManifest.id, name: existingManifest.name },
+            );
           }
           log.info(
             "upload/repo",
@@ -2406,6 +2414,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       return;
     }
     setPrStatus("loading");
+    setPendingConflictPr(null);
     setPrMessage(
       mode === "in_progress"
         ? "正在更新已有 PR..."
@@ -2807,9 +2816,47 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     } catch (error) {
       setPrStatus("error");
       setPrMessage((error as Error).message);
+      setPendingConflictPr(
+        error instanceof PendingSubmissionConflictError
+          ? {
+              number: error.conflict.prNumber,
+              title: error.conflict.prTitle,
+              samePath: error.conflict.samePath,
+            }
+          : null,
+      );
       reportFailure("publish/pr", `提交失败：${(error as Error).message}`, error, {
         data: { step: "createPR", itemId, resourceType, mode },
       });
+    }
+  };
+
+  /** 打开冲突 PR 继续编辑；同路径重复提交时直接回到原 PR 的编辑流程。 */
+  const handleOpenPendingConflictPr = async () => {
+    const target = pendingConflictPr;
+    if (!target) return;
+    const token = loadAccountState().github?.token;
+    if (!token) {
+      toast.error("GitHub 未登录，无法打开该 PR。");
+      return;
+    }
+    try {
+      const opened = await buildInProgressEditContextFromPr({
+        prNumber: target.number,
+        token,
+      });
+      const username = loadAccountState().github?.username?.trim().toLowerCase();
+      const author = opened.authorLogin?.trim().toLowerCase();
+      if (username && author && author !== username) {
+        toast.warning(
+          `PR #${target.number} 由 ${opened.authorLogin} 提交，请等待其处理完成后再编辑。`,
+        );
+        return;
+      }
+      toast.info("你正在编辑一个处于审核队列中的资源，提交后会更新原 PR。");
+      navigate("/publish/edit", { state: { editContext: opened } });
+    } catch (error) {
+      toast.error((error as Error).message || "打开 PR 失败");
     }
   };
 
@@ -3648,6 +3695,39 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               onNext={() => goToStep(2)}
               mode={repoStepMode}
             />
+          )}
+
+          {activeStepIndex === 2 && pendingConflictPr && (
+            <Callout.Root color="amber">
+              <Callout.Icon>
+                <WarningOctagonIcon size={18} weight="fill" />
+              </Callout.Icon>
+              <Callout.Text>
+                <div className="flex flex-col gap-2">
+                  <Text size="2">
+                    该资源已有未处理的提交 PR #{pendingConflictPr.number}
+                    {pendingConflictPr.title
+                      ? `《${pendingConflictPr.title}》`
+                      : ""}
+                    。
+                    {pendingConflictPr.samePath
+                      ? "你可以继续编辑该 PR，提交后会把最新修改更新到原 PR。"
+                      : "该 PR 可能由其他创作者提交，请等待审核处理完成后再编辑。"}
+                  </Text>
+                  {pendingConflictPr.samePath && (
+                    <div>
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => void handleOpenPendingConflictPr()}
+                      >
+                        继续编辑 PR #{pendingConflictPr.number}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Callout.Text>
+            </Callout.Root>
           )}
 
           {activeStepIndex === 2 && (
