@@ -2,6 +2,25 @@ import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { loadAccountState } from "~/logic/account/store";
 import { githubFetch } from "~/logic/publish/github-actions";
 
+/**
+ * PR 接口的目标仓库。缺省为当前资源目录仓库，插件审核时显式传入插件仓库。
+ * `defaultBranch` 用于需要读取默认分支内容的调用。
+ */
+export interface GithubRepoRef {
+  owner: string;
+  name: string;
+  defaultBranch: string;
+}
+
+/** 每次调用重新读取 repoEnv，避免把用户切换的环境固化在模块加载时。 */
+export function communityRepoRef(): GithubRepoRef {
+  return {
+    owner: COMMUNITY_REPO_CONFIG.owner,
+    name: COMMUNITY_REPO_CONFIG.name,
+    defaultBranch: COMMUNITY_REPO_CONFIG.defaultBranch,
+  };
+}
+
 export interface GithubPullRequest {
   number: number;
   title: string;
@@ -29,6 +48,8 @@ export interface GithubPullRequest {
   };
   mergeable?: boolean | null;
   mergeable_state?: string;
+  /** 作者是否允许维护者向 fork 分支提交。插件冲突自动解决依赖该字段。 */
+  maintainer_can_modify?: boolean;
   labels?: Array<{ name: string; color?: string }>;
   changed_files?: number;
   additions?: number;
@@ -99,8 +120,8 @@ function headers(tokenOverride?: string) {
   };
 }
 
-function repoPath(path: string) {
-  return `https://api.github.com/repos/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}${path}`;
+function repoPath(path: string, repo: GithubRepoRef = communityRepoRef()) {
+  return `https://api.github.com/repos/${repo.owner}/${repo.name}${path}`;
 }
 
 /** 与 PR 审核相同：具备仓库写入能力才算有管理权限。 */
@@ -110,13 +131,18 @@ export function hasCommunityRepoManagePermission(permission: string) {
   return COMMUNITY_REPO_MANAGE_PERMISSIONS.has(permission);
 }
 
-export async function getCurrentGithubPermission() {
+export async function getCurrentGithubPermission(
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   const account = getGithubAuth();
   if (!account.username) {
     throw new Error("GitHub 账号缺少用户名。");
   }
   return githubFetch<{ permission: string; user?: unknown }>(
-    repoPath(`/collaborators/${encodeURIComponent(account.username)}/permission`),
+    repoPath(
+      `/collaborators/${encodeURIComponent(account.username)}/permission`,
+      repo,
+    ),
     { headers: headers() },
   );
 }
@@ -174,9 +200,10 @@ export async function getGithubUserProfile(
 
 export async function listReviewPullRequests(
   state: "open" | "closed" | "all" = "open",
+  repo: GithubRepoRef = communityRepoRef(),
 ) {
   const pulls = await githubFetch<GithubPullRequest[]>(
-    repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
+    repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`, repo),
     { headers: headers() },
   );
   // 已合并或 head 分支已被删除的 PR 无法再处理，不展示。
@@ -185,33 +212,49 @@ export async function listReviewPullRequests(
   );
 }
 
-export async function getPullRequest(prNumber: number) {
+export async function getPullRequest(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+  token?: string,
+) {
   return githubFetch<GithubPullRequest>(
-    repoPath(`/pulls/${prNumber}`),
-    { headers: headers() },
+    repoPath(`/pulls/${prNumber}`, repo),
+    { headers: headers(token) },
   );
 }
 
-export async function mergePullRequest(prNumber: number) {
-  const latest = await getPullRequest(prNumber);
+export async function mergePullRequest(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+  options: { sha?: string; commitTitle?: string; commitMessage?: string } = {},
+) {
+  const latest = await getPullRequest(prNumber, repo);
   if (latest.mergeable === false) {
     throw new Error(
       `PR #${prNumber} 当前不可合并（mergeable_state: ${latest.mergeable_state || "unknown"}），请先更新分支。`,
     );
   }
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}/merge`),
+    repoPath(`/pulls/${prNumber}/merge`, repo),
     {
       method: "PUT",
       headers: headers(),
-      body: JSON.stringify({ merge_method: "merge" }),
+      body: JSON.stringify({
+        merge_method: "merge",
+        sha: options.sha,
+        commit_title: options.commitTitle,
+        commit_message: options.commitMessage,
+      }),
     },
   );
 }
 
-export async function closePullRequest(prNumber: number) {
+export async function closePullRequest(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}`),
+    repoPath(`/pulls/${prNumber}`, repo),
     {
       method: "PATCH",
       headers: headers(),
@@ -220,9 +263,12 @@ export async function closePullRequest(prNumber: number) {
   );
 }
 
-export async function reopenPullRequest(prNumber: number) {
+export async function reopenPullRequest(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}`),
+    repoPath(`/pulls/${prNumber}`, repo),
     {
       method: "PATCH",
       headers: headers(),
@@ -241,12 +287,13 @@ export async function reopenPullRequest(prNumber: number) {
 export async function waitForPullRequestOpen(
   prNumber: number,
   options: { timeoutMs?: number; intervalMs?: number } = {},
+  repo: GithubRepoRef = communityRepoRef(),
 ): Promise<boolean> {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const intervalMs = options.intervalMs ?? 3_000;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const pr = await getPullRequest(prNumber);
+    const pr = await getPullRequest(prNumber, repo);
     if (pr.state === "open") return true;
     // 已被合并的 PR 不该再被重开，也不必新建 PR 去替代它。
     if (pr.merged_at) return false;
@@ -259,9 +306,10 @@ export async function waitForPullRequestOpen(
 export async function updatePullRequestTitle(
   prNumber: number,
   title: string,
+  repo: GithubRepoRef = communityRepoRef(),
 ) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}`),
+    repoPath(`/pulls/${prNumber}`, repo),
     {
       method: "PATCH",
       headers: headers(),
@@ -270,22 +318,21 @@ export async function updatePullRequestTitle(
   );
 }
 
-export async function listPullRequestComments(prNumber: number) {
+export async function listPullRequestComments(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<GithubIssueComment[]>(
-    repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`),
+    repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`, repo),
     { headers: headers() },
   );
 }
 
-/**
- * 拉取所有非 PENDING 的 PR review（APPROVED / CHANGES_REQUESTED / COMMENTED），
- * 并映射成评论结构。NEEDFIX 走 review 接口，CLOSE/REFUSE/FIXED/REOPEN 走 issue
- * 评论接口。保留 body 为空的 review 以便在时间线显示「已批准」等状态。
- */
-export async function listPullRequestReviewComments(
+function mapReviewsToComments(
+  reviews: GithubPullReview[],
   prNumber: number,
-): Promise<GithubIssueComment[]> {
-  const reviews = await listPullRequestReviews(prNumber);
+  repo: GithubRepoRef,
+): GithubIssueComment[] {
   return reviews
     .filter((review) => review.state !== "PENDING")
     .map((review) => {
@@ -297,42 +344,86 @@ export async function listPullRequestReviewComments(
         body: review.body || (state === "APPROVE" ? "已批准" : state === "REQUEST_CHANGES" ? "请求变更" : "已评论"),
         user: review.user,
         created_at: review.submitted_at,
-        html_url: `https://github.com/${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name}/pull/${prNumber}#review-${review.id}`,
+        html_url: `https://github.com/${repo.owner}/${repo.name}/pull/${prNumber}#review-${review.id}`,
         pull_review_id: review.id,
         review_state: state,
       };
     });
 }
 
+/**
+ * 拉取所有非 PENDING 的 PR review（APPROVED / CHANGES_REQUESTED / COMMENTED），
+ * 并映射成评论结构。NEEDFIX 走 review 接口，CLOSE/REFUSE/FIXED/REOPEN 走 issue
+ * 评论接口。保留 body 为空的 review 以便在时间线显示「已批准」等状态。
+ */
+export async function listPullRequestReviewComments(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+): Promise<GithubIssueComment[]> {
+  const reviews = await listPullRequestReviews(prNumber, repo);
+  return mapReviewsToComments(reviews, prNumber, repo);
+}
+
+export interface PullRequestTimelineResult {
+  timeline: GithubIssueComment[];
+  reviews: GithubPullReview[];
+}
+
+/**
+ * 同时返回评论时间线与原始 reviews。插件 PR 的“需要修改”状态必须基于原始
+ * review state（DISMISSED 在时间线映射里会被归一化成 COMMENTED），因此这里
+ * 复用同一次 reviews 请求，避免重复拉取。
+ */
+export async function listPullRequestTimelineWithReviews(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+): Promise<PullRequestTimelineResult> {
+  const [comments, reviews] = await Promise.all([
+    listPullRequestComments(prNumber, repo),
+    listPullRequestReviews(prNumber, repo),
+  ]);
+  return {
+    reviews,
+    timeline: [...comments, ...mapReviewsToComments(reviews, prNumber, repo)].sort(
+      (a, b) => (b.created_at || "").localeCompare(a.created_at || ""),
+    ),
+  };
+}
+
 export async function listPullRequestTimeline(
   prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
 ): Promise<GithubIssueComment[]> {
-  const [comments, fromReviews] = await Promise.all([
-    listPullRequestComments(prNumber),
-    listPullRequestReviewComments(prNumber),
-  ]);
-  return [...comments, ...fromReviews].sort((a, b) =>
-    (b.created_at || "").localeCompare(a.created_at || ""),
-  );
+  return (await listPullRequestTimelineWithReviews(prNumber, repo)).timeline;
 }
 
-export async function listPullRequestFiles(prNumber: number) {
+export async function listPullRequestFiles(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<GithubPullFile[]>(
-    repoPath(`/pulls/${prNumber}/files?per_page=100`),
+    repoPath(`/pulls/${prNumber}/files?per_page=100`, repo),
     { headers: headers() },
   );
 }
 
-export async function listPullRequestReviews(prNumber: number) {
+export async function listPullRequestReviews(
+  prNumber: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<GithubPullReview[]>(
-    repoPath(`/pulls/${prNumber}/reviews?per_page=100`),
+    repoPath(`/pulls/${prNumber}/reviews?per_page=100`, repo),
     { headers: headers() },
   );
 }
 
-export async function createPullRequestComment(prNumber: number, body: string) {
+export async function createPullRequestComment(
+  prNumber: number,
+  body: string,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<GithubIssueComment>(
-    repoPath(`/issues/${prNumber}/comments`),
+    repoPath(`/issues/${prNumber}/comments`, repo),
     {
       method: "POST",
       headers: headers(),
@@ -341,9 +432,13 @@ export async function createPullRequestComment(prNumber: number, body: string) {
   );
 }
 
-export async function approvePullRequest(prNumber: number, body?: string) {
+export async function approvePullRequest(
+  prNumber: number,
+  body?: string,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}/reviews`),
+    repoPath(`/pulls/${prNumber}/reviews`, repo),
     {
       method: "POST",
       headers: headers(),
@@ -355,13 +450,14 @@ export async function approvePullRequest(prNumber: number, body?: string) {
 export async function requestChangesPullRequest(
   prNumber: number,
   body?: string,
+  repo: GithubRepoRef = communityRepoRef(),
 ) {
   const payload: Record<string, string> = { event: "REQUEST_CHANGES" };
   if (body?.trim()) {
     payload.body = body;
   }
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}/reviews`),
+    repoPath(`/pulls/${prNumber}/reviews`, repo),
     {
       method: "POST",
       headers: headers(),
@@ -370,9 +466,12 @@ export async function requestChangesPullRequest(
   );
 }
 
-export async function deletePullRequestComment(commentId: number) {
+export async function deletePullRequestComment(
+  commentId: number,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<unknown>(
-    repoPath(`/issues/comments/${commentId}`),
+    repoPath(`/issues/comments/${commentId}`, repo),
     {
       method: "DELETE",
       headers: headers(),
@@ -380,9 +479,13 @@ export async function deletePullRequestComment(commentId: number) {
   );
 }
 
-export async function updatePullRequestComment(commentId: number, body: string) {
+export async function updatePullRequestComment(
+  commentId: number,
+  body: string,
+  repo: GithubRepoRef = communityRepoRef(),
+) {
   return githubFetch<GithubIssueComment>(
-    repoPath(`/issues/comments/${commentId}`),
+    repoPath(`/issues/comments/${commentId}`, repo),
     {
       method: "PATCH",
       headers: headers(),
@@ -395,9 +498,10 @@ export async function updatePullRequestReview(
   prNumber: number,
   reviewId: number,
   body: string,
+  repo: GithubRepoRef = communityRepoRef(),
 ) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`),
+    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`, repo),
     {
       method: "PUT",
       headers: headers(),
@@ -409,9 +513,10 @@ export async function updatePullRequestReview(
 export async function deletePullRequestReview(
   prNumber: number,
   reviewId: number,
+  repo: GithubRepoRef = communityRepoRef(),
 ) {
   return githubFetch<unknown>(
-    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`),
+    repoPath(`/pulls/${prNumber}/reviews/${reviewId}`, repo),
     {
       method: "DELETE",
       headers: headers(),
@@ -437,6 +542,11 @@ export interface GithubCommitInfo {
   commit: {
     message?: string;
     author?: {
+      name?: string;
+      email?: string;
+      date?: string;
+    };
+    committer?: {
       name?: string;
       email?: string;
       date?: string;
@@ -476,12 +586,14 @@ export async function searchRepoCommits(
   term: string,
   perPage = 8,
   token?: string,
+  page = 1,
 ) {
   const params = new URLSearchParams({
     q: `repo:${owner}/${repo} ${term}`,
     sort: "committer-date",
     order: "desc",
     per_page: String(perPage),
+    page: String(Math.max(1, Math.trunc(page))),
   });
   return githubFetch<GithubCommitSearchResult>(
     `https://api.github.com/search/commits?${params.toString()}`,
