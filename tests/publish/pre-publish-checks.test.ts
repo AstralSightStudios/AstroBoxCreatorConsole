@@ -10,6 +10,7 @@ import {
   checkCoverFileSize,
   checkCoverRatio,
   checkIconDimensions,
+  checkIconShape,
   checkImageFormat,
   checkPreviewCount,
   hasCoverRatio,
@@ -33,6 +34,10 @@ describe("pre-publish checks: checkPreviewCount", () => {
 });
 
 describe("pre-publish checks: checkIconDimensions", () => {
+  test("caps icons at 512px", () => {
+    expect(ICON_MAX_DIMENSION).toBe(512);
+  });
+
   test("accepts a square icon within the size limit", () => {
     expect(checkIconDimensions({ width: 256, height: 256 })).toBeNull();
     expect(checkIconDimensions({ width: ICON_MAX_DIMENSION, height: ICON_MAX_DIMENSION })).toBeNull();
@@ -61,6 +66,15 @@ describe("pre-publish checks: checkIconDimensions", () => {
     expect(checkIconDimensions({ width: 800, height: 400 })).toContain("正方形");
     // 正方形但超限，只命中尺寸规则
     expect(checkIconDimensions({ width: 800, height: 800 })).toContain("过大");
+  });
+});
+
+describe("pre-publish checks: checkIconShape", () => {
+  test("only checks readability and 1:1, leaving oversize to auto-resize", () => {
+    expect(checkIconShape({ width: 1024, height: 1024 })).toBeNull();
+    expect(checkIconShape({ width: 4096, height: 4096 })).toBeNull();
+    expect(checkIconShape({ width: 1024, height: 512 })).toContain("正方形");
+    expect(checkIconShape({ width: undefined, height: 512 })).toContain("无法读取");
   });
 });
 
