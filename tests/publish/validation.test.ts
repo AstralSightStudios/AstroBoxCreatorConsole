@@ -111,6 +111,20 @@ describe("publish validation", () => {
     expect(validatePublish(validInput).errors).toEqual([]);
   });
 
+  test("预览图逐张问题携带 previewId，便于定位到单张图片", () => {
+    const oversized = {
+      ...coverImage,
+      id: "preview-oversized",
+      imageMeta: { format: "gif" as const, animated: true, frames: 601 },
+    };
+    const issues = validatePublish({
+      ...validInput,
+      previews: [oversized, ...validPreviews.slice(0, 2)],
+    }).issues;
+    const previewIssue = issues.find((issue) => issue.field === "previews");
+    expect(previewIssue?.previewId).toBe("preview-oversized");
+  });
+
   test("简介与标签同时不合规时两条错误都给出", () => {
     const issues = validatePushQuality("", ["only-one"]);
     expect(issues).toHaveLength(2);

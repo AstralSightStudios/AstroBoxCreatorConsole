@@ -188,6 +188,7 @@ import {
 import {
   flashFirstDownloadRow,
   flashPublishField,
+  flashPublishIssue,
 } from "~/logic/publish/scroll-highlight";
 import {
   applyPublishedBaseline,
@@ -1864,7 +1865,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (target > 0 && firstIssue) {
       toast.error(firstIssue.message);
       backToForm();
-      flashPublishField(firstIssue.field);
+      flashPublishIssue(firstIssue);
       return;
     }
     if (target > 1 && (repoStatus !== "success" || !repoInfo?.commitSha)) {

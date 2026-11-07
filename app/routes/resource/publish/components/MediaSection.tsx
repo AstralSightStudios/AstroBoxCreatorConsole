@@ -168,6 +168,7 @@ function MediaTile({
         </div>
       ) : media ? (
         <div
+          data-media-image={fieldKey}
           className={`flex min-h-56 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25 ${
             mediaClassName || ""
           }`}
@@ -895,6 +896,7 @@ export function MediaSection({
             <div ref={viewportRef} className="relative overflow-hidden">
             <div
               ref={previewScrollerRef}
+              data-preview-scroller=""
               className={`scrollbar-none overflow-x-auto pb-1 ${
                 draggingId ? "touch-none no-scrollbar" : ""
               }`}

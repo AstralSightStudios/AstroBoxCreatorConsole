@@ -72,6 +72,11 @@ export type PublishFieldKey =
 export interface PublishValidationIssue {
   field: PublishFieldKey;
   message: string;
+  /**
+   * 预览图逐张校验时的图片 id，对应 MediaSection 的 `data-preview-id`。
+   * 高亮时优先滚动到这张图片，而不是整个预览图容器。
+   */
+  previewId?: string;
 }
 
 export interface PublishValidationInput {
@@ -333,6 +338,7 @@ function validatePreviewMedia(
     if (issue) {
       issues.push({
         field: "previews",
+        previewId: item.id,
         message: `预览图 ${index + 1}：${issue.message}`,
       });
     }
