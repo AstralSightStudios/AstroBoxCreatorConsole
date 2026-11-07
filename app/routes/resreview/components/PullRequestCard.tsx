@@ -1,18 +1,21 @@
 import type { GithubIssueComment, GithubPullRequest } from "~/api/github/pr-review";
 import {
-  deriveReviewStatus,
   type NeedFixAuthorStat,
+  type ReviewState,
 } from "~/logic/publish/review-status";
 import { Check, UserCircle } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
 import { formatTime } from "../utils";
+import { reviewSourceLabel, type ReviewSource } from "../source";
 
 interface PullRequestCardProps {
   pull: GithubPullRequest;
+  source: ReviewSource;
+  status: ReviewState;
   comments: GithubIssueComment[];
-  /** 该 PR 上发送 NEEDFIX 的负责审核者分布（由 deriveNeedFixAuthors 得出）。 */
+  /** 该 PR 上发送 NEEDFIX / CHANGES_REQUESTED 的负责审核者分布。 */
   reviewers: NeedFixAuthorStat[];
   /** 选择模式：底部审核栏左侧留出复选框格，点击卡片勾选而非进入详情。 */
   selectable?: boolean;
@@ -42,6 +45,8 @@ function ReviewerAvatar({ reviewer }: { reviewer: NeedFixAuthorStat }) {
 
 export function PullRequestCard({
   pull,
+  source,
+  status,
   comments,
   reviewers,
   selectable = false,
@@ -50,7 +55,6 @@ export function PullRequestCard({
   onToggleSelect,
   onOpenReviewers,
 }: PullRequestCardProps) {
-  const status = deriveReviewStatus(comments);
   const prBadgeState: "open" | "closed" | "merged" =
     pull.state === "closed"
       ? pull.merged_at
@@ -89,7 +93,7 @@ export function PullRequestCard({
       }`}
     >
       <motion.button
-        layoutId={`pr-item-${pull.number}`}
+        layoutId={`pr-item-${source}#${pull.number}`}
         layout
         transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.85 }}
         type="button"
@@ -119,7 +123,16 @@ export function PullRequestCard({
             </span>
           </div>
           <div className="mt-2 flex items-center justify-end gap-2">
-            <ReviewStatusBadge state={status.state} />
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                source === "plugin"
+                  ? "bg-violet-500/15 text-violet-100"
+                  : "bg-white/10 text-white/55"
+              }`}
+            >
+              {reviewSourceLabel(source)}
+            </span>
+            <ReviewStatusBadge state={status} />
             {(comments.length ?? 0) > 0 && (
               <span className="inline-flex items-center gap-1 text-xs text-white/45">
                 <CommentIcon className="h-3.5 w-3.5 text-white/45" />

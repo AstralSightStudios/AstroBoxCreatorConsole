@@ -57,7 +57,6 @@ export interface PullRequestReviewViewProps {
   canRollback: boolean;
   rollbackDisabledReason?: string;
   rollbackTargetLabel: string;
-  rollbackScopeLabel: string;
   canMerge: boolean;
   onApprove: () => void;
   onApproveAndMerge: () => void;
@@ -103,7 +102,6 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
     canRollback,
     rollbackDisabledReason,
     rollbackTargetLabel,
-    rollbackScopeLabel,
     canMerge,
     onApprove,
     onApproveAndMerge,
@@ -185,7 +183,6 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
           canRollback={canRollback}
           rollbackDisabledReason={rollbackDisabledReason}
           rollbackTargetLabel={rollbackTargetLabel}
-          rollbackScopeLabel={rollbackScopeLabel}
           canMerge={canMerge}
           onApproveAndMerge={onApproveAndMerge}
           onClose={onClose}

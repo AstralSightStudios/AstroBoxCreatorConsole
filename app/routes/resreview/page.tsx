@@ -42,13 +42,20 @@ import {
   deriveNeedFixAuthors,
   filterReviewTagComments,
   resolveLatestTagAction,
+  type ReviewState,
+  type ReviewStatusResult,
 } from "~/logic/publish/review-status";
+import {
+  derivePluginRequestAuthors,
+  derivePluginReviewStatus,
+} from "~/logic/publish/plugin-review-status";
 import {
   getCurrentGithubPermission,
   hasCommunityRepoManagePermission,
   getPullRequest,
   listReviewPullRequests,
   listPullRequestTimeline,
+  listPullRequestTimelineWithReviews,
   listPullRequestFiles,
   approvePullRequest,
   mergePullRequest,
@@ -63,17 +70,33 @@ import {
   listOrganizationMembers,
   type GithubIssueComment,
   type GithubPullRequest,
+  type GithubPullReview,
 } from "~/api/github/pr-review";
+import {
+  mergePreparedPluginPullRequest,
+  preparePluginPullRequestForMerge,
+} from "~/api/github/plugin-pr-review";
+import { NG_PLUGIN_REPO_CONFIG } from "~/config/pluginRepo";
+import {
+  parseReviewSource,
+  reviewPullKey,
+  reviewPullKeyOf,
+  reviewRepoRef,
+  type ReviewPullRequest,
+  type ReviewSource,
+} from "./source";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import ReviewersDrawer from "./components/ReviewersDrawer";
 import BatchNoticeFailuresDrawer from "./components/BatchNoticeFailuresDrawer";
 import { AuditLookupDialog } from "./components/AuditLookupDialog";
+import { RollbackImpactDialog } from "./components/RollbackImpactDialog";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
 import {
   loadCatalogRollbackBaseline,
   rollbackCatalogRowsForPr,
 } from "~/logic/publish/catalog-rollback";
+import type { CatalogRollbackPreview } from "~/logic/publish/catalog-rollback-preview";
 import {
   buildCcNoticeCheckPlan,
   loadPrResourcePreviews,
@@ -160,19 +183,29 @@ export default function ResourceReviewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const [permission, setPermission] = useState("");
+  const [resourcePermission, setResourcePermission] = useState("");
+  const [pluginPermission, setPluginPermission] = useState("");
   const [orgMembers, setOrgMembers] = useState<Set<string>>(new Set());
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionError, setPermissionError] = useState("");
-  const [pulls, setPulls] = useState<GithubPullRequest[]>([]);
-  const [commentsByPr, setCommentsByPr] = useState<Record<number, import("~/api/github/pr-review").GithubIssueComment[]>>({});
+  const [pulls, setPulls] = useState<ReviewPullRequest[]>([]);
+  const [commentsByPr, setCommentsByPr] = useState<Record<string, GithubIssueComment[]>>({});
+  const [pluginReviewsByKey, setPluginReviewsByKey] = useState<
+    Record<string, GithubPullReview[]>
+  >({});
   const prParam = searchParams.get("pr");
   const openNumber = prParam && /^\d+$/.test(prParam) ? Number(prParam) : null;
-  const auditMode = searchParams.get("audit") === "1" && openNumber !== null;
+  const openSource = parseReviewSource(searchParams.get("source"));
+  const auditMode =
+    openSource === "resource" &&
+    searchParams.get("audit") === "1" &&
+    openNumber !== null;
   const auditResourceId = auditMode
     ? searchParams.get("resource")?.trim() || null
     : null;
-  const [detailPull, setDetailPull] = useState<GithubPullRequest | null>(null);
+  const rollbackRequested = searchParams.get("rollback") === "1";
+  const searchParamsString = searchParams.toString();
+  const [detailPull, setDetailPull] = useState<ReviewPullRequest | null>(null);
   const [detailError, setDetailError] = useState("");
   const [auditBaselineError, setAuditBaselineError] = useState("");
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
@@ -180,7 +213,8 @@ export default function ResourceReviewPage() {
   const [resourcePreviews, setResourcePreviews] = useState<PrResourcePreview[]>([]);
   const [loadingPulls, setLoadingPulls] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [stateFilter, setStateFilter] = useState<import("./types").ReviewState | "all">("all");
+  const [stateFilter, setStateFilter] = useState<ReviewState | "all">("all");
+  const [sourceFilter, setSourceFilter] = useState<ReviewSource | "all">("all");
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
@@ -194,18 +228,18 @@ export default function ResourceReviewPage() {
   const [detailRotate, setDetailRotate] = useState(0);
   const [isWorkbenchSidebarCollapsed, setIsWorkbenchSidebarCollapsed] =
     useState(true);
-  const [reviewersPrNumber, setReviewersPrNumber] = useState<number | null>(
-    null,
-  );
+  const [reviewersKey, setReviewersKey] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [approving, setApproving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [closing, setClosing] = useState(false);
   const [refusing, setRefusing] = useState(false);
+  const [requestingChanges, setRequestingChanges] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
+  const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedNumbers, setSelectedNumbers] = useState<Set<number>>(new Set());
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [bulkClosing, setBulkClosing] = useState(false);
   const [bulkCloseDialogOpen, setBulkCloseDialogOpen] = useState(false);
   const [bulkCloseReason, setBulkCloseReason] = useState("");
@@ -217,17 +251,45 @@ export default function ResourceReviewPage() {
   const [retryingNumbers, setRetryingNumbers] = useState<Set<number>>(new Set());
   const loadDetailRef = useRef<number>(0);
 
-  const canReview = hasCommunityRepoManagePermission(permission);
+  const canReviewResource = hasCommunityRepoManagePermission(resourcePermission);
+  const canReviewPlugin = hasCommunityRepoManagePermission(pluginPermission);
+  const canReview = canReviewResource || canReviewPlugin;
   const isInitialLoading =
     checkingPermission ||
     (!auditMode && loadingPulls && pulls.length === 0);
+  const openKey =
+    openNumber !== null ? reviewPullKeyOf(openSource, openNumber) : "";
   const listedPull =
-    pulls.find((pull) => pull.number === openNumber) || null;
+    pulls.find(
+      (pull) => pull.number === openNumber && pull.source === openSource,
+    ) || null;
   const openPull =
     listedPull ??
-    (detailPull?.number === openNumber ? detailPull : null);
-  const openComments = openNumber ? commentsByPr[openNumber] ?? [] : [];
-  const openStatus = deriveReviewStatus(openComments);
+    (detailPull?.number === openNumber && detailPull.source === openSource
+      ? detailPull
+      : null);
+  const openComments = openKey ? commentsByPr[openKey] ?? [] : [];
+  const openStatus: ReviewStatusResult =
+    openSource === "plugin"
+      ? {
+          state: derivePluginReviewStatus(
+            pluginReviewsByKey[openKey] ?? [],
+            orgMembers,
+          ),
+          items: [],
+        }
+      : deriveReviewStatus(openComments);
+  const statusByKey = useMemo(() => {
+    const map: Record<string, ReviewState> = {};
+    for (const pull of pulls) {
+      const key = reviewPullKey(pull);
+      map[key] =
+        pull.source === "plugin"
+          ? derivePluginReviewStatus(pluginReviewsByKey[key] ?? [], orgMembers)
+          : deriveReviewStatus(commentsByPr[key] ?? []).state;
+    }
+    return map;
+  }, [pulls, commentsByPr, pluginReviewsByKey, orgMembers]);
   const rollbackPreviews = useMemo(() => {
     if (!auditResourceId) return resourcePreviews;
     const needle = auditResourceId.trim().toLowerCase();
@@ -239,11 +301,14 @@ export default function ResourceReviewPage() {
   }, [auditResourceId, resourcePreviews]);
 
   const reviewModeForOpenPr =
-    publishMode === "staging" || hasSubmissionFiles(files)
-      ? "staging"
-      : "legacy";
+    openSource === "plugin"
+      ? "legacy"
+      : publishMode === "staging" || hasSubmissionFiles(files)
+        ? "staging"
+        : "legacy";
 
   const repoFileChanges = useMemo(() => {
+    if (openSource === "plugin") return [];
     if (files.length === 0 || resourcePreviews.length === 0) return [];
     if (reviewModeForOpenPr === "staging") {
       return resourcePreviews.map((preview) => {
@@ -279,20 +344,32 @@ export default function ResourceReviewPage() {
         manifest: preview.manifest,
       };
     });
-  }, [files, resourcePreviews, reviewModeForOpenPr]);
+  }, [files, resourcePreviews, reviewModeForOpenPr, openSource]);
 
   const loadPermission = async () => {
     setCheckingPermission(true);
     setPermissionError("");
-    try {
-      const res = await getCurrentGithubPermission();
-      setPermission(res.permission);
-    } catch (err) {
-      setPermission("");
-      setPermissionError(getErrorMessage(err));
-    } finally {
-      setCheckingPermission(false);
+    const resourceRepo = reviewRepoRef("resource");
+    const pluginRepo = reviewRepoRef("plugin");
+    const [resourceResult, pluginResult] = await Promise.allSettled([
+      getCurrentGithubPermission(resourceRepo),
+      getCurrentGithubPermission(pluginRepo),
+    ]);
+    if (resourceResult.status === "fulfilled") {
+      setResourcePermission(resourceResult.value.permission);
+    } else {
+      setResourcePermission("");
     }
+    if (pluginResult.status === "fulfilled") {
+      setPluginPermission(pluginResult.value.permission);
+    } else {
+      setPluginPermission("");
+    }
+    const errors = [resourceResult, pluginResult]
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => getErrorMessage(result.reason));
+    setPermissionError(errors.join("；"));
+    setCheckingPermission(false);
   };
 
   useEffect(() => {
@@ -302,46 +379,83 @@ export default function ResourceReviewPage() {
   }, []);
 
   const loadPulls = async () => {
-    // 等待 orgMembers 加载完成，避免评论过滤失效
-    if (orgMembers.size === 0) return;
+    // 等待 orgMembers 加载完成，避免资源 PR 的审核标签过滤失效。
+    // 插件 PR 不使用 ABCC 标签，但一起等待可以保证首次加载只跑一次。
+    if (canReviewResource && orgMembers.size === 0) return;
 
     setLoadingPulls(true);
     try {
-      const list = await listReviewPullRequests("open");
-      const commentEntries = await runWithConcurrency(
-        list,
+      const [resourcePulls, pluginPulls] = await Promise.all([
+        canReviewResource
+          ? listReviewPullRequests("open", reviewRepoRef("resource"))
+          : Promise.resolve([]),
+        canReviewPlugin
+          ? listReviewPullRequests("open", reviewRepoRef("plugin"))
+          : Promise.resolve([]),
+      ]);
+      const combined: ReviewPullRequest[] = [
+        ...resourcePulls.map((pull) => ({ ...pull, source: "resource" as const })),
+        ...pluginPulls.map((pull) => ({ ...pull, source: "plugin" as const })),
+      ];
+
+      const entries = await runWithConcurrency(
+        combined,
         6,
         async (pull) => {
+          const key = reviewPullKey(pull);
+          const repo = reviewRepoRef(pull.source);
           try {
-            return [
-              pull.number,
-              filterReviewTagComments(
-                await listPullRequestTimeline(pull.number),
+            if (pull.source === "plugin") {
+              const result = await listPullRequestTimelineWithReviews(
+                pull.number,
+                repo,
+              );
+              return {
+                key,
+                pull,
+                comments: result.timeline,
+                reviews: result.reviews,
+              };
+            }
+            return {
+              key,
+              pull,
+              comments: filterReviewTagComments(
+                await listPullRequestTimeline(pull.number, repo),
                 orgMembers,
                 pull.user?.login,
               ),
-            ] as const;
+              reviews: [] as GithubPullReview[],
+            };
           } catch {
-            return [pull.number, []] as const;
+            return {
+              key,
+              pull,
+              comments: [] as GithubIssueComment[],
+              reviews: [] as GithubPullReview[],
+            };
           }
         },
       );
-      const commentMap = Object.fromEntries(commentEntries);
-      const commentsByNumber = commentMap as Record<
-        number,
-        import("~/api/github/pr-review").GithubIssueComment[]
-      >;
-      const refusedNumbers = new Set(
-        list
-          .filter((pull) =>
-            (commentsByNumber[pull.number] ?? []).some((comment) =>
-              /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
-            ),
+
+      const commentMap: Record<string, GithubIssueComment[]> = {};
+      const reviewMap: Record<string, GithubPullReview[]> = {};
+      const refusedKeys = new Set<string>();
+      for (const entry of entries) {
+        commentMap[entry.key] = entry.comments;
+        reviewMap[entry.key] = entry.reviews;
+        if (
+          entry.pull.source === "resource" &&
+          entry.comments.some((comment) =>
+            /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
           )
-          .map((pull) => pull.number),
-      );
-      setPulls(list.filter((pull) => !refusedNumbers.has(pull.number)));
-      setCommentsByPr(commentsByNumber);
+        ) {
+          refusedKeys.add(entry.key);
+        }
+      }
+      setPulls(combined.filter((pull) => !refusedKeys.has(reviewPullKey(pull))));
+      setCommentsByPr(commentMap);
+      setPluginReviewsByKey(reviewMap);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -354,26 +468,33 @@ export default function ResourceReviewPage() {
     setRefreshTick((prev) => prev + 1);
   };
 
-  const loadDetail = async (number: number) => {
+  const loadDetail = async (source: ReviewSource, number: number) => {
     const callId = ++loadDetailRef.current;
     setLoadingDetail(true);
     setDetailError("");
     setAuditBaselineError("");
     setFiles([]);
     setResourcePreviews([]);
+    const key = reviewPullKeyOf(source, number);
+    const repo = reviewRepoRef(source);
     try {
-      let pull =
-        pulls.find((item) => item.number === number) ??
-        (detailPull?.number === number ? detailPull : null);
+      let pull: ReviewPullRequest | null =
+        pulls.find(
+          (item) => item.number === number && item.source === source,
+        ) ??
+        (detailPull?.number === number && detailPull.source === source
+          ? detailPull
+          : null);
       if (!pull) {
-        pull = await getPullRequest(number);
+        const fetched = await getPullRequest(number, repo);
         if (callId !== loadDetailRef.current) return;
+        pull = { ...fetched, source };
         setDetailPull(pull);
       }
 
       // 回查模式要还原 PR 合入前的目录状态；普通模式仍然看当前默认分支。
       const baselinePromise =
-        auditMode && pull
+        auditMode && source === "resource" && pull
           ? loadCatalogRollbackBaseline(pull).catch((err) => {
               if (callId === loadDetailRef.current) {
                 setAuditBaselineError(getErrorMessage(err));
@@ -381,16 +502,27 @@ export default function ResourceReviewPage() {
               return null;
             })
           : Promise.resolve(null);
-      const [nextComments, nextFiles, baseline] = await Promise.all([
-        listPullRequestTimeline(number).then((comments) =>
-          filterReviewTagComments(comments, orgMembers, pull?.user?.login),
-        ),
-        listPullRequestFiles(number),
+      const [timelineResult, nextFiles, baseline] = await Promise.all([
+        source === "plugin"
+          ? listPullRequestTimelineWithReviews(number, repo)
+          : listPullRequestTimeline(number, repo).then((timeline) => ({
+              timeline,
+              reviews: [] as GithubPullReview[],
+            })),
+        listPullRequestFiles(number, repo),
         baselinePromise,
       ]);
       if (callId !== loadDetailRef.current) return;
+      const nextComments =
+        source === "plugin"
+          ? timelineResult.timeline
+          : filterReviewTagComments(
+              timelineResult.timeline,
+              orgMembers,
+              pull?.user?.login,
+            );
       const nextResourcePreviews =
-        pull &&
+        source === "resource" && pull &&
         (publishMode === "staging" || hasSubmissionFiles(nextFiles))
           ? await loadStagingPrResourcePreviews(
               nextFiles,
@@ -403,25 +535,33 @@ export default function ResourceReviewPage() {
                   }
                 : undefined,
             )
-          : await loadPrResourcePreviews(
-              nextFiles,
-              accountState.github?.token || "",
-            );
+          : source === "resource"
+            ? await loadPrResourcePreviews(
+                nextFiles,
+                accountState.github?.token || "",
+              )
+            : [];
       if (callId !== loadDetailRef.current) return;
-      setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
+      setCommentsByPr((prev) => ({ ...prev, [key]: nextComments }));
+      if (source === "plugin") {
+        setPluginReviewsByKey((prev) => ({
+          ...prev,
+          [key]: timelineResult.reviews,
+        }));
+      }
       setFiles(nextFiles);
       setResourcePreviews(nextResourcePreviews);
 
       // 回查只读取历史提交，不能因为历史评论里的 REFUSE/CLOSE/REOPEN 标签
-      // 再次改变 PR 状态；这些副作用只在普通审核模式执行。
-      if (!auditMode) {
+      // 再次改变 PR 状态；这些副作用只在普通资源审核模式执行。
+      if (source === "resource" && !auditMode) {
         const refuseComment = nextComments.find((comment) =>
           /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
         );
         if (refuseComment) {
-          const fresh = await getPullRequest(number);
+          const fresh = await getPullRequest(number, repo);
           if (fresh.state === "open") {
-            await closePullRequest(number);
+            await closePullRequest(number, repo);
             toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
             await loadPulls();
             navigate("/resreview", { replace: true });
@@ -431,15 +571,15 @@ export default function ResourceReviewPage() {
           // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
           const latestAction = resolveLatestTagAction(nextComments);
           if (latestAction) {
-            const fresh = await getPullRequest(number);
+            const fresh = await getPullRequest(number, repo);
             if (latestAction === "reopen") {
               if (fresh.state === "closed" && !fresh.merged_at) {
-                await reopenPullRequest(number);
+                await reopenPullRequest(number, repo);
                 toast.success("检测到 REOPEN 标签，PR 已重新打开。");
                 await loadPulls();
               }
             } else if (fresh.state === "open") {
-              await closePullRequest(number);
+              await closePullRequest(number, repo);
               toast.success("检测到 CLOSE 标签，PR 已关闭。");
               await loadPulls();
             }
@@ -467,7 +607,7 @@ export default function ResourceReviewPage() {
     // 回查只需要目标 PR，不加载开放 PR 列表，避免无谓请求与列表状态干扰。
     if (!canReview || auditMode) return;
     void loadPulls();
-  }, [canReview, refreshTick, orgMembers, auditMode]);
+  }, [canReview, canReviewResource, canReviewPlugin, refreshTick, orgMembers, auditMode]);
 
   useEffect(() => {
     setGeneralComment("");
@@ -476,17 +616,18 @@ export default function ResourceReviewPage() {
     setNoticeDraft(null);
     setDetailError("");
     if (openNumber) {
-      // 等待 orgMembers 加载完成，避免评论过滤失效
-      if (orgMembers.size === 0) {
+      // 资源 PR 的评论过滤依赖 orgMembers；插件 PR 不使用标签，无需等待。
+      const needsOrgMembers = openSource === "resource";
+      if (needsOrgMembers && orgMembers.size === 0) {
         const waitForOrgMembers = setInterval(() => {
           if (orgMembers.size > 0) {
             clearInterval(waitForOrgMembers);
-            void loadDetail(openNumber);
+            void loadDetail(openSource, openNumber);
           }
         }, 100);
         setTimeout(() => clearInterval(waitForOrgMembers), 5000);
       } else {
-        void loadDetail(openNumber);
+        void loadDetail(openSource, openNumber);
       }
     } else {
       loadDetailRef.current += 1;
@@ -497,16 +638,38 @@ export default function ResourceReviewPage() {
       setLoadingDetail(false);
     }
     // detailPull 由 loadDetail 自己维护；依赖它会让详情加载再次触发自身。
-  }, [openNumber, accountState.github?.token, publishMode, orgMembers, auditMode]);
+  }, [openNumber, openSource, accountState.github?.token, publishMode, orgMembers, auditMode]);
+
+  useEffect(() => {
+    if (!rollbackRequested || !auditMode || loadingDetail) return;
+    if (!openPull || rollbackPreviews.length === 0) return;
+
+    setRollbackDialogOpen(true);
+    const params = new URLSearchParams(searchParamsString);
+    params.delete("rollback");
+    navigate(`/resreview/detail?${params.toString()}`, { replace: true });
+  }, [
+    rollbackRequested,
+    auditMode,
+    loadingDetail,
+    openPull,
+    rollbackPreviews.length,
+    searchParamsString,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    setRollbackDialogOpen(false);
+  }, [openNumber, openSource, auditMode]);
 
   // 检测当前 PR 的审核通知（NEEDFIX / 关闭 / 拒绝）是否送达 AstroBox 信箱，
   // 结果按评论回填：送达状态与重发入口都挂在对应评论上，PR 概览不再单独展示。
   useEffect(() => {
-    if (!openNumber) {
+    if (!openNumber || openSource !== "resource") {
       setNoticeStatusByCommentId({});
       return;
     }
-    const comments = commentsByPr[openNumber] ?? [];
+    const comments = commentsByPr[openKey] ?? [];
     const plan = buildCcNoticeCheckPlan(openNumber, comments);
     if (plan.targets.length === 0) {
       setNoticeStatusByCommentId({});
@@ -548,6 +711,8 @@ export default function ResourceReviewPage() {
     };
   }, [
     openNumber,
+    openSource,
+    openKey,
     commentsByPr,
     resourcePreviews,
     accountState.astrobox?.token,
@@ -556,35 +721,47 @@ export default function ResourceReviewPage() {
 
   const visiblePulls = useMemo(() => {
     let list = pulls;
-    if (stateFilter === "all") return list;
-    return list.filter((pull) => {
-      const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
-      return status.state === stateFilter;
+    const sourceFiltered =
+      sourceFilter === "all"
+        ? list
+        : list.filter((pull) => pull.source === sourceFilter);
+    if (stateFilter === "all") return sourceFiltered;
+    return sourceFiltered.filter((pull) => {
+      const status = statusByKey[reviewPullKey(pull)] ?? "waiting_review";
+      return status === stateFilter;
     });
-  }, [commentsByPr, pulls, stateFilter]);
+  }, [commentsByPr, pulls, stateFilter, sourceFilter, statusByKey]);
 
   const refreshDetail = () => {
     if (!openNumber) return;
     setDetailRotate((prev) => prev + 360);
-    void loadDetail(openNumber);
+    void loadDetail(openSource, openNumber);
   };
 
-  const deleteComment = async (comment: import("~/api/github/pr-review").GithubIssueComment) => {
+  const deleteComment = async (comment: GithubIssueComment) => {
     if (!openNumber || !comment.id) return;
+    const repo = reviewRepoRef(openSource);
     try {
       if (comment.pull_review_id) {
-        await deletePullRequestReview(openNumber, comment.pull_review_id);
+        await deletePullRequestReview(openNumber, comment.pull_review_id, repo);
       } else {
-        await deletePullRequestComment(comment.id);
+        await deletePullRequestComment(comment.id, repo);
       }
-      await loadDetail(openNumber);
+      await loadDetail(openSource, openNumber);
       toast.success("评论已删除");
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
-  const editComment = (comment: import("~/api/github/pr-review").GithubIssueComment) => {
+  const editComment = (comment: GithubIssueComment) => {
+    if (openSource === "plugin") {
+      setGeneralComment(comment.body || "");
+      setEditingTarget({ comment });
+      setNoticeDraft(null);
+      setReplyTarget(null);
+      return;
+    }
     const parsed = parseReviewCommentBody(comment.body || "");
     setGeneralComment(parsed.content);
     const sentRecord =
@@ -619,29 +796,54 @@ export default function ResourceReviewPage() {
   const submitComment = async (body: string) => {
     if (!openNumber || !body || submittingComment) return;
     const number = openNumber;
-    const isNewNeedFix =
-      !editingTarget && /^\s*\[ABCC_NEEDFIX/i.test(body.trim());
+    const repo = reviewRepoRef(openSource);
     setSubmittingComment(true);
     try {
+      if (openSource === "plugin") {
+        if (editingTarget) {
+          if (editingTarget.comment.pull_review_id) {
+            await updatePullRequestReview(
+              number,
+              editingTarget.comment.pull_review_id,
+              body,
+              repo,
+            );
+          } else {
+            await updatePullRequestComment(editingTarget.comment.id, body, repo);
+          }
+        } else {
+          await createPullRequestComment(number, body, repo);
+        }
+        setGeneralComment("");
+        setReplyTarget(null);
+        setEditingTarget(null);
+        await loadDetail(openSource, number);
+        toast.success(editingTarget ? "评论已更新" : "评论已发送");
+        return;
+      }
+
+      const isNewNeedFix =
+        !editingTarget && /^\s*\[ABCC_NEEDFIX/i.test(body.trim());
       if (editingTarget) {
         if (editingTarget.comment.pull_review_id) {
           await updatePullRequestReview(
             number,
             editingTarget.comment.pull_review_id,
             body,
+            repo,
           );
         } else {
-          await updatePullRequestComment(editingTarget.comment.id, body);
+          await updatePullRequestComment(editingTarget.comment.id, body, repo);
         }
       } else if (isNewNeedFix) {
-        await requestChangesPullRequest(number, body);
+        await requestChangesPullRequest(number, body, repo);
       } else {
-        await createPullRequestComment(number, body);
+        await createPullRequestComment(number, body, repo);
       }
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
-      await loadDetail(number);
+      await loadDetail(openSource, number);
       let resentNotice = false;
       if (editingTarget?.ccNotice && noticeDraft?.enabled) {
         // 编辑的是 NEEDFIX 评论且此前已发送过审核通知：撤回旧通知后按草稿重发。
@@ -700,9 +902,13 @@ export default function ResourceReviewPage() {
   const approve = async () => {
     if (!openNumber || approving) return;
     const number = openNumber;
+    const repo = reviewRepoRef(openSource);
     setApproving(true);
     try {
-      await approvePullRequest(number);
+      await approvePullRequest(number, undefined, repo);
+      if (openSource === "plugin") {
+        await loadDetail("plugin", number);
+      }
       toast.success("已提交 GitHub approve", { duration: 4000 });
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -714,9 +920,10 @@ export default function ResourceReviewPage() {
   const merge = async () => {
     if (!openNumber || merging) return;
     const number = openNumber;
+    const repo = reviewRepoRef(openSource);
     setMerging(true);
     try {
-      await mergePullRequest(number);
+      await mergePullRequest(number, repo);
       // 产品只有 create / edit 两种模式（无 update）：
       // staging 提交协议 request.json 直接带 mode；legacy 退回用目录旧条目启发式。
       const protocolModes = resourcePreviews
@@ -747,22 +954,16 @@ export default function ResourceReviewPage() {
     }
   };
 
-  const rollback = async () => {
-    if (!openPull || rollingBack) return;
-    if (rollbackPreviews.length === 0) {
-      toast.error(
-        auditResourceId
-          ? `当前 PR 未包含资源 ID「${auditResourceId}」，无法回退。`
-          : "没有解析到可回退的资源行。",
-      );
-      return;
-    }
+  const rollback = async (preview: CatalogRollbackPreview) => {
+    if (!openPull) throw new Error("PR 尚未加载完成，请稍后重试。");
+    if (rollingBack) return;
     setRollingBack(true);
     try {
       const result = await rollbackCatalogRowsForPr({
         pull: openPull,
-        previews: rollbackPreviews,
-        resourceId: auditResourceId ?? undefined,
+        targets: preview.targets,
+        expectedCurrentSha: preview.currentSha,
+        crossedPrNumbers: preview.crossedPrNumbers,
       });
       if (result.plan.changes.length === 0) {
         toast.message("目录已处于回退后的状态，无需写入。");
@@ -775,12 +976,22 @@ export default function ResourceReviewPage() {
           },
         );
       }
-      if (openNumber) await loadDetail(openNumber);
-    } catch (err) {
-      toast.error(getErrorMessage(err), { duration: 8000 });
+      if (openNumber) await loadDetail("resource", openNumber);
     } finally {
       setRollingBack(false);
     }
+  };
+
+  const switchToLatestRollback = (number: number, resourceId?: string) => {
+    const nextResourceId = resourceId?.trim() || null;
+    const params = new URLSearchParams({
+      pr: String(number),
+      audit: "1",
+      rollback: "1",
+    });
+    if (nextResourceId) params.set("resource", nextResourceId);
+    setRollbackDialogOpen(false);
+    navigate(`/resreview/detail?${params.toString()}`);
   };
 
   const openAuditPull = (number: number, resourceId?: string) => {
@@ -800,7 +1011,7 @@ export default function ResourceReviewPage() {
     if (sameAuditTarget) {
       setDetailError("");
       setResourcePreviews([]);
-      void loadDetail(number);
+      void loadDetail("resource", number);
       return;
     }
     navigate(`/resreview/detail?${params.toString()}`);
@@ -811,15 +1022,73 @@ export default function ResourceReviewPage() {
   const approveAndMerge = async () => {
     if (!openNumber || approving || merging) return;
     const number = openNumber;
+    const repo = reviewRepoRef(openSource);
+    const token = accountState.github?.token || "";
     const myLogin = accountState.github?.username?.trim().toLowerCase() ?? "";
     const authorLogin = openPull?.user?.login?.trim().toLowerCase() ?? "";
     const isOwnPull = Boolean(myLogin && authorLogin && myLogin === authorLogin);
+
+    // 插件 PR：先解决 index.txt 冲突，再 approve，最后合入。这样自动解决
+    // 产生的提交不会在 approve 之后触发 “Dismiss stale approvals”。
+    if (openSource === "plugin") {
+      setMerging(true);
+      try {
+        const prepared = await preparePluginPullRequestForMerge({
+          number,
+          repo,
+          token,
+        });
+        let skippedApprove = isOwnPull;
+        if (!isOwnPull) {
+          setApproving(true);
+          let approved = false;
+          try {
+            await approvePullRequest(number, undefined, repo);
+            approved = true;
+          } catch (err) {
+            if (isSelfApproveError(err)) {
+              approved = true;
+              skippedApprove = true;
+            } else {
+              toast.error(getErrorMessage(err));
+            }
+          } finally {
+            setApproving(false);
+          }
+          if (!approved) return;
+        }
+        if (skippedApprove) {
+          toast.message("当前合入本人 PR，已跳过 approve");
+        }
+        const result = await mergePreparedPluginPullRequest({
+          number,
+          repo,
+          token,
+          prepared,
+        });
+        toast.success(
+          result.resolved
+            ? `PR 已合入，已自动解决 index.txt 冲突（追加 ${result.appendedLines.length} 行）`
+            : "PR 已合入",
+          { duration: 4000 },
+        );
+        await loadPulls();
+        navigate("/resreview", { replace: true });
+      } catch (err) {
+        toast.error(getErrorMessage(err));
+      } finally {
+        setMerging(false);
+        setApproving(false);
+      }
+      return;
+    }
+
     let skippedApprove = isOwnPull;
     if (!isOwnPull) {
       setApproving(true);
       let approved = false;
       try {
-        await approvePullRequest(number);
+        await approvePullRequest(number, undefined, repo);
         approved = true;
       } catch (err) {
         // 兜底：即便未能预先识别作者身份，只要 GitHub 明确因「不能批准自己的 PR」
@@ -844,13 +1113,27 @@ export default function ResourceReviewPage() {
   const closePr = async (reason: string) => {
     if (!openNumber || closing) return;
     const number = openNumber;
+    const repo = reviewRepoRef(openSource);
     setClosing(true);
     try {
-      await closePullRequest(number);
+      if (openSource === "plugin") {
+        await createPullRequestComment(
+          number,
+          reason || "该插件提交已被审核成员关闭。",
+          repo,
+        );
+        await closePullRequest(number, repo);
+        toast.success("PR 已关闭，并已记录普通评论。");
+        await loadPulls();
+        await loadDetail(openSource, number);
+        return;
+      }
+
+      await closePullRequest(number, repo);
       const commentBody = reason
         ? `[ABCC_CLOSE] ${reason}`
         : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
-      await createPullRequestComment(number, commentBody);
+      await createPullRequestComment(number, commentBody, repo);
       void notifyCc({
         subtype: "review-closed",
         prNumber: number,
@@ -859,7 +1142,7 @@ export default function ResourceReviewPage() {
       });
       toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
       await loadPulls();
-      await loadDetail(number);
+      await loadDetail(openSource, number);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -867,16 +1150,34 @@ export default function ResourceReviewPage() {
     }
   };
 
+  /** 插件 PR：提交 GitHub REQUEST_CHANGES review，不使用 ABCC 标签。 */
+  const requestPluginChanges = async (body: string) => {
+    if (!openNumber || openSource !== "plugin" || requestingChanges) return;
+    const number = openNumber;
+    const repo = reviewRepoRef("plugin");
+    setRequestingChanges(true);
+    try {
+      await requestChangesPullRequest(number, body, repo);
+      toast.success("已提交 GitHub 要求修改");
+      await loadDetail("plugin", number);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRequestingChanges(false);
+    }
+  };
+
   const refusePr = async (reason: string) => {
     if (!openNumber || refusing) return;
     const number = openNumber;
+    const repo = reviewRepoRef(openSource);
     setRefusing(true);
     try {
-      await closePullRequest(number);
+      await closePullRequest(number, repo);
       const commentBody = reason
         ? `[ABCC_REFUSE] ${reason}`
         : "[ABCC_REFUSE] 该 PR 已被审核成员拒绝。";
-      await createPullRequestComment(number, commentBody);
+      await createPullRequestComment(number, commentBody, repo);
       void notifyCc({
         subtype: "review-refused",
         prNumber: number,
@@ -965,6 +1266,8 @@ export default function ResourceReviewPage() {
     bodyOverride?: string;
     force?: boolean;
   }): Promise<CcNoticeSendResult> => {
+    // 插件 PR 没有 ABCC 账号绑定字段，不发送 AstroBox 信箱通知。
+    if (openSource === "plugin") return "skipped";
     const { status } = await sendNoticeForPreviews(params, resourcePreviews);
     if (status === "skipped") return "skipped";
     return status === "sent" ? "sent" : "failed";
@@ -998,6 +1301,10 @@ export default function ResourceReviewPage() {
   };
 
   const retryCcNotice = async (comment: GithubIssueComment) => {
+    if (openSource !== "resource") {
+      toast.error("插件 PR 没有关联的 AstroBox 信箱通知");
+      return;
+    }
     const parsed = parseReviewCommentBody(comment.body || "");
     if (parsed.tagType === "NEEDFIX" && parsed.tagId) {
       await retryCcNoticeFor({
@@ -1020,31 +1327,31 @@ export default function ResourceReviewPage() {
 
   const enterSelectMode = () => {
     setSelectMode(true);
-    setSelectedNumbers(new Set());
+    setSelectedKeys(new Set());
   };
 
   const exitSelectMode = () => {
     setSelectMode(false);
-    setSelectedNumbers(new Set());
+    setSelectedKeys(new Set());
     setBulkCloseReason("");
   };
 
-  const toggleSelect = (number: number) => {
-    setSelectedNumbers((prev) => {
+  const toggleSelect = (key: string) => {
+    setSelectedKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(number)) next.delete(number);
-      else next.add(number);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
 
-  // 批量为每个 PR 加载 files + 预览，用于解析 AstroBox 收件人（与详情页同一套逻辑）。
+  // 批量为每个资源 PR 加载 files + 预览，用于解析 AstroBox 收件人（与详情页同一套逻辑）。
   const loadPreviewsForBatch = async (
     number: number,
     pull: GithubPullRequest,
   ): Promise<PrResourcePreview[]> => {
     const token = accountState.github?.token || "";
-    const nextFiles = await listPullRequestFiles(number);
+    const nextFiles = await listPullRequestFiles(number, reviewRepoRef("resource"));
     return publishMode === "staging" || hasSubmissionFiles(nextFiles)
       ? loadStagingPrResourcePreviews(nextFiles, token, pull)
       : loadPrResourcePreviews(nextFiles, token);
@@ -1053,13 +1360,15 @@ export default function ResourceReviewPage() {
   const bulkClose = async (reason: string) => {
     if (bulkClosing) return;
     // 选中是显式动作，即便之后切换了状态筛选也要照常关闭，故基于 pulls 而非 visiblePulls。
-    const targets = pulls.filter((pull) => selectedNumbers.has(pull.number));
+    const targets = pulls.filter((pull) =>
+      selectedKeys.has(reviewPullKey(pull)),
+    );
     if (targets.length === 0) return;
     setBulkClosing(true);
     setBulkProgress({ done: 0, total: targets.length });
 
     const newFailures: CcNoticeFailure[] = [];
-    const closeErrors: Array<{ number: number }> = [];
+    const closeErrors: Array<{ source: ReviewSource; number: number }> = [];
     let closedCount = 0;
     let skippedCount = 0;
     let noticeErrorCount = 0;
@@ -1067,18 +1376,28 @@ export default function ResourceReviewPage() {
     try {
       await runWithConcurrency(targets, 3, async (pull) => {
         const number = pull.number;
+        const repo = reviewRepoRef(pull.source);
         try {
           // 关闭前复查状态：跨设备/并发场景下已被关闭的 PR 直接跳过，避免重复评论。
-          const fresh = await getPullRequest(number);
+          const fresh = await getPullRequest(number, repo);
           if (fresh.state !== "open") {
             skippedCount += 1;
             return;
           }
-          await closePullRequest(number);
+          await closePullRequest(number, repo);
+          if (pull.source === "plugin") {
+            await createPullRequestComment(
+              number,
+              reason || "该插件提交已被审核成员关闭。",
+              repo,
+            );
+            closedCount += 1;
+            return;
+          }
           const commentBody = reason
             ? `[ABCC_CLOSE] ${reason}`
             : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
-          await createPullRequestComment(number, commentBody);
+          await createPullRequestComment(number, commentBody, repo);
           closedCount += 1;
 
           // PR 已关闭成功后，通知失败不应算作「关闭失败」，单独捕获。
@@ -1109,7 +1428,7 @@ export default function ResourceReviewPage() {
             console.error("批量关闭通知发送异常", number, noticeErr);
           }
         } catch (err) {
-          closeErrors.push({ number });
+          closeErrors.push({ source: pull.source, number });
           console.error("批量关闭 PR 失败", number, err);
         } finally {
           setBulkProgress((prev) => ({ ...prev, done: prev.done + 1 }));
@@ -1140,7 +1459,7 @@ export default function ResourceReviewPage() {
       if (closeErrors.length > 0) {
         toast.error(
           `有 ${closeErrors.length} 个 PR 关闭失败：${closeErrors
-            .map((item) => `#${item.number}`)
+            .map((item) => `${item.source === "plugin" ? "插件 " : ""}#${item.number}`)
             .join("、")}`,
         );
       }
@@ -1209,9 +1528,6 @@ export default function ResourceReviewPage() {
     : rollbackPreviews.length > 1
       ? "回退全部"
       : "回退";
-  const rollbackScopeLabel = auditResourceId
-    ? `资源 ID ${auditResourceId}`
-    : `${rollbackPreviews.length} 个资源行`;
   const showDetailError = Boolean(
     openNumber && !openPull && !loadingDetail && detailError,
   );
@@ -1233,17 +1549,19 @@ export default function ResourceReviewPage() {
     return (
       <ReviewAccessMessage
         title="PR审核"
-        text={`当前 GitHub 账号没有 ${COMMUNITY_REPO_CONFIG.owner}/${COMMUNITY_REPO_CONFIG.name} 的 PR 管理权限。${permissionError ? ` ${permissionError}` : ""}`}
+        text={`当前 GitHub 账号没有 ${env.owner}/${env.repoName} 或 ${NG_PLUGIN_REPO_CONFIG.owner}/${NG_PLUGIN_REPO_CONFIG.name} 的 PR 管理权限。${permissionError ? ` ${permissionError}` : ""}`}
       />
     );
   }
 
-  const handleSelectPull = (pull: GithubPullRequest) => {
-    navigate(`/resreview/detail?pr=${pull.number}`);
+  const handleSelectPull = (pull: ReviewPullRequest) => {
+    const params = new URLSearchParams({ pr: String(pull.number) });
+    if (pull.source === "plugin") params.set("source", "plugin");
+    navigate(`/resreview/detail?${params.toString()}`);
   };
 
-  const handleSelectSidebar = (pull: GithubPullRequest) => {
-    navigate(`/resreview/detail?pr=${pull.number}`);
+  const handleSelectSidebar = (pull: ReviewPullRequest) => {
+    handleSelectPull(pull);
   };
 
   const showWorkbench = openNumber !== null;
@@ -1300,16 +1618,17 @@ export default function ResourceReviewPage() {
                   showSwitcher={!auditMode}
                   focusResourceId={auditResourceId}
                   pulls={visiblePulls}
+                  openKey={openKey}
                   openNumber={openNumber!}
                   openPull={openPull}
                   openComments={openComments}
                   openStatus={openStatus}
+                  statusByKey={statusByKey}
                   files={files}
                   resourcePreviews={resourcePreviews}
                   repoFileChanges={repoFileChanges}
                   loadingDetail={loadingDetail}
                   loadingPulls={loadingPulls}
-                  commentsByPr={commentsByPr}
                   generalComment={generalComment}
                   replyTarget={replyTarget}
                   editingTarget={editingTarget}
@@ -1319,12 +1638,15 @@ export default function ResourceReviewPage() {
                   merging={merging}
                   closing={closing}
                   refusing={refusing}
+                  requestingChanges={requestingChanges}
                   rollingBack={rollingBack}
                   canRollback={!rollbackDisabledReason}
                   rollbackDisabledReason={rollbackDisabledReason}
                   rollbackTargetLabel={rollbackTargetLabel}
-                  rollbackScopeLabel={rollbackScopeLabel}
-                  canMerge={reviewModeForOpenPr === "staging"}
+                  canMerge={
+                    openSource === "plugin" ||
+                    reviewModeForOpenPr === "staging"
+                  }
                   onToggleSwitcher={() => setIsWorkbenchSidebarCollapsed((prev) => !prev)}
                   onSelectPull={handleSelectSidebar}
                   onRefreshList={handleRefreshList}
@@ -1342,9 +1664,10 @@ export default function ResourceReviewPage() {
                   onNoticeDraftChange={setNoticeDraft}
                   onApprove={approve}
                   onApproveAndMerge={approveAndMerge}
+                  onRequestChanges={requestPluginChanges}
                   onClose={closePr}
                   onRefuse={refusePr}
-                  onRollback={rollback}
+                  onRollback={() => setRollbackDialogOpen(true)}
                 />
               </LayoutGroup>
             )}
@@ -1360,15 +1683,19 @@ export default function ResourceReviewPage() {
           >
             <div className="flex h-full flex-col gap-2">
               <div className="flex flex-col gap-3">
-                <p className="text-sm text-white/60">
-                  {env.owner}/{env.repoName}
-                </p>
+                <div className="flex flex-col gap-0.5 text-sm text-white/60">
+                  <span>资源：{env.owner}/{env.repoName}</span>
+                  <span>
+                    插件：{NG_PLUGIN_REPO_CONFIG.owner}/
+                    {NG_PLUGIN_REPO_CONFIG.name}
+                  </span>
+                </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
                     <div className="min-w-0 flex-1">
                     <Select.Root
                       value={stateFilter}
-                      onValueChange={(val) => setStateFilter(val as import("./types").ReviewState | "all")}
+                      onValueChange={(val) => setStateFilter(val as ReviewState | "all")}
                     >
                       <Select.Trigger radius="large" className="w-full" />
                       <Select.Content position="popper">
@@ -1379,16 +1706,35 @@ export default function ResourceReviewPage() {
                       </Select.Content>
                     </Select.Root>
                     </div>
+                    <div className="min-w-0 flex-1">
+                      <Select.Root
+                        value={sourceFilter}
+                        onValueChange={(val) =>
+                          setSourceFilter(val as ReviewSource | "all")
+                        }
+                      >
+                        <Select.Trigger radius="large" className="w-full" />
+                        <Select.Content position="popper">
+                          <Select.Item value="all">全部来源</Select.Item>
+                          {canReviewResource && (
+                            <Select.Item value="resource">资源 PR</Select.Item>
+                          )}
+                          {canReviewPlugin && (
+                            <Select.Item value="plugin">插件 PR</Select.Item>
+                          )}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
                   </div>
                   {selectMode ? (
                     <>
                       <span className="shrink-0 text-sm text-white/70">
-                        已选 {selectedNumbers.size} 项
+                        已选 {selectedKeys.size} 项
                       </span>
                       <Button
                         color="red"
                         className="shrink-0"
-                        disabled={selectedNumbers.size === 0 || bulkClosing}
+                        disabled={selectedKeys.size === 0 || bulkClosing}
                         onClick={() => setBulkCloseDialogOpen(true)}
                       >
                         {bulkClosing ? "关闭中..." : "批量关闭"}
@@ -1484,23 +1830,32 @@ export default function ResourceReviewPage() {
                   ) : (
                     <LayoutGroup>
                       <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                        {visiblePulls.map((pull) => (
-                          <PullRequestCard
-                            key={pull.number}
-                            pull={pull}
-                            comments={commentsByPr[pull.number] ?? []}
-                            reviewers={deriveNeedFixAuthors(
-                              commentsByPr[pull.number] ?? [],
-                            )}
-                            selectable={selectMode}
-                            selected={selectedNumbers.has(pull.number)}
-                            onClick={() => handleSelectPull(pull)}
-                            onToggleSelect={() => toggleSelect(pull.number)}
-                            onOpenReviewers={() =>
-                              setReviewersPrNumber(pull.number)
-                            }
-                          />
-                        ))}
+                        {visiblePulls.map((pull) => {
+                          const key = reviewPullKey(pull);
+                          const comments = commentsByPr[key] ?? [];
+                          const reviewers =
+                            pull.source === "plugin"
+                              ? derivePluginRequestAuthors(
+                                  pluginReviewsByKey[key] ?? [],
+                                  orgMembers,
+                                )
+                              : deriveNeedFixAuthors(comments);
+                          return (
+                            <PullRequestCard
+                              key={key}
+                              pull={pull}
+                              source={pull.source}
+                              status={statusByKey[key] ?? "waiting_review"}
+                              comments={comments}
+                              reviewers={reviewers}
+                              selectable={selectMode}
+                              selected={selectedKeys.has(key)}
+                              onClick={() => handleSelectPull(pull)}
+                              onToggleSelect={() => toggleSelect(key)}
+                              onOpenReviewers={() => setReviewersKey(key)}
+                            />
+                          );
+                        })}
                       </div>
                     </LayoutGroup>
                   )}
@@ -1511,17 +1866,36 @@ export default function ResourceReviewPage() {
         )}
       </AnimatePresence>
       <ReviewersDrawer
-        open={reviewersPrNumber !== null}
-        onClose={() => setReviewersPrNumber(null)}
+        open={reviewersKey !== null}
+        onClose={() => setReviewersKey(null)}
         pull={
-          reviewersPrNumber !== null
-            ? pulls.find((pull) => pull.number === reviewersPrNumber) ?? null
+          reviewersKey !== null
+            ? pulls.find((pull) => reviewPullKey(pull) === reviewersKey) ?? null
             : null
         }
         comments={
-          reviewersPrNumber !== null
-            ? commentsByPr[reviewersPrNumber] ?? []
-            : []
+          reviewersKey !== null ? commentsByPr[reviewersKey] ?? [] : []
+        }
+        reviewers={
+          reviewersKey !== null
+            ? (() => {
+                const pull = pulls.find(
+                  (item) => reviewPullKey(item) === reviewersKey,
+                );
+                return pull?.source === "plugin"
+                  ? derivePluginRequestAuthors(
+                      pluginReviewsByKey[reviewersKey] ?? [],
+                      orgMembers,
+                    )
+                  : undefined;
+              })()
+            : undefined
+        }
+        statLabel={
+          pulls.find((pull) => reviewPullKey(pull) === reviewersKey)
+            ?.source === "plugin"
+            ? "changes request"
+            : "needfix"
         }
       />
       <BatchNoticeFailuresDrawer
@@ -1540,10 +1914,10 @@ export default function ResourceReviewPage() {
         }}
       >
         <Dialog.Content className="max-w-[420px]">
-          <Dialog.Title>批量关闭 {selectedNumbers.size} 个 PR</Dialog.Title>
+          <Dialog.Title>批量关闭 {selectedKeys.size} 个 PR</Dialog.Title>
           <Dialog.Description size="2" className="text-white/60">
-            将逐一关闭选中的 PR，并以 CLOSE 标签评论记录同一关闭原因；发送给创作者的
-            AstroBox 信箱通知内容也保持一致。作者未绑定账号的 PR 不会收到通知。
+            将逐一关闭选中的 PR。资源 PR 以 CLOSE 标签评论记录原因并发送 AstroBox
+            信箱通知；插件 PR 只记录普通评论，不发送通知。
           </Dialog.Description>
           <label className="mt-3 block text-sm text-white/70">
             关闭原因（可选）
@@ -1581,6 +1955,15 @@ export default function ResourceReviewPage() {
         open={auditDialogOpen}
         onOpenChange={setAuditDialogOpen}
         onOpenPull={openAuditPull}
+      />
+      <RollbackImpactDialog
+        open={rollbackDialogOpen}
+        onOpenChange={setRollbackDialogOpen}
+        pull={openPull}
+        previews={rollbackPreviews}
+        resourceId={auditResourceId}
+        onConfirm={rollback}
+        onSwitchToLatest={switchToLatestRollback}
       />
     </div>
   );

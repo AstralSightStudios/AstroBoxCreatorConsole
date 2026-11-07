@@ -47,6 +47,8 @@ export interface CommentComposerProps {
   onCancelEdit?: () => void;
   noticeDraft?: NoticeDraft | null;
   onNoticeDraftChange?: (draft: NoticeDraft) => void;
+  /** 插件审核：普通评论模式，不生成 ABCC 标签、不展示通知区域。 */
+  plain?: boolean;
 }
 
 function scrollToComment(commentId: number) {
@@ -83,6 +85,7 @@ export function CommentComposer({
   onCancelEdit,
   noticeDraft = null,
   onNoticeDraftChange,
+  plain = false,
 }: CommentComposerProps) {
   const { logicalHeight } = useUiScaleViewport();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -98,6 +101,10 @@ export function CommentComposer({
   }, [logicalHeight, value, tab]);
 
   useEffect(() => {
+    if (plain) {
+      setTagEnabled(false);
+      return;
+    }
     if (editingTarget) {
       const parsed = parseReviewCommentBody(editingTarget.comment.body || "");
       setTagEnabled(Boolean(parsed.tagId));
@@ -105,7 +112,7 @@ export function CommentComposer({
         tagIdRef.current = parsed.tagId;
       }
     }
-  }, [editingTarget]);
+  }, [editingTarget, plain]);
 
   const replaceSelection = (
     transform: (source: string, start: number, end: number) => { value: string; nextStart: number; nextEnd: number },
@@ -182,7 +189,7 @@ export function CommentComposer({
     // `^\s*\[ABCC_NEEDFIX` 识别是否走 REQUEST_CHANGES review 与状态推导。
     // 非编辑状态在提交瞬间生成全新 tagId，避免同一 Composer 连续提交时复用
     // 同一序号（会导致 deriveReviewStatus 按 id 合并条目、通知幂等键互相覆盖）。
-    if (tagEnabled) {
+    if (tagEnabled && !plain) {
       const tagId = editingTarget ? tagIdRef.current : makeNeedFixId();
       body = `[ABCC_NEEDFIX_${tagId}] ${body}`;
     }
@@ -333,7 +340,7 @@ export function CommentComposer({
           </div>
         )}
 
-        {isEditing && noticeDraft && onNoticeDraftChange ? (
+        {!plain && isEditing && noticeDraft && onNoticeDraftChange ? (
           <div className="border-b border-white/10 bg-white/[0.02] px-3 py-2">
             <label className="inline-flex items-center gap-2 text-xs text-white/50">
               <Switch
@@ -368,10 +375,12 @@ export function CommentComposer({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-white/10 bg-white/[0.02] px-3 py-2">
-          <label className="inline-flex items-center gap-2 text-xs text-white/50">
-            <Switch checked={tagEnabled} onCheckedChange={handleTagToggle} />
-            NEEDFIX 标签
-          </label>
+          {!plain && (
+            <label className="inline-flex items-center gap-2 text-xs text-white/50">
+              <Switch checked={tagEnabled} onCheckedChange={handleTagToggle} />
+              NEEDFIX 标签
+            </label>
+          )}
           <div className="ml-auto">
             <Button size="2" disabled={!canSubmit} onClick={handleSubmit} className="gap-1.5">
               {!submitting ? <PaperPlaneRight size={14} /> : null}

@@ -23,6 +23,10 @@ interface ReviewersDrawerProps {
   pull: GithubPullRequest | null;
   /** 当前 PR 的评论（已按组织成员过滤）。 */
   comments: GithubIssueComment[];
+  /** 插件 PR：直接传入基于 review 统计的审核者，避免走 ABCC 标签。 */
+  reviewers?: NeedFixAuthorStat[];
+  /** 统计单位文案。 */
+  statLabel?: string;
 }
 
 /** 在系统浏览器里打开该审核者的 GitHub 主页。 */
@@ -36,9 +40,11 @@ function openGithubProfile(login: string) {
 function ReviewerRow({
   reviewer,
   profile,
+  statLabel,
 }: {
   reviewer: NeedFixAuthorStat;
   profile?: GithubUserProfile | null;
+  statLabel: string;
 }) {
   const displayName = profile?.name?.trim() || reviewer.login;
   return (
@@ -71,7 +77,7 @@ function ReviewerRow({
           {reviewer.percent}%
         </div>
         <div className="text-[11px] text-white/45">
-          {reviewer.count} 条 needfix
+          {reviewer.count} 条 {statLabel}
         </div>
       </div>
       <ArrowSquareOut size={16} className="shrink-0 text-white/35" />
@@ -88,10 +94,12 @@ export default function ReviewersDrawer({
   onClose,
   pull,
   comments,
+  reviewers: reviewersOverride,
+  statLabel = "needfix",
 }: ReviewersDrawerProps) {
   const reviewers = useMemo(
-    () => (pull ? deriveNeedFixAuthors(comments) : []),
-    [pull, comments],
+    () => reviewersOverride ?? (pull ? deriveNeedFixAuthors(comments) : []),
+    [pull, comments, reviewersOverride],
   );
   const [profiles, setProfiles] = useState<
     Record<string, GithubUserProfile | null>
@@ -167,7 +175,7 @@ export default function ReviewersDrawer({
         ) : (
           <>
             <p className="mb-2 px-1 text-xs text-white/45">
-              共 {totalNeedFix} 条 needfix，由 {reviewers.length} 位审核者发送
+              共 {totalNeedFix} 条 {statLabel}，由 {reviewers.length} 位审核者发送
             </p>
             <div className="flex flex-col gap-2">
               {reviewers.map((reviewer) => (
@@ -175,6 +183,7 @@ export default function ReviewersDrawer({
                   key={reviewer.login}
                   reviewer={reviewer}
                   profile={profiles[reviewer.login]}
+                  statLabel={statLabel}
                 />
               ))}
             </div>

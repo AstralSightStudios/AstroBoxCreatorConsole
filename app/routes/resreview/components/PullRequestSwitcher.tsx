@@ -1,26 +1,29 @@
 import { ArrowClockwiseIcon, UserCircle, TextOutdent, TextIndent } from "@phosphor-icons/react";
 import { Button } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import type { GithubPullRequest } from "~/api/github/pr-review";
-import type { GithubIssueComment } from "~/api/github/pr-review";
-import { deriveReviewStatus } from "~/logic/publish/review-status";
+import type { ReviewState } from "~/logic/publish/review-status";
+import {
+  reviewPullKey,
+  reviewSourceLabel,
+  type ReviewPullRequest,
+} from "../source";
 import { ReviewStatusBadgeMini } from "./StatusBadges";
 
 interface PullRequestSwitcherProps {
-  pulls: GithubPullRequest[];
-  openNumber: number;
-  commentsByPr: Record<number, GithubIssueComment[]>;
+  pulls: ReviewPullRequest[];
+  openKey: string;
+  statusByKey: Record<string, ReviewState>;
   loadingPulls: boolean;
   isCollapsed: boolean;
   onToggle: () => void;
-  onSelect: (pull: GithubPullRequest) => void;
+  onSelect: (pull: ReviewPullRequest) => void;
   onRefresh: () => void;
 }
 
 export function PullRequestSwitcher({
   pulls,
-  openNumber,
-  commentsByPr,
+  openKey,
+  statusByKey,
   loadingPulls,
   isCollapsed,
   onToggle,
@@ -92,12 +95,13 @@ export function PullRequestSwitcher({
           </div>
         )}
         {pulls.map((pull) => {
-          const status = deriveReviewStatus(commentsByPr[pull.number] ?? []);
-          const selected = pull.number === openNumber;
+          const key = reviewPullKey(pull);
+          const status = statusByKey[key] ?? "waiting_review";
+          const selected = key === openKey;
           return (
             <motion.button
-              key={pull.number}
-              layoutId={`pr-item-${pull.number}`}
+              key={key}
+              layoutId={`pr-item-${key}`}
               layout
               transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.85 }}
               type="button"
@@ -139,6 +143,15 @@ export function PullRequestSwitcher({
                   <div className="mt-1 flex items-center justify-between gap-2 text-xs text-white/50">
                     <span className="truncate">{pull.user?.login}</span>
                     <span className="inline-flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                          pull.source === "plugin"
+                            ? "bg-violet-500/15 text-violet-100"
+                            : "bg-white/10 text-white/50"
+                        }`}
+                      >
+                        {reviewSourceLabel(pull.source)}
+                      </span>
                       {pull.state === "closed" && (
                         <span
                           className={`text-[10px] ${
@@ -148,7 +161,7 @@ export function PullRequestSwitcher({
                           {pull.merged_at ? "Merged" : "Closed"}
                         </span>
                       )}
-                      <ReviewStatusBadgeMini state={status.state} />
+                      <ReviewStatusBadgeMini state={status} />
                     </span>
                   </div>
                 </div>
