@@ -81,6 +81,8 @@ export interface PublishValidationInput {
   description: string;
   /** 已解析的标签列表，参与搜索与推流，数量需达到 PUBLISH_TAGS_MIN。 */
   tags: string[];
+  /** 作者列表；第一个作者代表账号本人，必须有名称且关联 AstroBox 账号。 */
+  authors: Array<{ name: string; bindABAccount: boolean }>;
   /** 资源类型；决定资源 ID 的格式规则。 */
   resourceType?: ResourceType;
   previews: ValidationUploadItem[];
@@ -376,6 +378,20 @@ export function validatePublish(
   // 放在 ID 之后、媒体规格之前：这两条是推流质量问题，优先级高于配图，
   // 且步骤流转只提示第一条，让创作者先补齐推流输入。
   issues.push(...validatePushQuality(input.description, input.tags));
+  // 第一作者代表账号本人：名称为空会在 buildManifest 阶段被过滤，资源归属不到
+  // 任何账号；绑定开关虽然 UI 固定开启且禁用，这里仍兜底，避免草稿、旧数据或
+  // 绕过 UI 的状态直接提交。
+  if (input.authors.length === 0) {
+    push("authors", "请至少添加一个作者。第一个作者代表你自己，必须关联 AstroBox 账号。");
+  } else {
+    const firstAuthor = input.authors[0];
+    if (!firstAuthor.name.trim()) {
+      push("authors", "请填写第一个作者的 AstroBox 用户名。第一个作者代表你自己，不能为空。");
+    }
+    if (!firstAuthor.bindABAccount) {
+      push("authors", "第一个作者必须关联 AstroBox 账号，且不可关闭。");
+    }
+  }
   if (!input.icon) {
     push("icon", "请上传图标。");
   } else {

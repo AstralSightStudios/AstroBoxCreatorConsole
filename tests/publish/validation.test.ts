@@ -25,6 +25,7 @@ const validInput = {
   itemName: "Example",
   description: "一个示例资源，用于演示各项功能。",
   tags: ["tool", "demo", "sample"],
+  authors: [{ name: "tester", bindABAccount: true }],
   previews: validPreviews,
   icon: image,
   cover: null,
@@ -67,6 +68,28 @@ describe("publish validation", () => {
     ).toEqual([]);
     // 去掉 c 后只剩 2 个有效标签，应拦截
     expect(validatePushQuality("简介", ["a", " ", "b", ""])).toHaveLength(1);
+  });
+
+  test("第一个作者必须有用户名且关联 AstroBox 账号", () => {
+    const emptyNameIssues = validatePublish({
+      ...validInput,
+      authors: [{ name: "   ", bindABAccount: true }],
+    }).issues;
+    expect(
+      emptyNameIssues.find((issue) => issue.field === "authors")?.message,
+    ).toContain("第一个作者的 AstroBox 用户名");
+
+    const unboundIssues = validatePublish({
+      ...validInput,
+      authors: [{ name: "tester", bindABAccount: false }],
+    }).issues;
+    expect(
+      unboundIssues.find((issue) => issue.field === "authors")?.message,
+    ).toContain("必须关联 AstroBox 账号");
+
+    expect(
+      validatePublish({ ...validInput, authors: [] }).errors.join(),
+    ).toContain("请至少添加一个作者");
   });
 
   test("预览图少于下限时拦截发布", () => {
