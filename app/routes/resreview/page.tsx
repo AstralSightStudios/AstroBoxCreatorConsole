@@ -1749,7 +1749,7 @@ export default function ResourceReviewPage() {
             <div className="flex h-full flex-col gap-2">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-0.5 text-sm text-white/60">
-                  <span>资源：{env.owner}/{env.repoName}</span>
+                  <span>目标仓库：{env.owner}/{env.repoName}</span>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-3">
                   {selectMode ? (

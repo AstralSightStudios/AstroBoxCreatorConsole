@@ -85,7 +85,7 @@ export function PullRequestCard({
 
   return (
     <div
-      className={`min-w-0 overflow-hidden rounded-[14px] border transition-colors ${
+      className={`flex h-full min-w-0 flex-col overflow-hidden rounded-[14px] border transition-colors ${
         selectable && selected
           ? "border-white/30 bg-white/[0.05]"
           : "border-white/10 bg-nav-item"
@@ -97,7 +97,7 @@ export function PullRequestCard({
         transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.85 }}
         type="button"
         onClick={selectable ? onToggleSelect : onClick}
-        className="flex w-full min-w-0 flex-col gap-3 px-4 py-4 text-left transition-colors hover:bg-nav-item-hover"
+        className="flex w-full min-w-0 flex-1 flex-col gap-3 px-4 py-4 text-left transition-colors hover:bg-nav-item-hover"
       >
         <div className="min-w-0 flex-1">
           <h2 className="line-clamp-2 text-base font-semibold text-white">
@@ -143,7 +143,7 @@ export function PullRequestCard({
         多选模式下在审核栏左侧切出复选框格，用纵向分割线隔开复选框与审核栏。
       */}
       {selectable ? (
-        <div className="flex items-stretch border-t border-white/10">
+        <div className="flex h-11 shrink-0 items-stretch border-t border-white/10">
           <button
             type="button"
             aria-label={selected ? "取消选择该 PR" : "选择该 PR"}
@@ -165,7 +165,7 @@ export function PullRequestCard({
           <button
             type="button"
             onClick={onOpenReviewers}
-            className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-nav-item-hover"
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 text-left transition-colors hover:bg-nav-item-hover"
           >
             {reviewerContent}
           </button>
@@ -174,7 +174,7 @@ export function PullRequestCard({
         <button
           type="button"
           onClick={onOpenReviewers}
-          className="flex w-full min-w-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-2.5 text-left transition-colors hover:bg-nav-item-hover"
+          className="flex h-11 w-full min-w-0 shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 text-left transition-colors hover:bg-nav-item-hover"
         >
           {reviewerContent}
         </button>
