@@ -346,13 +346,27 @@ export function rowHasPackage(row: DownloadInput): boolean {
 }
 
 /**
- * 已挂包体但未填写 versionCode 的行。versionCode 为强制项，
- * 缺失会导致 AstroBox 无法自动检查更新。
+ * 行本次是否会上传包体（新导入、替换或改写版本），而非沿用仓库旧文件。
+ *
+ * 只读的 existing 行（`skipUpload === true`）与仅剩 `existingFileName` 的行
+ * 都不算：它们不会在这次发布里产生新的包体字节。
+ */
+export function rowUploadsPackage(row: DownloadInput): boolean {
+  return Boolean(row.file && row.file.skipUpload !== true);
+}
+
+/**
+ * 本次导入/替换包体、却未填写 versionCode 的行。
+ *
+ * versionCode 是客户端判断更新的唯一依据，新包体必须带上；但沿用仓库旧包体的
+ * 行不该被它拦住——历史 manifest 本来就可能没有这个字段（后加的），只改图片等
+ * 非包体内容时没有理由要求创作者动包体。旧包体的版本由编辑页从仓库包体自动
+ * 补齐（见 version-code-backfill），补不出来也不拦。
  */
 export function rowsMissingVersionCode(rows: DownloadInput[]): DownloadInput[] {
   return rows.filter(
     (row) =>
-      rowHasPackage(row) &&
+      rowUploadsPackage(row) &&
       (row.versionCode === undefined || row.versionCode === null),
   );
 }

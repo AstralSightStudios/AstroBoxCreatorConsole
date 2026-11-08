@@ -285,10 +285,38 @@ describe("pre-publish checks: rowsMissingVersionCode", () => {
     expect(rowsMissingVersionCode(rows).map((r) => r.uid)).toEqual(["a"]);
   });
 
-  test("flags packaged rows referencing existing repository files", () => {
+  test("does not require versionCode for untouched repository packages", () => {
     const rows = [
       row({ uid: "a", existingFileName: "old.bin" }),
-      row({ uid: "b", existingFileName: "old.bin", versionCode: 1 }),
+      row({
+        uid: "b",
+        existingFileName: "old.bin",
+        file: {
+          id: "f",
+          name: "old.bin",
+          url: "",
+          file: new File([new Uint8Array([1])], "old.bin"),
+          skipUpload: true,
+        },
+      }),
+      row({ uid: "c", existingFileName: "old.bin", versionCode: 1 }),
+    ];
+    expect(rowsMissingVersionCode(rows)).toEqual([]);
+  });
+
+  test("flags a repository row once its package is replaced", () => {
+    const rows = [
+      row({
+        uid: "a",
+        existingFileName: "old.bin",
+        file: {
+          id: "f",
+          name: "new.bin",
+          url: "",
+          file: new File([new Uint8Array([1])], "new.bin"),
+          skipUpload: false,
+        },
+      }),
     ];
     expect(rowsMissingVersionCode(rows).map((r) => r.uid)).toEqual(["a"]);
   });

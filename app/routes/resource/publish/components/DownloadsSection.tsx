@@ -95,7 +95,7 @@ const DOWNLOAD_FIELD_HELP: FieldHelpItem[] = [
     label: "versionCode",
     icon: <HashIcon size={16} weight="duotone" />,
     description:
-      "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定。同样地，rpk 需要在构建工具链里改 manifest.json 的 versionCode 后重新打包导入。",
+      "数字版本号，AstroBox 用它和用户已装包比较来判断是否有更新，发布新版本时必须大于旧版本；导入包体后自动读取并锁定，编辑已有资源时会从仓库包体自动补齐。只有本次导入/替换且读取失败的包体才需要手动填写。同样地，rpk 需要在构建工具链里改 manifest.json 的 versionCode 后重新打包导入。",
   },
   {
     group: "基础配置",
@@ -362,7 +362,7 @@ export function DownloadsSection({
         ...row,
         file: uploadItem,
         existingFileName: undefined,
-        versionLocked: readable ? true : row.versionLocked,
+        versionLocked: readable && info.versionCode !== undefined,
         versionSource: readable ? "package" : row.versionSource,
         ...(readable && info.version ? { version: info.version } : {}),
         ...(readable && info.versionCode !== undefined

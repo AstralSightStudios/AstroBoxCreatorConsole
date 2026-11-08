@@ -72,7 +72,7 @@ export function AutoSaveRestoreDialog({
   );
 }
 
-/** 未填写 versionCode 的拦截框。versionCode 为强制项，只能返回填写。 */
+/** 未填写 versionCode 的拦截框。只针对本次导入/替换的包体，只能返回填写。 */
 export function VersionCodeWarningDialog({
   rows,
   sortedDeviceOptions,
@@ -94,7 +94,7 @@ export function VersionCodeWarningDialog({
       <Dialog.Content maxWidth="440px">
         <Dialog.Title>未填写 versionCode</Dialog.Title>
         <Dialog.Description size="2">
-          以下包体未填写 versionCode。未填写 versionCode
+          以下本次导入或替换的包体未填写 versionCode。未填写 versionCode
           将导致 AstroBox 无法为用户自动检查更新，填写后方可继续。
         </Dialog.Description>
         <div className="mt-3 flex flex-col gap-1.5">

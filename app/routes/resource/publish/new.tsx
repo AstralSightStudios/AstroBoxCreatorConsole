@@ -212,6 +212,11 @@ import {
 } from "~/logic/publish/pre-publish-checks";
 import { fetchPublishedBaselinesForResourceId } from "~/logic/publish/published-baseline";
 import {
+  applyVersionCodeBackfills,
+  collectVersionCodeBackfills,
+  deriveXiaomiWatchfaceVersionCode,
+} from "~/logic/publish/version-code-backfill";
+import {
   computePackageHash,
   readPackageVersion,
 } from "~/logic/publish/package-version";
@@ -910,6 +915,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   );
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
+  /**
+   * 编辑页启动的 versionCode 回填任务。进入仓库上传步骤前等待它完成，
+   * 避免历史 manifest 缺失的 versionCode 没写进本次提交。
+   */
+  const versionBackfillRef = useRef<Promise<void> | null>(null);
   const [lastManifest, setLastManifest] = useState<ManifestBuildResult | null>(
     null,
   );
@@ -1439,6 +1449,64 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             });
           }
         }
+        // 历史 manifest 可能只有 version、没有 versionCode（字段是后加的）。
+        // 编辑这类资源时从仓库包体补齐：小米表盘按 version 派生，其余包体读
+        // 包内清单。补不出来就保持缺失——沿用旧包体的行不再强制填写，只有
+        // 本次导入/替换的包体才要求 versionCode。
+        const backfillRows = [...downloadRows, ...trialDownloadRows];
+        if (
+          backfillRows.some(
+            (row) =>
+              Boolean(row.existingFileName?.trim()) &&
+              row.versionCode === undefined,
+          )
+        ) {
+          const manifestResourceType = normalizeResourceType(
+            manifest.item.restype,
+          );
+          versionBackfillRef.current = collectVersionCodeBackfills({
+            rows: backfillRows,
+            loadPackage: loadExistingPackage,
+            catalogMode: editContext.mode === "catalog",
+            deriveVersionCode: (row) =>
+              deriveXiaomiWatchfaceVersionCode(row, {
+                resourceType: manifestResourceType,
+                vendor: deviceVendorById.get(
+                  row.platformId.trim().toLowerCase(),
+                ),
+              }),
+            onError: (row, error) => {
+              log.warn(
+                "publish/version-backfill",
+                `读取仓库包体版本失败：${row.existingFileName ?? ""}`,
+                {
+                  data: {
+                    error: (error as Error)?.message ?? String(error),
+                  },
+                },
+              );
+            },
+          })
+            .then((backfills) => {
+              if (!active || backfills.length === 0) return;
+              setDownloads((prev) =>
+                applyVersionCodeBackfills(prev, backfills),
+              );
+              setTrialDownloads((prev) =>
+                applyVersionCodeBackfills(prev, backfills),
+              );
+              log.info(
+                "publish/version-backfill",
+                "已从仓库包体补齐 versionCode",
+                { data: { count: backfills.length } },
+              );
+            })
+            .catch((error) => {
+              log.warn("publish/version-backfill", "versionCode 回填失败", {
+                data: { error: (error as Error)?.message ?? String(error) },
+              });
+            });
+        }
         setDownloads(downloadRows);
         setTrialDownloads(trialDownloadRows);
         setEnableAstroBoxCreatorFeatures(
@@ -1487,6 +1555,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     load();
     return () => {
       active = false;
+      versionBackfillRef.current = null;
     };
   }, [editContext, isEditMode]);
 
@@ -1621,7 +1690,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     ],
   );
 
-  /** 已上传包体但未填写 versionCode 的行。versionCode 为强制项，缺失时不允许进入后续步骤。 */
+  /**
+   * 本次导入/替换了包体、却未填写 versionCode 的行。沿用仓库旧包体的行
+   * 不在此列：历史 manifest 可能本来就没有该字段，只改图片等非包体内容
+   * 不该被强制要求动版本。
+   */
   const missingVersionCodeRows = useMemo(
     () => rowsMissingVersionCode(downloads),
     [downloads],
@@ -1871,7 +1944,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
   };
 
-  const goToStep = (index: number) => {
+  /**
+   * 等待编辑页从仓库包体补齐 versionCode。
+   *
+   * 只改图片等非包体内容不再被 versionCode 拦截，但本次提交仍应尽量把历史
+   * manifest 缺失的字段补上；回填通常随着编辑页加载已经完成，只有动作很快
+   * 时才需要等一小会儿。
+   */
+  const waitForVersionCodeBackfill = async () => {
+    const pending = versionBackfillRef.current;
+    if (!pending) return;
+    versionBackfillRef.current = null;
+    let toastId: string | number | undefined;
+    const timer = window.setTimeout(() => {
+      toastId = toast.loading("正在从仓库包体读取 versionCode…");
+    }, 400);
+    try {
+      await pending;
+    } catch {
+      // 回填失败不阻断发布：缺失项由「只有本次替换的包体才强制填写」兜底。
+    } finally {
+      window.clearTimeout(timer);
+      if (toastId !== undefined) toast.dismiss(toastId);
+    }
+  };
+
+  const goToStep = async (index: number) => {
     const target = Math.max(0, Math.min(2, index));
     // 先切回第 1 步再定位：表单是条件渲染的，不切回去元素根本不在 DOM 里。
     const backToForm = () => {
@@ -1893,8 +1991,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         return;
       }
     }
-    // versionCode 为强制项。校验放在 goToStep 而非「下一步」按钮上，
-    // 否则侧边 StepList 直接点第 2/3 步会绕过检查。
+    // 进入后续步骤前先等包体版本回填完成：补进来的 versionCode 要随本次
+    // 提交落库，避免重新打包一次 manifest 就丢掉这个字段。
+    if (target > 0) await waitForVersionCodeBackfill();
+    // 本次导入/替换的包体才强制要求 versionCode。校验放在 goToStep 而非
+    // 「下一步」按钮上，否则侧边 StepList 直接点第 2/3 步会绕过检查。
     if (target > 0 && missingVersionCodeRows.length > 0) {
       setVersionCodeWarningRows(missingVersionCodeRows);
       backToForm();
@@ -2008,7 +2109,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setVersionIncrementWarning(versionWarningRows);
       return;
     }
-    goToStep(1);
+    void goToStep(1);
   };
 
 
