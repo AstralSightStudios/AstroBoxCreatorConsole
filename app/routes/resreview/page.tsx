@@ -1170,6 +1170,7 @@ export default function ResourceReviewPage() {
     const number = openNumber;
     const repo = reviewRepoRef(openSource);
     setClosing(true);
+    let closed = false;
     try {
       if (openSource === "plugin") {
         await createPullRequestComment(
@@ -1177,32 +1178,45 @@ export default function ResourceReviewPage() {
           reason || "该插件提交已被审核成员关闭。",
           repo,
         );
-        await closePullRequest(number, repo);
-        toast.success("PR 已关闭，并已记录普通评论。");
-        await loadPulls();
-        timelineCacheRef.current.delete(reviewPullKeyOf("plugin", number));
-        await loadDetail("plugin", number);
-        return;
       }
 
       await closePullRequest(number, repo);
-      const commentBody = reason
-        ? `[ABCC_CLOSE] ${reason}`
-        : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
-      await createPullRequestComment(number, commentBody, repo);
-      void notifyCc({
-        subtype: "review-closed",
-        prNumber: number,
-        content: reason,
-        senderNote: reason,
-      });
-      toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
-      await loadPulls();
+      closed = true;
       timelineCacheRef.current.delete(reviewPullKeyOf(openSource, number));
-      await loadDetail(openSource, number);
+
+      if (openSource === "plugin") {
+        toast.success("PR 已关闭，并已记录普通评论。");
+      } else {
+        const commentBody = reason
+          ? `[ABCC_CLOSE] ${reason}`
+          : "[ABCC_CLOSE] 该 PR 已由审核成员关闭。";
+        try {
+          await createPullRequestComment(number, commentBody, repo);
+          toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
+        } catch (commentErr) {
+          // PR 已经关闭，评论失败只提示；不能停留在仍可重复关闭的详情页。
+          toast.error(
+            `PR 已关闭，但关闭原因评论写入失败：${getErrorMessage(commentErr)}`,
+          );
+        }
+        void notifyCc({
+          subtype: "review-closed",
+          prNumber: number,
+          content: reason,
+          senderNote: reason,
+        });
+      }
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
+      if (closed) {
+        // 关闭成功后 PR 已不在开放列表里，刷新列表并回到列表页；
+        // 刷新期间保持 closing 状态，避免按钮短暂恢复可点造成重复关闭。
+        await loadPulls();
+        if (openNumber === number) {
+          navigate("/resreview", { replace: true });
+        }
+      }
       setClosing(false);
     }
   };
