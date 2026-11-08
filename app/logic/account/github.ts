@@ -110,12 +110,14 @@ function parseScopes(value?: string): string[] {
         .filter(Boolean);
 }
 
-export async function startGithubDeviceSession(): Promise<GithubDeviceSession> {
+export async function startGithubDeviceSession(
+    scopes: string[] = GITHUB_OAUTH_CONFIG.scopes,
+): Promise<GithubDeviceSession> {
     ensureClientId();
 
     const params = new URLSearchParams({
         client_id: GITHUB_OAUTH_CONFIG.clientId,
-        scope: GITHUB_OAUTH_CONFIG.scopes.join(" "),
+        scope: scopes.join(" "),
     });
 
     const data = await githubRequest<any>({
@@ -135,7 +137,7 @@ export async function startGithubDeviceSession(): Promise<GithubDeviceSession> {
         verificationUriComplete: data.verification_uri_complete,
         expiresIn: data.expires_in,
         interval: data.interval,
-        scopes: GITHUB_OAUTH_CONFIG.scopes,
+        scopes,
     };
 }
 
@@ -217,6 +219,7 @@ export async function pollGithubDeviceSession(
 
 async function fetchGithubProfile(
     token: string,
+    options: { includeEmail?: boolean } = {},
 ): Promise<{ profile: any; email?: string }> {
     const headers = {
         Authorization: `Bearer ${token}`,
@@ -229,7 +232,7 @@ async function fetchGithubProfile(
     });
 
     let email = data?.email || "";
-    if (!email) {
+    if (!email && options.includeEmail !== false) {
         try {
             const emails = await githubRequest<any[]>({
                 url: EMAILS_URL,
@@ -247,12 +250,16 @@ async function fetchGithubProfile(
     return { profile: data, email };
 }
 
-export async function finalizeGithubLogin(
+export async function buildGithubAccountFromToken(
     payload: GithubTokenPayload,
+    options: { includeEmail?: boolean } = {},
 ): Promise<GithubAccount> {
-    const { profile, email } = await fetchGithubProfile(payload.accessToken);
+    const { profile, email } = await fetchGithubProfile(
+        payload.accessToken,
+        options,
+    );
 
-    const account: GithubAccount = {
+    return {
         avatar: profile?.avatar_url ?? "",
         username: profile?.login ?? "",
         name: profile?.name ?? profile?.login ?? "",
@@ -261,7 +268,49 @@ export async function finalizeGithubLogin(
         scopes: payload.scopes,
         profileUrl: profile?.html_url,
     };
+}
+
+export async function finalizeGithubLogin(
+    payload: GithubTokenPayload,
+): Promise<GithubAccount> {
+    const account = await buildGithubAccountFromToken(payload, {
+        includeEmail: true,
+    });
 
     setGithubAccount(account);
     return account;
+}
+
+/**
+ * 校验读取账号的 Access Token（fine-grained PAT 或 classic PAT）。
+ * 只调用 /user 读取身份，不写入任何账号状态。
+ */
+export async function validateGithubReaderToken(
+    token: string,
+): Promise<GithubAccount> {
+    const trimmed = token.trim();
+    if (!trimmed) {
+        throw new Error("请填写 GitHub Access Token。");
+    }
+
+    const profile = await githubRequest<any>({
+        url: PROFILE_URL,
+        headers: {
+            Authorization: `Bearer ${trimmed}`,
+            Accept: "application/vnd.github+json",
+        },
+    });
+
+    if (!profile?.login) {
+        throw new Error("GitHub Token 无效：未返回账号信息。");
+    }
+
+    return {
+        avatar: profile?.avatar_url ?? "",
+        username: profile.login,
+        name: profile?.name ?? profile.login,
+        token: trimmed,
+        scopes: [],
+        profileUrl: profile?.html_url,
+    };
 }
