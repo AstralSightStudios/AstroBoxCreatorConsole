@@ -53,6 +53,7 @@ import {
   hidePullRequestRecord,
   unhidePullRequestRecord,
 } from "~/logic/publish/pr-visibility";
+import { evaluateReopenGate } from "~/logic/publish/review-status";
 import {
   parseSubmissionRequestJson,
   submissionRequestPath,
@@ -330,6 +331,14 @@ export default function ResourcePublish() {
 
   const handleReopen = async (resource: PublishingResource) => {
     if (reopening !== null) return;
+    // 重新打开 PR 前必须把审核者提出的 NEEDFIX 全部修复。
+    const gate = evaluateReopenGate(resource.needs);
+    if (!gate.ok) {
+      toast.error(
+        `该 PR 还有 ${gate.pendingCount} 项 NEEDFIX 未修复，请全部修复后再重新打开。`,
+      );
+      return;
+    }
     const prNumber = resource.prNumber;
     setReopening(prNumber);
     try {

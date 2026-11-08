@@ -63,7 +63,9 @@ export function PrStepSection({
         {needFixItems.length > 0 && (
           <div className="flex flex-col gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 p-2.5">
             <p className="text-sm font-semibold text-amber-200">
-              本次更新已修复的问题
+              {isReopen
+                ? "重新打开 PR 前需修复全部问题（请全部勾选）"
+                : "本次更新已修复的问题"}
             </p>
             {needFixItems.map((item) => (
               <div key={item.id} className="flex flex-col gap-1.5">

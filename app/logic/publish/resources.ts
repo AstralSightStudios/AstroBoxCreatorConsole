@@ -250,6 +250,22 @@ export async function buildInProgressEditContextFromPr(options: {
         throw new Error("该 PR 是删除申请，不能继续编辑。");
     }
     const entry = parseSubmissionCsv(decodeCatalogContent(csvFile.content));
+    // 审核状态与 NEEDFIX 列表：编辑页据此展示待修复问题，并在重新打开 PR
+    // 前要求全部修复。拉取失败时按无 NEEDFIX 处理，避免卡住正常编辑。
+    const [comments, orgMembers] = await Promise.all([
+        fetchPrTimelineComments(
+            PUBLISH_CONFIG.targetPrRepoOwner,
+            PUBLISH_CONFIG.targetPrRepoName,
+            prNumber,
+            token,
+        ).catch(() => [] as any[]),
+        listOrganizationMembers(PUBLISH_CONFIG.upstreamRepoOwner).catch(
+            () => new Set<string>(),
+        ),
+    ]);
+    const review = deriveReviewStatus(
+        filterReviewTagComments(comments, orgMembers, full.user?.login),
+    );
     const catalog: ResourceCatalogContext = {
         entry,
         owner: prHead.owner,
@@ -270,6 +286,8 @@ export async function buildInProgressEditContextFromPr(options: {
                   ? "merged"
                   : "closed",
         prHead,
+        reviewState: review.state,
+        needs: review.items,
         submission: { path: submissionPath, request },
         authorLogin: full.user?.login,
     };

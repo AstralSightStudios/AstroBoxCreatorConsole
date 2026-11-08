@@ -256,3 +256,24 @@ export function deriveReviewStatus(comments: Array<{ id?: number; body?: string;
         items,
     };
 }
+
+/** 重新打开 PR 的门槛判定结果。 */
+export interface ReopenGate {
+    ok: boolean;
+    /** 仍未修复的 NEEDFIX 数量。 */
+    pendingCount: number;
+}
+
+/**
+ * 重新打开 PR 前必须修复全部 NEEDFIX。
+ *
+ * 列表页用服务端的 `fixed` 标记判定；编辑页里的勾选要等提交后才会以 FIXED
+ * 评论写回 PR，因此通过 `isFixed` 传入本次勾选状态。
+ */
+export function evaluateReopenGate(
+    items: readonly NeedFixItem[],
+    isFixed: (item: NeedFixItem) => boolean = (item) => item.fixed,
+): ReopenGate {
+    const pendingCount = items.filter((item) => !isFixed(item)).length;
+    return { ok: pendingCount === 0, pendingCount };
+}

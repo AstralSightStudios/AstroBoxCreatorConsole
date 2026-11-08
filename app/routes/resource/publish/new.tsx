@@ -160,6 +160,7 @@ import {
   resolveIdMigration,
   resolveIdentityLocks,
 } from "~/logic/publish/resources";
+import { evaluateReopenGate } from "~/logic/publish/review-status";
 import {
   registerIdMigrationIntent,
   registerVersionResetIntent,
@@ -2423,6 +2424,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       setPrMessage("未获取到仓库提交哈希，请重新执行步骤 2。");
       reportFailure("publish/pr", "未获取到仓库提交哈希，请重新执行步骤 2。");
       return;
+    }
+    // 已关闭的 PR 只有在全部 NEEDFIX 都勾选为已修复后才允许重新打开并提交。
+    if (mode === "in_progress" && editContext?.prState === "closed") {
+      const gate = evaluateReopenGate(
+        needFixItems,
+        (item) => Boolean(fixedSelections[item.id]),
+      );
+      if (!gate.ok) {
+        const message = `重新打开 PR 前需要修复全部 NEEDFIX，还有 ${gate.pendingCount} 项未勾选为已修复。`;
+        setPrStatus("error");
+        setPrMessage(message);
+        toast.error(message);
+        reportFailure("publish/pr", message);
+        return;
+      }
     }
     setPrStatus("loading");
     setPendingConflictPr(null);

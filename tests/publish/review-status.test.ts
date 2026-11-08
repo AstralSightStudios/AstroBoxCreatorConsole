@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   deriveNeedFixAuthors,
   deriveReviewStatus,
+  evaluateReopenGate,
   filterReviewTagComments,
   hasHideTag,
   resolveLatestTagAction,
 } from "../../app/logic/publish/review-status";
+import type { NeedFixItem } from "../../app/logic/publish/review-status";
 import { parseReviewCommentBody } from "../../app/routes/resreview/utils/comment";
 
 const MEMBERS = new Set(["member-one", "member-two"]);
@@ -246,5 +248,38 @@ describe("deriveNeedFixAuthors", () => {
       "member-two",
       "member-one",
     ]);
+  });
+});
+
+describe("reopen gate", () => {
+  const item = (
+    id: string,
+    fixed: boolean,
+  ): NeedFixItem => ({ id, message: `问题 ${id}`, fixed });
+
+  test("没有 NEEDFIX 时允许重新打开", () => {
+    expect(evaluateReopenGate([])).toEqual({ ok: true, pendingCount: 0 });
+  });
+
+  test("全部 NEEDFIX 已修复时允许重新打开", () => {
+    expect(
+      evaluateReopenGate([item("a", true), item("b", true)]),
+    ).toEqual({ ok: true, pendingCount: 0 });
+  });
+
+  test("存在未修复的 NEEDFIX 时拒绝重新打开并返回数量", () => {
+    expect(
+      evaluateReopenGate([item("a", true), item("b", false), item("c", false)]),
+    ).toEqual({ ok: false, pendingCount: 2 });
+  });
+
+  test("编辑页可以按本次勾选状态判定", () => {
+    const selections: Record<string, boolean> = { a: true, b: false };
+    expect(
+      evaluateReopenGate(
+        [item("a", false), item("b", false)],
+        (needFix) => Boolean(selections[needFix.id]),
+      ),
+    ).toEqual({ ok: false, pendingCount: 1 });
   });
 });
