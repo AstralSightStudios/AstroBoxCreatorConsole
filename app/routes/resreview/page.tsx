@@ -222,7 +222,14 @@ export default function ResourceReviewPage() {
    * PR 没有变化时不再重复请求 comments + reviews。
    */
   const timelineCacheRef = useRef(
-    new Map<number, { updatedAt: string; comments: GithubIssueComment[] }>(),
+    new Map<
+      number,
+      {
+        updatedAt: string;
+        comments: GithubIssueComment[];
+        fetchedAt: number;
+      }
+    >(),
   );
 
   const canReview = hasCommunityRepoManagePermission(permission);
@@ -332,6 +339,7 @@ export default function ResourceReviewPage() {
               timelineCacheRef.current.set(pull.number, {
                 updatedAt,
                 comments,
+                fetchedAt: Date.now(),
               });
             } catch {
               // 限流等情况保留上一次缓存，避免把已知的审核状态清空。
@@ -408,13 +416,21 @@ export default function ResourceReviewPage() {
           : Promise.resolve(null);
       const updatedAt = pull?.updated_at || "";
       const cachedTimeline = timelineCacheRef.current.get(number);
-      const timelinePromise =
-        cachedTimeline && cachedTimeline.updatedAt === updatedAt
-          ? Promise.resolve(cachedTimeline.comments)
-          : listPullRequestTimeline(number).then((comments) => {
-              timelineCacheRef.current.set(number, { updatedAt, comments });
-              return comments;
+      // 列表里的 updated_at 可能已经过时；详情打开时超过 30 秒就重新拉取。
+      const timelineFresh =
+        cachedTimeline &&
+        cachedTimeline.updatedAt === updatedAt &&
+        Date.now() - cachedTimeline.fetchedAt < 30_000;
+      const timelinePromise = timelineFresh
+        ? Promise.resolve(cachedTimeline.comments)
+        : listPullRequestTimeline(number).then((comments) => {
+            timelineCacheRef.current.set(number, {
+              updatedAt,
+              comments,
+              fetchedAt: Date.now(),
             });
+            return comments;
+          });
       const [rawComments, nextFiles, baseline] = await Promise.all([
         timelinePromise,
         listPullRequestFiles(number),

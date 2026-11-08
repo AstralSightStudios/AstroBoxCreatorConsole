@@ -543,39 +543,49 @@ const repoTreeCache = new Map<
 >();
 const REPO_TREE_CACHE_TTL_MS = 5 * 60 * 1000;
 
+async function fetchRepoTree(
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<RepoTreeResult> {
+  const commit = await githubFetch<{
+    sha: string;
+    commit: { tree: { sha: string } };
+  }>(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
+    { headers: headers() },
+    { auth: "read" },
+  );
+  const tree = await githubFetch<{
+    tree: RepoTreeEntry[];
+    truncated?: boolean;
+  }>(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
+    { headers: headers() },
+    { auth: "read" },
+  );
+  return { tree: tree.tree, truncated: Boolean(tree.truncated) };
+}
+
 /**
  * 读取某个提交的完整文件树。审核页的「改动文件」和「自动检查」都会请求同一
  * 个 commit/tree，这里共用一次请求；失败不缓存，允许下次重试。
+ * 只缓存完整 SHA；分支名可能移动，不走缓存。
  */
 function getRepoTree(
   owner: string,
   repo: string,
   commitSha: string,
 ): Promise<RepoTreeResult> {
+  if (!/^[0-9a-f]{40}$/i.test(commitSha)) {
+    return fetchRepoTree(owner, repo, commitSha);
+  }
+
   const key = `${owner}/${repo}@${commitSha}`;
   const cached = repoTreeCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
-  const promise = (async () => {
-    const commit = await githubFetch<{
-      sha: string;
-      commit: { tree: { sha: string } };
-    }>(
-      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
-      { headers: headers() },
-      { auth: "read" },
-    );
-    const tree = await githubFetch<{
-      tree: RepoTreeEntry[];
-      truncated?: boolean;
-    }>(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
-      { headers: headers() },
-      { auth: "read" },
-    );
-    return { tree: tree.tree, truncated: Boolean(tree.truncated) };
-  })();
-
+  const promise = fetchRepoTree(owner, repo, commitSha);
   repoTreeCache.set(key, {
     promise,
     expiresAt: Date.now() + REPO_TREE_CACHE_TTL_MS,
