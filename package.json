@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "start": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "android": "tauri android build --target aarch64",
     "android:debug": "tauri android build --target aarch64 --debug",
     "macos:release": "bash ./scripts/build_dmg.sh",
