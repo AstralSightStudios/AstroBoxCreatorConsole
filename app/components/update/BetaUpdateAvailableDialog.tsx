@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
-import { DownloadSimpleIcon, GitBranchIcon, SpinnerIcon } from "@phosphor-icons/react";
-import { Button, Dialog, Flex } from "~/components/ScaleAwareThemes";
+import { GithubLogoIcon } from "@phosphor-icons/react";
+import { Button, Dialog } from "~/components/ScaleAwareThemes";
 import { ScrollArea } from "~/components/scroll-area";
-import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { toast } from "sonner";
+import { useUiScaleViewport } from "~/components/UiScaleContext";
 import {
   detectBetaPlatform,
   ignoreBetaBuild,
   isTauriRuntime,
   selectBetaArtifact,
+  UPDATE_REPO,
+  type BetaArtifactInfo,
   type BetaPlatform,
   type BetaUpdatePrompt,
 } from "~/logic/update/update-checker";
-import { downloadBetaArtifact } from "~/logic/update/beta-download";
 import { renderCommentMarkdownHtml } from "~/routes/resreview/utils/comment";
 
 interface BetaUpdateAvailableDialogProps {
@@ -35,12 +35,23 @@ function formatSize(bytes: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(2)} MB`;
 }
 
+/**
+ * GitHub Actions 的构建摘要页。带 `/attempts/{n}` 才能定位到实际产出该构建的
+ * 那次 attempt；用户在这个页面里按平台自行选择 artifact 下载。
+ */
+function buildBetaRunUrl(info: BetaArtifactInfo): string {
+  const base = (
+    info.htmlUrl || `https://github.com/${UPDATE_REPO}/actions/runs/${info.runId}`
+  ).replace(/\/+$/, "");
+  return info.runAttempt > 0 ? `${base}/attempts/${info.runAttempt}` : base;
+}
+
 export default function BetaUpdateAvailableDialog({
   prompt,
   open,
   onOpenChange,
 }: BetaUpdateAvailableDialogProps) {
-  const [downloading, setDownloading] = useState(false);
+  const { isNarrow } = useUiScaleViewport();
   const [platform] = useState<BetaPlatform | null>(() => detectBetaPlatform());
 
   const info = prompt?.info ?? null;
@@ -76,40 +87,17 @@ export default function BetaUpdateAvailableDialog({
 
   if (!info) return null;
 
-  const handleViewWorkflow = () => {
-    openUrl(info.htmlUrl).catch(() =>
-      window.open(info.htmlUrl, "_blank", "noopener,noreferrer"),
-    );
-  };
+  const buildUrl = buildBetaRunUrl(info);
 
-  const handleDownload = async () => {
-    if (!artifact) return;
-    // 非 Tauri 环境无法带鉴权下载，退回到打开构建页面
-    if (!isTauriRuntime()) {
-      handleViewWorkflow();
+  const handleOpenBuildPage = () => {
+    if (isTauriRuntime()) {
+      void openUrl(buildUrl).catch(() =>
+        window.open(buildUrl, "_blank", "noopener,noreferrer"),
+      );
       return;
     }
-    try {
-      const targetPath = await save({
-        title: `保存 Beta 构建产物（${PLATFORM_LABELS[artifact.platform]}）`,
-        defaultPath: `${artifact.name}.zip`,
-        filters: [{ name: "Zip 压缩包", extensions: ["zip"] }],
-      });
-      if (!targetPath) return;
-
-      setDownloading(true);
-      const bytes = await downloadBetaArtifact(artifact, targetPath);
-      toast.success(`构建产物已保存（${formatSize(bytes)}）`);
-      onOpenChange(false);
-    } catch (error) {
-      toast.error(
-        `下载构建产物失败：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    } finally {
-      setDownloading(false);
-    }
+    // Web / bun dev：直接开新标签页，避免 Tauri opener 在浏览器里抛错。
+    window.open(buildUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleIgnore = () => {
@@ -123,6 +111,9 @@ export default function BetaUpdateAvailableDialog({
         <Dialog.Title>
           发现新的 Beta 构建 #{info.runNumber}.{info.runAttempt}
         </Dialog.Title>
+        <Dialog.Description size="2" className="mb-3 text-white/55">
+          构建产物需要前往 GitHub Actions 的构建摘要页，按自己的平台手动下载。
+        </Dialog.Description>
 
         <ScrollArea className="mb-3 max-h-[var(--ui-viewport-height-42pct)] overflow-hidden rounded-lg border border-white/10 bg-white/[0.02]">
           <div className="p-3 text-[13px] leading-relaxed text-white/80">
@@ -134,45 +125,54 @@ export default function BetaUpdateAvailableDialog({
           </div>
         </ScrollArea>
 
-        {!artifact && (
+        {artifact ? (
+          <p className="mb-3 text-[12px] leading-relaxed text-white/45">
+            当前平台（{PLATFORM_LABELS[artifact.platform]}）匹配产物：
+            {artifact.name}（{formatSize(artifact.size)}）。
+          </p>
+        ) : (
           <p className="mb-3 text-[12px] leading-relaxed text-amber-200/80">
-            当前平台没有可下载的构建产物，请点击「查看工作流」手动选择。
+            {platform
+              ? "当前平台没有匹配的构建产物，请前往 GitHub 页面手动选择对应平台的包。"
+              : "无法识别当前平台，请前往 GitHub 页面手动选择对应平台的包。"}
           </p>
         )}
 
-        <Flex justify="between" align="center">
-          <Button variant="soft" color="gray" onClick={handleIgnore}>
+        <div
+          className={`mt-4 flex gap-2 ${
+            isNarrow ? "flex-col" : "flex-row items-center justify-between"
+          }`}
+        >
+          <Button
+            variant="soft"
+            color="gray"
+            className={isNarrow ? "w-full" : undefined}
+            onClick={handleIgnore}
+          >
             忽略此构建
           </Button>
-          <Flex gap="2" align="center">
+          <div
+            className={`flex gap-2 ${
+              isNarrow ? "flex-col" : "flex-row items-center"
+            }`}
+          >
             <Button
               variant="soft"
               color="gray"
+              className={isNarrow ? "w-full" : undefined}
               onClick={() => onOpenChange(false)}
             >
               取消
             </Button>
-            <Button variant="outline" onClick={handleViewWorkflow}>
-              <GitBranchIcon size={15} />
-              查看工作流
-            </Button>
             <Button
-              onClick={() => void handleDownload()}
-              disabled={downloading || !artifact}
+              className={isNarrow ? "w-full" : undefined}
+              onClick={handleOpenBuildPage}
             >
-              {downloading ? (
-                <SpinnerIcon size={15} className="animate-spin" />
-              ) : (
-                <DownloadSimpleIcon size={15} />
-              )}
-              {downloading
-                ? "下载中…"
-                : artifact
-                  ? `下载 ${PLATFORM_LABELS[artifact.platform]} 产物`
-                  : "当前平台无产物"}
+              <GithubLogoIcon size={15} weight="fill" />
+              前往 GitHub 下载
             </Button>
-          </Flex>
-        </Flex>
+          </div>
+        </div>
       </Dialog.Content>
     </Dialog.Root>
   );

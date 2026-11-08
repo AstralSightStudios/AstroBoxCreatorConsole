@@ -27,7 +27,10 @@ export default function AutoBetaUpdateChecker() {
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          if (!isTauriRuntime() || !isBetaUpdateEnabled()) return;
+          // 浏览器端 `bun dev` 没有 Tauri 运行时；开发模式允许预览 Beta 弹窗，
+          // 生产 Web 构建仍然只在 Tauri 内检测。
+          const canCheckBeta = isTauriRuntime() || import.meta.env.DEV;
+          if (!canCheckBeta || !isBetaUpdateEnabled()) return;
 
           const result = await checkForBetaUpdate();
           if (cancelled || result.status !== "available") return;

@@ -972,7 +972,8 @@ export default function Settings({
 
   const handleCheckBetaUpdate = async () => {
     if (checkingBetaUpdate) return;
-    if (!isTauriRuntime() && !appVersion) {
+    // 浏览器端 `bun dev` 没有 Tauri 版本号，开发模式允许手动触发以便预览弹窗。
+    if (!isTauriRuntime() && !appVersion && !import.meta.env.DEV) {
       toast.info("Beta 更新检测仅支持桌面端应用。");
       return;
     }
