@@ -505,6 +505,99 @@ export default function ResourceReviewPage() {
     setRefreshTick((prev) => prev + 1);
   };
 
+  /**
+   * 处理评论里携带的 REFUSE / CLOSE / REOPEN 标签副作用。
+   * 回查模式只读取历史提交，不能因为历史标签再次改变 PR 状态。
+   */
+  const applyCommentTagActions = async (
+    source: ReviewSource,
+    number: number,
+    comments: GithubIssueComment[],
+  ) => {
+    if (source !== "resource" || auditMode) return;
+    const repo = reviewRepoRef(source);
+    const refuseComment = comments.find((comment) =>
+      /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
+    );
+    if (refuseComment) {
+      const fresh = await getPullRequest(number, repo);
+      if (fresh.state === "open") {
+        await closePullRequest(number, repo);
+        toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
+        await loadPulls();
+        navigate("/resreview", { replace: true });
+      }
+      return;
+    }
+    // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
+    // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
+    const latestAction = resolveLatestTagAction(comments);
+    if (!latestAction) return;
+    const fresh = await getPullRequest(number, repo);
+    if (latestAction === "reopen") {
+      if (fresh.state === "closed" && !fresh.merged_at) {
+        await reopenPullRequest(number, repo);
+        toast.success("检测到 REOPEN 标签，PR 已重新打开。");
+        await loadPulls();
+      }
+    } else if (fresh.state === "open") {
+      await closePullRequest(number, repo);
+      toast.success("检测到 CLOSE 标签，PR 已关闭。");
+      await loadPulls();
+    }
+  };
+
+  /**
+   * 只刷新评论时间线，不重新解析 PR 详情。
+   *
+   * 评论的增删改不会改变 PR 的文件列表与资源预览；若复用 loadDetail，它会先清空
+   * files / resourcePreviews 再重新拉取，导致「资源信息」Tab 重置、自动检查
+   * 因输入引用变化而整块重跑。这里沿用 loadDetail 的时间线缓存结构，只更新评论。
+   */
+  const refreshTimeline = async (source: ReviewSource, number: number) => {
+    const key = reviewPullKeyOf(source, number);
+    const repo = reviewRepoRef(source);
+    const pull =
+      pulls.find(
+        (item) => item.number === number && item.source === source,
+      ) ??
+      (detailPull?.number === number && detailPull.source === source
+        ? detailPull
+        : null);
+    timelineCacheRef.current.delete(key);
+
+    if (source === "plugin") {
+      const { timeline, reviews } = await listPullRequestTimelineWithReviews(
+        number,
+        repo,
+      );
+      timelineCacheRef.current.set(key, {
+        updatedAt: pull?.updated_at || "",
+        comments: timeline,
+        reviews,
+        fetchedAt: Date.now(),
+      });
+      setCommentsByPr((prev) => ({ ...prev, [key]: timeline }));
+      setPluginReviewsByKey((prev) => ({ ...prev, [key]: reviews }));
+      return;
+    }
+
+    const timeline = await listPullRequestTimeline(number, repo);
+    const nextComments = filterReviewTagComments(
+      timeline,
+      orgMembers,
+      pull?.user?.login,
+    );
+    timelineCacheRef.current.set(key, {
+      updatedAt: pull?.updated_at || "",
+      comments: timeline,
+      reviews: [],
+      fetchedAt: Date.now(),
+    });
+    setCommentsByPr((prev) => ({ ...prev, [key]: nextComments }));
+    await applyCommentTagActions(source, number, nextComments);
+  };
+
   const loadDetail = async (source: ReviewSource, number: number) => {
     const callId = ++loadDetailRef.current;
     setLoadingDetail(true);
@@ -620,38 +713,7 @@ export default function ResourceReviewPage() {
 
       // 回查只读取历史提交，不能因为历史评论里的 REFUSE/CLOSE/REOPEN 标签
       // 再次改变 PR 状态；这些副作用只在普通资源审核模式执行。
-      if (source === "resource" && !auditMode) {
-        const refuseComment = nextComments.find((comment) =>
-          /^\s*\[ABCC_REFUSE\]/i.test(comment.body || ""),
-        );
-        if (refuseComment) {
-          const fresh = await getPullRequest(number, repo);
-          if (fresh.state === "open") {
-            await closePullRequest(number, repo);
-            toast.success("检测到 REFUSE 标签，PR 已关闭并拒绝。");
-            await loadPulls();
-            navigate("/resreview", { replace: true });
-          }
-        } else {
-          // 同一 PR 可能同时存在 CLOSE 与 REOPEN 评论（例如关闭后又被创作者重开），
-          // 只以最新一条标签为准，避免 CLOSE/REOPEN 互相触发形成循环。
-          const latestAction = resolveLatestTagAction(nextComments);
-          if (latestAction) {
-            const fresh = await getPullRequest(number, repo);
-            if (latestAction === "reopen") {
-              if (fresh.state === "closed" && !fresh.merged_at) {
-                await reopenPullRequest(number, repo);
-                toast.success("检测到 REOPEN 标签，PR 已重新打开。");
-                await loadPulls();
-              }
-            } else if (fresh.state === "open") {
-              await closePullRequest(number, repo);
-              toast.success("检测到 CLOSE 标签，PR 已关闭。");
-              await loadPulls();
-            }
-          }
-        }
-      }
+      await applyCommentTagActions(source, number, nextComments);
     } catch (err) {
       if (callId === loadDetailRef.current) {
         const message = getErrorMessage(err);
@@ -795,8 +857,7 @@ export default function ResourceReviewPage() {
       } else {
         await deletePullRequestComment(comment.id, repo);
       }
-      timelineCacheRef.current.delete(reviewPullKeyOf(openSource, openNumber));
-      await loadDetail(openSource, openNumber);
+      await refreshTimeline(openSource, openNumber);
       toast.success("评论已删除");
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -866,8 +927,7 @@ export default function ResourceReviewPage() {
         setGeneralComment("");
         setReplyTarget(null);
         setEditingTarget(null);
-        timelineCacheRef.current.delete(reviewPullKeyOf("plugin", number));
-        await loadDetail("plugin", number);
+        await refreshTimeline("plugin", number);
         toast.success(editingTarget ? "评论已更新" : "评论已发送");
         return;
       }
@@ -893,8 +953,7 @@ export default function ResourceReviewPage() {
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
-      timelineCacheRef.current.delete(reviewPullKeyOf(openSource, number));
-      await loadDetail(openSource, number);
+      await refreshTimeline(openSource, number);
       let resentNotice = false;
       if (editingTarget?.ccNotice && noticeDraft?.enabled) {
         // 编辑的是 NEEDFIX 评论且此前已发送过审核通知：撤回旧通知后按草稿重发。
@@ -1230,8 +1289,9 @@ export default function ResourceReviewPage() {
     try {
       await requestChangesPullRequest(number, body, repo);
       toast.success("已提交 GitHub 要求修改");
-      timelineCacheRef.current.delete(reviewPullKeyOf("plugin", number));
-      await loadDetail("plugin", number);
+      // REQUEST_CHANGES 只新增 review 评论，不影响 PR 文件列表；只刷新时间线，
+      // 避免「插件信息」与「自动检查」两个 Tab 被重置重跑。
+      await refreshTimeline("plugin", number);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
