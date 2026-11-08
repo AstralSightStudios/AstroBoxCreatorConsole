@@ -3,7 +3,7 @@ import {
   type NeedFixAuthorStat,
   type ReviewState,
 } from "~/logic/publish/review-status";
-import { Check, UserCircle } from "@phosphor-icons/react";
+import { Check, PuzzlePiece, UserCircle } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
@@ -124,7 +124,8 @@ export function PullRequestCard({
         </div>
         <div className="mt-auto flex items-center justify-end gap-2">
           {source === "plugin" && (
-            <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] text-violet-100">
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-medium text-violet-100">
+              <PuzzlePiece size={12} weight="fill" />
               插件
             </span>
           )}

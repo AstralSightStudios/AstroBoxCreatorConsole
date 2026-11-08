@@ -6,7 +6,7 @@ import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { PrStatusBadge, StatusBadge } from "./StatusBadges";
 import { formatTime } from "../utils";
 import type { ReviewSource } from "../source";
-import { UserCircle, GithubLogo } from "@phosphor-icons/react";
+import { UserCircle, GithubLogo, PuzzlePiece } from "@phosphor-icons/react";
 
 interface PullRequestSummaryCardProps {
   source?: ReviewSource;
@@ -82,7 +82,8 @@ export function PullRequestSummaryCard({
               <span className="ml-1 text-sm text-white/50">#{openPull.number}</span>
             </h2>
             {isPlugin && (
-              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs text-violet-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-medium text-violet-100">
+                <PuzzlePiece size={12} weight="fill" />
                 插件
               </span>
             )}
