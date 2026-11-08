@@ -49,6 +49,8 @@ export interface PublishingResource {
     prTitle: string;
     prUrl: string;
     prState: "open" | "closed" | "merged";
+    /** 删除申请与普通提交共用待审核列表，用 kind 区分并阻止进入编辑。 */
+    kind?: "submission" | "delete";
     /** 创作者用 [ABCC_HIDE] 评论隐藏的 closed 记录；open 记录不隐藏。 */
     hidden?: boolean;
     refused?: boolean;
@@ -244,6 +246,9 @@ export async function buildInProgressEditContextFromPr(options: {
     const request = parseSubmissionRequestJson(
         decodeCatalogContent(requestFile.content),
     );
+    if (request.mode === "delete") {
+        throw new Error("该 PR 是删除申请，不能继续编辑。");
+    }
     const entry = parseSubmissionCsv(decodeCatalogContent(csvFile.content));
     const catalog: ResourceCatalogContext = {
         entry,
@@ -830,6 +835,9 @@ async function loadInProgressStagingResourcesForCurrentUser(
                     prTitle: pr.title,
                     prUrl: pr.html_url || "",
                     prState,
+                    kind: pr.title.startsWith("[ABCC] Delete resource")
+                        ? "delete"
+                        : "submission",
                     hidden: hidden || undefined,
                     refused: refused || undefined,
                     refuseReason: refuseReason || undefined,

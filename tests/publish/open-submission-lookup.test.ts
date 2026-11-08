@@ -101,7 +101,11 @@ describe("findOpenSubmissionForResourceId", () => {
       (next) => progress.push(next),
     );
 
-    expect(result).toEqual({ prNumber: 12, prTitle: "PR B" });
+    expect(result).toEqual({
+      prNumber: 12,
+      prTitle: "PR B",
+      mode: "unknown",
+    });
     expect(progress[0]).toEqual({ done: 0, total: 2 });
     expect(progress[progress.length - 1]).toEqual({ done: 2, total: 2 });
   });

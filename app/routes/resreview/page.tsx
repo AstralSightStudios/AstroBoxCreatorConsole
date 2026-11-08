@@ -976,13 +976,13 @@ export default function ResourceReviewPage() {
     setMerging(true);
     try {
       await mergePullRequest(number, repo);
-      // 产品只有 create / edit 两种模式（无 update）：
       // staging 提交协议 request.json 直接带 mode；legacy 退回用目录旧条目启发式。
+      // delete 也走同一列表，但不能按 create 通知服务端。
       const protocolModes = resourcePreviews
         .map((preview) => preview.request?.mode)
         .filter(
-          (mode): mode is "create" | "edit" =>
-            mode === "create" || mode === "edit",
+          (mode): mode is "create" | "edit" | "delete" =>
+            mode === "create" || mode === "edit" || mode === "delete",
         );
       const isCreateMode =
         protocolModes.length > 0

@@ -15,6 +15,7 @@ import {
 import {
     createBranch,
     fetchCatalogEntries,
+    findCatalogEntryById,
     getOrCreateFork,
     getRefSha,
     normalizeCatalogPaidType,
@@ -25,6 +26,8 @@ import { syncForkDefaultBranch } from "./fork";
 import {
     buildClientInfo,
     buildCreateSubmissionRequest,
+    buildDeleteSubmissionRequest,
+    buildDeletionSubmissionPath,
     buildEditSubmissionRequest,
     buildSubmissionCsv,
     buildSubmissionPath,
@@ -35,6 +38,7 @@ import {
     parseSubmissionRequestJson,
     submissionCsvPath,
     submissionRequestPath,
+    type SubmissionMode,
     type SubmissionRequest,
 } from "./submission-protocol";
 
@@ -188,6 +192,14 @@ export interface OpenSubmissionLookupProgress {
     total: number;
 }
 
+export type OpenSubmissionMode = SubmissionMode | "unknown";
+
+export interface OpenSubmissionMatch {
+    prNumber: number;
+    prTitle: string;
+    mode: OpenSubmissionMode;
+}
+
 /** 并发扫描开放 PR 时同时读取的文件数上限，避免触发二级速率限制。 */
 const OPEN_SUBMISSION_LOOKUP_CONCURRENCY = 4;
 
@@ -195,7 +207,7 @@ async function pullReferencesResource(
     token: string,
     pull: { number: number; title: string },
     resourceId: string,
-): Promise<{ prNumber: number; prTitle: string } | null> {
+): Promise<OpenSubmissionMatch | null> {
     const files = await githubFetch<
         Array<{ filename?: string; sha?: string }>
     >(
@@ -212,16 +224,25 @@ async function pullReferencesResource(
             if (filePath.endsWith(".json")) {
                 const request = parseSubmissionRequestJson(text);
                 if (
-                    request.mode === "edit" &&
+                    (request.mode === "edit" ||
+                        request.mode === "delete") &&
                     typeof request.original_id === "string" &&
                     sameResourceId(request.original_id, resourceId)
                 ) {
-                    return { prNumber: pull.number, prTitle: pull.title };
+                    return {
+                        prNumber: pull.number,
+                        prTitle: pull.title,
+                        mode: request.mode,
+                    };
                 }
             } else {
                 const parsed = parseSubmissionCsv(text);
                 if (sameResourceId(parsed.id, resourceId)) {
-                    return { prNumber: pull.number, prTitle: pull.title };
+                    return {
+                        prNumber: pull.number,
+                        prTitle: pull.title,
+                        mode: "unknown",
+                    };
                 }
             }
         } catch {
@@ -244,7 +265,7 @@ export async function findOpenSubmissionForResourceId(
     token: string,
     resourceId: string,
     onProgress?: (progress: OpenSubmissionLookupProgress) => void,
-): Promise<{ prNumber: number; prTitle: string } | null> {
+): Promise<OpenSubmissionMatch | null> {
     const pulls = await listOpenPulls(token);
     const total = pulls.length;
     onProgress?.({ done: 0, total });
@@ -252,7 +273,7 @@ export async function findOpenSubmissionForResourceId(
 
     let next = 0;
     let done = 0;
-    let found: { prNumber: number; prTitle: string } | null = null;
+    let found: OpenSubmissionMatch | null = null;
 
     const worker = async () => {
         while (!found && next < total) {
@@ -318,6 +339,67 @@ async function commitFilesToBranch(params: {
     );
     await updateRef(repoInfo, commitSha, token);
     return commitSha;
+}
+
+/**
+ * 准备一个基于 fork 的提交分支。
+ *
+ * syncForkDefaultBranch 在同步失败时会静默降级（见 fork.ts），fork 可能仍停留在
+ * 落后于上游的旧提交上。若在这种 fork HEAD 上切分支，会生成一个基于「上游已清理
+ * 过 tmp 路径」历史的 PR，合并时必然触发 modify/delete 冲突（如 #822 事故）。
+ * 因此在切分支前强校验 fork 已追平上游；未追平则中止并提示重试，绝不静默产出冲突 PR。
+ */
+async function prepareSubmissionForkBranch(params: {
+    token: string;
+    upstreamOwner: string;
+    upstreamRepo: string;
+    defaultBranch: string;
+    branchPrefix: string;
+}): Promise<{ forkOwner: string; forkRepo: string; branchName: string }> {
+    const {
+        token,
+        upstreamOwner,
+        upstreamRepo,
+        defaultBranch,
+        branchPrefix,
+    } = params;
+    const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
+    log.info("publish/fork", `fork 就绪 ${fork.owner}/${fork.name}`, {
+        data: { defaultBranch: fork.default_branch },
+    });
+    await syncForkDefaultBranch({
+        token,
+        forkOwner: fork.owner,
+        forkRepo: fork.name,
+        branch: fork.default_branch,
+        upstreamOwner,
+        upstreamRepo,
+    });
+    const forkHeadSha = await getRefSha(
+        token,
+        fork.owner,
+        fork.name,
+        `heads/${fork.default_branch}`,
+    );
+    const upstreamHead = await getRefSha(
+        token,
+        upstreamOwner,
+        upstreamRepo,
+        `heads/${defaultBranch}`,
+    );
+    if (forkHeadSha !== upstreamHead) {
+        throw new Error(
+            `Fork ${fork.owner}/${fork.name} 未能同步到上游最新提交` +
+            `（上游 ${upstreamHead.slice(0, 7)}，fork ${forkHeadSha.slice(0, 7)}）。` +
+            `基于陈旧分支创建提交会产生合并冲突，已中止本次提交，请重试。`,
+        );
+    }
+    const branchName = `${branchPrefix}-${Date.now()}`;
+    await createBranch(token, fork.owner, fork.name, forkHeadSha, branchName);
+    log.info("publish/branch", `提交分支已创建 ${branchName}`, {
+        data: { base: `${fork.owner}/${fork.name}@${forkHeadSha.slice(0, 7)}` },
+    });
+    return { forkOwner: fork.owner, forkRepo: fork.name, branchName };
 }
 
 export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
@@ -393,46 +475,14 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
         );
     }
 
-    const fork = await getOrCreateFork(token, upstreamOwner, upstreamRepo);
-    log.info("publish/fork", `fork 就绪 ${fork.owner}/${fork.name}`, {
-      data: { defaultBranch: fork.default_branch },
-    });
-    await syncForkDefaultBranch({
-        token,
-        forkOwner: fork.owner,
-        forkRepo: fork.name,
-        branch: fork.default_branch,
-        upstreamOwner,
-        upstreamRepo,
-    });
-    const forkHeadSha = await getRefSha(
-        token,
-        fork.owner,
-        fork.name,
-        `heads/${fork.default_branch}`,
-    );
-    // syncForkDefaultBranch 在同步失败时会静默降级（见 fork.ts），fork 可能仍停留在
-    // 落后于上游的旧提交上。若在这种 fork HEAD 上切分支，会生成一个基于「上游已清理
-    // 过 tmp 路径」历史的 PR，合并时必然触发 modify/delete 冲突（如 #822 事故）。
-    // 因此在切分支前强校验 fork 已追平上游；未追平则中止并提示重试，绝不静默产出冲突 PR。
-    const upstreamHead = await getRefSha(
-        token,
-        upstreamOwner,
-        upstreamRepo,
-        `heads/${defaultBranch}`,
-    );
-    if (forkHeadSha !== upstreamHead) {
-        throw new Error(
-            `Fork ${fork.owner}/${fork.name} 未能同步到上游最新提交` +
-            `（上游 ${upstreamHead.slice(0, 7)}，fork ${forkHeadSha.slice(0, 7)}）。` +
-            `基于陈旧分支创建提交会产生合并冲突，已中止本次提交，请重试。`,
-        );
-    }
-    const branchName = `astrobox-submit-${Date.now()}`;
-    await createBranch(token, fork.owner, fork.name, forkHeadSha, branchName);
-    log.info("publish/branch", `提交分支已创建 ${branchName}`, {
-      data: { base: `${fork.owner}/${fork.name}@${forkHeadSha.slice(0, 7)}` },
-    });
+    const { forkOwner, forkRepo, branchName } =
+        await prepareSubmissionForkBranch({
+            token,
+            upstreamOwner,
+            upstreamRepo,
+            defaultBranch,
+            branchPrefix: "astrobox-submit",
+        });
 
     let request: SubmissionRequest;
     if (intent.mode === "create") {
@@ -451,8 +501,8 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
 
     await commitFilesToBranch({
         token,
-        owner: fork.owner,
-        repo: fork.name,
+        owner: forkOwner,
+        repo: forkRepo,
         branch: branchName,
         message: `submit: ${entry.id}`,
         files: [
@@ -468,12 +518,107 @@ export async function createSubmissionBranch(payload: CatalogUpdateRequest) {
     });
 
     return {
-        forkOwner: fork.owner,
-        forkRepo: fork.name,
+        forkOwner,
+        forkRepo,
         branch: branchName,
         submissionPath,
         request,
         entry,
+    };
+}
+
+export interface PreparedDeletionSubmission {
+    entry: CatalogEntry;
+    token: string;
+    forkOwner: string;
+    forkRepo: string;
+    branch: string;
+    submissionPath: string;
+    request: SubmissionRequest;
+}
+
+/**
+ * 准备删除申请的分支与两个提交文件，但不创建 PR。
+ *
+ * 创建者选择“同时删除 GitHub 仓库”时，客户端需要先删仓库、再创建 PR。把分支和
+ * 文件准备拆出来，仓库删除失败时不会留下 PR；仓库删除成功后若 PR 创建失败，
+ * 也可以复用同一分支重试，避免重复删除仓库。
+ */
+export async function createDeletionSubmissionBranch(
+    resource: CatalogEntry,
+): Promise<PreparedDeletionSubmission> {
+    const token = getGithubTokenOrThrow();
+    const githubLogin = requireGithubLogin();
+    const upstreamOwner = PUBLISH_CONFIG.upstreamRepoOwner;
+    const upstreamRepo = PUBLISH_CONFIG.upstreamRepoName;
+    const defaultBranch = PUBLISH_CONFIG.defaultBranch;
+
+    const latest = await fetchCatalogEntries({ token });
+    const entry = findCatalogEntryById(latest.entries, resource.id);
+    if (!entry) {
+        throw new Error("该资源已不在目录中，可能已被删除。");
+    }
+    if (
+        entry.repo_owner.trim().toLowerCase() !==
+        githubLogin.trim().toLowerCase()
+    ) {
+        throw new Error("该资源不属于当前 GitHub 账号，无法删除。");
+    }
+
+    const upstreamCommit = await getRefSha(
+        token,
+        upstreamOwner,
+        upstreamRepo,
+        `heads/${defaultBranch}`,
+    );
+    const submissionPath = buildDeletionSubmissionPath(
+        githubLogin,
+        entry.id,
+    );
+    const { forkOwner, forkRepo, branchName } =
+        await prepareSubmissionForkBranch({
+            token,
+            upstreamOwner,
+            upstreamRepo,
+            defaultBranch,
+            branchPrefix: "astrobox-delete",
+        });
+
+    const request = await buildDeleteSubmissionRequest({
+        originalId: entry.id,
+        baseEntryDigest: await canonicalCatalogEntryDigest(entry),
+        baseCatalogCommit: upstreamCommit,
+    });
+
+    await commitFilesToBranch({
+        token,
+        owner: forkOwner,
+        repo: forkRepo,
+        branch: branchName,
+        message: `delete: ${entry.id}`,
+        files: [
+            {
+                path: submissionCsvPath(submissionPath),
+                content: buildSubmissionCsv(entry),
+            },
+            {
+                path: submissionRequestPath(submissionPath),
+                content: buildSubmissionRequest(request),
+            },
+        ],
+    });
+
+    log.info("publish/delete", `删除申请分支已创建 ${branchName}`, {
+        data: { resourceId: entry.id, submissionPath },
+    });
+    return {
+        entry,
+        token,
+        forkOwner,
+        forkRepo,
+        branch: branchName,
+        submissionPath,
+        request,
     };
 }
 

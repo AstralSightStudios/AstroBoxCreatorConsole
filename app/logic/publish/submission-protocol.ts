@@ -9,7 +9,7 @@ import {
     type CatalogEntry,
 } from "./catalog";
 
-export type SubmissionMode = "create" | "edit";
+export type SubmissionMode = "create" | "edit" | "delete";
 
 /** 提交客户端信息：CC 版本与构建期注入的元信息（可缺失，历史 request.json 无此字段）。 */
 export interface SubmissionClientInfo {
@@ -66,6 +66,30 @@ export function buildSubmissionPath(
 ): string {
     const login = normalizeSubmissionPathSegment(githubLogin, "GitHub 用户名");
     const name = normalizeSubmissionPathSegment(repoName, "仓库名");
+    return `${PUBLISH_CONFIG.submissionRootPath}/${login}/${name}`;
+}
+
+/**
+ * 删除申请使用资源 ID 派生路径，而不是仓库名。
+ *
+ * 旧版资源里存在 `-MyGO-` 这类不符合 tmp 路径规则的仓库名；资源 ID 则稳定且
+ * 一个资源只对应一个目录。`del-` 前缀让待审核列表和 PR 一眼能看出是删除申请。
+ */
+export function buildDeletionSubmissionPath(
+    githubLogin: string,
+    resourceId: string,
+): string {
+    const login = normalizeSubmissionPathSegment(githubLogin, "GitHub 用户名");
+    const raw = resourceId.trim().toLowerCase();
+    if (!raw) throw new Error("资源 ID 不能为空。");
+    const safe = raw
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^[^a-z0-9]+/, "")
+        .replace(/[^a-z0-9]+$/, "");
+    const name = normalizeSubmissionPathSegment(
+        `del-${safe || "resource"}`,
+        "资源 ID",
+    );
     return `${PUBLISH_CONFIG.submissionRootPath}/${login}/${name}`;
 }
 
@@ -137,8 +161,12 @@ export function parseSubmissionRequestJson(raw: string): SubmissionRequest {
     if (value.schema_version !== 1) {
         throw new Error("request.json schema_version 必须为 1。");
     }
-    if (value.mode !== "create" && value.mode !== "edit") {
-        throw new Error("request.json mode 必须为 create 或 edit。");
+    if (
+        value.mode !== "create" &&
+        value.mode !== "edit" &&
+        value.mode !== "delete"
+    ) {
+        throw new Error("request.json mode 必须为 create、edit 或 delete。");
     }
     const originalId =
         value.original_id === null ? null : String(value.original_id ?? "").trim() || null;
@@ -150,9 +178,12 @@ export function parseSubmissionRequestJson(raw: string): SubmissionRequest {
         value.base_catalog_commit === null
             ? null
             : String(value.base_catalog_commit ?? "").trim() || null;
-    if (value.mode === "edit" && (!originalId || !digest || !commit)) {
+    if (
+        (value.mode === "edit" || value.mode === "delete") &&
+        (!originalId || !digest || !commit)
+    ) {
         throw new Error(
-            "edit 请求必须提供 original_id、base_entry_digest、base_catalog_commit。",
+            "edit/delete 请求必须提供 original_id、base_entry_digest、base_catalog_commit。",
         );
     }
     return {
@@ -248,6 +279,21 @@ export async function buildEditSubmissionRequest(params: {
     return {
         schema_version: 1,
         mode: "edit",
+        original_id: params.originalId,
+        base_entry_digest: params.baseEntryDigest,
+        base_catalog_commit: params.baseCatalogCommit,
+        client: await buildClientInfo(),
+    };
+}
+
+export async function buildDeleteSubmissionRequest(params: {
+    originalId: string;
+    baseEntryDigest: string;
+    baseCatalogCommit: string;
+}): Promise<SubmissionRequest> {
+    return {
+        schema_version: 1,
+        mode: "delete",
         original_id: params.originalId,
         base_entry_digest: params.baseEntryDigest,
         base_catalog_commit: params.baseCatalogCommit,

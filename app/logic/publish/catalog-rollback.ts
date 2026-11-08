@@ -20,7 +20,7 @@ export interface RollbackPreviewInput {
   entry: CatalogEntry;
   originalId?: string;
   request?: {
-    mode: "create" | "edit";
+    mode: "create" | "edit" | "delete";
     original_id?: string | null;
   } | null;
 }

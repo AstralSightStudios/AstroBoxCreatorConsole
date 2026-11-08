@@ -26,7 +26,7 @@ export interface CatalogFieldChange {
   newValue: string;
 }
 
-export type CatalogRowMode = "create" | "edit";
+export type CatalogRowMode = "create" | "edit" | "delete";
 
 /** 按目录列顺序把 `;` 分隔的字段值拆成去空 token。 */
 export function splitSemicolonTokens(value: string): string[] {

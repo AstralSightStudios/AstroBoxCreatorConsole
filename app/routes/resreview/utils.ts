@@ -35,6 +35,7 @@ import {
   parseSubmissionRequestJson,
   submissionCsvPath,
   submissionRequestPath,
+  type SubmissionRequest,
 } from "~/logic/publish/submission-protocol";
 import { parseReviewCommentBody } from "./utils/comment";
 
@@ -475,6 +476,16 @@ export interface StagingPreviewOptions {
   allowDefaultBase?: boolean;
 }
 
+function predictSubmissionAction(request: SubmissionRequest): string {
+  if (request.mode === "create") {
+    return "新增资源，将追加到目录末尾";
+  }
+  if (request.mode === "delete") {
+    return "删除资源，将从目录中移除";
+  }
+  return "更新资源，将由仓库 Action 根据包内容判断原位替换或移尾";
+}
+
 export async function loadStagingPrResourcePreviews(
   files: GithubPullFile[],
   token: string,
@@ -583,10 +594,7 @@ export async function loadStagingPrResourcePreviews(
           originalId: request.original_id || undefined,
           ref,
           request,
-          predictedAction:
-            request.mode === "create"
-              ? "新增资源，将追加到目录末尾"
-              : "更新资源，将由仓库 Action 根据包内容判断原位替换或移尾",
+          predictedAction: predictSubmissionAction(request),
           manifest,
           iconUrl: buildResourceRawUrl(entry, ref, iconPath),
           coverUrl: buildResourceRawUrl(entry, ref, coverPath),
@@ -602,10 +610,7 @@ export async function loadStagingPrResourcePreviews(
           originalId: request.original_id || undefined,
           ref,
           request,
-          predictedAction:
-            request.mode === "create"
-              ? "新增资源，将追加到目录末尾"
-              : "更新资源，将由仓库 Action 根据包内容判断原位替换或移尾",
+          predictedAction: predictSubmissionAction(request),
           manifestError: getErrorMessage(err),
           iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
           coverUrl: buildResourceRawUrl(entry, ref, entry.cover),

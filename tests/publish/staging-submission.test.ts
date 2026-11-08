@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { saveAccountState } from "../../app/logic/account/store";
 import {
   createSubmissionBranch,
   type CatalogUpdateRequest,
@@ -49,10 +50,15 @@ function stubAccount(login = "sl9325", token = "tok-123") {
     setItem: (key: string, value: string) => void store.set(key, value),
     removeItem: (key: string) => void store.delete(key),
   };
-  store.set(
-    "ACCOUNT_STATE_V2",
-    JSON.stringify({ github: { token, username: login }, astrobox: {} }),
-  );
+  saveAccountState({
+    activeProvider: "github",
+    github: {
+      avatar: "",
+      token,
+      username: login,
+      scopes: ["repo", "delete_repo"],
+    },
+  });
 }
 
 function buildPayload(

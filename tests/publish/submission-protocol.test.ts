@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   buildClientInfo,
   buildCreateSubmissionRequest,
+  buildDeleteSubmissionRequest,
+  buildDeletionSubmissionPath,
   buildSubmissionCsv,
   buildSubmissionPath,
   buildSubmissionRequest,
@@ -37,6 +39,15 @@ describe("submission protocol", () => {
   test("rejects path traversal segments", () => {
     expect(() => buildSubmissionPath("../Alice", "repo")).toThrow();
     expect(() => buildSubmissionPath("alice", "repo/../x")).toThrow();
+  });
+
+  test("builds deletion path from resource id", () => {
+    expect(buildDeletionSubmissionPath("Alice", "LegacyItem108")).toBe(
+      "tmp/alice/del-legacyitem108",
+    );
+    expect(
+      buildDeletionSubmissionPath("alice", "cn.waijade.2048"),
+    ).toBe("tmp/alice/del-cn.waijade.2048");
   });
 
   test("detects new-flow files in a PR", () => {
@@ -93,6 +104,37 @@ describe("submission protocol", () => {
       base_entry_digest: "digest",
       base_catalog_commit: "commit",
     });
+
+    const deletion = parseSubmissionRequestJson(
+      buildSubmissionRequest({
+        schema_version: 1,
+        mode: "delete",
+        original_id: "old-id",
+        base_entry_digest: "digest",
+        base_catalog_commit: "commit",
+        client: null,
+      }),
+    );
+    expect(deletion).toMatchObject({
+      mode: "delete",
+      original_id: "old-id",
+      base_entry_digest: "digest",
+      base_catalog_commit: "commit",
+    });
+  });
+
+  test("rejects delete request without baseline fields", () => {
+    expect(() =>
+      parseSubmissionRequestJson(
+        JSON.stringify({
+          schema_version: 1,
+          mode: "delete",
+          original_id: "old-id",
+          base_entry_digest: null,
+          base_catalog_commit: "commit",
+        }),
+      ),
+    ).toThrow();
   });
 
   test("preserves client info through build/parse round-trip", () => {
@@ -155,6 +197,19 @@ describe("submission protocol", () => {
     const edit = await buildCreateSubmissionRequest(null);
     expect(edit.client).toBeNull();
     expect(edit.base_catalog_commit).toBeNull();
+
+    const deletion = await buildDeleteSubmissionRequest({
+      originalId: "demo",
+      baseEntryDigest: "digest",
+      baseCatalogCommit: "upstream-head",
+    });
+    expect(deletion).toMatchObject({
+      mode: "delete",
+      original_id: "demo",
+      base_entry_digest: "digest",
+      base_catalog_commit: "upstream-head",
+    });
+    expect(deletion.client).toBeNull();
   });
 
   test("buildClientInfo returns null outside Tauri runtime", async () => {

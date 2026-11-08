@@ -1,7 +1,6 @@
 import {
   ArchiveIcon,
   CopyIcon,
-  GithubLogoIcon,
   WarningOctagonIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
@@ -17,10 +16,13 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import PageHeader from "~/components/page-header";
 import Page from "~/layout/page";
+import { DeleteResourceDialog } from "~/components/resource/DeleteResourceDialog";
+import { ResourceActionMenu } from "~/components/resource/ResourceActionMenu";
 import { useListViewMode } from "~/logic/ui/list-view-mode";
 import { indexItemIconUrl } from "~/logic/catalog/index-v2";
 import { ResourceIcon } from "~/routes/manage-resources/components/ResourceVisuals";
 import { loadAccountState } from "~/logic/account/store";
+import { isLegacyItemId } from "~/logic/publish/resource-deletion";
 import {
   loadOwnedCatalogResourcesForCurrentUser,
   buildInProgressEditContextFromPr,
@@ -39,6 +41,8 @@ export default function ResourceManage() {
   const [selectError, setSelectError] = useState("");
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectProgress, setSelectProgress] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] =
+    useState<ResourceCatalogContext | null>(null);
   const viewMode = useListViewMode("resource-manage-view");
 
   useEffect(() => {
@@ -63,7 +67,7 @@ export default function ResourceManage() {
 
   const handleSelect = async (catalog: ResourceCatalogContext) => {
     setSelectError("");
-    if (catalog.entry.id?.includes("LegacyItem")) {
+    if (isLegacyItemId(catalog.entry.id)) {
       setSelectError("旧版资源（LegacyItem）暂不支持在控制台编辑。");
       return;
     }
@@ -89,6 +93,12 @@ export default function ResourceManage() {
           },
         );
         if (open) {
+          if (open.mode === "delete") {
+            toast.warning(
+              `资源「${catalog.entry.name}」已有进行中的删除申请 PR #${open.prNumber}，处理进度请前往审核列表查看。`,
+            );
+            return;
+          }
           setSelectProgress("正在载入提交信息…");
           try {
             const username = loadAccountState().github?.username
@@ -151,6 +161,13 @@ export default function ResourceManage() {
           </div>
         </Dialog.Content>
       </Dialog.Root>
+      <DeleteResourceDialog
+        open={deleteTarget !== null}
+        resource={deleteTarget}
+        onOpenChange={(next) => {
+          if (!next) setDeleteTarget(null);
+        }}
+      />
       <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
         <PageHeader
           title="已发布资源"
@@ -236,6 +253,7 @@ export default function ResourceManage() {
                     <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>仓库</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -258,6 +276,14 @@ export default function ResourceManage() {
                       <Table.Cell>
                         {item.entry.repo_owner}/{item.entry.repo_name}
                       </Table.Cell>
+                      <Table.Cell>
+                        <ResourceActionMenu
+                          item={item}
+                          disabled={selectingId !== null}
+                          onEdit={() => void handleSelect(item)}
+                          onDelete={() => setDeleteTarget(item)}
+                        />
+                      </Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>
@@ -272,24 +298,23 @@ export default function ResourceManage() {
                   item={item}
                   selecting={selectingId === item.entry.id}
                   onSelect={() => void handleSelect(item)}
+                  onDelete={() => setDeleteTarget(item)}
                 />
               ))}
             </div>
           )}
-          <p className="px-3.5 pt-1.5 text-xs text-white/60">
-            旧版资源（LegacyItem）暂不支持在控制台编辑，您仍需要按照 v1
-            操作方式修改它们。
-          </p>
+          {!loading &&
+            !error &&
+            items.some((item) => isLegacyItemId(item.entry.id)) && (
+              <p className="px-3.5 pt-1.5 text-xs text-white/60">
+                旧版资源（LegacyItem）暂不支持在控制台编辑，您仍需要按照 v1
+                操作方式修改它们。
+              </p>
+            )}
         </div>
       </div>
     </Page>
   );
-}
-
-function openRepoInExternal(repoUrl: string) {
-  void import("@tauri-apps/plugin-opener")
-    .then(({ openUrl }) => openUrl(repoUrl))
-    .catch(() => window.open(repoUrl, "_blank", "noopener,noreferrer"));
 }
 
 const PAID_TYPE_LABELS: Record<string, string> = {
@@ -305,20 +330,20 @@ function paidTypeLabel(paidType: string): string {
 
 /**
  * 手机/卡片视图：名称是主要辨识依据，ID 次要；仓库与编辑入口靠后。
- * 整卡点击进入编辑，内部按钮需要阻止冒泡。
+ * 整卡点击进入编辑，右上角操作菜单用于编辑/打开仓库/删除。
  */
 function ManageResourceCard({
   item,
   selecting,
   onSelect,
+  onDelete,
 }: {
   item: ResourceCatalogContext;
   selecting: boolean;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const entry = item.entry;
-  const repoLabel = `${entry.repo_owner}/${entry.repo_name}`;
-  const repoUrl = `https://github.com/${repoLabel}`;
 
   return (
     <div
@@ -326,6 +351,7 @@ function ManageResourceCard({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect();
@@ -345,18 +371,12 @@ function ManageResourceCard({
             <p className="line-clamp-2 min-w-0 text-sm font-semibold leading-5 text-white">
               {entry.name}
             </p>
-            <button
-              type="button"
-              aria-label="打开仓库"
-              title="打开仓库"
-              className="mt-0.5 shrink-0 rounded p-0.5 text-white/35 transition-colors hover:bg-white/10 hover:text-white/70"
-              onClick={(event) => {
-                event.stopPropagation();
-                openRepoInExternal(repoUrl);
-              }}
-            >
-              <GithubLogoIcon size={16} weight="duotone" />
-            </button>
+            <ResourceActionMenu
+              item={item}
+              disabled={selecting}
+              onEdit={onSelect}
+              onDelete={onDelete}
+            />
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

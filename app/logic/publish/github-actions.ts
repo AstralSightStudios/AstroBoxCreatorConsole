@@ -670,6 +670,51 @@ export async function createUserRepo(
     return repo;
 }
 
+export interface GithubRepositoryInfo {
+    full_name?: string;
+    name?: string;
+    owner?: { login?: string };
+    permissions?: { admin?: boolean };
+}
+
+/** 读取当前账号可见的仓库信息，用于删除前校验归属与管理权限。 */
+export async function getUserRepository(
+    owner: string,
+    name: string,
+    token: string,
+): Promise<GithubRepositoryInfo> {
+    return githubFetch<GithubRepositoryInfo>(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+            },
+        },
+    );
+}
+
+/** 删除仓库。调用方负责校验归属、权限与二次确认。 */
+export async function deleteUserRepository(
+    fullName: string,
+    token: string,
+): Promise<void> {
+    const encoded = fullName
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/");
+    await githubFetch<unknown>(
+        `https://api.github.com/repos/${encoded}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+            },
+        },
+    );
+}
+
 export function ensureBase64(content: ArrayBuffer | Uint8Array | string) {
     const bytes =
         typeof content === "string"

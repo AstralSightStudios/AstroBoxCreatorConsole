@@ -31,6 +31,16 @@ function buildCatalogRowDiff(resource: PrResourcePreview): CatalogRowDiff | null
 
   const next = normalizeCatalogEntryForCsv(resource.entry);
 
+  if (request.mode === "delete") {
+    return {
+      mode: "delete",
+      base: resource.baseEntry,
+      next,
+      changed: new Set(),
+      missingBase: !resource.baseEntry,
+    };
+  }
+
   if (request.mode === "edit") {
     // 定位不到原行时无法逐字段对比，继续沿用人工核对提示。
     if (!resource.baseEntry) {
@@ -129,7 +139,8 @@ function CatalogFieldValue({
  * 列宽按内容展开、超出容器时横向滚动。
  */
 function CatalogChangeTable({ diff }: { diff: CatalogRowDiff }) {
-  const isEdit = diff.mode === "edit";
+  const showBase = diff.mode === "edit" || diff.mode === "delete";
+  const showNext = diff.mode !== "delete";
 
   const valueOf = (entry: CatalogEntry | undefined, field: CatalogField): string =>
     entry?.[field] ?? "";
@@ -199,8 +210,8 @@ function CatalogChangeTable({ diff }: { diff: CatalogRowDiff }) {
           </tr>
         </thead>
         <tbody>
-          {isEdit && renderRow("-", diff.base, diff.next, "old")}
-          {renderRow("+", diff.next, diff.base, "new")}
+          {showBase && renderRow("-", diff.base, diff.next, "old")}
+          {showNext && renderRow("+", diff.next, diff.base, "new")}
         </tbody>
       </table>
     </ScrollArea>
@@ -254,10 +265,16 @@ export function CatalogRowChanges({
               className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${
                 diff.mode === "create"
                   ? "bg-emerald-500/15 text-emerald-200/80"
-                  : "bg-amber-500/15 text-amber-200/80"
+                  : diff.mode === "delete"
+                    ? "bg-red-500/15 text-red-200/80"
+                    : "bg-amber-500/15 text-amber-200/80"
               }`}
             >
-              {diff.mode === "create" ? "新增行" : "更新行"}
+              {diff.mode === "create"
+                ? "新增行"
+                : diff.mode === "delete"
+                  ? "删除行"
+                  : "更新行"}
             </span>
             {(resource.entry.name || resource.entry.id) && (
               <span className="ml-auto min-w-0 truncate text-xs text-white/45">

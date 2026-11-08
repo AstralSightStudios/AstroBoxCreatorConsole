@@ -261,6 +261,13 @@ export default function ResourcePublish() {
   );
 
   const handleSelect = async (resource: PublishingResource) => {
+    if (resource.kind === "delete") {
+      if (resource.prUrl) {
+        openExternal(resource.prUrl);
+      }
+      toast.info("这是删除申请，已为你打开 GitHub PR。");
+      return;
+    }
     if (resource.refused) {
       setRefuseTarget(resource);
       return;
@@ -750,6 +757,11 @@ export default function ResourcePublish() {
                         </Table.Cell>
                         <Table.Cell className="flex flex-row gap-1 items-center">
                           {statusRender(item)}
+                          {item.kind === "delete" && (
+                            <Badge color="red" variant="soft">
+                              删除申请
+                            </Badge>
+                          )}
                           {item.hidden && (
                             <Badge color="gray" variant="soft">
                               已隐藏
@@ -993,6 +1005,11 @@ function PublishResourceCard({
 
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             {statusRender(item)}
+            {item.kind === "delete" && (
+              <Badge color="red" variant="soft">
+                删除申请
+              </Badge>
+            )}
             {item.hidden && (
               <Badge color="gray" variant="soft">
                 已隐藏

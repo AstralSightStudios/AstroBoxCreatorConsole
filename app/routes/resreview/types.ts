@@ -36,7 +36,7 @@ export interface PrResourcePreview {
    */
   originalId?: string;
   request?: {
-    mode: "create" | "edit";
+    mode: "create" | "edit" | "delete";
     originalId?: string | null;
     /** staging 提交 request.json 附带的提交客户端信息（历史提交可能缺失）。 */
     client?: SubmissionClientInfo | null;
