@@ -19,7 +19,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { AlertDialog } from "~/components/ScaleAwareThemes";
 import { SectionCard } from "~/routes/resource/publish/components/shared";
-import { clearGithubQuotas } from "~/logic/account/github-tokens";
+import {
+  clearGithubQuotas,
+  forgetGithubQuota,
+} from "~/logic/account/github-tokens";
 import { refreshGithubQuotas } from "~/logic/account/github-quota-refresh";
 import {
   cancelGithubLogin,
@@ -105,6 +108,7 @@ export default function AccountsSection({
   const confirmRemoveReader = () => {
     if (!readerToRemove) return;
     removeGithubReader(readerToRemove.username);
+    forgetGithubQuota(readerToRemove.username);
     toast.success(`已移除读取账号 @${readerToRemove.username}`);
     setReaderToRemove(null);
   };

@@ -82,6 +82,13 @@ export function clearGithubQuotas(): void {
     notifyQuota();
 }
 
+/** 移除某个账号的额度记录（例如读取账号被用户移除）。 */
+export function forgetGithubQuota(login: string): void {
+    if (quotaByLogin.delete(quotaKey(login))) {
+        notifyQuota();
+    }
+}
+
 function upsertQuota(
     login: string,
     role: GithubAccountRole,
