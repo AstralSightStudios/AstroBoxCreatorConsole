@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshGithubQuotas } from "~/logic/account/github-quota-refresh";
 import {
   applyGithubRateLimitHeaders,
   pickGithubReadIdentity,
@@ -50,28 +51,38 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
   }
 
   const job = (async () => {
-    if (isTauriRuntime()) {
-      const result = await invoke<FetchMediaResponse>("fetch_media", {
-        request: { url: requestUrl, headers },
-      });
-      const bytes = base64ToBytes(result.body_base64);
-      const blob = new Blob([bytes.buffer as ArrayBuffer], {
-        type: result.content_type || "application/octet-stream",
-      });
+    try {
+      if (isTauriRuntime()) {
+        const result = await invoke<FetchMediaResponse>("fetch_media", {
+          request: { url: requestUrl, headers },
+        });
+        const bytes = base64ToBytes(result.body_base64);
+        const blob = new Blob([bytes.buffer as ArrayBuffer], {
+          type: result.content_type || "application/octet-stream",
+        });
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlCache.set(url, blobUrl);
+        return blobUrl;
+      }
+
+      const response = await fetch(toProxiedApiUrl(requestUrl), { headers });
+      if (identity) {
+        applyGithubRateLimitHeaders(identity.login, identity.role, response.headers);
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       blobUrlCache.set(url, blobUrl);
       return blobUrl;
+    } catch (error) {
+      // Tauri 的 fetch_media 不返回响应头；图片限流时用免费的 /rate_limit
+      // 校准一次，让下一次选号跳过已耗尽的读取账号。
+      const message = error instanceof Error ? error.message : String(error);
+      if (identity && /(?:HTTP |\()(403|429)(?:\)|$)/.test(message)) {
+        void refreshGithubQuotas();
+      }
+      throw error;
     }
-
-    const response = await fetch(toProxiedApiUrl(requestUrl), { headers });
-    if (identity) {
-      applyGithubRateLimitHeaders(identity.login, identity.role, response.headers);
-    }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    blobUrlCache.set(url, blobUrl);
-    return blobUrl;
   })();
 
   inflight.set(url, job);
