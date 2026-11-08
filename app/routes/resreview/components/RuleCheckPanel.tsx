@@ -9,6 +9,7 @@ import {
   Spinner,
 } from "@phosphor-icons/react";
 import { useAccountState } from "~/logic/account/store";
+import { getGithubReadToken } from "~/logic/account/github-tokens";
 import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
 import type { GithubPullFile } from "~/api/github/pr-review";
 import type { PrResourcePreview, RuleCheckItem } from "../types";
@@ -88,7 +89,7 @@ const STATUS_META: Record<
 
 export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: RuleCheckPanelProps) {
   const accountState = useAccountState();
-  const token = accountState.github?.token || "";
+  const token = getGithubReadToken() || "";
   const astroboxToken = accountState.astrobox?.token;
   const [activeIdx, setActiveIdx] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);

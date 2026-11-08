@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useAccountState } from "~/logic/account/store";
+import { getGithubReadToken } from "~/logic/account/github-tokens";
 import { AstroboxLinkIcon } from "~/components/phosphor-icon";
 import { formatResourceType } from "~/logic/publish/resource-type";
 import {
@@ -189,6 +190,10 @@ function ResourceDetailView({
   }, [manifest?.item?.author]);
 
   const accountState = useAccountState();
+  const githubReadToken = useMemo(
+    () => getGithubReadToken() || undefined,
+    [accountState],
+  );
   // 资源只归属第一位声明绑定 AstroBox 的作者，比例只判他。
   const ratioAuthorName = useMemo(() => pickRatioAuthorName(authors), [authors]);
   const boundAuthorNames = useMemo(
@@ -204,7 +209,7 @@ function ResourceDetailView({
     ratioAuthorName,
     authorProStatuses,
     astroboxToken: accountState.astrobox?.token,
-    githubToken: accountState.github?.token,
+    githubToken: githubReadToken,
     paidType: entry.paid_type,
     resourceId: manifestItem?.id || entry.id,
     originalResourceId: resource.originalId,

@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useSetHeaderActions } from "~/layout/header-actions";
 import { useNavVisibility } from "~/layout/nav-visibility-context";
 import { useAccountState, getAstroboxToken } from "~/logic/account/store";
+import { getGithubReadToken } from "~/logic/account/github-tokens";
 import {
   sendCcNotice,
   findSentCcNotice,
@@ -394,7 +395,7 @@ export default function ResourceReviewPage() {
         (publishMode === "staging" || hasSubmissionFiles(nextFiles))
           ? await loadStagingPrResourcePreviews(
               nextFiles,
-              accountState.github?.token || "",
+              getGithubReadToken() || "",
               pull,
               auditMode
                 ? {
@@ -405,7 +406,7 @@ export default function ResourceReviewPage() {
             )
           : await loadPrResourcePreviews(
               nextFiles,
-              accountState.github?.token || "",
+              getGithubReadToken() || "",
             );
       if (callId !== loadDetailRef.current) return;
       setCommentsByPr((prev) => ({ ...prev, [number]: nextComments }));
@@ -1043,7 +1044,7 @@ export default function ResourceReviewPage() {
     number: number,
     pull: GithubPullRequest,
   ): Promise<PrResourcePreview[]> => {
-    const token = accountState.github?.token || "";
+    const token = getGithubReadToken() || "";
     const nextFiles = await listPullRequestFiles(number);
     return publishMode === "staging" || hasSubmissionFiles(nextFiles)
       ? loadStagingPrResourcePreviews(nextFiles, token, pull)

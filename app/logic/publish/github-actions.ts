@@ -1,5 +1,15 @@
 import { MAIN_RESOURCE_BRANCH } from "./branch";
 import { loadAccountState } from "../account/store";
+import {
+    applyGithubRateLimitHeaders,
+    getPrimaryGithubIdentity,
+    markGithubAccountExhausted,
+    markGithubAccountInvalid,
+    pickGithubReadIdentity,
+    resolveGithubAuthPurpose,
+    type GithubAuthPurpose,
+    type GithubRequestIdentity,
+} from "../account/github-tokens";
 import { log } from "~/logic/logging";
 
 const isWeb =
@@ -94,6 +104,11 @@ const MAX_RETRY_WAIT_MS = 60_000;
 export interface GithubFetchOptions {
     timeoutMs?: number;
     retries?: number;
+    /**
+     * 显式指定使用主账号或读取账号。
+     * 不传时保持调用方自己的 Authorization 头，兼容发布流程等显式传 token 的调用。
+     */
+    auth?: GithubAuthPurpose;
 }
 
 export class GithubApiError extends Error {
@@ -110,12 +125,53 @@ export class GithubApiError extends Error {
     }
 }
 
+export type GithubRateLimitKind = "primary" | "secondary";
+
+/** 主额度或二级限流错误；调用方可以据此展示真实的重置时间。 */
+export class GithubRateLimitError extends GithubApiError {
+    readonly kind: GithubRateLimitKind;
+    readonly resource: string;
+    /** 毫秒时间戳。 */
+    readonly resetAt: number;
+    readonly accountLogin: string;
+
+    constructor(params: {
+        status: number;
+        url: string;
+        body: string;
+        message: string;
+        kind: GithubRateLimitKind;
+        resource?: string;
+        resetAt: number;
+        accountLogin?: string;
+    }) {
+        super(params.status, params.url, params.body, params.message);
+        this.name = "GithubRateLimitError";
+        this.kind = params.kind;
+        this.resource = params.resource ?? "core";
+        this.resetAt = params.resetAt;
+        this.accountLogin = params.accountLogin ?? "";
+    }
+}
+
 export function isGithubStatus(error: unknown, ...codes: number[]): boolean {
     return error instanceof GithubApiError && codes.includes(error.status);
 }
 
 /** Prefix an error with a context message while preserving the HTTP status. */
 export function withGithubContext(error: unknown, context: string): Error {
+    if (error instanceof GithubRateLimitError) {
+        return new GithubRateLimitError({
+            status: error.status,
+            url: error.url,
+            body: error.body,
+            message: `${context}: ${error.message}`,
+            kind: error.kind,
+            resource: error.resource,
+            resetAt: error.resetAt,
+            accountLogin: error.accountLogin,
+        });
+    }
     if (error instanceof GithubApiError) {
         return new GithubApiError(
             error.status,
@@ -151,7 +207,7 @@ function buildGithubErrorMessage(status: number, body: string): string {
     }
     const detail = parseGithubErrorDetail(body);
     if (status === 403 && /rate limit|abuse/i.test(body)) {
-        return `GitHub 触发了速率限制（403），请稍等一分钟后重试。${detail}`;
+        return `GitHub 触发了速率限制（403），请等待额度重置后再试。${detail}`;
     }
     return `GitHub API ${status}: ${detail}`;
 }
@@ -160,12 +216,56 @@ function sleep(ms: number) {
     return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-function isRateLimited(status: number, response: Response, body: string): boolean {
-    if (status === 429) return true;
-    if (status !== 403) return false;
-    if (response.headers.get("retry-after")) return true;
-    if (response.headers.get("x-ratelimit-remaining") === "0") return true;
-    return /rate limit|abuse/i.test(body);
+interface GithubRateLimitClassification {
+    kind: GithubRateLimitKind;
+    resource: string;
+}
+
+function classifyGithubRateLimit(
+    response: Response,
+    body: string,
+): GithubRateLimitClassification | null {
+    if (response.status === 429) {
+        return { kind: "secondary", resource: "core" };
+    }
+    if (response.status !== 403) return null;
+
+    const resource = response.headers.get("x-ratelimit-resource") || "core";
+    // primary 限流最可靠的信号：剩余额度为 0。
+    if (response.headers.get("x-ratelimit-remaining") === "0") {
+        return { kind: "primary", resource };
+    }
+    if (response.headers.get("retry-after")) {
+        return { kind: "secondary", resource };
+    }
+    if (/secondary rate limit/i.test(body)) {
+        return { kind: "secondary", resource };
+    }
+    if (/rate limit/i.test(body)) {
+        return { kind: "primary", resource };
+    }
+    return null;
+}
+
+function readGithubRateLimitResetAt(response: Response): number {
+    const reset = Number(response.headers.get("x-ratelimit-reset"));
+    if (Number.isFinite(reset) && reset > 0) return reset * 1000;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Date.now() + retryAfter * 1000;
+    }
+    return Date.now() + 60_000;
+}
+
+function formatGithubResetTime(resetAt: number): string {
+    try {
+        return new Date(resetAt).toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } catch {
+        return new Date(resetAt).toISOString();
+    }
 }
 
 function retryDelayMs(attempt: number, response?: Response): number {
@@ -184,9 +284,10 @@ function retryDelayMs(attempt: number, response?: Response): number {
 /**
  * Fetch against the GitHub API with:
  * - request timeout (AbortController)
- * - automatic retry with backoff for network errors, 5xx, 429 and
- *   403 secondary-rate-limit responses (honoring Retry-After)
- * - typed GithubApiError carrying the HTTP status for callers to branch on
+ * - auth routing: 显式 auth="read" 时按账号池选读取账号；写请求与身份端点强制主账号
+ * - automatic retry with backoff for network errors, 5xx and secondary rate limits
+ * - reader rotation when a read account's primary quota is exhausted
+ * - typed GithubApiError / GithubRateLimitError carrying the HTTP status
  */
 export async function githubFetch<T>(
     url: string,
@@ -195,12 +296,49 @@ export async function githubFetch<T>(
 ): Promise<T> {
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const retries = options?.retries ?? DEFAULT_RETRIES;
+    const requestedAuth = options?.auth;
+    const purpose = resolveGithubAuthPurpose(url, init.method, requestedAuth);
+    const needsIdentity = requestedAuth !== undefined;
 
+    let identity: GithubRequestIdentity | null = null;
+    const excludedReaders = new Set<string>();
+    let rotations = 0;
+    const maxRotations = 10;
+
+    if (needsIdentity) {
+        identity =
+            purpose === "read"
+                ? pickGithubReadIdentity({ exclude: excludedReaders })
+                : getPrimaryGithubIdentity();
+        if (!identity) {
+            throw new Error(
+                purpose === "read"
+                    ? "没有可用的 GitHub 读取账号，且主账号额度不足以承担内容浏览。"
+                    : "未登录 GitHub，无法完成该请求。",
+            );
+        }
+    }
+
+    let attempt = 0;
     let lastError: Error | undefined;
-    for (let attempt = 0; attempt <= retries; attempt++) {
+
+    while (true) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         const startedAt = performance.now();
+        const method = describeMethod(init);
+
+        const headers = new Headers(init.headers);
+        if (!headers.has("Accept")) {
+            headers.set("Accept", "application/vnd.github+json");
+        }
+        if (!headers.has("X-GitHub-Api-Version")) {
+            headers.set("X-GitHub-Api-Version", "2022-11-28");
+        }
+        if (identity) {
+            headers.set("Authorization", `Bearer ${identity.token}`);
+        }
+
         let response: Response;
         try {
             response = await fetch(proxyGithubUrl(url), {
@@ -209,12 +347,8 @@ export async function githubFetch<T>(
                 // GitHub REST API 的 GET 响应带 `Cache-Control: private, max-age=60`，
                 // WebView 会直接命中本地缓存返回 60 秒前的旧数据，导致刚提交的
                 // review/评论重新拉取时看不到（如 NEEDFIX 后状态不刷新）。一律绕过。
-                cache: (init.method ?? "GET").toUpperCase() === "GET" ? "no-store" : undefined,
-                headers: {
-                    Accept: "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    ...(init.headers || {}),
-                },
+                cache: method === "GET" ? "no-store" : undefined,
+                headers,
             });
         } catch (error) {
             clearTimeout(timer);
@@ -225,22 +359,38 @@ export async function githubFetch<T>(
                     : "GitHub 网络连接失败，请检查网络。",
             );
             if (attempt < retries) {
-                log.warn("github/fetch", `${describeMethod(init)} ${url} 网络失败(第 ${attempt + 1} 次)，将重试`, {
-                    data: { error, timeoutMs },
+                attempt += 1;
+                log.warn("github/fetch", `${method} ${url} 网络失败(第 ${attempt} 次)，将重试`, {
+                    data: { error, timeoutMs, accountLogin: identity?.login, purpose },
                 });
                 await sleep(retryDelayMs(attempt));
                 continue;
             }
-            log.error("github/fetch", `${describeMethod(init)} ${url} 网络失败，已达最大重试`, {
-                data: { error, attempts: retries + 1, durationMs: Math.round(performance.now() - startedAt) },
+            log.error("github/fetch", `${method} ${url} 网络失败，已达最大重试`, {
+                data: {
+                    error,
+                    attempts: attempt + 1,
+                    durationMs: Math.round(performance.now() - startedAt),
+                    accountLogin: identity?.login,
+                    purpose,
+                },
             });
             throw lastError;
         }
         clearTimeout(timer);
 
+        if (identity) {
+            applyGithubRateLimitHeaders(identity.login, identity.role, response.headers);
+        }
+
         if (response.ok) {
-            log.debug("github/fetch", `${describeMethod(init)} ${url} → ${response.status}`, {
-                data: { durationMs: Math.round(performance.now() - startedAt), status: response.status },
+            log.debug("github/fetch", `${method} ${url} → ${response.status}`, {
+                data: {
+                    durationMs: Math.round(performance.now() - startedAt),
+                    status: response.status,
+                    accountLogin: identity?.login,
+                    purpose,
+                },
             });
             if (response.status === 204) {
                 return undefined as T;
@@ -253,8 +403,8 @@ export async function githubFetch<T>(
                 return JSON.parse(text) as T;
             } catch {
                 // 中间代理/网关可能返回非 JSON（如 HTML 错误页）
-                log.error("github/fetch", `${describeMethod(init)} ${url} 返回非 JSON 响应`, {
-                    data: { bodyPreview: text.slice(0, 200) },
+                log.error("github/fetch", `${method} ${url} 返回非 JSON 响应`, {
+                    data: { bodyPreview: text.slice(0, 200), accountLogin: identity?.login },
                 });
                 throw new Error(
                     `GitHub 返回了无法解析的响应（可能被代理或网关篡改）：${text.slice(0, 120)}`,
@@ -263,30 +413,140 @@ export async function githubFetch<T>(
         }
 
         const bodyText = await response.text().catch(() => "");
-        const apiError = new GithubApiError(response.status, url, bodyText);
-        const retryable =
-            response.status >= 500 ||
-            isRateLimited(response.status, response, bodyText);
-        if (retryable && attempt < retries) {
-            log.warn("github/fetch", `${describeMethod(init)} ${url} → HTTP ${response.status}(第 ${attempt + 1} 次)，将重试`, {
-                data: { status: response.status, bodyPreview: bodyText.slice(0, 300) },
+        const rateLimit = classifyGithubRateLimit(response, bodyText);
+        const resetAt = readGithubRateLimitResetAt(response);
+
+        if (response.status === 401) {
+            if (identity?.role === "reader" && rotations < maxRotations) {
+                markGithubAccountInvalid(identity.login);
+                excludedReaders.add(identity.login.trim().toLowerCase());
+                const next = pickGithubReadIdentity({ exclude: excludedReaders });
+                if (next) {
+                    rotations += 1;
+                    identity = next;
+                    attempt = 0;
+                    log.warn("github/fetch", `${method} ${url} 读取账号失效，切换账号重试`, {
+                        data: { accountLogin: identity.login, purpose },
+                    });
+                    continue;
+                }
+            }
+            log.error("github/fetch", `${method} ${url} → HTTP 401`, {
+                data: { accountLogin: identity?.login, purpose },
             });
-            lastError = apiError;
+            throw new GithubApiError(response.status, url, bodyText);
+        }
+
+        if (rateLimit?.kind === "primary") {
+            if (!identity) {
+                throw new GithubRateLimitError({
+                    status: response.status,
+                    url,
+                    body: bodyText,
+                    message: `GitHub 触发了主额度速率限制，预计 ${formatGithubResetTime(resetAt)} 恢复。`,
+                    kind: "primary",
+                    resource: rateLimit.resource,
+                    resetAt,
+                });
+            }
+
+            if (identity.role === "reader") {
+                markGithubAccountExhausted(identity.login, resetAt);
+                excludedReaders.add(identity.login.trim().toLowerCase());
+
+                if (rotations < maxRotations) {
+                    const next = pickGithubReadIdentity({ exclude: excludedReaders });
+                    if (next) {
+                        rotations += 1;
+                        identity = next;
+                        attempt = 0;
+                        log.warn("github/fetch", `${method} ${url} 读取账号额度耗尽，切换账号重试`, {
+                            data: { accountLogin: identity.login, resetAt, purpose },
+                        });
+                        continue;
+                    }
+                }
+
+                throw new GithubRateLimitError({
+                    status: response.status,
+                    url,
+                    body: bodyText,
+                    message: `GitHub 内容读取账号额度已用完，预计 ${formatGithubResetTime(resetAt)} 恢复。主账号额度保留给审核操作。`,
+                    kind: "primary",
+                    resource: rateLimit.resource,
+                    resetAt,
+                });
+            }
+
+            throw new GithubRateLimitError({
+                status: response.status,
+                url,
+                body: bodyText,
+                message: `GitHub 主账号额度已用完，预计 ${formatGithubResetTime(resetAt)} 恢复。期间无法批准、合并或评论。`,
+                kind: "primary",
+                resource: rateLimit.resource,
+                resetAt,
+                accountLogin: identity.login,
+            });
+        }
+
+        if (rateLimit?.kind === "secondary") {
+            if (attempt < retries) {
+                attempt += 1;
+                const delay = retryDelayMs(attempt, response);
+                log.warn(
+                    "github/fetch",
+                    `${method} ${url} → 二级限流(第 ${attempt} 次)，${Math.round(delay / 1000)} 秒后重试`,
+                    {
+                        data: {
+                            status: response.status,
+                            accountLogin: identity?.login,
+                            purpose,
+                        },
+                    },
+                );
+                await sleep(delay);
+                continue;
+            }
+            throw new GithubRateLimitError({
+                status: response.status,
+                url,
+                body: bodyText,
+                message: "GitHub 触发了二级速率限制，请稍后再试。",
+                kind: "secondary",
+                resource: rateLimit.resource,
+                resetAt,
+                accountLogin: identity?.login,
+            });
+        }
+
+        if (response.status >= 500 && attempt < retries) {
+            attempt += 1;
+            lastError = new GithubApiError(response.status, url, bodyText);
+            log.warn("github/fetch", `${method} ${url} → HTTP ${response.status}(第 ${attempt} 次)，将重试`, {
+                data: {
+                    status: response.status,
+                    bodyPreview: bodyText.slice(0, 300),
+                    accountLogin: identity?.login,
+                },
+            });
             await sleep(retryDelayMs(attempt, response));
             continue;
         }
-        log.error("github/fetch", `${describeMethod(init)} ${url} → HTTP ${response.status}`, {
+
+        const apiError = new GithubApiError(response.status, url, bodyText);
+        log.error("github/fetch", `${method} ${url} → HTTP ${response.status}`, {
             data: {
                 status: response.status,
                 bodyPreview: bodyText.slice(0, 500),
                 attempts: attempt + 1,
                 durationMs: Math.round(performance.now() - startedAt),
+                accountLogin: identity?.login,
+                purpose,
             },
         });
         throw apiError;
     }
-
-    throw lastError ?? new Error("GitHub 请求失败。");
 }
 
 /**

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { loadAccountState } from "~/logic/account/store";
+import { pickGithubReadIdentity } from "~/logic/account/github-tokens";
 import {
   GITHUB_RAW_ACCEPT,
   isTauriRuntime,
@@ -21,11 +21,14 @@ interface AuthTarget {
 function resolveAuthTarget(rawUrl: string): AuthTarget {
   const apiUrl = rawGithubUrlToApiUrl(rawUrl);
   if (!apiUrl) throw new Error(`不是 GitHub 资源链接，无法鉴权下载：${rawUrl}`);
-  const token = loadAccountState().github?.token;
-  if (!token) throw new Error("未登录 GitHub，无法下载资源。");
+  const identity = pickGithubReadIdentity();
+  if (!identity) throw new Error("未登录 GitHub，无法下载资源。");
   return {
     url: apiUrl,
-    headers: { Authorization: `Bearer ${token}`, Accept: GITHUB_RAW_ACCEPT },
+    headers: {
+      Authorization: `Bearer ${identity.token}`,
+      Accept: GITHUB_RAW_ACCEPT,
+    },
   };
 }
 

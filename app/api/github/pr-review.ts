@@ -1,5 +1,6 @@
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { loadAccountState } from "~/logic/account/store";
+import type { GithubAuthPurpose } from "~/logic/account/github-tokens";
 import { githubFetch } from "~/logic/publish/github-actions";
 
 export interface GithubPullRequest {
@@ -92,9 +93,17 @@ function getGithubAuth() {
   return account;
 }
 
-function headers(tokenOverride?: string) {
+/** 由 githubFetch 按 auth 选项注入 Authorization，调用方不再直接拼 token。 */
+function headers() {
   return {
-    Authorization: `Bearer ${tokenOverride ?? getGithubAuth().token}`,
+    "Content-Type": "application/json",
+  };
+}
+
+/** 显式传 token 的旧调用（发布/回查）继续使用这个 helper。 */
+function primaryHeaders(token?: string) {
+  return {
+    Authorization: `Bearer ${token ?? getGithubAuth().token}`,
     "Content-Type": "application/json",
   };
 }
@@ -118,6 +127,7 @@ export async function getCurrentGithubPermission() {
   return githubFetch<{ permission: string; user?: unknown }>(
     repoPath(`/collaborators/${encodeURIComponent(account.username)}/permission`),
     { headers: headers() },
+    { auth: "primary" },
   );
 }
 
@@ -134,6 +144,7 @@ export async function listOrganizationMembers(org: string): Promise<Set<string>>
     >(
       `https://api.github.com/orgs/${encodeURIComponent(org)}/members?per_page=100&page=${page}`,
       { headers: headers() },
+      { auth: "primary" },
     );
     for (const user of data) {
       if (user.login) members.add(user.login);
@@ -167,6 +178,7 @@ export async function getGithubUserProfile(
   const profile = await githubFetch<GithubUserProfile>(
     `https://api.github.com/users/${encodeURIComponent(login.trim())}`,
     { headers: headers() },
+    { auth: "read" },
   );
   githubUserProfileCache.set(key, profile);
   return profile;
@@ -178,6 +190,7 @@ export async function listReviewPullRequests(
   const pulls = await githubFetch<GithubPullRequest[]>(
     repoPath(`/pulls?state=${state}&per_page=80&sort=updated&direction=desc`),
     { headers: headers() },
+    { auth: "read" },
   );
   // 已合并或 head 分支已被删除的 PR 无法再处理，不展示。
   return pulls.filter(
@@ -185,15 +198,20 @@ export async function listReviewPullRequests(
   );
 }
 
-export async function getPullRequest(prNumber: number) {
+export async function getPullRequest(
+  prNumber: number,
+  purpose: GithubAuthPurpose = "read",
+) {
   return githubFetch<GithubPullRequest>(
     repoPath(`/pulls/${prNumber}`),
     { headers: headers() },
+    { auth: purpose },
   );
 }
 
 export async function mergePullRequest(prNumber: number) {
-  const latest = await getPullRequest(prNumber);
+  // 合并链路整体走主账号：预检也读主账号视角，避免读取账号的视图影响写操作。
+  const latest = await getPullRequest(prNumber, "primary");
   if (latest.mergeable === false) {
     throw new Error(
       `PR #${prNumber} 当前不可合并（mergeable_state: ${latest.mergeable_state || "unknown"}），请先更新分支。`,
@@ -206,6 +224,7 @@ export async function mergePullRequest(prNumber: number) {
       headers: headers(),
       body: JSON.stringify({ merge_method: "merge" }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -217,6 +236,7 @@ export async function closePullRequest(prNumber: number) {
       headers: headers(),
       body: JSON.stringify({ state: "closed" }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -228,6 +248,7 @@ export async function reopenPullRequest(prNumber: number) {
       headers: headers(),
       body: JSON.stringify({ state: "open" }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -246,7 +267,7 @@ export async function waitForPullRequestOpen(
   const intervalMs = options.intervalMs ?? 3_000;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const pr = await getPullRequest(prNumber);
+    const pr = await getPullRequest(prNumber, "primary");
     if (pr.state === "open") return true;
     // 已被合并的 PR 不该再被重开，也不必新建 PR 去替代它。
     if (pr.merged_at) return false;
@@ -267,6 +288,7 @@ export async function updatePullRequestTitle(
       headers: headers(),
       body: JSON.stringify({ title }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -274,6 +296,7 @@ export async function listPullRequestComments(prNumber: number) {
   return githubFetch<GithubIssueComment[]>(
     repoPath(`/issues/${prNumber}/comments?per_page=100&sort=created&direction=desc`),
     { headers: headers() },
+    { auth: "read" },
   );
 }
 
@@ -320,6 +343,7 @@ export async function listPullRequestFiles(prNumber: number) {
   return githubFetch<GithubPullFile[]>(
     repoPath(`/pulls/${prNumber}/files?per_page=100`),
     { headers: headers() },
+    { auth: "read" },
   );
 }
 
@@ -327,6 +351,7 @@ export async function listPullRequestReviews(prNumber: number) {
   return githubFetch<GithubPullReview[]>(
     repoPath(`/pulls/${prNumber}/reviews?per_page=100`),
     { headers: headers() },
+    { auth: "read" },
   );
 }
 
@@ -338,6 +363,7 @@ export async function createPullRequestComment(prNumber: number, body: string) {
       headers: headers(),
       body: JSON.stringify({ body }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -349,6 +375,7 @@ export async function approvePullRequest(prNumber: number, body?: string) {
       headers: headers(),
       body: JSON.stringify({ event: "APPROVE", body: body || "Approved from AstroBox Creator Console." }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -367,6 +394,7 @@ export async function requestChangesPullRequest(
       headers: headers(),
       body: JSON.stringify(payload),
     },
+    { auth: "primary" },
   );
 }
 
@@ -377,6 +405,7 @@ export async function deletePullRequestComment(commentId: number) {
       method: "DELETE",
       headers: headers(),
     },
+    { auth: "primary" },
   );
 }
 
@@ -388,6 +417,7 @@ export async function updatePullRequestComment(commentId: number, body: string) 
       headers: headers(),
       body: JSON.stringify({ body }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -403,6 +433,7 @@ export async function updatePullRequestReview(
       headers: headers(),
       body: JSON.stringify({ body }),
     },
+    { auth: "primary" },
   );
 }
 
@@ -416,6 +447,7 @@ export async function deletePullRequestReview(
       method: "DELETE",
       headers: headers(),
     },
+    { auth: "primary" },
   );
 }
 
@@ -428,6 +460,7 @@ export async function compareCommits(
   return githubFetch<{ files: GithubPullFile[] }>(
     `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
     { headers: headers() },
+    { auth: "read" },
   );
 }
 
@@ -462,7 +495,8 @@ export async function getRepoCommit(
 ) {
   return githubFetch<GithubCommitInfo>(
     `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-    { headers: headers(token) },
+    { headers: token ? primaryHeaders(token) : headers() },
+    token ? undefined : { auth: "read" },
   );
 }
 
@@ -485,7 +519,8 @@ export async function searchRepoCommits(
   });
   return githubFetch<GithubCommitSearchResult>(
     `https://api.github.com/search/commits?${params.toString()}`,
-    { headers: headers(token) },
+    { headers: token ? primaryHeaders(token) : headers() },
+    token ? undefined : { auth: "primary" },
   );
 }
 
@@ -494,16 +529,17 @@ export async function listRepoFilesAtCommit(
   repo: string,
   commitSha: string,
 ) {
-  const auth = getGithubAuth();
   const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
     `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
+    { headers: headers() },
+    { auth: "read" },
   );
   const tree = await githubFetch<{
     tree: Array<{ path: string; type: string; mode: string; sha: string; size?: number }>;
   }>(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
+    { headers: headers() },
+    { auth: "read" },
   );
   return tree.tree
     .filter((item) => item.type === "blob")
@@ -520,17 +556,18 @@ export async function listRepoFileSizesAtCommit(
   repo: string,
   commitSha: string,
 ): Promise<{ files: Array<{ path: string; size: number }>; truncated: boolean }> {
-  const auth = getGithubAuth();
   const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
     `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
+    { headers: headers() },
+    { auth: "read" },
   );
   const tree = await githubFetch<{
     tree: Array<{ path: string; type: string; size?: number }>;
     truncated?: boolean;
   }>(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
+    { headers: headers() },
+    { auth: "read" },
   );
   return {
     files: tree.tree

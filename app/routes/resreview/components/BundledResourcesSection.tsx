@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useAccountState } from "~/logic/account/store";
+import { getGithubReadToken } from "~/logic/account/github-tokens";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import { fetchCatalogEntries, type CatalogEntry } from "~/logic/publish/catalog";
 import { formatResourceType } from "~/logic/publish/resource-type";
@@ -102,7 +103,10 @@ function BundledIcon({ url }: { url: string }) {
 /** manifest ext.bundledResources 的可视化：图标 + 名称 + 安装方式 + 存在性。 */
 export function BundledResourcesSection({ resource }: { resource: PrResourcePreview }) {
   const accountState = useAccountState();
-  const githubToken = accountState.github?.token;
+  const githubToken = useMemo(
+    () => getGithubReadToken() || undefined,
+    [accountState],
+  );
 
   const bundled = useMemo(
     () => normalizeBundledResources(resource.manifest?.ext?.bundledResources),

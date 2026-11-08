@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { loadAccountState } from "~/logic/account/store";
+import {
+  applyGithubRateLimitHeaders,
+  pickGithubReadIdentity,
+} from "~/logic/account/github-tokens";
 import {
   GITHUB_RAW_ACCEPT,
   isTauriRuntime,
@@ -38,10 +41,11 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
   const apiUrl = rawGithubUrlToApiUrl(url);
   const requestUrl = apiUrl ?? url;
   const headers: Record<string, string> = {};
+  // 公开资源优先走读取账号，分摊主账号的内容浏览额度。
+  const identity = apiUrl ? pickGithubReadIdentity() : null;
   if (apiUrl) {
-    const token = loadAccountState().github?.token;
-    if (!token) throw new Error("未登录 GitHub，无法获取资源内容。");
-    headers.Authorization = `Bearer ${token}`;
+    if (!identity) throw new Error("未登录 GitHub，无法获取资源内容。");
+    headers.Authorization = `Bearer ${identity.token}`;
     headers.Accept = GITHUB_RAW_ACCEPT;
   }
 
@@ -60,6 +64,9 @@ export async function fetchProxiedMediaUrl(url: string): Promise<string> {
     }
 
     const response = await fetch(toProxiedApiUrl(requestUrl), { headers });
+    if (identity) {
+      applyGithubRateLimitHeaders(identity.login, identity.role, response.headers);
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
