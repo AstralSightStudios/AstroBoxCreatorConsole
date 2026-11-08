@@ -1971,7 +1971,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           )
           .join("、")}）` +
           (resourceType === "canopus"
-            ? "。模块 ID 编译在模块二进制中，无法像资源包那样改写；请用资源 ID 重新构建 canopus 模块后导入。"
+            ? "。请把资源 ID 改成包内模块 ID，或用该资源 ID 重新构建 canopus 模块后导入。"
             : "，将无法自动检查更新，请先统一 ID。"),
       );
       return;

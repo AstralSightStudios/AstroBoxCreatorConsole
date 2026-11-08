@@ -373,6 +373,17 @@ export function DownloadsSection({
         Boolean(info.identity) &&
         Boolean(resourceId?.trim()) &&
         info.identity !== resourceId?.trim();
+      if (mismatch) {
+        // 身份不一致只在导入时用 toast 提醒；它不属于「包体配置」这一行的
+        // 常驻状态，塞在行内会让创作者以为每次发布都要处理一次。
+        toast.error(
+          `${info.source === "canopus-manifest" ? "包内模块 ID" : "包体包名"}（${info.identity}）与资源 ID（${resourceId?.trim()}）不一致` +
+            (info.source === "canopus-manifest"
+              ? "。请把资源 ID 改成包内模块 ID，或用该资源 ID 重新构建 canopus 模块后导入。"
+              : "，将无法自动检查更新，请先统一 ID。"),
+          { duration: 8000 },
+        );
+      }
       if (
         readable &&
         info.versionCode !== undefined &&
@@ -836,15 +847,6 @@ export function DownloadsSection({
                   )}
                 </div>
 
-                {isIdentityMismatch(item) && (
-                  <p className="text-xs text-red-300">
-                    {identityLabel(item)}（{item.packageIdentity}）与资源 ID（
-                    {resourceId}）不一致
-                    {item.packageSource === "canopus-manifest" || item.canopus
-                      ? "。模块 ID 编译在模块二进制中，无法像资源包那样改写；请用资源 ID 重新构建 canopus 模块后导入。"
-                      : "，将无法自动检查更新，且禁止修改版本。"}
-                  </p>
-                )}
                 {isNonIncrementRow(item) && (
                   <p className="text-xs text-red-300">
                     versionCode 未递增（{item.versionCode} ≤ 上次{" "}
