@@ -524,24 +524,76 @@ export async function searchRepoCommits(
   );
 }
 
+interface RepoTreeEntry {
+  path: string;
+  type: string;
+  mode?: string;
+  sha: string;
+  size?: number;
+}
+
+interface RepoTreeResult {
+  tree: RepoTreeEntry[];
+  truncated: boolean;
+}
+
+const repoTreeCache = new Map<
+  string,
+  { promise: Promise<RepoTreeResult>; expiresAt: number }
+>();
+const REPO_TREE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 读取某个提交的完整文件树。审核页的「改动文件」和「自动检查」都会请求同一
+ * 个 commit/tree，这里共用一次请求；失败不缓存，允许下次重试。
+ */
+function getRepoTree(
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<RepoTreeResult> {
+  const key = `${owner}/${repo}@${commitSha}`;
+  const cached = repoTreeCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const promise = (async () => {
+    const commit = await githubFetch<{
+      sha: string;
+      commit: { tree: { sha: string } };
+    }>(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
+      { headers: headers() },
+      { auth: "read" },
+    );
+    const tree = await githubFetch<{
+      tree: RepoTreeEntry[];
+      truncated?: boolean;
+    }>(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
+      { headers: headers() },
+      { auth: "read" },
+    );
+    return { tree: tree.tree, truncated: Boolean(tree.truncated) };
+  })();
+
+  repoTreeCache.set(key, {
+    promise,
+    expiresAt: Date.now() + REPO_TREE_CACHE_TTL_MS,
+  });
+  promise.catch(() => {
+    const current = repoTreeCache.get(key);
+    if (current?.promise === promise) repoTreeCache.delete(key);
+  });
+  return promise;
+}
+
 export async function listRepoFilesAtCommit(
   owner: string,
   repo: string,
   commitSha: string,
 ) {
-  const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
-    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
-    { headers: headers() },
-    { auth: "read" },
-  );
-  const tree = await githubFetch<{
-    tree: Array<{ path: string; type: string; mode: string; sha: string; size?: number }>;
-  }>(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
-    { headers: headers() },
-    { auth: "read" },
-  );
-  return tree.tree
+  const { tree } = await getRepoTree(owner, repo, commitSha);
+  return tree
     .filter((item) => item.type === "blob")
     .map((item) => item.path);
 }
@@ -556,23 +608,11 @@ export async function listRepoFileSizesAtCommit(
   repo: string,
   commitSha: string,
 ): Promise<{ files: Array<{ path: string; size: number }>; truncated: boolean }> {
-  const commit = await githubFetch<{ sha: string; commit: { tree: { sha: string } } }>(
-    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(commitSha)}`,
-    { headers: headers() },
-    { auth: "read" },
-  );
-  const tree = await githubFetch<{
-    tree: Array<{ path: string; type: string; size?: number }>;
-    truncated?: boolean;
-  }>(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees/${commit.commit.tree.sha}?recursive=1`,
-    { headers: headers() },
-    { auth: "read" },
-  );
+  const { tree, truncated } = await getRepoTree(owner, repo, commitSha);
   return {
-    files: tree.tree
+    files: tree
       .filter((item) => item.type === "blob" && typeof item.size === "number")
       .map((item) => ({ path: item.path, size: item.size as number })),
-    truncated: Boolean(tree.truncated),
+    truncated,
   };
 }

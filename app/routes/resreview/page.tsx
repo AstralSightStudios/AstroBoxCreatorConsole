@@ -217,6 +217,13 @@ export default function ResourceReviewPage() {
   const [failuresDrawerOpen, setFailuresDrawerOpen] = useState(false);
   const [retryingNumbers, setRetryingNumbers] = useState<Set<number>>(new Set());
   const loadDetailRef = useRef<number>(0);
+  /**
+   * 按 PR 的 updated_at 缓存最近一次完整时间线。列表刷新和详情加载共用，
+   * PR 没有变化时不再重复请求 comments + reviews。
+   */
+  const timelineCacheRef = useRef(
+    new Map<number, { updatedAt: string; comments: GithubIssueComment[] }>(),
+  );
 
   const canReview = hasCommunityRepoManagePermission(permission);
   const isInitialLoading =
@@ -313,18 +320,33 @@ export default function ResourceReviewPage() {
         list,
         6,
         async (pull) => {
-          try {
-            return [
-              pull.number,
-              filterReviewTagComments(
-                await listPullRequestTimeline(pull.number),
-                orgMembers,
-                pull.user?.login,
-              ),
-            ] as const;
-          } catch {
-            return [pull.number, []] as const;
+          const updatedAt = pull.updated_at || "";
+          const cached = timelineCacheRef.current.get(pull.number);
+          let comments: GithubIssueComment[];
+
+          if (cached && cached.updatedAt === updatedAt) {
+            comments = cached.comments;
+          } else {
+            try {
+              comments = await listPullRequestTimeline(pull.number);
+              timelineCacheRef.current.set(pull.number, {
+                updatedAt,
+                comments,
+              });
+            } catch {
+              // 限流等情况保留上一次缓存，避免把已知的审核状态清空。
+              comments = cached?.comments ?? [];
+            }
           }
+
+          return [
+            pull.number,
+            filterReviewTagComments(
+              comments,
+              orgMembers,
+              pull.user?.login,
+            ),
+          ] as const;
         },
       );
       const commentMap = Object.fromEntries(commentEntries);
@@ -351,6 +373,8 @@ export default function ResourceReviewPage() {
   };
 
   const handleRefreshList = () => {
+    // 手动刷新强制重新拉取时间线，不受 updated_at 缓存影响。
+    timelineCacheRef.current.clear();
     setRotate((prev) => prev + 360);
     setRefreshTick((prev) => prev + 1);
   };
@@ -382,13 +406,25 @@ export default function ResourceReviewPage() {
               return null;
             })
           : Promise.resolve(null);
-      const [nextComments, nextFiles, baseline] = await Promise.all([
-        listPullRequestTimeline(number).then((comments) =>
-          filterReviewTagComments(comments, orgMembers, pull?.user?.login),
-        ),
+      const updatedAt = pull?.updated_at || "";
+      const cachedTimeline = timelineCacheRef.current.get(number);
+      const timelinePromise =
+        cachedTimeline && cachedTimeline.updatedAt === updatedAt
+          ? Promise.resolve(cachedTimeline.comments)
+          : listPullRequestTimeline(number).then((comments) => {
+              timelineCacheRef.current.set(number, { updatedAt, comments });
+              return comments;
+            });
+      const [rawComments, nextFiles, baseline] = await Promise.all([
+        timelinePromise,
         listPullRequestFiles(number),
         baselinePromise,
       ]);
+      const nextComments = filterReviewTagComments(
+        rawComments,
+        orgMembers,
+        pull?.user?.login,
+      );
       if (callId !== loadDetailRef.current) return;
       const nextResourcePreviews =
         pull &&
@@ -566,6 +602,7 @@ export default function ResourceReviewPage() {
 
   const refreshDetail = () => {
     if (!openNumber) return;
+    timelineCacheRef.current.delete(openNumber);
     setDetailRotate((prev) => prev + 360);
     void loadDetail(openNumber);
   };

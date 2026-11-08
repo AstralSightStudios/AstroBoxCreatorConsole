@@ -238,7 +238,7 @@ function classifyGithubRateLimit(
     if (response.headers.get("retry-after")) {
         return { kind: "secondary", resource };
     }
-    if (/secondary rate limit/i.test(body)) {
+    if (/secondary rate limit|abuse/i.test(body)) {
         return { kind: "secondary", resource };
     }
     if (/rate limit/i.test(body)) {
