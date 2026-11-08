@@ -557,7 +557,9 @@ html[data-ui-narrow="false"] .titlebar-effect {
     position: fixed;
     inset: 0 0 auto;
     z-index: -1;
-    height: calc(52px + 2rem);
+    /* 与滚动内容预留的 Header 空间（52px + 0.5rem）严格对齐：
+       再往下就是页面内容，渐变不能继续盖在内容上。 */
+    height: calc(52px + 0.5rem);
     pointer-events: none;
     background-color: transparent !important;
 }
@@ -626,7 +628,7 @@ html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .app-page-
 }
 
 html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
-    --titlebar-effect-height: calc(var(--ui-safe-area-top) + 48px + 1rem);
+    --titlebar-effect-height: calc(var(--ui-safe-area-top) + 48px + 0.5rem);
 
     display: block;
     position: fixed;
@@ -639,7 +641,8 @@ html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect
 }
 
 html:is([data-ui-desktop="false"], [data-ui-scale-active="true"]) .titlebar-effect-gradient {
-    height: var(--ui-titlebar-gradient-height);
+    /* 渐变高度跟随顶栏容器，不再单独按 --ui-titlebar-gradient-height 往内容区延伸。 */
+    height: 100%;
     background-image: linear-gradient(
         to bottom,
         var(--color-background) 0%,
@@ -658,11 +661,7 @@ html:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect
 }
 
 html.macos:is([data-ui-narrow="true"], [data-ui-scale-active="true"]) .titlebar-effect {
-    --titlebar-effect-height: calc(var(--macos-titlebar-height) + 44px + 1rem);
-}
-
-html.macos:is([data-ui-desktop="false"], [data-ui-scale-active="true"]) .titlebar-effect-gradient {
-    height: var(--macos-titlebar-gradient-height);
+    --titlebar-effect-height: calc(var(--macos-titlebar-height) + 44px + 0.5rem);
 }
 
 /* ---- 私信列表顶部延展 ---- */
