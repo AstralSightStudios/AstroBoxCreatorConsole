@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
 import { ScrollArea } from "~/components/scroll-area";
-import { fetchProxiedMediaUrl, useProxiedMediaUrl } from "~/logic/media-proxy";
+import {
+  fetchProxiedMediaUrl,
+  useLazyProxiedMediaUrl,
+  useProxiedMediaUrl,
+} from "~/logic/media-proxy";
 import { inspectImageFile, type ImageMeta as ImageContentMeta } from "~/logic/publish/image-meta";
 import type { PrResourcePreview } from "../types";
 
@@ -22,8 +26,17 @@ function DimensionTrackedImage({
   className?: string;
   onLoad?: React.ReactEventHandler<HTMLImageElement>;
 }) {
-  const proxiedUrl = useProxiedMediaUrl(rawUrl);
-  return <img src={proxiedUrl} alt={alt} className={className} onLoad={onLoad} loading="lazy" />;
+  const { ref, resolvedUrl } = useLazyProxiedMediaUrl<HTMLImageElement>(rawUrl);
+  return (
+    <img
+      ref={ref}
+      src={resolvedUrl || undefined}
+      alt={alt}
+      className={`${className ?? ""} ${resolvedUrl ? "" : "min-h-24 min-w-16 bg-white/[0.03]"}`}
+      onLoad={onLoad}
+      loading="lazy"
+    />
+  );
 }
 
 function PreviewLightbox({

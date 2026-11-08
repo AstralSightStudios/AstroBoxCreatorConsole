@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyGithubRateLimitHeaders,
   pickGithubReadIdentity,
@@ -109,6 +109,71 @@ export function useProxiedMediaUrl(url: string | undefined) {
   }, [url]);
 
   return resolved;
+}
+
+/**
+ * 图片进入视口附近后才请求 Contents API，避免打开资源详情时一次性拉取全部
+ * 预览图。元素未挂载或 IntersectionObserver 不可用时回退为立即加载。
+ */
+export function useLazyProxiedMediaUrl<T extends Element = Element>(
+  url: string | undefined,
+  options: { rootMargin?: string } = {},
+): { ref: (element: T | null) => void; resolvedUrl: string } {
+  const [visible, setVisible] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState("");
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const rootMargin = options.rootMargin ?? "200px";
+
+  const ref = useCallback(
+    (element: T | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!element || !url || visible) return;
+      if (typeof IntersectionObserver === "undefined") {
+        setVisible(true);
+        return;
+      }
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            setVisible(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin },
+      );
+      observer.observe(element);
+      observerRef.current = observer;
+    },
+    [url, rootMargin, visible],
+  );
+
+  useEffect(() => {
+    if (!visible || !url) {
+      setResolvedUrl("");
+      return;
+    }
+    let cancelled = false;
+    fetchProxiedMediaUrl(url)
+      .then((next) => {
+        if (!cancelled) setResolvedUrl(next);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, url]);
+
+  useEffect(
+    () => () => {
+      observerRef.current?.disconnect();
+    },
+    [],
+  );
+
+  return { ref, resolvedUrl };
 }
 
 export function clearMediaProxyCache() {
