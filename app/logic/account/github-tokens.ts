@@ -209,7 +209,13 @@ export function applyGithubRateLimitPayload(
 
 export function markGithubAccountExhausted(login: string, resetAt: number): void {
     const current = quotaByLogin.get(quotaKey(login));
+    // 有的错误响应不带 X-RateLimit-*，这里把已知的 core 剩余量同步为 0，
+    // 避免设置页继续显示一个已经不可用的剩余额度。
+    const core = current?.core
+        ? { ...current.core, remaining: 0 }
+        : undefined;
     upsertQuota(login, current?.role ?? "reader", {
+        ...(core ? { core } : {}),
         coreExhaustedUntil: resetAt,
         updatedAt: Date.now(),
     });
