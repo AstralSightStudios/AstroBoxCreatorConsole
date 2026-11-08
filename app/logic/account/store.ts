@@ -28,10 +28,33 @@ export interface GithubAccount {
     profileUrl?: string;
 }
 
+export type GithubReaderAuthType = "oauth" | "pat";
+
+/**
+ * 内容读取账号：只用于公开内容的读取请求，永远不参与写操作。
+ * 独立于主账号 `github`，主账号仍负责审核、合并、评论和发布。
+ */
+export interface GithubReaderAccount {
+    avatar: string;
+    username: string;
+    name?: string;
+    token: string;
+    scopes: string[];
+    authType: GithubReaderAuthType;
+    profileUrl?: string;
+    addedAt: number;
+    /** PAT 的提醒日期（ISO 日期）；OAuth 为空。GitHub API 不返回 PAT 过期时间。 */
+    expiresAt?: string;
+}
+
+export const MAX_GITHUB_READERS = 10;
+
 export interface AccountState {
     activeProvider?: AccountProvider;
     astrobox?: AstroboxAccount;
     github?: GithubAccount;
+    /** 审核者专用的 GitHub 内容读取账号，仅用于分摊公开内容浏览的 API 额度。 */
+    githubReaders?: GithubReaderAccount[];
 }
 
 export interface DisplayAccount {
@@ -86,6 +109,68 @@ function parseState(raw: string | null): AccountState | undefined {
     }
 }
 
+function normalizeGithubReader(input: unknown): GithubReaderAccount | null {
+    if (!input || typeof input !== "object") return null;
+    const raw = input as Partial<GithubReaderAccount>;
+    const token = typeof raw.token === "string" ? raw.token : "";
+    const username = typeof raw.username === "string" ? raw.username.trim() : "";
+    if (!token || !username) return null;
+
+    const avatar = typeof raw.avatar === "string" ? raw.avatar.trim() : "";
+    const name = typeof raw.name === "string" ? raw.name.trim() : "";
+    const profileUrl =
+        typeof raw.profileUrl === "string" && raw.profileUrl.trim()
+            ? raw.profileUrl.trim()
+            : undefined;
+    const authType: GithubReaderAuthType = raw.authType === "pat" ? "pat" : "oauth";
+    const scopes = Array.isArray(raw.scopes)
+        ? raw.scopes.filter((scope): scope is string => typeof scope === "string")
+        : [];
+    const addedAt =
+        typeof raw.addedAt === "number" && Number.isFinite(raw.addedAt)
+            ? raw.addedAt
+            : Date.now();
+    const expiresAt =
+        typeof raw.expiresAt === "string" && raw.expiresAt.trim()
+            ? raw.expiresAt.trim()
+            : undefined;
+
+    return {
+        avatar,
+        username,
+        name: name || username,
+        token,
+        scopes,
+        authType,
+        profileUrl,
+        addedAt,
+        expiresAt,
+    };
+}
+
+/** 纯函数：去重、剔除与主账号同名的条目，并限制数量。 */
+export function normalizeGithubReaders(
+    readers: unknown,
+    primaryUsername?: string,
+): GithubReaderAccount[] {
+    if (!Array.isArray(readers)) return [];
+    const primaryKey = primaryUsername?.trim().toLowerCase() ?? "";
+    const seen = new Set<string>();
+    const normalized: GithubReaderAccount[] = [];
+
+    for (const item of readers) {
+        const reader = normalizeGithubReader(item);
+        if (!reader) continue;
+        const key = reader.username.toLowerCase();
+        if (key === primaryKey || seen.has(key)) continue;
+        seen.add(key);
+        normalized.push(reader);
+        if (normalized.length >= MAX_GITHUB_READERS) break;
+    }
+
+    return normalized;
+}
+
 function normalizeState(state: AccountState | undefined): AccountState {
     if (!state) return {};
 
@@ -117,6 +202,11 @@ function normalizeState(state: AccountState | undefined): AccountState {
           }
         : undefined;
 
+    const githubReaders = normalizeGithubReaders(
+        state.githubReaders,
+        github?.username,
+    );
+
     const activeProvider =
         state.activeProvider ??
         (astrobox ? "astrobox" : github ? "github" : undefined);
@@ -125,6 +215,7 @@ function normalizeState(state: AccountState | undefined): AccountState {
         activeProvider,
         astrobox,
         github,
+        githubReaders,
     };
 }
 
@@ -172,12 +263,76 @@ export function setGithubAccount(account: GithubAccount): AccountState {
     return next;
 }
 
+/** 添加读取账号；同 username 会更新 token，不会重复添加。 */
+export function addGithubReader(account: GithubReaderAccount): AccountState {
+    const state = loadAccountState();
+    const normalized = normalizeGithubReader(account);
+    if (!normalized) {
+        throw new Error("读取账号信息不完整。");
+    }
+
+    const primaryLogin = state.github?.username?.trim().toLowerCase() ?? "";
+    if (normalized.username.toLowerCase() === primaryLogin) {
+        throw new Error("不能把主账号添加为读取账号。");
+    }
+
+    const readers = state.githubReaders ?? [];
+    const index = readers.findIndex(
+        (reader) => reader.username.toLowerCase() === normalized.username.toLowerCase(),
+    );
+    const nextReaders =
+        index >= 0
+            ? readers.map((reader, readerIndex) =>
+                  readerIndex === index
+                      ? { ...normalized, addedAt: reader.addedAt }
+                      : reader,
+              )
+            : [...readers, normalized].slice(0, MAX_GITHUB_READERS);
+
+    const next: AccountState = { ...state, githubReaders: nextReaders };
+    saveAccountState(next);
+    return next;
+}
+
+export function removeGithubReader(username: string): AccountState {
+    const state = loadAccountState();
+    const key = username.trim().toLowerCase();
+    const next: AccountState = {
+        ...state,
+        githubReaders: (state.githubReaders ?? []).filter(
+            (reader) => reader.username.toLowerCase() !== key,
+        ),
+    };
+    saveAccountState(next);
+    return next;
+}
+
+export function updateGithubReaderToken(
+    username: string,
+    token: string,
+    expiresAt?: string,
+): AccountState {
+    const state = loadAccountState();
+    const key = username.trim().toLowerCase();
+    const next: AccountState = {
+        ...state,
+        githubReaders: (state.githubReaders ?? []).map((reader) =>
+            reader.username.toLowerCase() === key
+                ? { ...reader, token, expiresAt: expiresAt ?? reader.expiresAt }
+                : reader,
+        ),
+    };
+    saveAccountState(next);
+    return next;
+}
+
 export function logoutAccount(provider: AccountProvider) {
     const state = loadAccountState();
 
     const next: AccountState = {
         ...state,
         [provider]: undefined,
+        ...(provider === "github" ? { githubReaders: [] } : {}),
     };
 
     const remainingProvider =
