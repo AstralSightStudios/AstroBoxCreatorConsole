@@ -183,52 +183,102 @@ async function findPendingSubmissionConflicts(
     return null;
 }
 
+export interface OpenSubmissionLookupProgress {
+    done: number;
+    total: number;
+}
+
+/** 并发扫描开放 PR 时同时读取的文件数上限，避免触发二级速率限制。 */
+const OPEN_SUBMISSION_LOOKUP_CONCURRENCY = 4;
+
+async function pullReferencesResource(
+    token: string,
+    pull: { number: number; title: string },
+    resourceId: string,
+): Promise<{ prNumber: number; prTitle: string } | null> {
+    const files = await githubFetch<
+        Array<{ filename?: string; sha?: string }>
+    >(
+        `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${pull.number}/files?per_page=100`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    for (const file of files) {
+        const filePath = file.filename ?? "";
+        if (!isSubmissionFilePath(filePath)) continue;
+        if (!file.sha) continue;
+        try {
+            const text = await fetchBlobText(token, file.sha);
+            if (!text) continue;
+            if (filePath.endsWith(".json")) {
+                const request = parseSubmissionRequestJson(text);
+                if (
+                    request.mode === "edit" &&
+                    typeof request.original_id === "string" &&
+                    sameResourceId(request.original_id, resourceId)
+                ) {
+                    return { prNumber: pull.number, prTitle: pull.title };
+                }
+            } else {
+                const parsed = parseSubmissionCsv(text);
+                if (sameResourceId(parsed.id, resourceId)) {
+                    return { prNumber: pull.number, prTitle: pull.title };
+                }
+            }
+        } catch {
+            // 历史/脏数据解析失败：跳过该文件，不误判为冲突。
+            continue;
+        }
+    }
+    return null;
+}
+
 /**
  * 扫描所有开放 PR，返回第一个已引用该资源 ID 的提交（edit 的 original_id
  * 或 csv 行 id 命中即视为冲突）。解析失败的历史/脏数据跳过；无命中返回 null。
  * 供「管理」页进入编辑前预检：已有进行中 PR 时直接引导到审核页继续编辑。
+ *
+ * 扫描是点击后最慢的一步，因此并发读取（4 个 worker）并在每检查完一个 PR 时
+ * 通过 onProgress 汇报进度；命中后其余 worker 会在下一个检查点停止。
  */
 export async function findOpenSubmissionForResourceId(
     token: string,
     resourceId: string,
+    onProgress?: (progress: OpenSubmissionLookupProgress) => void,
 ): Promise<{ prNumber: number; prTitle: string } | null> {
     const pulls = await listOpenPulls(token);
-    for (const pull of pulls) {
-        const files = await githubFetch<
-            Array<{ filename?: string; sha?: string }>
-        >(
-            `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${pull.number}/files?per_page=100`,
-            { headers: { Authorization: `Bearer ${token}` } },
-        );
-        for (const file of files) {
-            const filePath = file.filename ?? "";
-            if (!isSubmissionFilePath(filePath)) continue;
-            if (!file.sha) continue;
-            try {
-                const text = await fetchBlobText(token, file.sha);
-                if (!text) continue;
-                if (filePath.endsWith(".json")) {
-                    const request = parseSubmissionRequestJson(text);
-                    if (
-                        request.mode === "edit" &&
-                        typeof request.original_id === "string" &&
-                        sameResourceId(request.original_id, resourceId)
-                    ) {
-                        return { prNumber: pull.number, prTitle: pull.title };
-                    }
-                } else {
-                    const parsed = parseSubmissionCsv(text);
-                    if (sameResourceId(parsed.id, resourceId)) {
-                        return { prNumber: pull.number, prTitle: pull.title };
-                    }
-                }
-            } catch {
-                // 历史/脏数据解析失败：跳过该文件，不误判为冲突。
-                continue;
+    const total = pulls.length;
+    onProgress?.({ done: 0, total });
+    if (total === 0) return null;
+
+    let next = 0;
+    let done = 0;
+    let found: { prNumber: number; prTitle: string } | null = null;
+
+    const worker = async () => {
+        while (!found && next < total) {
+            const index = next;
+            next += 1;
+            const match = await pullReferencesResource(
+                token,
+                pulls[index],
+                resourceId,
+            );
+            done += 1;
+            onProgress?.({ done, total });
+            if (match) {
+                found = match;
+                return;
             }
         }
-    }
-    return null;
+    };
+
+    await Promise.all(
+        Array.from(
+            { length: Math.min(OPEN_SUBMISSION_LOOKUP_CONCURRENCY, total) },
+            () => worker(),
+        ),
+    );
+    return found;
 }
 
 async function commitFilesToBranch(params: {

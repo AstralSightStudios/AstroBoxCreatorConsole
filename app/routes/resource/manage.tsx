@@ -10,6 +10,7 @@ import {
   Callout,
   Spinner,
   Badge,
+  Dialog,
   SegmentedControl,
 } from "~/components/ScaleAwareThemes";
 import { useNavigate } from "react-router";
@@ -37,6 +38,7 @@ export default function ResourceManage() {
   const [error, setError] = useState("");
   const [selectError, setSelectError] = useState("");
   const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [selectProgress, setSelectProgress] = useState<string | null>(null);
   const viewMode = useListViewMode("resource-manage-view");
 
   useEffect(() => {
@@ -71,14 +73,23 @@ export default function ResourceManage() {
       catalog,
     };
     setSelectingId(catalog.entry.id);
+    setSelectProgress("正在检查进行中的提交…");
     try {
       const token = loadAccountState().github?.token;
       if (token) {
         const open = await findOpenSubmissionForResourceId(
           token,
           catalog.entry.id,
+          ({ done, total }) => {
+            if (total > 0) {
+              setSelectProgress(
+                `正在检查进行中的提交（${done}/${total}）…`,
+              );
+            }
+          },
         );
         if (open) {
+          setSelectProgress("正在载入提交信息…");
           try {
             const username = loadAccountState().github?.username
               ?.trim()
@@ -99,6 +110,7 @@ export default function ResourceManage() {
             toast.warning(
               `资源「${catalog.entry.name}」已有进行中的提交 PR #${open.prNumber}《${open.prTitle}》，已为你打开该提交继续编辑。`,
             );
+            setSelectProgress("正在打开编辑器…");
             navigate("/publish/edit", {
               state: { editContext: opened },
             });
@@ -117,12 +129,28 @@ export default function ResourceManage() {
       // 预检扫描失败不阻塞编辑，交给提交阶段的重复提交守卫兜底。
     } finally {
       setSelectingId(null);
+      setSelectProgress(null);
     }
     navigate("/manage/edit", { state: { editContext } });
   };
 
   return (
     <Page>
+      <Dialog.Root open={selectingId !== null}>
+        <Dialog.Content
+          className="max-w-[360px]"
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <Dialog.Title className="sr-only">正在处理</Dialog.Title>
+          <div className="flex flex-col items-center gap-3 py-1">
+            <Spinner size="3" />
+            <Dialog.Description className="text-sm font-medium text-white/70">
+              {selectProgress || "正在载入..."}
+            </Dialog.Description>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
       <div className="flex flex-col gap-4 px-3 pb-8 pt-3 sm:px-5">
         <PageHeader
           title="已发布资源"
@@ -168,14 +196,16 @@ export default function ResourceManage() {
             </Callout.Root>
           )}
           {loading && (
-            <Callout.Root color="gray" variant="soft" highContrast>
-              <Callout.Icon>
-                <Spinner size="2" />
-              </Callout.Icon>
-              <Callout.Text className="font-semibold text-white/45">
+            <div
+              className="flex flex-col items-center justify-center gap-2.5 px-3 py-8"
+              role="status"
+              aria-live="polite"
+            >
+              <Spinner size="2" />
+              <span className="text-sm font-semibold text-white/45">
                 正在载入资源目录...
-              </Callout.Text>
-            </Callout.Root>
+              </span>
+            </div>
           )}
           {error && (
             <Callout.Root color="red" variant="soft">
