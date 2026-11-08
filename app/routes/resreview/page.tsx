@@ -631,6 +631,7 @@ export default function ResourceReviewPage() {
       } else {
         await deletePullRequestComment(comment.id);
       }
+      timelineCacheRef.current.delete(openNumber);
       await loadDetail(openNumber);
       toast.success("评论已删除");
     } catch (err) {
@@ -695,6 +696,7 @@ export default function ResourceReviewPage() {
       setGeneralComment("");
       setReplyTarget(null);
       setEditingTarget(null);
+      timelineCacheRef.current.delete(number);
       await loadDetail(number);
       let resentNotice = false;
       if (editingTarget?.ccNotice && noticeDraft?.enabled) {
@@ -758,6 +760,10 @@ export default function ResourceReviewPage() {
     try {
       await approvePullRequest(number);
       toast.success("已提交 GitHub approve", { duration: 4000 });
+      timelineCacheRef.current.delete(number);
+      void loadDetail(number).catch(() => {
+        // 刷新时间线失败不影响 approve 已成功的提示。
+      });
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -888,6 +894,7 @@ export default function ResourceReviewPage() {
         setApproving(false);
       }
       if (!approved) return;
+      timelineCacheRef.current.delete(number);
     }
     if (skippedApprove) {
       toast.message("当前合入本人 PR，已跳过 approve");
@@ -913,6 +920,7 @@ export default function ResourceReviewPage() {
       });
       toast.success("PR 已关闭，并已记录 CLOSE 标签评论。");
       await loadPulls();
+      timelineCacheRef.current.delete(number);
       await loadDetail(number);
     } catch (err) {
       toast.error(getErrorMessage(err));
