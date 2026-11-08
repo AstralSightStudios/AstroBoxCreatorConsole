@@ -4,6 +4,7 @@ import {
   applyGithubRateLimitPayload,
   clearGithubQuotas,
   getGithubQuota,
+  markGithubAccountExhausted,
   resolveGithubAuthPurpose,
   selectGithubReadIdentity,
   type GithubAccountQuota,
@@ -242,6 +243,29 @@ describe("applyGithubRateLimitHeaders", () => {
     expect(
       applyGithubRateLimitHeaders("bob", "reader", new Headers()),
     ).toBeNull();
+  });
+});
+
+describe("markGithubAccountExhausted", () => {
+  beforeEach(() => {
+    clearGithubQuotas();
+  });
+
+  test("把已知 core 剩余量同步为 0", () => {
+    applyGithubRateLimitHeaders(
+      "bob",
+      "reader",
+      new Headers({
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4000",
+        "x-ratelimit-reset": "100",
+      }),
+    );
+    markGithubAccountExhausted("bob", 250_000);
+
+    const quota = getGithubQuota("bob");
+    expect(quota?.core?.remaining).toBe(0);
+    expect(quota?.coreExhaustedUntil).toBe(250_000);
   });
 });
 
