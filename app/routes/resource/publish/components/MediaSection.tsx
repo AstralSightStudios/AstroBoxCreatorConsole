@@ -17,10 +17,7 @@ import {
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "~/components/ScaleAwareThemes";
-import {
-  ICON_MAX_DIMENSION,
-  PUBLISH_PREVIEWS_MIN,
-} from "~/logic/publish/pre-publish-checks";
+import { PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { FieldHelpItem, UploadItem } from "./shared";
@@ -87,13 +84,13 @@ const MEDIA_FIELD_HELP: FieldHelpItem[] = [
     group: "规格",
     label: "图标",
     icon: <SquareIcon size={16} weight="duotone" />,
-    description: `宽高比 1:1，超出 ${ICON_MAX_DIMENSION}px 会自动压缩；不支持动图。`,
+    description: "宽高比 1:1；不支持动图。",
   },
   {
     group: "规格",
     label: "封面",
     icon: <CropIcon size={16} weight="duotone" />,
-    description: "宽高比 3:2（保留两位小数为 1.50）；不支持动图。",
+    description: "宽高比 3:2；不支持动图。",
   },
   {
     group: "规格",
@@ -798,7 +795,7 @@ export function MediaSection({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <MediaTile
             label="图标"
-            hint={`宽高比 1:1 · 超出 ${ICON_MAX_DIMENSION}px 自动压缩`}
+            hint="宽高比 1:1"
             fieldKey="icon"
             dropActive={mediaDropTarget === "icon"}
             media={icon}
@@ -811,7 +808,7 @@ export function MediaSection({
           />
           <MediaTile
             label="封面"
-            hint="宽高比 3:2（保留两位小数为 1.50）"
+            hint="宽高比 3:2"
             fieldKey="cover"
             dropActive={mediaDropTarget === "cover"}
             media={cover}
