@@ -3,6 +3,7 @@ import {
   deriveNeedFixAuthors,
   deriveReviewStatus,
   filterReviewTagComments,
+  hasHideTag,
   resolveLatestTagAction,
 } from "../../app/logic/publish/review-status";
 import { parseReviewCommentBody } from "../../app/routes/resreview/utils/comment";
@@ -144,6 +145,38 @@ describe("review tags", () => {
       created_at: "2026-08-12T10:00:00Z",
     };
     expect(resolveLatestTagAction([commentWithQuote])).toBeNull();
+  });
+
+  test("HIDE tag only counts when the PR author sent it", () => {
+    const authorHide = {
+      id: 20,
+      body: "[ABCC_HIDE] 隐藏这条记录",
+      user: { login: "creator" },
+    };
+    const outsiderHide = {
+      id: 21,
+      body: "[ABCC_HIDE] 冒充作者",
+      user: { login: "outsider" },
+    };
+    const quoted = {
+      id: 22,
+      body: "> [ABCC_HIDE] 引用旧评论",
+      user: { login: "creator" },
+    };
+
+    expect(hasHideTag([authorHide], "creator")).toBe(true);
+    expect(hasHideTag([outsiderHide], "creator")).toBe(false);
+    expect(hasHideTag([quoted], "creator")).toBe(false);
+    expect(hasHideTag([authorHide], undefined)).toBe(false);
+  });
+
+  test("filter keeps the author's HIDE tag and drops outsiders'", () => {
+    const comments = [
+      { id: 30, body: "[ABCC_HIDE] 隐藏", user: { login: "creator" } },
+      { id: 31, body: "[ABCC_HIDE] 恶意", user: { login: "outsider" } },
+    ];
+    const filtered = filterReviewTagComments(comments, MEMBERS, "creator");
+    expect(filtered.map((comment) => comment.id)).toEqual([30]);
   });
 });
 

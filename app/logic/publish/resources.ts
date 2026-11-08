@@ -1,4 +1,5 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
+import { loadRepoEnvId } from "~/config/repoEnv";
 import { loadAccountState } from "../account/store";
 import { githubFetch } from "./github-actions";
 import {
@@ -24,6 +25,7 @@ import {
 import {
     deriveReviewStatus,
     filterReviewTagComments,
+    hasHideTag,
     type NeedFixItem,
     type ReviewState,
 } from "./review-status";
@@ -47,6 +49,8 @@ export interface PublishingResource {
     prTitle: string;
     prUrl: string;
     prState: "open" | "closed" | "merged";
+    /** 创作者用 [ABCC_HIDE] 评论隐藏的 closed 记录；open 记录不隐藏。 */
+    hidden?: boolean;
     refused?: boolean;
     refuseReason?: string;
     prHead?: { owner: string; repo: string; ref: string };
@@ -368,11 +372,19 @@ async function mapWithConcurrency<T, R>(
 const CATALOG_CSV_HEADER =
     "id,name,restype,repo_owner,repo_name,repo_commit_hash,icon,cover,tags,device_vendors,devices,paid_type";
 
-let inProgressCache: {
+interface InProgressPageCacheEntry {
     signature: string;
-    mode: "legacy" | "staging";
     data: PublishingResource[];
-} | null = null;
+    hasMore: boolean;
+}
+
+/** 按仓库环境 + 账号 + 页码缓存，避免来回切页时重复拉评论与文件。 */
+const inProgressPageCache = new Map<string, InProgressPageCacheEntry>();
+
+/** 隐藏/恢复后清掉本次会话的列表缓存，下次进入页面重新从 PR 时间线计算。 */
+export function clearInProgressResourcesCache() {
+    inProgressPageCache.clear();
+}
 
 function parseCatalogEntryRow(row: string) {
     return parseCatalogCsv(`${CATALOG_CSV_HEADER}\n${row}`)[0];
@@ -438,15 +450,27 @@ interface MyReviewPullRequest {
     } | null;
 }
 
+/** 单页 PR 数量。隐藏记录仍占用 API 的原始分页名额，分页按钮让用户继续往前翻。 */
+const MY_REVIEW_PAGE_SIZE = 50;
+
+interface MyReviewPullRequestPage {
+    pulls: MyReviewPullRequest[];
+    /** 是否还有更早的 PR 可以继续加载。 */
+    hasMore: boolean;
+}
+
 /**
- * 优先用 search API 只拉当前用户自己的 PR（不受仓库前 50 条限制）；
- * search 失败时回退到 pulls API。search 索引可能有几秒延迟，
- * 所以额外合并一次 state=open 的 pulls 结果保证最新提交立即可见。
+ * 按页拉取当前用户的 PR。
+ *
+ * 只拉第一页时额外合并一次 REST state=all：它同时承担 head 信息（含分支是否
+ * 已删除）与 search 索引延迟时最新创建的 open PR 兜底。后续页只走 search，
+ * 避免每次翻页都重复拉整份仓库 PR 列表。
  */
 async function fetchMyReviewPullRequests(
     token: string,
     username: string,
-): Promise<MyReviewPullRequest[]> {
+    page: number,
+): Promise<MyReviewPullRequestPage> {
     const owner = PUBLISH_CONFIG.targetPrRepoOwner;
     const repo = PUBLISH_CONFIG.targetPrRepoName;
     const headers = { Authorization: `Bearer ${token}` };
@@ -455,8 +479,11 @@ async function fetchMyReviewPullRequests(
 
     const searchPromise = (async () => {
         try {
-            const query = `repo:${owner}/${repo} type:pr author:${username}`;
+            // is:unmerged 让 GitHub 先在服务端排除已合入 PR，避免它们占用 50 条
+            // 分页名额，也让 total_count 与实际可加载的条数一致。
+            const query = `repo:${owner}/${repo} type:pr author:${username} is:unmerged`;
             const data = await githubFetch<{
+                total_count?: number;
                 items?: Array<{
                     number?: number;
                     title?: string;
@@ -469,17 +496,21 @@ async function fetchMyReviewPullRequests(
                     pull_request?: { merged_at?: string | null };
                 }>;
             }>(
-                `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`,
+                `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=${MY_REVIEW_PAGE_SIZE}&page=${page}`,
                 { headers },
             );
-            return (data.items || [])
-                .filter(
-                    (item) =>
-                        item.number != null &&
-                        !item.merged_at &&
-                        !item.pull_request?.merged_at,
-                )
-                .map((item) => ({
+            const items = (data.items || []).filter(
+                (item) =>
+                    item.number != null &&
+                    !item.merged_at &&
+                    !item.pull_request?.merged_at,
+            );
+            const total =
+                typeof data.total_count === "number"
+                    ? data.total_count
+                    : page * MY_REVIEW_PAGE_SIZE;
+            return {
+                items: items.map((item) => ({
                     number: item.number!,
                     title: item.title || "",
                     state: item.state || "open",
@@ -488,25 +519,44 @@ async function fetchMyReviewPullRequests(
                     updated_at: item.updated_at,
                     html_url: item.html_url,
                     merged_at: null,
-                }));
+                })),
+                hasMore: page * MY_REVIEW_PAGE_SIZE < total,
+            };
         } catch (error) {
             console.error("search API 不可用，回退到 pulls API", error);
             return null;
         }
     })();
 
-    // REST state=all 同时承担：回退数据源、head 信息（含分支是否已删除）、
-    // 以及兜底 search 索引延迟时最新创建的 open PR。
-    const allPulls = await githubFetch<any[]>(
-        `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=100`,
-        { headers },
-    );
+    // 后续页不需要 head 兜底，也不应重复请求整份仓库 PR 列表。
+    if (page > 1) {
+        const searchResult = await searchPromise;
+        if (!searchResult) {
+            // 抛给 loadMore：失败时保留「加载更多」按钮，用户可以直接重试。
+            throw new Error("加载更多 PR 失败，请稍后重试。");
+        }
+        return {
+            pulls: searchResult.items,
+            hasMore: searchResult.hasMore,
+        };
+    }
+
+    // head 信息只是增强项（编辑时会按 PR 号重新拉取）；这里失败不应拖垮整个列表。
+    let allPulls: any[] = [];
+    try {
+        allPulls = await githubFetch<any[]>(
+            `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=100`,
+            { headers },
+        );
+    } catch (error) {
+        console.error("拉取仓库 PR 列表失败，跳过 head 兜底", error);
+    }
     const validPulls = allPulls.filter(
         (pull) => !pull.merged_at && Boolean(pull.head?.repo),
     );
-    const searchItems = await searchPromise;
-    if (searchItems === null) {
-        return validPulls;
+    const searchResult = await searchPromise;
+    if (searchResult === null) {
+        return { pulls: validPulls, hasMore: false };
     }
 
     const headByNumber = new Map<number, any>();
@@ -514,7 +564,7 @@ async function fetchMyReviewPullRequests(
         headByNumber.set(pull.number, pull.head);
     }
     const byNumber = new Map<number, MyReviewPullRequest>();
-    for (const item of searchItems) {
+    for (const item of searchResult.items) {
         const head = headByNumber.get(item.number);
         // REST 里能查到该 PR 且 head 分支已被删除 → 不显示（无法重开/更新）。
         if (headByNumber.has(item.number) && !head?.repo) continue;
@@ -540,9 +590,12 @@ async function fetchMyReviewPullRequests(
             });
         }
     }
-    return Array.from(byNumber.values()).sort((a, b) =>
-        (b.updated_at || "").localeCompare(a.updated_at || ""),
-    );
+    return {
+        pulls: Array.from(byNumber.values()).sort((a, b) =>
+            (b.updated_at || "").localeCompare(a.updated_at || ""),
+        ),
+        hasMore: searchResult.hasMore,
+    };
 }
 
 function submissionEntryFromPullFiles(
@@ -572,25 +625,43 @@ function submissionEntryFromPullFiles(
     return byPath;
 }
 
-export async function loadInProgressResourcesForCurrentUser(): Promise<PublishingResource[]> {
-    const mode = "staging";
+export interface InProgressResourcesPage {
+    data: PublishingResource[];
+    /** 是否还有更早的 PR 可以继续加载。 */
+    hasMore: boolean;
+}
+
+/**
+ * 拉取创作者侧的「审核列表」。
+ *
+ * 每次只处理一页 PR（默认 50 条）；被 [ABCC_HIDE] 隐藏的记录仍会占用这一页的
+ * 原始名额，但不会阻止继续加载更早的页。页面按需调用，避免一次性把所有历史 PR
+ * 的评论与文件都拉下来。
+ */
+export async function loadInProgressResourcesForCurrentUser(
+    options: { page?: number } = {},
+): Promise<InProgressResourcesPage> {
+    const page = Math.max(1, Math.trunc(options.page ?? 1));
     const { token, username } = requireGithubAccount();
-    const pulls = await fetchMyReviewPullRequests(token, username);
+    const { pulls, hasMore } = await fetchMyReviewPullRequests(
+        token,
+        username,
+        page,
+    );
     const signature = pulls
         .map(
             (pull) =>
                 `${pull.state || "open"}:${pull.number}:${pull.updated_at || ""}`,
         )
         .join("|");
-    if (inProgressCache && inProgressCache.mode === mode && inProgressCache.signature === signature) {
-        return inProgressCache.data;
+    const cacheKey = `${loadRepoEnvId()}:${username.toLowerCase()}:${page}`;
+    const cached = inProgressPageCache.get(cacheKey);
+    if (cached && cached.signature === signature) {
+        return { data: cached.data, hasMore: cached.hasMore };
     }
-    const result =
-        mode === "staging"
-            ? await loadInProgressStagingResourcesForCurrentUser(pulls)
-            : await loadInProgressLegacyResourcesForCurrentUser(pulls);
-    inProgressCache = { signature, mode, data: result };
-    return result;
+    const data = await loadInProgressStagingResourcesForCurrentUser(pulls);
+    inProgressPageCache.set(cacheKey, { signature, data, hasMore });
+    return { data, hasMore };
 }
 
 async function loadInProgressLegacyResourcesForCurrentUser(
@@ -635,6 +706,9 @@ async function loadInProgressLegacyResourcesForCurrentUser(
                       .trim()
                 : "";
             const review = deriveReviewStatus(filteredComments);
+            // 隐藏只作用于 closed 记录：PR 之后被重新打开时应重新出现在列表里。
+            const hidden =
+                pr.state === "closed" && hasHideTag(comments, pr.user?.login);
             const relatedEntries = extractCatalogEntriesFromPullFiles(files);
             const headRepo = pr.head?.repo;
             const out: PublishingResource[] = [];
@@ -657,6 +731,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(
                     prTitle: pr.title,
                     prUrl: pr.html_url || "",
                     prState,
+                    hidden: hidden || undefined,
                     refused: refused || undefined,
                     refuseReason: refuseReason || undefined,
                     prHead: headRepo
@@ -729,6 +804,9 @@ async function loadInProgressStagingResourcesForCurrentUser(
                       .trim()
                 : "";
             const review = deriveReviewStatus(filteredComments);
+            // 隐藏只作用于 closed 记录：PR 之后被重新打开时应重新出现在列表里。
+            const hidden =
+                pr.state === "closed" && hasHideTag(comments, pr.user?.login);
             const entriesByPath = submissionEntryFromPullFiles(files);
             const headRepo = pr.head?.repo;
             const out: PublishingResource[] = [];
@@ -752,6 +830,7 @@ async function loadInProgressStagingResourcesForCurrentUser(
                     prTitle: pr.title,
                     prUrl: pr.html_url || "",
                     prState,
+                    hidden: hidden || undefined,
                     refused: refused || undefined,
                     refuseReason: refuseReason || undefined,
                     prHead: headRepo

@@ -85,7 +85,39 @@ export function deriveNeedFixAuthors(
         }));
 }
 
-const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
+const COMMENT_PATTERN = /^\s*\[ABCC_(NEEDFIX|FIXED|CLOSE|REOPEN|REFUSE|HIDE)(?:_([^\]]+))?\]\s*([\s\S]*)$/i;
+
+/**
+ * 创作者在审核列表里主动隐藏的 PR 标记。
+ *
+ * 藏的是 ABCC 自己的展示，不是删除 GitHub 上的 PR：标记以评论形式留在 PR 上，
+ * 换设备、重装后重新拉取时间线仍能读到。只认 PR 作者本人发送的标记，
+ * 其他人评论同样的内容不会影响创作者的列表。
+ */
+const HIDE_TAG_PATTERN = /^\s*\[ABCC_HIDE\]/i;
+
+export const HIDE_PR_COMMENT =
+    "[ABCC_HIDE] 创作者已将该提交记录隐藏在 AstroBox Creator Console 的审核列表中。";
+
+export function isHideTagComment(
+    comment: { body?: string; user?: { login?: string } },
+    prAuthor?: string,
+): boolean {
+    const author = prAuthor?.trim().toLowerCase();
+    if (!author) return false;
+    return (
+        HIDE_TAG_PATTERN.test(comment.body?.trim() || "") &&
+        comment.user?.login?.trim().toLowerCase() === author
+    );
+}
+
+/** 时间线里是否存在由 PR 作者本人发送的 [ABCC_HIDE] 标记。 */
+export function hasHideTag(
+    comments: Array<{ body?: string; user?: { login?: string } }>,
+    prAuthor?: string,
+): boolean {
+    return comments.some((comment) => isHideTagComment(comment, prAuthor));
+}
 
 export type TagAction = "close" | "reopen";
 
@@ -131,10 +163,10 @@ export function filterReviewTagComments<T extends {
         const login = comment.user?.login;
         const isMember = Boolean(login && allowedAuthors.has(login));
         const isAuthor = Boolean(prAuthor && login && login === prAuthor);
-        // FIXED / REOPEN 由 PR 创建者通过工具发送，属于合法流程；
+        // FIXED / REOPEN / HIDE 由 PR 创建者通过工具发送，属于合法流程；
         // 其余标签（NEEDFIX/CLOSE/REFUSE）只能由组织 member 发送。
         const isAuthorFlowTag =
-            /^\s*\[ABCC_(?:FIXED|REOPEN)(?:_[^\]]+)?\]/i.test(body);
+            /^\s*\[ABCC_(?:FIXED|REOPEN|HIDE)(?:_[^\]]+)?\]/i.test(body);
         return isMember || (isAuthor && isAuthorFlowTag);
     });
 }
