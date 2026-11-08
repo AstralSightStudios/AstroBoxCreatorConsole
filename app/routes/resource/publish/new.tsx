@@ -1706,6 +1706,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     packageIdentity?: string;
     packageIdentityKind?: DownloadInput["packageIdentityKind"];
     packageWritable?: boolean;
+    packageUnwritableReason?: string;
+    packageSource?: DownloadInput["packageSource"];
     canopus?: DownloadInput["canopus"];
   }) => {
     log.info("download/row", "一键填充下载配置", {
@@ -1734,6 +1736,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        packageUnwritableReason: template.packageUnwritableReason,
+        packageSource: template.packageSource,
         canopus: template.canopus,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
@@ -1822,6 +1826,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     packageIdentity?: string;
     packageIdentityKind?: DownloadInput["packageIdentityKind"];
     packageWritable?: boolean;
+    packageUnwritableReason?: string;
+    packageSource?: DownloadInput["packageSource"];
     canopus?: DownloadInput["canopus"];
   }) => {
     log.info("download/trial/row", "一键填充试用下载配置", {
@@ -1846,6 +1852,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         packageIdentity: template.packageIdentity,
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
+        packageUnwritableReason: template.packageUnwritableReason,
+        packageSource: template.packageSource,
         canopus: template.canopus,
         updatelogs: template.updatelogs
           ? template.updatelogs.map((log) => ({ ...log }))
@@ -1956,12 +1964,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     );
     if (identityMismatch.length > 0) {
       toast.error(
-        `包体包名与资源 ID 不一致（${identityMismatch
+        `${resourceType === "canopus" ? "包内模块 ID" : "包体包名"}与资源 ID 不一致（${identityMismatch
           .map(
             (d) =>
               `${sortedDeviceOptions.find((opt) => opt.id === d.platformId)?.name || d.platformId || "未选设备"}: ${d.packageIdentity}`,
           )
-          .join("、")}），将无法自动检查更新，请先统一 ID。`,
+          .join("、")}）` +
+          (resourceType === "canopus"
+            ? "。模块 ID 编译在模块二进制中，无法像资源包那样改写；请用资源 ID 重新构建 canopus 模块后导入。"
+            : "，将无法自动检查更新，请先统一 ID。"),
       );
       return;
     }
@@ -3048,6 +3059,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
             packageIdentity: info.identity,
             packageIdentityKind: info.identityKind,
             packageWritable: info.writable,
+            packageUnwritableReason: info.reason,
+            packageSource: info.source,
             canopus: info.canopus,
           };
         }),

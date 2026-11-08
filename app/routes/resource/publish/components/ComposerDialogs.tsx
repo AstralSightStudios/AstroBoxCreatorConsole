@@ -216,14 +216,14 @@ export function VersionIncrementWarningDialog({
               {deviceLabel(sortedDeviceOptions, row.platformId)}
               ：versionCode {row.versionCode} ≤ 上次 {row.previousVersionCode}
               {/*
-                逐行标注能否就地改。rpk 行的处理方式完全不同，混在一句
-                「请修改版本」里，创作者会点开编辑框才发现改不了。
+                逐行标注能否就地改。不可改写的包体处理方式各不相同，混在一句
+                「请修改版本」里，创作者会点开编辑框才发现改不了。具体原因取自
+                包体解析结果，避免把 .canopus 也套上 rpk 的签名文案。
               */}
               {row.packageWritable === false && (
                 <p className="mt-1 text-xs leading-relaxed text-amber-200/85">
-                  这是已签名的 rpk，无法在控制台内改版本。请在 rpk 构建工具链中改好{" "}
-                  <code>manifest.json</code> 的 <code>versionName</code> /{" "}
-                  <code>versionCode</code>，用 <code>aiot release</code> 重新打包，再回这里重新导入包体。
+                  {row.packageUnwritableReason ??
+                    "该包体无法在控制台内改版本，请按构建工具链重新打包后再导入。"}
                 </p>
               )}
             </div>

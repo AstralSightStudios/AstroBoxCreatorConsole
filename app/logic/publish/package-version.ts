@@ -1,7 +1,9 @@
 import { unzipSync, zipSync, type Unzipped } from "fflate";
 import {
+  canopusPackageWriteBlocker,
   isTarArchive,
   readCanopusPackage,
+  rewriteCanopusPackage,
   type ManifestCanopusMeta,
 } from "./canopus-package";
 import {
@@ -24,7 +26,8 @@ import {
  *   包体标识取 `themeId`。
  * - 原生 Canopus 模块（`.canopus`，未压缩 tar）：`manifest.json` 的 `version` /
  *   `version_code`，包体标识取 `module_id`；同时给出商店条目的 `canopus` 元数据。
- *   不可改写：回执里绑定了产物哈希与 `module_version`。
+ *   包本身没有签名，可以改写；写路径会同步更新每个产物的安装回执
+ *   （+20 的 `module_version`）与 `receipt_sha256`。
  *
  * ## 为什么 rpk 不能改版本
  *
@@ -67,9 +70,6 @@ const RPK_UNWRITABLE_REASON =
   "快应用 rpk 带签名，改动包内任一字节都会导致手环验签失败、无法安装。" +
   "请在 rpk 构建工具链中改好 manifest.json 的 versionName / versionCode，用 aiot release 重新打包后再重新导入包体。";
 
-const CANOPUS_UNWRITABLE_REASON =
-  ".canopus 包的安装回执绑定了产物哈希与 module_version，不能在控制台里改版本。" +
-  "请用 canopus package 重新打包后再导入。";
 
 export type PackageVersionSource =
   | "zip-manifest"
@@ -368,6 +368,12 @@ function findCrpackManifestName(entries: Unzipped): string | undefined {
 function readCanopusManifest(bytes: Uint8Array): PackageVersionInfo {
   try {
     const info = readCanopusPackage(bytes);
+    let blocker: string | null;
+    try {
+      blocker = canopusPackageWriteBlocker(bytes);
+    } catch (error) {
+      blocker = error instanceof Error ? error.message : String(error);
+    }
     return {
       version: info.version,
       versionCode: info.versionCode,
@@ -375,9 +381,9 @@ function readCanopusManifest(bytes: Uint8Array): PackageVersionInfo {
       identityKind: "package",
       source: "canopus-manifest",
       readable: true,
-      writable: false,
+      writable: blocker === null,
       entry: "manifest.json",
-      reason: CANOPUS_UNWRITABLE_REASON,
+      ...(blocker ? { reason: blocker } : {}),
       canopus: info.canopus,
     };
   } catch (error) {
@@ -481,13 +487,24 @@ function wrapFile(bytes: Uint8Array, source: File): File {
  * rpk（`source === "zip-manifest"`）**故意不支持**，而且必须显式拦下，不能靠
  * 「后面没分支了」兜底：调用方只认抛错与否，一旦漏写分支就会静默产出一个
  * 装不上的包，而装不上要到用户手环上才暴露。理由见文件头「为什么 rpk 不能改版本」。
+ *
+ * `.canopus` 可以改写：包本身无签名，但写路径必须同步更新每个产物的安装回执
+ * 与 `receipt_sha256`，见 `rewriteCanopusPackage`。
  */
 export async function writePackageVersion(
   file: File,
   target: PackageVersionTarget,
 ): Promise<File> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (isTarArchive(bytes)) throw new Error(CANOPUS_UNWRITABLE_REASON);
+  if (isTarArchive(bytes)) {
+    return wrapFile(
+      await rewriteCanopusPackage(bytes, {
+        version: target.version,
+        versionCode: target.versionCode,
+      }),
+      file,
+    );
+  }
   if (startsWith(bytes, WATCHFACE_MAGIC)) {
     return wrapFile(writeXiaomiBin(bytes, target), file);
   }

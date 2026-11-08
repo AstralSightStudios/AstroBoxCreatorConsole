@@ -90,10 +90,13 @@ export function VersionEditorDialog({
 
   const isZipManifest = info?.source === "zip-manifest";
   const isCrpack = info?.source === "crpack-corona";
-  // crpack 的 corona.json 与快应用 rpk 的 manifest.json 同构，统一走
-  // 「版本名 + 数字版本号」形态，版本号上限同为 32 位。
-  const isVersioned = isZipManifest || isCrpack;
+  const isCanopus = info?.source === "canopus-manifest";
+  // crpack 的 corona.json、canopus 的 manifest.json 与快应用 rpk 的清单同构，
+  // 统一走「版本名 + 数字版本号」形态。canopus 的 version_code 是 u32，
+  // 其余两类沿用客户端的 32 位有符号上限。
+  const isVersioned = isZipManifest || isCrpack || isCanopus;
   const isWatchfaceBin = info?.source === "xiaomi-bin" || info?.source === "xiaomi-mwz";
+  const maxVersionCode = isCanopus ? 0xffffffff : 2147483647;
 
   const nextCode = isVersioned
     ? Number(versionCodeInput.trim())
@@ -108,15 +111,22 @@ export function VersionEditorDialog({
     if (!info.writable) {
       return info.reason || "该包体暂不支持内置改写版本。";
     }
-    if (identityMismatch) return "包体包名与资源 ID 不一致，请先统一 ID 再修改版本。";
+    if (identityMismatch) {
+      return `${isCanopus ? "包内模块 ID" : "包体包名"}与资源 ID 不一致，请先统一 ID 再修改版本。`;
+    }
     if (isVersioned) {
       if (!versionName.trim()) return "请填写版本名。";
+      if (isCanopus && !/^\d+\.\d+\.\d+$/.test(versionName.trim())) {
+        return "canopus 的版本名必须是 major.minor.patch，例如 1.2.0。";
+      }
       if (!versionCodeInput.trim() || !Number.isFinite(nextCode) || nextCode < 0) {
         return "请填写合法的 versionCode。";
       }
       if (!Number.isInteger(nextCode)) return "versionCode 必须是整数。";
-      if (nextCode > 2147483647) {
-        return "versionCode 不能超过 2147483647（客户端按 32 位整数解析）。";
+      if (nextCode > maxVersionCode) {
+        return isCanopus
+          ? "versionCode 不能超过 4294967295（u32 上限）。"
+          : "versionCode 不能超过 2147483647（客户端按 32 位整数解析）。";
       }
       if (previousVersionCode !== undefined && nextCode <= previousVersionCode) {
         return `versionCode 必须大于上次发布的 ${previousVersionCode}。`;
@@ -133,8 +143,10 @@ export function VersionEditorDialog({
   }, [
     info,
     identityMismatch,
+    isCanopus,
     isVersioned,
     isWatchfaceBin,
+    maxVersionCode,
     versionName,
     versionCodeInput,
     nextCode,
@@ -273,7 +285,8 @@ export function VersionEditorDialog({
             {!loading && isVersioned && info.writable && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                 <Text size="1" color="gray">
-                  包内版本{isCrpack ? "（corona.json）" : ""}
+                  包内版本
+                  {isCrpack ? "（corona.json）" : isCanopus ? "（manifest.json）" : ""}
                 </Text>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <TextField.Root

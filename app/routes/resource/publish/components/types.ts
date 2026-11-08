@@ -1,5 +1,6 @@
 import type { ManifestCanopusMeta, ManifestUpdateLogEntry } from "~/logic/publish/manifest";
 import type { ImportedPackage } from "~/logic/publish/package-import";
+import type { PackageVersionSource } from "~/logic/publish/package-version";
 import type { UploadItem } from "./shared";
 
 export type AuthorInput = { name: string; bindABAccount: boolean };
@@ -48,6 +49,12 @@ export type DownloadInput = {
     packageWritable?: boolean;
     /** 不可改写时的具体原因（rpk / .canopus / 未知格式各不相同）。 */
     packageUnwritableReason?: string;
+    /**
+     * 包体来源（zip-manifest / canopus-manifest / ...）。文案不能只凭
+     * packageWritable 判断「是不是 rpk」——canopus 同样不可改写，但原因和
+     * 处理方式完全不同。
+     */
+    packageSource?: PackageVersionSource;
     /** 原生 Canopus 包体的 ABI 与目标固件，来自包内 manifest 或旧条目。 */
     canopus?: ManifestCanopusMeta;
 };

@@ -170,6 +170,7 @@ interface DownloadsSectionProps {
     packageIdentityKind?: DownloadIdentityKind;
     packageWritable?: boolean;
     packageUnwritableReason?: string;
+    packageSource?: DownloadInput["packageSource"];
     canopus?: DownloadInput["canopus"];
   }) => void;
 }
@@ -217,6 +218,12 @@ export function DownloadsSection({
     Boolean(item.packageIdentity) &&
     Boolean(resourceId?.trim()) &&
     item.packageIdentity !== resourceId?.trim();
+
+  /** 包体身份在文案里的叫法：canopus 是模块 ID，其他包体是包名。 */
+  const identityLabel = (item: DownloadInput) =>
+    item.packageSource === "canopus-manifest" || item.canopus
+      ? "包内模块 ID"
+      : "包体包名";
 
   const isNonIncrementRow = (item: DownloadInput) =>
     item.versionSource === "package" &&
@@ -287,6 +294,7 @@ export function DownloadsSection({
         packageIdentityKind: template.packageIdentityKind,
         packageWritable: template.packageWritable,
         packageUnwritableReason: template.packageUnwritableReason,
+        packageSource: template.packageSource,
         canopus: template.canopus,
       });
     }
@@ -343,6 +351,8 @@ export function DownloadsSection({
         packageIdentity: info.identity,
         packageIdentityKind: info.identityKind,
         packageWritable: info.writable,
+        packageUnwritableReason: info.reason,
+        packageSource: info.source,
         canopus: info.canopus,
       }));
       log.info("download/file", "包体校验完成", {
@@ -370,16 +380,15 @@ export function DownloadsSection({
         info.versionCode <= previousVersionCode &&
         !mismatch
       ) {
-        // 这是 rpk 创作者最常撞的一次：包体读得出来、版本也确实没涨，
-        // 但只有一条出路——回工具链改 versionCode 后重新打包。
-        // 不说清楚，他们会以为点两下就能解决，然后一轮轮卡在这里。
+        // 包体读得出来、版本也确实没涨，但不可改写的包体只有一条出路——
+        // 回各自的构建工具链改 versionCode 后重新打包。rpk 与 .canopus 的
+        // 原因不同，一律套 rpk 文案会让 canopus 创作者去改不存在的东西。
         toast.warning(
           `包体版本未递增（versionCode ${info.versionCode} ≤ 上次 ${previousVersionCode}）。` +
             (info.writable
               ? "请修改版本后再提交。"
-              : "该包体是已签名的 rpk，无法在控制台内改版本：" +
-                "请在 rpk 构建工具链中改好 manifest.json 的 versionName / versionCode，" +
-                "用 aiot release 重新打包后，再回这里重新导入包体。"),
+              : info.reason ??
+                "该包体无法在控制台内改版本，请按构建工具链重新打包后再导入。"),
           // 比默认稍长，够读完三行指引；再长就变成噪音了。
           { duration: info.writable ? undefined : 8000 },
         );
@@ -410,12 +419,16 @@ export function DownloadsSection({
     }
   };
 
-  const applyVersionEdit = (updated: File, info: PackageVersionInfo) => {
-    if (!versionEditor) return;
-    const sourceId = downloads.find((d) => d.uid === versionEditor.uid)?.file?.id;
+  const applyVersionEdit = async (updated: File, info: PackageVersionInfo) => {
+    const editor = versionEditor;
+    if (!editor) return;
+    const sourceId = downloads.find((d) => d.uid === editor.uid)?.file?.id;
+    // 改写后的字节变了，指纹必须跟着变；否则两台设备分别导入同一份旧包后
+    // 只有其中一台改写版本时，发布会把它们当成同一份包体共用路径。
+    const packageHash = await computePackageHash(updated);
     for (const row of downloads) {
       if (!row.file) continue;
-      if (row.uid !== versionEditor.uid && (!sourceId || row.file.id !== sourceId)) {
+      if (row.uid !== editor.uid && (!sourceId || row.file.id !== sourceId)) {
         continue;
       }
       onUpdateRow(row.uid, (r) => ({
@@ -425,7 +438,10 @@ export function DownloadsSection({
         versionCode: info.versionCode ?? r.versionCode,
         versionLocked: true,
         versionSource: "package",
+        packageHash,
         packageWritable: info.writable,
+        packageUnwritableReason: info.reason,
+        packageSource: info.source,
         canopus: info.canopus,
         packageIdentity: info.identity,
         packageIdentityKind: info.identityKind,
@@ -650,12 +666,15 @@ export function DownloadsSection({
                             )}
                             <span
                               title={
-                                // 只在明确不可改写时才说「不支持」。老草稿里
-                                // packageWritable 可能是 undefined（该字段是后加的），
-                                // 用真值判断会把这些行误标成 rpk。
-                                item.packageWritable === false
+                                // 不能只凭 packageWritable 判断是不是 rpk：canopus
+                                // 同样不可改写，但原因和处理方式完全不同。按包体
+                                // 来源区分，来源未知时保持中性描述。
+                                item.packageSource === "zip-manifest"
                                   ? "由包体自动读取；已签名的 rpk 无法在控制台内改写版本，需在构建工具链重新打包"
-                                  : "由包体自动读取，可点击右侧「修改版本」调整"
+                                  : item.packageWritable === false
+                                    ? item.packageUnwritableReason ??
+                                      "由包体自动读取并锁定，无法在控制台内改写版本"
+                                    : "由包体自动读取，可点击右侧「修改版本」调整"
                               }
                             >
                               <LockSimpleIcon
@@ -675,7 +694,7 @@ export function DownloadsSection({
                                 disabled={isIdentityMismatch(item)}
                                 title={
                                   isIdentityMismatch(item)
-                                    ? "包体包名与资源 ID 不一致，禁止修改版本"
+                                    ? `${identityLabel(item)}与资源 ID 不一致，禁止修改版本`
                                     : "修改包体版本"
                                 }
                                 onClick={() =>
@@ -696,10 +715,12 @@ export function DownloadsSection({
                             ——那会让创作者以为版本被锁死是 Bug，或去别处找绕开的
                             办法。必须把「去工具链改 manifest.json 后重新打包再导入」
                             这条唯一出路直接写在这里。
+                            这条例外说明只属于 rpk：canopus 也不可改写，但原因与
+                            rpk 签名无关，套用 rpk 文案会让创作者去改不存在的东西。
                           */}
                           {item.file &&
                             !item.file.skipUpload &&
-                            item.packageWritable === false && (
+                            item.packageSource === "zip-manifest" && (
                               <span className="w-full basis-full text-xs leading-relaxed text-amber-200/80">
                                 已签名的 rpk 无法在控制台内改版本：改动包内任一字节都会让手环验签失败、装不上。
                                 请在 rpk 构建工具链里改好 <code>manifest.json</code> 的{" "}
@@ -817,7 +838,11 @@ export function DownloadsSection({
 
                 {isIdentityMismatch(item) && (
                   <p className="text-xs text-red-300">
-                    包体包名（{item.packageIdentity}）与资源 ID（{resourceId}）不一致，将无法自动检查更新，且禁止修改版本。
+                    {identityLabel(item)}（{item.packageIdentity}）与资源 ID（
+                    {resourceId}）不一致
+                    {item.packageSource === "canopus-manifest" || item.canopus
+                      ? "。模块 ID 编译在模块二进制中，无法像资源包那样改写；请用资源 ID 重新构建 canopus 模块后导入。"
+                      : "，将无法自动检查更新，且禁止修改版本。"}
                   </p>
                 )}
                 {isNonIncrementRow(item) && (
@@ -825,11 +850,12 @@ export function DownloadsSection({
                     versionCode 未递增（{item.versionCode} ≤ 上次{" "}
                     {item.previousVersionCode}）
                     {/*
-                      rpk 行没有「修改版本」按钮（被 packageWritable 隐藏了），
-                      说「请点修改版本」是让人去找一个不存在的入口。
+                      不可改写的行没有「修改版本」按钮（被 packageWritable
+                      隐藏了），说「请点修改版本」是让人去找一个不存在的出口。
+                      原因按包体来源取，rpk 与 canopus 各自回自己的工具链。
                     */}
                     {item.packageWritable === false
-                      ? "，请在 rpk 构建工具链改好 manifest.json 后重新打包导入。"
+                      ? `，${item.packageUnwritableReason ?? "请按构建工具链重新打包导入。"}`
                       : "，请点「修改版本」。"}
                   </p>
                 )}
