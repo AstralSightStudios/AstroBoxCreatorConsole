@@ -99,7 +99,7 @@ export function PullRequestCard({
         onClick={selectable ? onToggleSelect : onClick}
         className="flex w-full min-w-0 flex-1 flex-col gap-3 px-4 py-4 text-left transition-colors hover:bg-nav-item-hover"
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <h2 className="line-clamp-2 text-base font-semibold text-white">
             {pull.title}
             <span className="ml-1.5 text-[12px] font-medium text-white/40">#{pull.number}</span>
@@ -121,20 +121,20 @@ export function PullRequestCard({
               <span className="shrink-0">· {formatTime(pull.updated_at)}</span>
             </span>
           </div>
-          <div className="mt-2 flex items-center justify-end gap-2">
-            {source === "plugin" && (
-              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] text-violet-100">
-                插件
-              </span>
-            )}
-            <ReviewStatusBadge state={status} />
-            {(comments.length ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-white/45">
-                <CommentIcon className="h-3.5 w-3.5 text-white/45" />
-                {comments.length}
-              </span>
-            )}
-          </div>
+        </div>
+        <div className="mt-auto flex items-center justify-end gap-2">
+          {source === "plugin" && (
+            <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] text-violet-100">
+              插件
+            </span>
+          )}
+          <ReviewStatusBadge state={status} />
+          {(comments.length ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-white/45">
+              <CommentIcon className="h-3.5 w-3.5 text-white/45" />
+              {comments.length}
+            </span>
+          )}
         </div>
       </motion.button>
 
