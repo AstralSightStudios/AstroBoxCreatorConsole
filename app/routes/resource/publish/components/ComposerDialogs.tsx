@@ -205,29 +205,49 @@ export function VersionIncrementWarningDialog({
       <Dialog.Content maxWidth="460px">
         <Dialog.Title>versionCode 未递增</Dialog.Title>
         <Dialog.Description size="2">
-          以下设备的包体已更新，但 versionCode 未大于上次发布的值，用户将无法检测到更新。
+          以下设备的包体已更新，但 versionCode 未大于上次的值，用户将无法检测到更新。
         </Dialog.Description>
         <div className="mt-3 flex flex-col gap-1.5">
-          {(rows ?? []).map((row) => (
-            <div
-              key={row.uid}
-              className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100"
-            >
-              {deviceLabel(sortedDeviceOptions, row.platformId)}
-              ：versionCode {row.versionCode} ≤ 上次 {row.previousVersionCode}
-              {/*
-                逐行标注能否就地改。不可改写的包体处理方式各不相同，混在一句
-                「请修改版本」里，创作者会点开编辑框才发现改不了。具体原因取自
-                包体解析结果，避免把 .canopus 也套上 rpk 的签名文案。
-              */}
-              {row.packageWritable === false && (
-                <p className="mt-1 text-xs leading-relaxed text-amber-200/85">
-                  {row.packageUnwritableReason ??
-                    "该包体无法在控制台内改版本，请按构建工具链重新打包后再导入。"}
-                </p>
-              )}
-            </div>
-          ))}
+          {(rows ?? []).map((row) => {
+            const previousVersion =
+              row.previousVersion?.trim() || row.replacedVersion?.trim();
+            const previousVersionCode =
+              row.previousVersionCode ?? row.replacedVersionCode;
+            const versionChangedSameCode =
+              Boolean(previousVersion) &&
+              Boolean(row.version?.trim()) &&
+              row.version!.trim() !== previousVersion &&
+              row.versionCode !== undefined &&
+              previousVersionCode !== undefined &&
+              row.versionCode === previousVersionCode;
+            return (
+              <div
+                key={row.uid}
+                className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100"
+              >
+                {deviceLabel(sortedDeviceOptions, row.platformId)}
+                ：versionCode {row.versionCode} ≤ 上次{" "}
+                {previousVersionCode ?? "?"}
+                {versionChangedSameCode && (
+                  <p className="mt-1 text-xs leading-relaxed text-amber-200/85">
+                    version 已从 {previousVersion} 变为 {row.version}，但
+                    versionCode 未变化。
+                  </p>
+                )}
+                {/*
+                  逐行标注能否就地改。不可改写的包体处理方式各不相同，混在一句
+                  「请修改版本」里，创作者会点开编辑框才发现改不了。具体原因取自
+                  包体解析结果，避免把 .canopus 也套上 rpk 的签名文案。
+                */}
+                {row.packageWritable === false && (
+                  <p className="mt-1 text-xs leading-relaxed text-amber-200/85">
+                    {row.packageUnwritableReason ??
+                      "该包体无法在控制台内改版本，请按构建工具链重新打包后再导入。"}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="mt-4 flex justify-end gap-3">
           <Button

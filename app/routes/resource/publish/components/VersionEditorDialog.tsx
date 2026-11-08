@@ -19,8 +19,8 @@ interface VersionEditorDialogProps {
   onOpenChange: (open: boolean) => void;
   file: File;
   previousVersionCode?: number;
-  /** 快应用包名与资源 ID 不一致时禁止改写。 */
-  identityMismatch?: boolean;
+  /** 只有已进入索引的资源才要求 versionCode 递增。 */
+  requireVersionIncrement?: boolean;
   onApply: (updated: File, info: PackageVersionInfo) => void;
 }
 
@@ -56,7 +56,7 @@ export function VersionEditorDialog({
   onOpenChange,
   file,
   previousVersionCode,
-  identityMismatch,
+  requireVersionIncrement = true,
   onApply,
 }: VersionEditorDialogProps) {
   const [info, setInfo] = useState<PackageVersionInfo | null>(null);
@@ -111,9 +111,6 @@ export function VersionEditorDialog({
     if (!info.writable) {
       return info.reason || "该包体暂不支持内置改写版本。";
     }
-    if (identityMismatch) {
-      return `${isCanopus ? "包内模块 ID" : "包体包名"}与资源 ID 不一致，请先统一 ID 再修改版本。`;
-    }
     if (isVersioned) {
       if (!versionName.trim()) return "请填写版本名。";
       if (isCanopus && !/^\d+\.\d+\.\d+$/.test(versionName.trim())) {
@@ -128,25 +125,46 @@ export function VersionEditorDialog({
           ? "versionCode 不能超过 4294967295（u32 上限）。"
           : "versionCode 不能超过 2147483647（客户端按 32 位整数解析）。";
       }
-      if (previousVersionCode !== undefined && nextCode <= previousVersionCode) {
-        return `versionCode 必须大于上次发布的 ${previousVersionCode}。`;
+      if (
+        requireVersionIncrement &&
+        versionName.trim() !== (info.version ?? "").trim() &&
+        nextCode === info.versionCode
+      ) {
+        return "version 已变化，versionCode 也必须同步变化，否则用户检测不到更新。";
+      }
+      if (
+        requireVersionIncrement &&
+        previousVersionCode !== undefined &&
+        nextCode <= previousVersionCode
+      ) {
+        return `versionCode 必须大于上一次的 ${previousVersionCode}。`;
+      }
+      if (
+        nextCode === info.versionCode &&
+        versionName.trim() === (info.version ?? "").trim()
+      ) {
+        return "版本没有变化，请修改 version 或 versionCode。";
       }
       return null;
     }
     if (isWatchfaceBin) {
-      if (previousVersionCode !== undefined && nextCode <= previousVersionCode) {
-        return `versionCode 必须大于上次发布的 ${previousVersionCode}。`;
+      if (
+        requireVersionIncrement &&
+        previousVersionCode !== undefined &&
+        nextCode <= previousVersionCode
+      ) {
+        return `versionCode 必须大于上一次的 ${previousVersionCode}。`;
       }
       return null;
     }
     return "该包体暂不支持内置改写版本。";
   }, [
     info,
-    identityMismatch,
     isCanopus,
     isVersioned,
     isWatchfaceBin,
     maxVersionCode,
+    requireVersionIncrement,
     versionName,
     versionCodeInput,
     nextCode,
@@ -284,24 +302,26 @@ export function VersionEditorDialog({
 
             {!loading && isVersioned && info.writable && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                <Text size="1" color="gray">
-                  包内版本
-                  {isCrpack ? "（corona.json）" : isCanopus ? "（manifest.json）" : ""}
-                </Text>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <TextField.Root
-                    placeholder="versionName，如 2.5.0"
-                    className="min-w-[160px] flex-1"
-                    value={versionName}
-                    onChange={(e) => setVersionName(e.target.value)}
-                  />
-                  <TextField.Root
-                    placeholder="versionCode"
-                    className="w-32"
-                    inputMode="numeric"
-                    value={versionCodeInput}
-                    onChange={(e) => setVersionCodeInput(e.target.value)}
-                  />
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex min-w-[160px] flex-1 flex-col gap-1">
+                    <span className="text-xs text-white/45">version</span>
+                    <TextField.Root
+                      placeholder="version"
+                      aria-label="version"
+                      value={versionName}
+                      onChange={(e) => setVersionName(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex w-32 flex-col gap-1">
+                    <span className="text-xs text-white/45">versionCode</span>
+                    <TextField.Root
+                      placeholder="versionCode"
+                      aria-label="versionCode"
+                      inputMode="numeric"
+                      value={versionCodeInput}
+                      onChange={(e) => setVersionCodeInput(e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
             )}

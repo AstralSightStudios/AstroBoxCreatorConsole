@@ -404,6 +404,34 @@ export function rowsWithNonIncrementedVersionCode(
   );
 }
 
+/**
+ * version 变了但 versionCode 没变的行。
+ *
+ * versionCode 是客户端判断更新的唯一依据；只改展示版本不改 versionCode，
+ * 用户永远收不到更新。与「是否已进入索引」无关，替换包体时就该拦。
+ * 依赖 previousVersion / previousVersionCode：它们来自上次提交或本地被替换
+ * 的包体，调用方负责在合适的时机写入。
+ */
+export function rowsWithVersionChangedButCodeSame(
+  rows: DownloadInput[],
+): DownloadInput[] {
+  return rows.filter((row) => {
+    const previousVersion =
+      row.previousVersion?.trim() || row.replacedVersion?.trim();
+    const previousVersionCode =
+      row.previousVersionCode ?? row.replacedVersionCode;
+    return (
+      row.versionSource === "package" &&
+      Boolean(row.version?.trim()) &&
+      Boolean(previousVersion) &&
+      row.version!.trim() !== previousVersion &&
+      row.versionCode !== undefined &&
+      previousVersionCode !== undefined &&
+      row.versionCode === previousVersionCode
+    );
+  });
+}
+
 /** 已合入索引的 manifest 中某设备的版本信息，递增判定唯一的合法基线。 */
 export interface PublishedDownloadBaseline {
   version?: string;

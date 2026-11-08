@@ -142,12 +142,19 @@ interface DownloadsSectionProps {
   deviceError: string;
   isVip: boolean;
   resourceId?: string;
+  /**
+   * 只有已进入目录索引的资源才要求 versionCode 递增。首次提交、未合入的 PR
+   * 没有已发布基线，不能拿 PR 分支上的 manifest 当基线把编辑拦死。
+   */
+  requireVersionIncrement?: boolean;
   allowEncryption?: boolean;
   /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
   fileAccept?: string;
   /** 当前资源类型不支持某些厂商时，禁用项悬浮显示的系统气泡文案。 */
   disabledDeviceTitle?: string;
   validateFile?: (file: File) => Promise<ValidatedPackage>;
+  /** 读取仓库中的已有包体；编辑模式下由上层用 GitHub API 提供。 */
+  loadExistingPackage?: (item: DownloadInput) => Promise<File>;
   onAddRow: () => void;
   onRemoveRow: (uid: string) => void;
   onUpdateRow: (
@@ -187,10 +194,12 @@ export function DownloadsSection({
   deviceError,
   isVip,
   resourceId,
+  requireVersionIncrement = true,
   allowEncryption = true,
   fileAccept,
   disabledDeviceTitle,
   validateFile,
+  loadExistingPackage,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
@@ -204,7 +213,6 @@ export function DownloadsSection({
     uid: string;
     file: File;
     previousVersionCode?: number;
-    mismatch: boolean;
   } | null>(null);
   const [updateLogEditor, setUpdateLogEditor] = useState<{
     uid: string;
@@ -212,20 +220,12 @@ export function DownloadsSection({
     entries: UpdateLogEntry[];
   } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-
-  const isIdentityMismatch = (item: DownloadInput) =>
-    item.packageIdentityKind === "package" &&
-    Boolean(item.packageIdentity) &&
-    Boolean(resourceId?.trim()) &&
-    item.packageIdentity !== resourceId?.trim();
-
-  /** 包体身份在文案里的叫法：canopus 是模块 ID，其他包体是包名。 */
-  const identityLabel = (item: DownloadInput) =>
-    item.packageSource === "canopus-manifest" || item.canopus
-      ? "包内模块 ID"
-      : "包体包名";
+  const [versionEditorLoadingUid, setVersionEditorLoadingUid] = useState<
+    string | null
+  >(null);
 
   const isNonIncrementRow = (item: DownloadInput) =>
+    requireVersionIncrement &&
     item.versionSource === "package" &&
     item.versionCode !== undefined &&
     item.previousVersionCode !== undefined &&
@@ -347,6 +347,17 @@ export function DownloadsSection({
         ...(readable && info.versionCode !== undefined
           ? { versionCode: info.versionCode }
           : {}),
+        // 记下被替换掉的本地包体版本，供发布前拦截「version 变了但
+        // versionCode 没变」。不写进 previousVersion，避免误标成上次发布。
+        ...(readable &&
+        (row.file || row.existingFileName) &&
+        row.version?.trim() &&
+        row.versionCode !== undefined
+          ? {
+              replacedVersion: row.version.trim(),
+              replacedVersionCode: row.versionCode,
+            }
+          : {}),
         packageHash,
         packageIdentity: info.identity,
         packageIdentityKind: info.identityKind,
@@ -367,7 +378,11 @@ export function DownloadsSection({
         },
       });
       const current = downloads.find((d) => d.uid === uid);
-      const previousVersionCode = current?.previousVersionCode;
+      // 未进入索引的资源没有已发布基线，PR 分支 manifest 里的 versionCode
+      // 不能拿来要求「必须递增」，否则首次提交也会被拦死。
+      const previousVersionCode = requireVersionIncrement
+        ? current?.previousVersionCode
+        : undefined;
       const mismatch =
         info.identityKind === "package" &&
         Boolean(info.identity) &&
@@ -384,7 +399,48 @@ export function DownloadsSection({
           { duration: 8000 },
         );
       }
+
+      // 替换包体时 version 变了、versionCode 却没动：只有已进入索引的资源
+      // 才需要拦——未上架的资源还没有用户装过旧版本，首次发布前调整版本
+      // 不会造成更新检测问题。否则首次提交/草稿恢复也会被要求反复提升。
+      if (requireVersionIncrement) {
+        const nextVersion = info.version?.trim();
+        const previousLocalVersion = current?.version?.trim();
+        const versionChanged =
+          readable &&
+          Boolean(current?.file || current?.existingFileName) &&
+          Boolean(nextVersion) &&
+          Boolean(previousLocalVersion) &&
+          nextVersion !== previousLocalVersion;
+        const versionCodeUnchanged =
+          info.versionCode !== undefined &&
+          current?.versionCode !== undefined &&
+          info.versionCode === current.versionCode;
+        if (versionChanged && versionCodeUnchanged) {
+          toast.error(
+            `包体 version 已从 ${previousLocalVersion} 变为 ${nextVersion}，但 versionCode 仍是 ${info.versionCode}。` +
+              (info.writable
+                ? "请同时提升 versionCode，否则用户检测不到更新。"
+                : info.reason ??
+                  "该包体无法在控制台内改版本，请回构建工具链提升 versionCode 后重新打包。"),
+            { duration: 8000 },
+          );
+          if (info.writable) {
+            // 包体 version 已变但 versionCode 没变，必须强制超过被替换包体
+            // 的 versionCode；这里不能用「是否已进入索引」的基线，否则未上架
+            // 的首次提交可以原样再点一次「应用」。
+            setVersionEditor({
+              uid,
+              file,
+              previousVersionCode: current?.versionCode,
+            });
+          }
+          return;
+        }
+      }
+
       if (
+        requireVersionIncrement &&
         readable &&
         info.versionCode !== undefined &&
         previousVersionCode !== undefined &&
@@ -406,12 +462,7 @@ export function DownloadsSection({
         // 只有可改写的包体才弹编辑器。rpk 弹出来也提交不了（签名块逐文件
         // 校验），弹了只是让创作者对着一个必然失败的表单发呆。
         if (info.writable) {
-          setVersionEditor({
-            uid,
-            file,
-            previousVersionCode,
-            mismatch: false,
-          });
+          setVersionEditor({ uid, file, previousVersionCode });
         }
         return;
       }
@@ -444,7 +495,12 @@ export function DownloadsSection({
       }
       onUpdateRow(row.uid, (r) => ({
         ...r,
-        file: r.file ? { ...r.file, file: updated } : r.file,
+        // 改写后的包体是新的字节，必须真的上传；旧仓库文件走的是同一
+        // pathOverride，所以上传会覆盖原文件而不是另起一份。
+        file: r.file
+          ? { ...r.file, file: updated, skipUpload: false, source: "upload" }
+          : r.file,
+        existingFileName: undefined,
         version: info.version ?? r.version,
         versionCode: info.versionCode ?? r.versionCode,
         versionLocked: true,
@@ -465,6 +521,41 @@ export function DownloadsSection({
         versionCode: info.versionCode ?? null,
       },
     });
+  };
+
+  /**
+   * 打开版本编辑器。编辑已有资源时包体只在仓库里，需要先取回原始字节；
+   * 改写后会作为新文件上传，并沿用原 pathOverride 覆盖同一路径。
+   */
+  const openVersionEditor = async (item: DownloadInput) => {
+    if (!item.file) return;
+    const previousVersionCode = requireVersionIncrement
+      ? item.previousVersionCode
+      : undefined;
+    if (!item.file.skipUpload) {
+      setVersionEditor({
+        uid: item.uid,
+        file: item.file.file,
+        previousVersionCode,
+      });
+      return;
+    }
+    if (!loadExistingPackage) {
+      toast.error("当前模式无法读取仓库中的包体");
+      return;
+    }
+    setVersionEditorLoadingUid(item.uid);
+    try {
+      setVersionEditor({
+        uid: item.uid,
+        file: await loadExistingPackage(item),
+        previousVersionCode,
+      });
+    } catch (error) {
+      toast.error(`无法读取仓库中的包体：${(error as Error).message}`);
+    } finally {
+      setVersionEditorLoadingUid(null);
+    }
   };
 
   return (
@@ -680,12 +771,16 @@ export function DownloadsSection({
                                 // 不能只凭 packageWritable 判断是不是 rpk：canopus
                                 // 同样不可改写，但原因和处理方式完全不同。按包体
                                 // 来源区分，来源未知时保持中性描述。
-                                item.packageSource === "zip-manifest"
-                                  ? "由包体自动读取；已签名的 rpk 无法在控制台内改写版本，需在构建工具链重新打包"
-                                  : item.packageWritable === false
-                                    ? item.packageUnwritableReason ??
-                                      "由包体自动读取并锁定，无法在控制台内改写版本"
-                                    : "由包体自动读取，可点击右侧「修改版本」调整"
+                                item.encryptOnUpload
+                                  ? "该包体已加密上传，无法在控制台内读取并改写版本"
+                                  : item.canopus
+                                    ? "由包体自动读取；点击「修改版本」时会重新校验能否改写"
+                                    : item.packageSource === "zip-manifest"
+                                      ? "由包体自动读取；已签名的 rpk 无法在控制台内改写版本，需在构建工具链重新打包"
+                                      : item.packageWritable === false
+                                        ? item.packageUnwritableReason ??
+                                          "由包体自动读取并锁定，无法在控制台内改写版本"
+                                        : "由包体自动读取，可点击右侧「修改版本」调整"
                               }
                             >
                               <LockSimpleIcon
@@ -696,29 +791,21 @@ export function DownloadsSection({
                             </span>
                           </span>
                           {item.file &&
-                            !item.file.skipUpload &&
-                            item.packageWritable && (
+                            !item.encryptOnUpload &&
+                            (item.packageWritable === true ||
+                              Boolean(item.canopus)) && (
                               <Button
                                 size="1"
                                 variant="soft"
                                 color="gray"
-                                disabled={isIdentityMismatch(item)}
-                                title={
-                                  isIdentityMismatch(item)
-                                    ? `${identityLabel(item)}与资源 ID 不一致，禁止修改版本`
-                                    : "修改包体版本"
-                                }
-                                onClick={() =>
-                                  setVersionEditor({
-                                    uid: item.uid,
-                                    file: item.file!.file,
-                                    previousVersionCode: item.previousVersionCode,
-                                    mismatch: isIdentityMismatch(item),
-                                  })
-                                }
+                                disabled={versionEditorLoadingUid === item.uid}
+                                title="修改包体版本"
+                                onClick={() => void openVersionEditor(item)}
                               >
                                 <PencilSimpleLineIcon size={13} weight="bold" />
-                                修改版本
+                                {versionEditorLoadingUid === item.uid
+                                  ? "读取中…"
+                                  : "修改版本"}
                               </Button>
                             )}
                           {/*
@@ -957,7 +1044,7 @@ export function DownloadsSection({
           }}
           file={versionEditor.file}
           previousVersionCode={versionEditor.previousVersionCode}
-          identityMismatch={versionEditor.mismatch}
+          requireVersionIncrement={requireVersionIncrement}
           onApply={applyVersionEdit}
         />
       )}

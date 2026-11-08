@@ -240,6 +240,56 @@ export async function getFileContent(
     );
 }
 
+/**
+ * 读取仓库中任意大小文件的原始字节。
+ *
+ * contents API 对大于 1 MB 的文件直接报错，canopus 模块包普遍超过这个上限；
+ * Git Data API 先按 ref 取整棵树定位 blob SHA，再取 blob（上限 100 MB）。
+ */
+export async function getRepoFileBytes(params: {
+    token: string;
+    owner: string;
+    repo: string;
+    path: string;
+    ref: string;
+}): Promise<Uint8Array> {
+    const { token, owner, repo, path, ref } = params;
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+    };
+    const tree = await githubFetch<{
+        tree?: Array<{ path?: string; type?: string; sha?: string }>;
+        truncated?: boolean;
+    }>(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+        { headers },
+    );
+    const file = tree.tree?.find(
+        (entry) => entry.type === "blob" && entry.path === path,
+    );
+    if (!file?.sha) {
+        throw new Error(
+            tree.truncated
+                ? `仓库文件过多，无法定位包体 ${path}`
+                : `仓库中找不到包体 ${path}`,
+        );
+    }
+    const blob = await githubFetch<{ content?: string; encoding?: string }>(
+        `https://api.github.com/repos/${owner}/${repo}/git/blobs/${file.sha}`,
+        { headers },
+    );
+    if (blob.encoding !== "base64" || !blob.content) {
+        throw new Error("无法读取仓库包体：GitHub 返回的内容格式异常");
+    }
+    const binary = atob(blob.content.replace(/\n/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
 export async function fetchCatalogEntries(options?: {
     token?: string;
     owner?: string;

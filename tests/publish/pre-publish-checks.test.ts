@@ -20,6 +20,7 @@ import {
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
+  rowsWithVersionChangedButCodeSame,
 } from "../../app/logic/publish/pre-publish-checks";
 
 describe("pre-publish checks: checkPreviewCount", () => {
@@ -345,6 +346,72 @@ describe("pre-publish checks: rowsWithNonIncrementedVersionCode", () => {
       withPackage({ uid: "c", versionSource: "package", previousVersionCode: 9 }),
     ];
     expect(rowsWithNonIncrementedVersionCode(rows)).toEqual([]);
+  });
+});
+
+describe("pre-publish checks: rowsWithVersionChangedButCodeSame", () => {
+  test("flags a changed version that kept the same versionCode", () => {
+    const rows = [
+      withPackage({
+        uid: "a",
+        versionSource: "package",
+        version: "1.1.0",
+        versionCode: 4,
+        previousVersion: "1.0.0",
+        previousVersionCode: 4,
+      }),
+      withPackage({
+        uid: "b",
+        versionSource: "package",
+        version: "1.1.0",
+        versionCode: 5,
+        previousVersion: "1.0.0",
+        previousVersionCode: 4,
+      }),
+      withPackage({
+        uid: "c",
+        versionSource: "package",
+        version: "1.0.0",
+        versionCode: 4,
+        previousVersion: "1.0.0",
+        previousVersionCode: 4,
+      }),
+    ];
+    expect(rowsWithVersionChangedButCodeSame(rows).map((r) => r.uid)).toEqual([
+      "a",
+    ]);
+  });
+
+  test("falls back to the replaced local package snapshot", () => {
+    const rows = [
+      withPackage({
+        uid: "a",
+        versionSource: "package",
+        version: "2.0.0",
+        versionCode: 7,
+        replacedVersion: "1.0.0",
+        replacedVersionCode: 7,
+      }),
+      withPackage({
+        uid: "b",
+        versionSource: "package",
+        version: "2.0.0",
+        versionCode: 8,
+        replacedVersion: "1.0.0",
+        replacedVersionCode: 7,
+      }),
+      withPackage({
+        uid: "c",
+        versionSource: "existing",
+        version: "2.0.0",
+        versionCode: 7,
+        replacedVersion: "1.0.0",
+        replacedVersionCode: 7,
+      }),
+    ];
+    expect(rowsWithVersionChangedButCodeSame(rows).map((r) => r.uid)).toEqual([
+      "a",
+    ]);
   });
 });
 

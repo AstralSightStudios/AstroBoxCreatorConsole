@@ -40,6 +40,12 @@ export type DownloadInput = {
     /** 上次发布的展示版本与整数版本，作为递增强制基准。 */
     previousVersion?: string;
     previousVersionCode?: number;
+    /**
+     * 本次会话内被替换掉的本地包体版本。只用于校验「version 变了但
+     * versionCode 没变」，不展示成「上次发布」。
+     */
+    replacedVersion?: string;
+    replacedVersionCode?: number;
     /** 本次包体内容哈希，用于判断包体是否变化。 */
     packageHash?: string;
     /** 包体标识（快应用 package / 表盘 ID / Vivo dial id）。 */

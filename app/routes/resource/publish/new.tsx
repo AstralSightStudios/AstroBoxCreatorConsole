@@ -55,6 +55,7 @@ import { hasCreatorPlusOrAbove } from "~/logic/account/permissions";
 import { listSellerResourceFileKeys } from "~/api/astrobox/order";
 import {
   createCatalogPullRequest,
+  getRepoFileBytes,
   updateCatalogCsv,
   updateCatalogEntryOnBranch,
 } from "~/logic/publish/catalog";
@@ -206,6 +207,7 @@ import {
   rowsMissingVersionCode,
   rowsWithIdentityMismatch,
   rowsWithNonIncrementedVersionCode,
+  rowsWithVersionChangedButCodeSame,
   rowsWithoutCanopusMeta,
 } from "~/logic/publish/pre-publish-checks";
 import { fetchPublishedBaselinesForResourceId } from "~/logic/publish/published-baseline";
@@ -1003,6 +1005,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   // 已合入目录的资源可以改类型；ID 只有改了类型才放开（表盘、模块等的 ID 格式不同，
   // 换类型往往只能连 ID 一起换）。换了 ID 的提交在 PR 前登记迁移，合入后服务端搬数据。
   const listedResourceId = listedResourceIdOf(editContext);
+  // 只有直接编辑已上架资源（catalog）才要求 versionCode 递增。进行中的 PR
+  // 与全新发布都还没进入索引，迭代包体时不能反复要求提升版本号。
+  const requireVersionIncrement = editContext?.mode === "catalog";
   const listedType =
     isEditing && !canEditIdentity && editContext?.catalog.entry.restype
       ? normalizeResourceType(editContext.catalog.entry.restype)
@@ -1980,12 +1985,27 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       );
       return;
     }
-    const nonIncrement = rowsWithNonIncrementedVersionCode([
-      ...downloads,
-      ...trialDownloads,
-    ]);
-    if (nonIncrement.length > 0) {
-      setVersionIncrementWarning(nonIncrement);
+    const allDownloadRows = [...downloads, ...trialDownloads];
+    // 只有直接编辑已上架资源（catalog）才有「必须大于已发布版本」的基线；
+    // 首次提交 / 未合入 PR 不拿 PR 分支的 manifest 当基线，否则会误拦。
+    const nonIncrement = requireVersionIncrement
+      ? rowsWithNonIncrementedVersionCode(allDownloadRows)
+      : [];
+    // 同样只对已上架资源的直接编辑生效：未合入 PR / 新资源没有旧版本用户，
+    // 首次发布前调整 version / versionCode 不涉及更新检测。
+    const versionChangedSameCode = requireVersionIncrement
+      ? rowsWithVersionChangedButCodeSame(allDownloadRows)
+      : [];
+    const versionWarningRows = Array.from(
+      new Map(
+        [...nonIncrement, ...versionChangedSameCode].map((row) => [
+          row.uid,
+          row,
+        ]),
+      ).values(),
+    );
+    if (versionWarningRows.length > 0) {
+      setVersionIncrementWarning(versionWarningRows);
       return;
     }
     goToStep(1);
@@ -3102,6 +3122,54 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     [],
   );
 
+  /**
+   * 读取编辑模式下仓库里的已有包体。
+   *
+   * 草稿里的本地包体在 restoreDownloadInput 中已经还原成 File，不会走到这里；
+   * 只有「继续编辑 PR / 编辑已上架资源」的 existing 行需要从 GitHub 读取。
+   * 用 Git Data API 而不是 raw.githubusercontent.com，才能带 token 读取私有仓库，
+   * 也不受 contents API 1 MB 的限制。
+   */
+  const loadExistingPackage = useCallback(
+    async (item: DownloadInput): Promise<File> => {
+      const path = item.file?.pathOverride || item.existingFileName;
+      if (!path) throw new Error("缺少包体路径");
+      if (!editContext) throw new Error("当前不是编辑模式，无法读取仓库包体");
+      const token = loadAccountState().github?.token;
+      if (!token) throw new Error("GitHub 未登录，无法读取仓库包体");
+
+      const entry = editContext.catalog.entry;
+      const entryRef = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
+      const refs =
+        editContext.mode === "in_progress"
+          ? [editContext.catalog.sha || editContext.prHead?.ref || entryRef]
+          : [entryRef, MAIN_RESOURCE_BRANCH];
+      let lastError: unknown;
+      for (const ref of refs) {
+        try {
+          const bytes = await getRepoFileBytes({
+            token,
+            owner: entry.repo_owner,
+            repo: entry.repo_name,
+            path,
+            ref,
+          });
+          const name =
+            path.split("/").pop() || item.existingFileName || "package";
+          return new File([bytes as BlobPart], name, {
+            type: "application/octet-stream",
+          });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(String(lastError ?? "无法读取仓库包体"));
+    },
+    [editContext],
+  );
+
   const restoreFormData = useCallback((data: PublishDraftFormData) => {
     setItemId(data.itemId);
     idsByTypeRef.current[data.resourceType] = data.itemId;
@@ -3626,6 +3694,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 deviceError={deviceError}
                 isVip={isVip}
                 resourceId={itemId}
+                requireVersionIncrement={requireVersionIncrement}
+                loadExistingPackage={loadExistingPackage}
                 allDeviceOptions={allSortedDeviceOptions}
                 disabledDeviceTitle={disabledDeviceTitle}
                 fileAccept={PACKAGE_ACCEPT[resourceType]}
@@ -3653,6 +3723,9 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 isDeviceLoading={isDeviceLoading}
                 deviceError={deviceError}
                 isVip={isVip}
+                resourceId={itemId}
+                requireVersionIncrement={requireVersionIncrement}
+                loadExistingPackage={loadExistingPackage}
                 allDeviceOptions={allSortedDeviceOptions}
                 disabledDeviceTitle={disabledDeviceTitle}
                 allowEncryption={false}
