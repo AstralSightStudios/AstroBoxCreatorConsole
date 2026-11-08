@@ -78,6 +78,7 @@ export function buildSubmissionPath(
 export function buildDeletionSubmissionPath(
     githubLogin: string,
     resourceId: string,
+    nonce?: string | number,
 ): string {
     const login = normalizeSubmissionPathSegment(githubLogin, "GitHub 用户名");
     const raw = resourceId.trim().toLowerCase();
@@ -86,8 +87,14 @@ export function buildDeletionSubmissionPath(
         .replace(/[^a-z0-9._-]+/g, "-")
         .replace(/^[^a-z0-9]+/, "")
         .replace(/[^a-z0-9]+$/, "");
+    // 每次提交使用唯一目录，避免上一次删除 PR 合并后 apply 失败、tmp 残留在
+    // main 上时，新 PR 与旧 tmp 内容完全相同而变成空 diff。
+    const suffix =
+        nonce === undefined || nonce === ""
+            ? ""
+            : `-${String(nonce).replace(/[^a-z0-9]+/gi, "")}`;
     const name = normalizeSubmissionPathSegment(
-        `del-${safe || "resource"}`,
+        `del-${safe || "resource"}${suffix}`,
         "资源 ID",
     );
     return `${PUBLISH_CONFIG.submissionRootPath}/${login}/${name}`;

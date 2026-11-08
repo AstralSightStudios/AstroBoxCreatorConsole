@@ -48,6 +48,9 @@ describe("submission protocol", () => {
     expect(
       buildDeletionSubmissionPath("alice", "cn.waijade.2048"),
     ).toBe("tmp/alice/del-cn.waijade.2048");
+    expect(
+      buildDeletionSubmissionPath("alice", "cn.waijade.2048", 1760000000000),
+    ).toBe("tmp/alice/del-cn.waijade.2048-1760000000000");
   });
 
   test("detects new-flow files in a PR", () => {

@@ -574,6 +574,7 @@ export async function createDeletionSubmissionBranch(
     const submissionPath = buildDeletionSubmissionPath(
         githubLogin,
         entry.id,
+        Date.now(),
     );
     const { forkOwner, forkRepo, branchName } =
         await prepareSubmissionForkBranch({
