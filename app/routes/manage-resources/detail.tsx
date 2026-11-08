@@ -24,6 +24,7 @@ import {
   parseIndexV2,
   type IndexV2Entry,
 } from "~/logic/catalog/index-v2";
+import { rawGithubUrlToBlobUrl } from "~/logic/github-raw";
 import {
   collectResourceAdminUserIds,
   loadResourceAdminInfo,
@@ -335,9 +336,11 @@ export default function ManageResourceDetailPage() {
               <p className="mb-2 text-xs text-white/45">封面</p>
               <button
                 type="button"
-                title="在外部打开封面"
+                title="在 GitHub 查看封面源文件"
                 className="block w-full overflow-hidden rounded-lg border border-white/10 bg-black/20 transition-colors hover:border-white/25"
-                onClick={() => openExternal(coverUrl)}
+                onClick={() =>
+                  openExternal(rawGithubUrlToBlobUrl(coverUrl) ?? coverUrl)
+                }
               >
                 <ProxiedImage
                   url={coverUrl}

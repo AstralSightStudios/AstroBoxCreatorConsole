@@ -16,6 +16,7 @@ import { Badge } from "@radix-ui/themes";
 import { toast } from "sonner";
 import { Panel, formatDateTime } from "~/components/admin/AdminPage";
 import { AdminUserChip } from "~/components/admin/AdminUserChip";
+import { rawGithubUrlToBlobUrl } from "~/logic/github-raw";
 import { useProxiedMediaUrl } from "~/logic/media-proxy";
 import {
   formatCdkStatus,
@@ -529,9 +530,9 @@ export function ManifestPanel({
                 <button
                   key={path}
                   type="button"
-                  title={path}
+                  title={`${path}（在 GitHub 查看源文件）`}
                   className="overflow-hidden rounded-lg border border-white/10 bg-black/20 transition-colors hover:border-white/25"
-                  onClick={() => openExternal(url)}
+                  onClick={() => openExternal(rawGithubUrlToBlobUrl(url) ?? url)}
                 >
                   <ProxiedImage url={url} alt={path} />
                 </button>
