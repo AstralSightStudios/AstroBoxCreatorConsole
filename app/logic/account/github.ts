@@ -31,12 +31,49 @@ function isTauriEnvironment() {
 
 const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
 
+class GithubProxyHttpError extends Error {
+    readonly status: number;
+    readonly body: string;
+
+    constructor(status: number, body: string) {
+        super(`GitHub 请求失败（HTTP ${status}）`);
+        this.name = "GithubProxyHttpError";
+        this.status = status;
+        this.body = body;
+    }
+}
+
+/** Tauri 代理的错误串格式：`GitHub request failed (400): {json}`。 */
+function parseGithubProxyHttpError(
+    message: string,
+): { status: number; body: string } | null {
+    let text = message;
+    // 某些 Tauri 版本会把 Err(String) 再 JSON 序列化一次。
+    if (text.startsWith('"') && text.endsWith('"')) {
+        try {
+            const parsed = JSON.parse(text);
+            if (typeof parsed === "string") text = parsed;
+        } catch {
+            // 保留原始错误串。
+        }
+    }
+
+    const match = /GitHub request failed \((\d+)\):\s*([\s\S]*)$/.exec(text);
+    if (!match) return null;
+    return { status: Number(match[1]), body: match[2] };
+}
+
 async function githubRequest<T>(options: {
     url: string;
     method?: "GET" | "POST";
     headers?: Record<string, string>;
     body?: string;
     timeoutMs?: number;
+    /**
+     * Tauri 代理返回非 2xx 时，把 GitHub 的 JSON 错误体交给调用方处理。
+     * Device Flow 的 authorization_pending / slow_down 需要这个行为。
+     */
+    allowHttpErrorBody?: boolean;
 }): Promise<T> {
     const {
         url,
@@ -44,6 +81,7 @@ async function githubRequest<T>(options: {
         headers,
         body,
         timeoutMs = DEFAULT_GITHUB_REQUEST_TIMEOUT_MS,
+        allowHttpErrorBody = false,
     } = options;
 
     if (isTauriEnvironment()) {
@@ -65,10 +103,25 @@ async function githubRequest<T>(options: {
                 }),
             ]);
         } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             // 超时是 Tauri 代理本身无响应，继续走 axios 只会再等一轮。
-            if (error instanceof Error && error.message === "GitHub 请求超时，请检查网络。") {
+            if (message === "GitHub 请求超时，请检查网络。") {
                 throw error;
             }
+
+            // 代理已经拿到 GitHub 的 HTTP 响应；这不是网络失败，不能回退 axios。
+            const httpError = parseGithubProxyHttpError(message);
+            if (httpError) {
+                if (allowHttpErrorBody) {
+                    try {
+                        return JSON.parse(httpError.body) as T;
+                    } catch {
+                        // 非 JSON 错误体继续按 HTTP 错误抛出。
+                    }
+                }
+                throw new GithubProxyHttpError(httpError.status, httpError.body);
+            }
+
             console.warn(
                 "GitHub request via Tauri failed, falling back to axios",
                 error,
@@ -76,15 +129,27 @@ async function githubRequest<T>(options: {
         }
     }
 
-    const response = await axios.request<T>({
-        url,
-        method,
-        data: body,
-        headers,
-        timeout: timeoutMs,
-    });
-
-    return response.data;
+    try {
+        const response = await axios.request<T>({
+            url,
+            method,
+            data: body,
+            headers,
+            timeout: timeoutMs,
+        });
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            // Web 构建的 /github-login 代理可能以 4xx 返回 OAuth 错误体。
+            if (allowHttpErrorBody && error.response) {
+                return error.response.data as T;
+            }
+            if (error.code === "ECONNABORTED") {
+                throw new Error("GitHub 请求超时，请检查网络。");
+            }
+        }
+        throw error;
+    }
 }
 
 export interface GithubDeviceSession {
@@ -150,7 +215,15 @@ export async function startGithubDeviceSession(
             Accept: "application/json",
         },
         body: params.toString(),
+        allowHttpErrorBody: true,
     });
+
+    if (data?.error) {
+        throw new Error(data.error_description || data.error);
+    }
+    if (!data?.device_code || !data?.user_code) {
+        throw new Error("GitHub 未返回设备授权码，请稍后重试。");
+    }
 
     return {
         deviceCode: data.device_code,
@@ -208,6 +281,7 @@ export async function pollGithubDeviceSession(
                 Accept: "application/json",
             },
             body: params.toString(),
+            allowHttpErrorBody: true,
         });
 
         if (data.error === "authorization_pending") {
@@ -251,7 +325,16 @@ async function fetchGithubProfile(
     const data = await githubRequest<any>({
         url: PROFILE_URL,
         headers,
+        allowHttpErrorBody: true,
     });
+
+    if (!data?.login) {
+        throw new Error(
+            typeof data?.message === "string"
+                ? `GitHub 用户信息读取失败：${data.message}`
+                : "GitHub 用户信息读取失败。",
+        );
+    }
 
     let email = data?.email || "";
     if (!email && options.includeEmail !== false) {
@@ -321,10 +404,15 @@ export async function validateGithubReaderToken(
             Authorization: `Bearer ${trimmed}`,
             Accept: "application/vnd.github+json",
         },
+        allowHttpErrorBody: true,
     });
 
     if (!profile?.login) {
-        throw new Error("GitHub Token 无效：未返回账号信息。");
+        throw new Error(
+            typeof profile?.message === "string"
+                ? `GitHub Token 无效或已过期：${profile.message}`
+                : "GitHub Token 无效：未返回账号信息。",
+        );
     }
 
     return {
