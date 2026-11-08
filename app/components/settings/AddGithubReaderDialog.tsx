@@ -198,6 +198,7 @@ export default function AddGithubReaderDialog({
                       </code>
                       <Button
                         variant="soft"
+                        aria-label="复制授权代码"
                         onClick={() =>
                           void handleCopy(deviceCode || "", "已复制授权代码")
                         }
@@ -264,7 +265,7 @@ export default function AddGithubReaderDialog({
               <Tabs.Content value="token">
                 <div className="flex flex-col gap-3">
                   <p className="text-sm text-white/60">
-                    适合不想切换浏览器账号的情况。建议使用 fine-grained PAT，Repository access 选择 Public Repositories (read-only)。
+                    如果已有读取账号的 Access Token，可以直接粘贴；新建时请先在 GitHub 登录该账号。建议使用 fine-grained PAT，Repository access 选择 Public Repositories (read-only)。
                   </p>
                   <div className="flex items-center gap-2">
                     <TextField.Root
