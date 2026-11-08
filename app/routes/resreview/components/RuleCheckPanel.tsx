@@ -21,6 +21,11 @@ import {
 } from "../rule-checks";
 import { resetPaidRatioCaches, type PaidRatioResult } from "../utils/paid-ratio";
 import {
+  buildRuleCheckCacheKey,
+  readRuleCheckCache,
+  writeRuleCheckCache,
+} from "../rule-check-cache";
+import {
   describeRpkDebug,
   type RpkDebugLevel,
 } from "~/logic/publish/rpk-signature";
@@ -46,7 +51,16 @@ function useResourceRuleChecks(
   astroboxToken: string | undefined,
   reloadTick: number,
 ): CheckState {
-  const [state, setState] = useState<CheckState>({ loading: Boolean(resource) });
+  const [state, setState] = useState<CheckState>(() => {
+    if (!resource) return { loading: false };
+    if (!token) return { loading: false, error: "未登录 GitHub" };
+    const cached = readRuleCheckCache(
+      buildRuleCheckCacheKey(resource, prFiles, token, astroboxToken),
+    );
+    return cached ? { loading: false, result: cached } : { loading: true };
+  });
+  // 记录已经处理过的「重新检查」计数；计数增长代表用户显式要求跳过缓存。
+  const appliedReloadTickRef = useRef(reloadTick);
 
   useEffect(() => {
     if (!resource) {
@@ -58,15 +72,35 @@ function useResourceRuleChecks(
       return;
     }
 
+    const cacheKey = buildRuleCheckCacheKey(resource, prFiles, token, astroboxToken);
+    const forced = reloadTick !== appliedReloadTickRef.current;
+    appliedReloadTickRef.current = reloadTick;
+    if (!forced) {
+      const cached = readRuleCheckCache(cacheKey);
+      if (cached) {
+        // 评论、刷新时间线等动作会重建 resource / prFiles 引用，但检查输入没变，
+        // 直接复用缓存，避免仓库文件树、图片与包体检查整块重跑。
+        setState({ loading: false, result: cached });
+        return;
+      }
+    }
+
     let cancelled = false;
-    setState({ loading: true });
+    // 重新检查时保留上一次结果，只把按钮切到「检查中」，避免面板瞬间闪空。
+    setState((previous) => ({ loading: true, result: previous.result }));
     runResourceRuleChecks({ preview: resource, prFiles, token, astroboxToken })
       .then((result) => {
+        // 先写缓存再判断取消：即使组件因切换 PR 被卸载，结果也能在切回时复用。
+        writeRuleCheckCache(cacheKey, result);
         if (!cancelled) setState({ loading: false, result });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setState({ loading: false, error: err instanceof Error ? err.message : String(err) });
+          setState((previous) => ({
+            loading: false,
+            result: previous.result,
+            error: err instanceof Error ? err.message : String(err),
+          }));
         }
       });
     return () => {
