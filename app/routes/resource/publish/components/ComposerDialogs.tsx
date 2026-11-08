@@ -22,6 +22,7 @@ import {
 } from "@phosphor-icons/react";
 import type { PublishDraft } from "~/logic/publish/publish-drafts";
 import type { UnpaidEncryptionCheck } from "~/logic/publish/unpaid-encryption";
+import type { PaidTypeConsistencyCheck } from "~/logic/publish/paid-type-consistency";
 import type { DeviceOption, DownloadInput } from "./types";
 
 function deviceLabel(
@@ -317,6 +318,63 @@ export function UnpaidEncryptionWarningDialog({
           <AlertDialog.Action>
             <Button variant="solid" color="red" onClick={onContinue}>
               继续
+            </Button>
+          </AlertDialog.Action>
+        </div>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+  );
+}
+
+/**
+ * 「更新仓库」前的提醒：目录付费类型为免费，但服务端已配置启用中的付费 SKU。
+ * 不拦截（创作者确认后仍可继续），审核侧会判不通过并要求修正。
+ */
+export function PaidTypeWarningDialog({
+  warning,
+  sortedDeviceOptions,
+  onContinue,
+  onClose,
+}: {
+  warning: Extract<PaidTypeConsistencyCheck, { status: "mismatch" }> | null;
+  sortedDeviceOptions: DeviceOption[];
+  onContinue: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AlertDialog.Root
+      open={warning !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <AlertDialog.Content maxWidth="480px">
+        <AlertDialog.Title>付费 SKU 与付费类型不一致</AlertDialog.Title>
+        <AlertDialog.Description size="2">
+          资源 ID「{warning?.resourceId ?? ""}」下存在启用中的付费 SKU，但当前「付费类型」标注为免费。以下设备必须购买后才能解锁：
+        </AlertDialog.Description>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {(warning?.deviceIds ?? []).map((deviceId) => (
+            <div
+              key={deviceId}
+              className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+            >
+              {deviceLabel(sortedDeviceOptions, deviceId)}
+            </div>
+          ))}
+        </div>
+        <Text as="p" size="2" className="mt-3">
+          这类资源会被商品页展示为免费，审核也会要求修正。请把「付费类型」改为「付费」或「强制付费」后再发布。是否仍要继续？
+        </Text>
+        <div className="mt-4 flex justify-end gap-3">
+          <AlertDialog.Cancel>
+            <Button variant="soft" color="gray">
+              返回修改
+            </Button>
+          </AlertDialog.Cancel>
+          <AlertDialog.Action>
+            <Button variant="solid" color="red" onClick={onContinue}>
+              仍要继续
             </Button>
           </AlertDialog.Action>
         </div>

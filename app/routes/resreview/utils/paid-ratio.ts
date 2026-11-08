@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getPublicProfile, type PublicProfile } from "~/api/astrobox/profile";
 import { fetchCatalogEntries, type CatalogEntry } from "~/logic/publish/catalog";
+import { isPaidDirectoryType } from "~/logic/publish/paid-type-consistency";
 import { hasCreatorPro, isVipActive, type AuthorProStatus } from "../owner-pro";
 import type { VipTier } from "~/api/astrobox/admin";
 
@@ -47,13 +48,11 @@ export interface ManifestAuthorLike {
 }
 
 export function entryPaidKind(paidType: string | undefined): PaidKind {
-    const normalized = (paidType || "").trim().toLowerCase();
-    if (normalized === "paid" || normalized === "force_paid") return "paid";
-    return "free";
+    return isPaidDirectoryType(paidType) ? "paid" : "free";
 }
 
 export function isPaidEntry(paidType: string | undefined) {
-    return entryPaidKind(paidType) === "paid";
+    return isPaidDirectoryType(paidType);
 }
 
 /**

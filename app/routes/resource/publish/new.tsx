@@ -77,6 +77,7 @@ import { StepList, SectionCard, type UploadItem } from "./components/shared";
 import {
   AutoSaveRestoreDialog,
   DraftActions,
+  PaidTypeWarningDialog,
   UnboundAuthorNoticeDialog,
   UnpaidEncryptionWarningDialog,
   VersionCodeWarningDialog,
@@ -185,6 +186,10 @@ import {
   checkUnpaidEncryption,
   type UnpaidEncryptionCheck,
 } from "~/logic/publish/unpaid-encryption";
+import {
+  checkPaidTypeConsistency,
+  type PaidTypeConsistencyCheck,
+} from "~/logic/publish/paid-type-consistency";
 import {
   BANNED_IMAGE_NOTICE,
   COVER_COMPRESS_TARGET_BYTES,
@@ -896,6 +901,11 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   const [unpaidEncryptionWarning, setUnpaidEncryptionWarning] = useState<Exclude<
     UnpaidEncryptionCheck,
     { status: "ok" }
+  > | null>(null);
+  /** 目录标注免费、但服务端已有启用中付费 SKU 时的提醒；确认后可继续发布。 */
+  const [paidTypeWarning, setPaidTypeWarning] = useState<Extract<
+    PaidTypeConsistencyCheck,
+    { status: "mismatch" }
   > | null>(null);
   const [repoNameInput, setRepoNameInput] = useState("");
   const [userRepos, setUserRepos] = useState<ExistingRepoOption[]>([]);
@@ -2309,7 +2319,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   };
 
   const handleUploadToRepo = async (
-    options: { skipUnpaidEncryptionCheck?: boolean } = {},
+    options: { skipUnpaidEncryptionCheck?: boolean; skipPaidTypeCheck?: boolean } = {},
   ) => {
     if (missingEditContext) {
       setRepoStatus("error");
@@ -2364,6 +2374,41 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           setRepoStatus("idle");
           setRepoMessage("");
           return;
+        }
+      }
+
+      // 目录标注免费、但服务端已有启用中的付费 SKU：这是明显的强制付费分发，
+      // 商品页却会把资源展示成免费。发布页只提示、不拦截，创作者确认后仍可继续；
+      // 审核侧会判为不通过，必须在合入前修正 paid_type。
+      //
+      // SKU 配置要求 CreatorPlus，非会员不可能配置成功；跳过查询，避免接口
+      // 返回 403 后触发一次无意义的 token 续期。
+      if (!options.skipPaidTypeCheck && isVip) {
+        setRepoMessage("正在检查付费 SKU 与付费类型...");
+        const paidCheck = await checkPaidTypeConsistency(
+          itemId,
+          effectivePaidType,
+          { migratingFromId: idMigration?.fromId },
+        );
+        if (paidCheck.status === "mismatch") {
+          log.warn("upload/repo", "付费 SKU 与目录付费类型不一致，等待确认", {
+            data: {
+              itemId,
+              paidType: paidCheck.paidType,
+              deviceIds: paidCheck.deviceIds,
+              skuLabels: paidCheck.skuLabels,
+            },
+          });
+          setPaidTypeWarning(paidCheck);
+          setRepoStatus("idle");
+          setRepoMessage("");
+          return;
+        }
+        if (paidCheck.status === "unknown") {
+          // 查询失败不能据此拦截发布；审核侧仍会给出人工复核结论。
+          log.warn("upload/repo", "付费 SKU 校验失败，跳过提示", {
+            data: { itemId, error: paidCheck.error },
+          });
         }
       }
 
@@ -3520,6 +3565,32 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       onClose={() => setUnpaidEncryptionWarning(null)}
     />
   );
+  const paidTypeWarningDialog = (
+    <PaidTypeWarningDialog
+      warning={paidTypeWarning}
+      sortedDeviceOptions={sortedDeviceOptions}
+      onContinue={() => {
+        log.info(
+          "upload/repo",
+          "确认在付费 SKU 已配置的情况下继续以免费类型发布",
+          {
+            data: {
+              itemId,
+              deviceIds: paidTypeWarning?.deviceIds,
+              paidType: paidTypeWarning?.paidType,
+            },
+          },
+        );
+        // 未付费加密提醒若已确认过，不能因为这次继续又弹回来。
+        // 没有加密设备时该检查本身会直接通过，跳过也无副作用。
+        void handleUploadToRepo({
+          skipUnpaidEncryptionCheck: true,
+          skipPaidTypeCheck: true,
+        });
+      }}
+      onClose={() => setPaidTypeWarning(null)}
+    />
+  );
   const versionIncrementWarningDialog = (
     <VersionIncrementWarningDialog
       rows={versionIncrementWarning}
@@ -3578,6 +3649,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       {unboundAuthorNoticeDialogEl}
       {versionIncrementWarningDialog}
       {unpaidEncryptionWarningDialog}
+      {paidTypeWarningDialog}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(auto,280px)_1fr] mx-auto max-w-6xl px-2 w-full lg:gap-4 gap-6">
         {/* sticky 偏移要和滚动内容预留的顶部空间一致（app.css 里 app-page-scroll-content
             的 padding-top 为 52px + 0.5rem），否则吸顶后会钻进 Header 的渐进模糊区。 */}

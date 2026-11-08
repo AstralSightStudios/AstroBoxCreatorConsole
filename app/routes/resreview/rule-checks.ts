@@ -94,6 +94,11 @@ import {
 } from "./utils/purchase-gate";
 import { inspectResPack } from "~/logic/publish/crpack-validate";
 import {
+  findEnabledPaidSkus,
+  findPaidTypeMismatch,
+  type PaidTypeMismatch,
+} from "~/logic/publish/paid-type-consistency";
+import {
   judgePackageDisplayName,
   summarizeDisplayNameCheck,
   type DisplayNameKind,
@@ -1280,6 +1285,10 @@ export async function runResourceRuleChecks(options: {
   let encryptedDeviceSet: Set<string> | null = null;
   let encryptedHashSet = new Set<string>();
   let cryptoCheckError = "";
+  /** 启用中付费 SKU 与目录付费类型不一致的明细；null 表示没有冲突。 */
+  let paidTypeMismatch: PaidTypeMismatch | null = null;
+  let enabledPaidSkuCount = 0;
+  let enabledPaidSkuDevices = 0;
   const creatorFeaturesEnabled = Boolean(manifest?.ext?.enableAstroBoxCreatorFeatures);
   const cryptoResourceId = toNonEmptyString(manifestItem?.id) || toNonEmptyString(entry.id);
   const fullDownloadDevices = Array.from(
@@ -1313,6 +1322,34 @@ export async function runResourceRuleChecks(options: {
       encryptedHashSet = new Set(
         configs.fileKeys.map((k) => k.encryptedFileHash).filter(Boolean),
       );
+
+      // 目录付费类型一致性：存在启用中的付费 SKU 就说明资源在走 AB 授权
+      // 分发（用户必须购买才能解锁），此时 paid_type 不能仍标为免费。
+      // 换 ID 迁移时旧 ID 上的付费配置会在合入后迁移到新 ID，一并计入。
+      let skusForPaidType = configs.skus;
+      const inheritedId = toNonEmptyString(preview.originalId);
+      if (inheritedId && inheritedId !== cryptoResourceId) {
+        try {
+          const inherited = await AdminApi.orders.resourceConfigs({
+            resourceId: inheritedId,
+            limit: 500,
+          });
+          skusForPaidType = [...skusForPaidType, ...inherited.skus];
+        } catch {
+          // 旧 ID 查不到配置不影响本项判定；ID 迁移另有独立检查与提示。
+        }
+      }
+      const enabledPaidSkus = findEnabledPaidSkus(skusForPaidType);
+      enabledPaidSkuCount = enabledPaidSkus.length;
+      enabledPaidSkuDevices = new Set(
+        enabledPaidSkus
+          .map((sku) => (sku.deviceId ?? "").trim())
+          .filter(Boolean),
+      ).size;
+      paidTypeMismatch = findPaidTypeMismatch({
+        paidType: entry.paid_type,
+        skus: skusForPaidType,
+      });
 
       if (creatorFeaturesEnabled) {
         // 资源作者账户 id：用于校验配置归属（服务端 checkConfigUsable 的判定之一）。
@@ -1412,6 +1449,30 @@ export async function runResourceRuleChecks(options: {
         : "未登录 AstroBox，无法校验服务端配置",
     });
   }
+
+  // --- check: 付费 SKU 与目录付费类型一致 ---
+  // 启用中的付费 SKU 意味着用户必须购买才能解锁，属于 AB 授权分发；
+  // 目录若仍标注免费，商品页会把付费资源展示成免费。发布页只提示不拦截，
+  // 审核侧直接判不通过，避免创作者用「标免费 + 配 SKU」绕开付费比例规则。
+  checks.push({
+    title: "付费 SKU 与目录付费类型一致",
+    status: (() => {
+      if (!astroboxToken) return "manual";
+      if (!cryptoResourceId) return "warn";
+      if (cryptoCheckError) return "manual";
+      return paidTypeMismatch ? "fail" : "pass";
+    })(),
+    detail: (() => {
+      if (!astroboxToken) return "未登录 AstroBox，无法校验付费 SKU 与目录付费类型";
+      if (!cryptoResourceId) return "manifest 缺少资源 ID，无法查询服务端付费配置";
+      if (cryptoCheckError) return `校验失败：${cryptoCheckError}`;
+      if (paidTypeMismatch)
+        return `以下设备存在启用中的付费 SKU，但目录付费类型为「免费」：${paidTypeMismatch.skuLabels.join("、")}。用户必须购买后才能解锁，请把 index_v2.csv 的 paid_type 改为「付费」或「强制付费」。`;
+      if (enabledPaidSkuCount > 0)
+        return `检测到 ${enabledPaidSkuCount} 个启用中的付费 SKU（${enabledPaidSkuDevices} 台设备），目录付费类型已标注为付费。`;
+      return "未检测到启用中的付费 SKU，无需校验付费类型。";
+    })(),
+  });
 
   if (creatorFeaturesEnabled) {
     // --- check: 启用购买与加密功能但未使用 CC 加密 ---
