@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowSquareOutIcon,
   CopyIcon,
@@ -16,12 +16,14 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { Dialog } from "~/components/ScaleAwareThemes";
-import { validateGithubReaderToken } from "~/logic/account/github";
+import { GITHUB_OAUTH_CONFIG } from "~/config/github";
 import {
-  cancelGithubLogin,
-  startGithubLogin,
-  useGithubLoginState,
-} from "~/logic/account/github-login-state";
+  buildGithubAccountFromToken,
+  pollGithubDeviceSession,
+  startGithubDeviceSession,
+  validateGithubReaderToken,
+  type GithubDeviceSession,
+} from "~/logic/account/github";
 import {
   addGithubReader,
   type GithubAccount,
@@ -29,6 +31,8 @@ import {
 } from "~/logic/account/store";
 
 const PAT_CREATE_URL = "https://github.com/settings/personal-access-tokens/new";
+
+type ReaderDeviceStatus = "idle" | "requesting" | "waiting" | "error";
 
 function openExternal(url: string) {
   void openUrl(url).catch(() => {
@@ -47,7 +51,7 @@ export interface AddGithubReaderDialogProps {
 
 /**
  * 添加读取账号：优先 GitHub 登录（Device Flow），其次 Access Token。
- * 读取账号只读公开内容；入口本身只对具备审核权限的主账号开放。
+ * Device Flow 在对话框内独立维护，确保授权码和手动跳转始终可见。
  */
 export default function AddGithubReaderDialog({
   open,
@@ -57,50 +61,36 @@ export default function AddGithubReaderDialog({
   gateMessage,
   onAdded,
 }: AddGithubReaderDialogProps) {
-  const githubLogin = useGithubLoginState();
   const [pat, setPat] = useState("");
   const [patBusy, setPatBusy] = useState(false);
   const [patError, setPatError] = useState("");
-
-  const loginBusy =
-    githubLogin.status === "requesting" || githubLogin.status === "waiting";
-  const primaryLoginBusy =
-    loginBusy && githubLogin.target === "primary";
-  const readerWaiting =
-    githubLogin.status === "waiting" && githubLogin.target === "reader";
-  const deviceCode = githubLogin.session?.userCode;
-  const authLink =
-    githubLogin.session?.verificationUriComplete ||
-    githubLogin.session?.verificationUri;
-
-  useEffect(() => {
-    if (!open) return;
-    if (
-      githubLogin.status === "success" &&
-      githubLogin.target === "reader" &&
-      githubLogin.addedReader
-    ) {
-      onAdded(githubLogin.addedReader);
-      cancelGithubLogin();
-      onOpenChange(false);
-    }
-  }, [
-    open,
-    githubLogin.status,
-    githubLogin.target,
-    githubLogin.addedReader,
-    onAdded,
-    onOpenChange,
-  ]);
+  const [deviceSession, setDeviceSession] =
+    useState<GithubDeviceSession | null>(null);
+  const [deviceStatus, setDeviceStatus] =
+    useState<ReaderDeviceStatus>("idle");
+  const [deviceError, setDeviceError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (open) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setDeviceSession(null);
+    setDeviceStatus("idle");
+    setDeviceError("");
     setPat("");
     setPatError("");
-    if (githubLogin.target === "reader") {
-      cancelGithubLogin();
-    }
-  }, [open, githubLogin.target]);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
+  const authLink =
+    deviceSession?.verificationUriComplete || deviceSession?.verificationUri;
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -119,9 +109,72 @@ export default function AddGithubReaderDialog({
     }
   };
 
-  const handleStartLogin = () => {
+  const handleStartLogin = async () => {
     if (!canAdd) return;
-    void startGithubLogin("reader");
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setDeviceStatus("requesting");
+    setDeviceError("");
+    setDeviceSession(null);
+
+    try {
+      const session = await startGithubDeviceSession(
+        GITHUB_OAUTH_CONFIG.readerScopes,
+      );
+      if (controller.signal.aborted) return;
+
+      setDeviceSession(session);
+      setDeviceStatus("waiting");
+
+      const link = session.verificationUriComplete || session.verificationUri;
+      if (link) {
+        // 不阻塞轮询：自动打开失败时，对话框里的手动按钮仍然可用。
+        void openUrl(link).catch(() => {
+          // 手动按钮会兜底。
+        });
+      }
+
+      const payload = await pollGithubDeviceSession(session, {
+        signal: controller.signal,
+      });
+      const account = await buildGithubAccountFromToken(payload, {
+        includeEmail: false,
+      });
+      const primaryLogin = primary?.username?.trim().toLowerCase() ?? "";
+      if (
+        primaryLogin &&
+        account.username.trim().toLowerCase() === primaryLogin
+      ) {
+        throw new Error(
+          "这是当前 GitHub 主账号。请先在浏览器中切换到另一个账号，或使用 Access Token 添加。",
+        );
+      }
+
+      const reader: GithubReaderAccount = {
+        ...account,
+        authType: "oauth",
+        addedAt: Date.now(),
+      };
+      addGithubReader(reader);
+      onAdded(reader);
+      onOpenChange(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (controller.signal.aborted || message === "Login cancelled") {
+        return;
+      }
+      setDeviceStatus("error");
+      setDeviceError(message);
+    }
+  };
+
+  const handleCancelLogin = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setDeviceSession(null);
+    setDeviceStatus("idle");
+    setDeviceError("");
   };
 
   const handleAddPat = async () => {
@@ -178,36 +231,39 @@ export default function AddGithubReaderDialog({
 
             <div className="pt-4">
               <Tabs.Content value="login">
-                {primaryLoginBusy ? (
+                {deviceStatus === "requesting" ? (
                   <Callout.Root color="gray" size="1">
                     <Callout.Icon>
                       <Spinner size="1" />
                     </Callout.Icon>
-                    <Callout.Text>
-                      正在登录 GitHub 主账号，请完成后再添加读取账号。
-                    </Callout.Text>
+                    <Callout.Text>正在获取 GitHub 授权码…</Callout.Text>
                   </Callout.Root>
-                ) : readerWaiting ? (
+                ) : deviceStatus === "waiting" && deviceSession ? (
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-white/60">
                       在浏览器中输入下面的代码完成 GitHub 授权：
                     </p>
                     <div className="flex items-center gap-2">
                       <code className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-center text-lg font-semibold tracking-[0.18em] text-white">
-                        {deviceCode}
+                        {deviceSession.userCode}
                       </code>
                       <Button
                         variant="soft"
                         aria-label="复制授权代码"
                         onClick={() =>
-                          void handleCopy(deviceCode || "", "已复制授权代码")
+                          void handleCopy(
+                            deviceSession.userCode,
+                            "已复制授权代码",
+                          )
                         }
                       >
                         <CopyIcon size={14} />
                       </Button>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => authLink && openExternal(authLink)}>
+                      <Button
+                        onClick={() => authLink && openExternal(authLink)}
+                      >
                         <ArrowSquareOutIcon size={14} />
                         打开授权页面
                       </Button>
@@ -223,7 +279,7 @@ export default function AddGithubReaderDialog({
                       <Button
                         variant="soft"
                         color="gray"
-                        onClick={cancelGithubLogin}
+                        onClick={handleCancelLogin}
                       >
                         取消
                       </Button>
@@ -235,29 +291,23 @@ export default function AddGithubReaderDialog({
                 ) : (
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-white/60">
-                      点击后会在系统浏览器打开 GitHub 授权页面，授权完成会自动添加为读取账号。
+                      点击后会在系统浏览器打开 GitHub 授权页面；对话框会同时显示授权码，即使浏览器没有自动打开，也可以手动跳转。
                     </p>
-                    <Button disabled={loginBusy} onClick={handleStartLogin}>
-                      {loginBusy ? (
-                        <Spinner size="1" />
-                      ) : (
-                        <GithubLogoIcon size={16} />
-                      )}
-                      {loginBusy ? "等待授权…" : "开始 GitHub 登录"}
+                    <Button onClick={() => void handleStartLogin()}>
+                      <GithubLogoIcon size={16} />
+                      开始 GitHub 登录
                     </Button>
                     <p className="text-[11px] leading-relaxed text-white/45">
                       GitHub 会授权浏览器当前登录的账号。若要添加其他账号，请先在浏览器中切换账号，或使用 Access Token。
                     </p>
-                    {githubLogin.status === "error" &&
-                      githubLogin.target === "reader" &&
-                      githubLogin.error && (
-                        <Callout.Root color="red" size="1">
-                          <Callout.Icon>
-                            <WarningIcon size={16} />
-                          </Callout.Icon>
-                          <Callout.Text>{githubLogin.error}</Callout.Text>
-                        </Callout.Root>
-                      )}
+                    {deviceStatus === "error" && deviceError && (
+                      <Callout.Root color="red" size="1">
+                        <Callout.Icon>
+                          <WarningIcon size={16} />
+                        </Callout.Icon>
+                        <Callout.Text>{deviceError}</Callout.Text>
+                      </Callout.Root>
+                    )}
                   </div>
                 )}
               </Tabs.Content>

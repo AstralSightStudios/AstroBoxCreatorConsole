@@ -3,7 +3,10 @@ import {
   ArrowClockwiseIcon,
   Info,
   PlusIcon,
+  SealCheckIcon,
+  SignOutIcon,
   TrashIcon,
+  WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { Badge, Button, Callout, Spinner } from "@radix-ui/themes";
@@ -105,12 +108,12 @@ export default function GithubAccountsDrawer({
     void onRefreshQuota();
   }, [open, onRefreshQuota]);
 
-  const permissionText = access.checking
-    ? "正在校验审核权限…"
+  const permissionTitle = access.checking
+    ? "正在校验审核权限"
     : access.allowed
       ? "审核权限已确认"
       : access.error
-        ? `权限校验失败：${access.error}`
+        ? `审核权限校验失败：${access.error}`
         : "当前主账号无审核权限";
 
   return (
@@ -170,6 +173,27 @@ export default function GithubAccountsDrawer({
                   <Badge color="gray" size="1">
                     主账号
                   </Badge>
+                  <span
+                    className="inline-flex items-center"
+                    title={permissionTitle}
+                    aria-label={permissionTitle}
+                  >
+                    {access.checking ? (
+                      <Spinner size="1" />
+                    ) : access.allowed ? (
+                      <SealCheckIcon
+                        size={16}
+                        weight="fill"
+                        className="text-emerald-400"
+                      />
+                    ) : (
+                      <WarningIcon
+                        size={16}
+                        weight="fill"
+                        className="text-amber-400"
+                      />
+                    )}
+                  </span>
                 </div>
                 <div className="truncate text-xs text-white/45">
                   @{primary.username}
@@ -177,15 +201,14 @@ export default function GithubAccountsDrawer({
                 <div className="mt-1 text-[11px] text-white/45">
                   {formatQuota(quotaByLogin.get(primary.username.toLowerCase()))}
                 </div>
-                <div className="text-[11px] text-white/45">{permissionText}</div>
               </div>
               <Button
                 variant="soft"
                 color="red"
-                size="2"
                 onClick={onLogoutPrimary}
               >
-                退出
+                <SignOutIcon size={15} />
+                退出登录
               </Button>
             </div>
           </div>
@@ -257,9 +280,10 @@ export default function GithubAccountsDrawer({
           )}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
+        <div className="mt-4 flex flex-col gap-2">
+          <div className="rounded-[14px] border border-dashed border-white/15 bg-white/[0.03] p-3">
             <Button
+              className="w-full"
               disabled={!canAdd}
               onClick={onAdd}
               aria-label="添加读取账号"
@@ -268,24 +292,26 @@ export default function GithubAccountsDrawer({
               添加读取账号
             </Button>
             {!canAdd && gateMessage && (
-              <p className="mt-1 max-w-[320px] text-[11px] leading-relaxed text-white/40">
+              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
                 {gateMessage}
               </p>
             )}
           </div>
-          <Button
-            variant="soft"
-            color="gray"
-            disabled={refreshingQuota}
-            onClick={() => void onRefreshQuota()}
-          >
-            {refreshingQuota ? (
-              <Spinner size="1" />
-            ) : (
-              <ArrowClockwiseIcon size={14} />
-            )}
-            刷新额度
-          </Button>
+          <div className="flex justify-end">
+            <Button
+              variant="soft"
+              color="gray"
+              disabled={refreshingQuota}
+              onClick={() => void onRefreshQuota()}
+            >
+              {refreshingQuota ? (
+                <Spinner size="1" />
+              ) : (
+                <ArrowClockwiseIcon size={14} />
+              )}
+              刷新额度
+            </Button>
+          </div>
         </div>
       </div>
     </FloatingDrawer>

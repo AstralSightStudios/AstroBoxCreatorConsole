@@ -201,14 +201,7 @@ export default function AccountsSection({
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--gray-12)]">
                 GitHub
-                {accounts.github?.token?.trim() ? (
-                  <>
-                    <Badge color="gray">主账号</Badge>
-                    <Badge color="gray">审核/合并</Badge>
-                  </>
-                ) : (
-                  <Badge color="gray">必需</Badge>
-                )}
+                <Badge color="gray">必需</Badge>
               </p>
               <p className="truncate text-xs text-[var(--gray-11)]">
                 {accounts.github?.token?.trim()

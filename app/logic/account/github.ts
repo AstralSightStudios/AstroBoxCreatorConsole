@@ -29,25 +29,46 @@ function isTauriEnvironment() {
     );
 }
 
+const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 30_000;
+
 async function githubRequest<T>(options: {
     url: string;
     method?: "GET" | "POST";
     headers?: Record<string, string>;
     body?: string;
+    timeoutMs?: number;
 }): Promise<T> {
-    const { url, method = "GET", headers, body } = options;
+    const {
+        url,
+        method = "GET",
+        headers,
+        body,
+        timeoutMs = DEFAULT_GITHUB_REQUEST_TIMEOUT_MS,
+    } = options;
 
     if (isTauriEnvironment()) {
         try {
-            return await invoke<T>("github_request", {
-                request: {
-                    url,
-                    method,
-                    headers,
-                    body: body ?? null,
-                },
-            });
+            return await Promise.race([
+                invoke<T>("github_request", {
+                    request: {
+                        url,
+                        method,
+                        headers,
+                        body: body ?? null,
+                    },
+                }),
+                new Promise<never>((_, reject) => {
+                    setTimeout(
+                        () => reject(new Error("GitHub 请求超时，请检查网络。")),
+                        timeoutMs,
+                    );
+                }),
+            ]);
         } catch (error) {
+            // 超时是 Tauri 代理本身无响应，继续走 axios 只会再等一轮。
+            if (error instanceof Error && error.message === "GitHub 请求超时，请检查网络。") {
+                throw error;
+            }
             console.warn(
                 "GitHub request via Tauri failed, falling back to axios",
                 error,
@@ -60,6 +81,7 @@ async function githubRequest<T>(options: {
         method,
         data: body,
         headers,
+        timeout: timeoutMs,
     });
 
     return response.data;
