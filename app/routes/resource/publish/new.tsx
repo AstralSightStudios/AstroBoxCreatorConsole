@@ -219,7 +219,6 @@ import { fetchPublishedBaselinesForResourceId } from "~/logic/publish/published-
 import {
   applyVersionCodeBackfills,
   collectVersionCodeBackfills,
-  deriveXiaomiWatchfaceVersionCode,
 } from "~/logic/publish/version-code-backfill";
 import {
   computePackageHash,
@@ -1460,9 +1459,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           }
         }
         // 历史 manifest 可能只有 version、没有 versionCode（字段是后加的）。
-        // 编辑这类资源时从仓库包体补齐：小米表盘按 version 派生，其余包体读
-        // 包内清单。补不出来就保持缺失——沿用旧包体的行不再强制填写，只有
-        // 本次导入/替换的包体才要求 versionCode。
+        // 编辑这类资源时从仓库包体补齐——versionCode 一律以包体自身为准，
+        // 不能用展示版本反推（存量资源两者不一致的情况很多）。补不出来就
+        // 保持缺失：沿用旧包体的行不再强制填写，只有本次导入/替换的包体
+        // 才要求 versionCode。
         const backfillRows = [...downloadRows, ...trialDownloadRows];
         if (
           backfillRows.some(
@@ -1471,20 +1471,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               row.versionCode === undefined,
           )
         ) {
-          const manifestResourceType = normalizeResourceType(
-            manifest.item.restype,
-          );
           versionBackfillRef.current = collectVersionCodeBackfills({
             rows: backfillRows,
             loadPackage: loadExistingPackage,
             catalogMode: editContext.mode === "catalog",
-            deriveVersionCode: (row) =>
-              deriveXiaomiWatchfaceVersionCode(row, {
-                resourceType: manifestResourceType,
-                vendor: deviceVendorById.get(
-                  row.platformId.trim().toLowerCase(),
-                ),
-              }),
             onError: (row, error) => {
               log.warn(
                 "publish/version-backfill",

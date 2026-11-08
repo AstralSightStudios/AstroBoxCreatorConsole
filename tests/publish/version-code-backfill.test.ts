@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   applyVersionCodeBackfills,
   collectVersionCodeBackfills,
-  deriveXiaomiWatchfaceVersionCode,
   type VersionCodeBackfill,
 } from "../../app/logic/publish/version-code-backfill";
 import type { DownloadInput } from "../../app/routes/resource/publish/components/types";
@@ -52,57 +51,18 @@ function existingRow(
   });
 }
 
-describe("version-code-backfill: deriveXiaomiWatchfaceVersionCode", () => {
-  test("小米表盘按 major.minor.patch 派生 versionCode", () => {
-    const row = makeRow({ uid: "a", version: "1.1.2" });
-    expect(
-      deriveXiaomiWatchfaceVersionCode(row, {
-        resourceType: "watchface",
-        vendor: "xiaomi",
-      }),
-    ).toBe(65794);
-    expect(
-      deriveXiaomiWatchfaceVersionCode(row, {
-        resourceType: "watchface",
-        vendor: "XiaoMi",
-      }),
-    ).toBe(65794);
-  });
-
-  test("其他资源类型、厂商与四段版本号不套用该公式", () => {
-    const row = makeRow({ uid: "a", version: "1.1.2" });
-    expect(
-      deriveXiaomiWatchfaceVersionCode(row, {
-        resourceType: "quick_app",
-        vendor: "xiaomi",
-      }),
-    ).toBeUndefined();
-    expect(
-      deriveXiaomiWatchfaceVersionCode(row, {
-        resourceType: "watchface",
-        vendor: "vivo",
-      }),
-    ).toBeUndefined();
-    expect(
-      deriveXiaomiWatchfaceVersionCode(
-        makeRow({ uid: "b", version: "1.0.0.2" }),
-        { resourceType: "watchface", vendor: "xiaomi" },
-      ),
-    ).toBeUndefined();
-  });
-});
-
 describe("version-code-backfill: collectVersionCodeBackfills", () => {
-  test("派生值不读包体，其余行按路径去重读取", async () => {
+  test("versionCode 一律读包体，共用包体按路径去重", async () => {
     const shared = "downloads/shared.bin";
     const rows = [
       existingRow({
-        uid: "derived",
+        uid: "a",
         version: "1.1.2",
         existingFileName: "downloads/watch.bin",
       }),
-      existingRow({ uid: "read-a", version: "", existingFileName: shared }),
-      existingRow({ uid: "read-b", version: "1.0.0", existingFileName: shared }),
+      existingRow({ uid: "b", version: "", existingFileName: shared }),
+      // 展示版本与包体内部版本不一致：不能拿它反推 versionCode。
+      existingRow({ uid: "c", version: "9.9.9", existingFileName: shared }),
     ];
     let loads = 0;
     const backfills = await collectVersionCodeBackfills({
@@ -112,16 +72,15 @@ describe("version-code-backfill: collectVersionCodeBackfills", () => {
         return binFile();
       },
       catalogMode: true,
-      deriveVersionCode: (row) => (row.uid === "derived" ? 65794 : undefined),
     });
 
-    expect(loads).toBe(1);
+    expect(loads).toBe(2);
     const byUid = new Map(backfills.map((item) => [item.uid, item]));
-    expect(byUid.get("derived")?.versionCode).toBe(65794);
-    expect(byUid.get("read-a")?.versionCode).toBe(65794);
-    expect(byUid.get("read-a")?.version).toBe("1.1.2");
-    expect(byUid.get("read-a")?.previousVersionCode).toBe(65794);
-    expect(byUid.get("read-b")?.versionCode).toBe(65794);
+    expect(byUid.get("a")?.versionCode).toBe(65794);
+    expect(byUid.get("b")?.versionCode).toBe(65794);
+    expect(byUid.get("b")?.version).toBe("1.1.2");
+    expect(byUid.get("b")?.previousVersionCode).toBe(65794);
+    expect(byUid.get("c")?.versionCode).toBe(65794);
   });
 
   test("PR 编辑不写递增基线", async () => {

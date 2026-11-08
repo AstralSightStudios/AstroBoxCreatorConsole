@@ -6,22 +6,16 @@
  * 但没有 versionCode」会被拦在第二步之前，而版本列又是只读的——创作者只能
  * 重新导入一次包体，等于被逼着动包体。
  *
- * 这里在进入编辑页后按包体补齐：
- * - 小米表盘的 versionCode 由包体 offset 4..6 的 major.minor.patch 唯一派生，
- *   而 manifest 里的 version 也是发布时从同一处读出的，因此可以直接按 version
- *   计算，不必下载包体；
- * - 其余包体（rpk / CRPack / .canopus / vivo 表盘）的 versionCode 只存在包内
- *   清单里，交给调用方注入的 loadPackage 读取。
+ * 这里在进入编辑页后按包体补齐：versionCode 一律以**包体自身**为准，不能用
+ * manifest 的 version 反推。存量资源里展示版本与包内版本不一致的例子并不少见
+ * （例如 manifest 写 1.1.0、包体实际是 1.0.0），按 version 算出来的 versionCode
+ * 会高于用户真正安装的版本，客户端会陷入「永远有更新」的循环。
  *
  * 读不出来就保持缺失：未替换的旧包体不再强制填写，只有本次导入/替换的包体
  * 才要求 versionCode 非空（见 pre-publish-checks 的 rowUploadsPackage）。
  */
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
-import {
-  readPackageVersion,
-  xiaomiVersionCodeFromVersion,
-} from "./package-version";
-import type { ResourceType } from "./resource-type";
+import { readPackageVersion } from "./package-version";
 
 /** 一条回填结果。`uid` 对应下载行，应用时会再次核对行是否已被替换。 */
 export interface VersionCodeBackfill {
@@ -40,22 +34,6 @@ export interface VersionCodeBackfill {
 /** 仓库里已有包体的路径；本地新上传的行没有值。 */
 function existingPackagePath(row: DownloadInput): string {
   return (row.file?.pathOverride || row.existingFileName || "").trim();
-}
-
-/**
- * 小米表盘 versionCode 是否可由 manifest 的 version 唯一确定。
- *
- * 仅限小米表盘：小米 `.bin` / `.mwz` 把 major.minor.patch 直接写在包体里，
- * versionCode 就是这三个字节的拼接；vivo 表盘 rpk 的 version 与 versionCode
- * 各自独立，套用这个公式会算出错误的值。
- */
-export function deriveXiaomiWatchfaceVersionCode(
-  row: DownloadInput,
-  params: { resourceType: ResourceType; vendor?: string },
-): number | undefined {
-  if (params.resourceType !== "watchface") return undefined;
-  if ((params.vendor ?? "").trim().toLowerCase() !== "xiaomi") return undefined;
-  return xiaomiVersionCodeFromVersion(row.version);
 }
 
 function toBackfill(
@@ -82,35 +60,14 @@ export async function collectVersionCodeBackfills(params: {
   loadPackage: (row: DownloadInput) => Promise<File>;
   /** 目录直编时把读到的值同时写成递增基线。 */
   catalogMode: boolean;
-  /** 无需读取包体即可确定的值；返回 undefined 时回退到读取包体。 */
-  deriveVersionCode?: (row: DownloadInput) => number | undefined;
   onError?: (row: DownloadInput, error: unknown) => void;
 }): Promise<VersionCodeBackfill[]> {
-  const { rows, loadPackage, catalogMode, deriveVersionCode, onError } =
-    params;
+  const { rows, loadPackage, catalogMode, onError } = params;
   // 只处理仍指向仓库旧文件的行；本次导入/替换的包体在导入时就读出版本了。
   const targets = rows.filter(
     (row) => Boolean(row.existingFileName?.trim()) && row.versionCode === undefined,
   );
   if (targets.length === 0) return [];
-
-  const backfills: VersionCodeBackfill[] = [];
-  const pending: DownloadInput[] = [];
-  for (const row of targets) {
-    const derived = deriveVersionCode?.(row);
-    if (derived !== undefined) {
-      backfills.push(
-        toBackfill(
-          row,
-          existingPackagePath(row),
-          { version: row.version, versionCode: derived },
-          catalogMode,
-        ),
-      );
-      continue;
-    }
-    pending.push(row);
-  }
 
   const reads = new Map<
     string,
@@ -134,8 +91,9 @@ export async function collectVersionCodeBackfills(params: {
     return promise;
   };
 
+  const backfills: VersionCodeBackfill[] = [];
   const loaded = await Promise.all(
-    pending.map(async (row) => {
+    targets.map(async (row) => {
       const path = existingPackagePath(row);
       const info = await readPath(path, row);
       return info ? toBackfill(row, path, info, catalogMode) : null;
