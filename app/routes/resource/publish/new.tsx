@@ -160,7 +160,10 @@ import {
   resolveIdMigration,
   resolveIdentityLocks,
 } from "~/logic/publish/resources";
-import { evaluateReopenGate } from "~/logic/publish/review-status";
+import {
+  evaluateNeedFixSubmitGate,
+  evaluateReopenGate,
+} from "~/logic/publish/review-status";
 import {
   registerIdMigrationIntent,
   registerVersionResetIntent,
@@ -2433,6 +2436,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       );
       if (!gate.ok) {
         const message = `重新打开 PR 前需要修复全部 NEEDFIX，还有 ${gate.pendingCount} 项未勾选为已修复。`;
+        setPrStatus("error");
+        setPrMessage(message);
+        toast.error(message);
+        reportFailure("publish/pr", message);
+        return;
+      }
+    }
+    // 存在未修复的 NEEDFIX 时，本次提交至少要勾选一项已修复；无 NEEDFIX 不限制。
+    if (mode === "in_progress") {
+      const submitGate = evaluateNeedFixSubmitGate(
+        needFixItems,
+        fixedSelections,
+      );
+      if (!submitGate.ok) {
+        const message = "请至少勾选一项本次已修复的 NEEDFIX 问题后再提交。";
         setPrStatus("error");
         setPrMessage(message);
         toast.error(message);

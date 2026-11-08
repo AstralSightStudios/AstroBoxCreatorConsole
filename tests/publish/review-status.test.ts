@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   deriveNeedFixAuthors,
   deriveReviewStatus,
+  evaluateNeedFixSubmitGate,
   evaluateReopenGate,
   filterReviewTagComments,
   hasHideTag,
@@ -281,5 +282,42 @@ describe("reopen gate", () => {
         (needFix) => Boolean(selections[needFix.id]),
       ),
     ).toEqual({ ok: false, pendingCount: 1 });
+  });
+});
+
+describe("needfix submit gate", () => {
+  const item = (id: string): NeedFixItem => ({
+    id,
+    message: `问题 ${id}`,
+    fixed: false,
+  });
+
+  test("没有 NEEDFIX 时不阻拦提交", () => {
+    expect(evaluateNeedFixSubmitGate([], {})).toEqual({
+      ok: true,
+      selectedCount: 0,
+    });
+  });
+
+  test("存在 NEEDFIX 但一项都没勾选时拒绝提交", () => {
+    expect(evaluateNeedFixSubmitGate([item("a"), item("b")], {})).toEqual({
+      ok: false,
+      selectedCount: 0,
+    });
+  });
+
+  test("至少勾选一项已修复即可提交", () => {
+    expect(
+      evaluateNeedFixSubmitGate([item("a"), item("b")], { b: true }),
+    ).toEqual({ ok: true, selectedCount: 1 });
+  });
+
+  test("全部勾选也可以通过", () => {
+    expect(
+      evaluateNeedFixSubmitGate([item("a"), item("b")], {
+        a: true,
+        b: true,
+      }),
+    ).toEqual({ ok: true, selectedCount: 2 });
   });
 });

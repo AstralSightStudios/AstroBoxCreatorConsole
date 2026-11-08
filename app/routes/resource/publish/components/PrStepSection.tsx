@@ -65,7 +65,7 @@ export function PrStepSection({
             <p className="text-sm font-semibold text-amber-200">
               {isReopen
                 ? "重新打开 PR 前需修复全部问题（请全部勾选）"
-                : "本次更新已修复的问题"}
+                : "本次更新已修复的问题（请至少勾选一项）"}
             </p>
             {needFixItems.map((item) => (
               <div key={item.id} className="flex flex-col gap-1.5">

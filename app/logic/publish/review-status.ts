@@ -277,3 +277,25 @@ export function evaluateReopenGate(
     const pendingCount = items.filter((item) => !isFixed(item)).length;
     return { ok: pendingCount === 0, pendingCount };
 }
+
+/** 修改已有 PR 的提交门槛判定结果。 */
+export interface NeedFixSubmitGate {
+    ok: boolean;
+    /** 本次勾选为已修复的 NEEDFIX 数量。 */
+    selectedCount: number;
+}
+
+/**
+ * 修改已有 PR 的提交门槛：存在未修复的 NEEDFIX 时，本次提交至少要勾选
+ * 一项已修复；没有 NEEDFIX 的 PR 不做限制。
+ */
+export function evaluateNeedFixSubmitGate(
+    items: readonly NeedFixItem[],
+    selections: Readonly<Record<string, boolean>>,
+): NeedFixSubmitGate {
+    const selectedCount = items.filter((item) => selections[item.id]).length;
+    return {
+        ok: items.length === 0 || selectedCount > 0,
+        selectedCount,
+    };
+}
