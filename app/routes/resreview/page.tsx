@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, Dialog, DropdownMenu, Select, TextArea } from "~/components/ScaleAwareThemes";
+import { Button, Dialog, DropdownMenu, TextArea } from "~/components/ScaleAwareThemes";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   ArrowClockwiseIcon,
   ArrowLeft,
   CheckSquare,
   DotsThree,
+  FunnelSimple,
   MagnifyingGlass,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -89,6 +90,7 @@ import {
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
 import ReviewersDrawer from "./components/ReviewersDrawer";
+import ReviewFilterDrawer from "./components/ReviewFilterDrawer";
 import BatchNoticeFailuresDrawer from "./components/BatchNoticeFailuresDrawer";
 import { AuditLookupDialog } from "./components/AuditLookupDialog";
 import { PullRequestReviewWorkspace } from "./components/PullRequestReviewWorkspace";
@@ -212,6 +214,7 @@ export default function ResourceReviewPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [stateFilter, setStateFilter] = useState<ReviewState | "all">("all");
   const [sourceFilter, setSourceFilter] = useState<ReviewSource | "all">("all");
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [generalComment, setGeneralComment] = useState("");
   const [replyTarget, setReplyTarget] = useState<import("./components/CommentComposer").ReplyTarget | null>(null);
   const [editingTarget, setEditingTarget] = useState<import("./components/CommentComposer").EditingTarget | null>(null);
@@ -761,7 +764,10 @@ export default function ResourceReviewPage() {
   ]);
 
   const visiblePulls = useMemo(() => {
-    let list = pulls;
+    // 两个来源的 PR 混排，统一按最近更新时间倒序，避免插件永远排在资源后面。
+    const list = [...pulls].sort((a, b) =>
+      (b.updated_at || "").localeCompare(a.updated_at || ""),
+    );
     const sourceFiltered =
       sourceFilter === "all"
         ? list
@@ -1744,47 +1750,8 @@ export default function ResourceReviewPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-0.5 text-sm text-white/60">
                   <span>资源：{env.owner}/{env.repoName}</span>
-                  <span>
-                    插件：{NG_PLUGIN_REPO_CONFIG.owner}/
-                    {NG_PLUGIN_REPO_CONFIG.name}
-                  </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
-                    <div className="min-w-0 flex-1">
-                    <Select.Root
-                      value={stateFilter}
-                      onValueChange={(val) => setStateFilter(val as ReviewState | "all")}
-                    >
-                      <Select.Trigger radius="large" className="w-full" />
-                      <Select.Content position="popper">
-                        <Select.Item value="all">全部状态</Select.Item>
-                        <Select.Item value="waiting_review">等待审核</Select.Item>
-                        <Select.Item value="changes_requested">需要修改</Select.Item>
-                        <Select.Item value="fixed_waiting">已修复待复核</Select.Item>
-                      </Select.Content>
-                    </Select.Root>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <Select.Root
-                        value={sourceFilter}
-                        onValueChange={(val) =>
-                          setSourceFilter(val as ReviewSource | "all")
-                        }
-                      >
-                        <Select.Trigger radius="large" className="w-full" />
-                        <Select.Content position="popper">
-                          <Select.Item value="all">全部来源</Select.Item>
-                          {canReviewResource && (
-                            <Select.Item value="resource">资源 PR</Select.Item>
-                          )}
-                          {canReviewPlugin && (
-                            <Select.Item value="plugin">插件 PR</Select.Item>
-                          )}
-                        </Select.Content>
-                      </Select.Root>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-center justify-end gap-3">
                   {selectMode ? (
                     <>
                       <span className="shrink-0 text-sm text-white/70">
@@ -1843,6 +1810,14 @@ export default function ResourceReviewPage() {
                           </Button>
                         </DropdownMenu.Trigger>
                         <DropdownMenu.Content align="end">
+                          <DropdownMenu.Item
+                            className="gap-2"
+                            onSelect={() => setFilterDrawerOpen(true)}
+                          >
+                            <FunnelSimple size={15} />
+                            筛选
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Separator />
                           <DropdownMenu.Item
                             className="gap-2"
                             onSelect={() => setAuditDialogOpen(true)}
@@ -1924,10 +1899,19 @@ export default function ResourceReviewPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ReviewFilterDrawer
+        open={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        stateFilter={stateFilter}
+        sourceFilter={sourceFilter}
+        canReviewResource={canReviewResource}
+        canReviewPlugin={canReviewPlugin}
+        onStateFilterChange={setStateFilter}
+        onSourceFilterChange={setSourceFilter}
+      />
       <ReviewersDrawer
         open={reviewersKey !== null}
-        onClose={() => setReviewersKey(null)}
-        pull={
+        onClose={() => setReviewersKey(null)}        pull={
           reviewersKey !== null
             ? pulls.find((pull) => reviewPullKey(pull) === reviewersKey) ?? null
             : null

@@ -9,7 +9,7 @@ import {
 import type { PluginIndexEntryGroup } from "~/logic/publish/plugin-review";
 import { Button } from "~/components/ScaleAwareThemes";
 import { LoadingIndicator } from "../LoadingIndicator";
-import { PluginEntryTabBar, pluginGroupLabel } from "./PluginEntryTabBar";
+import { PluginEntryTabBar } from "./PluginEntryTabBar";
 
 interface PluginRuleCheckPanelProps {
   groups: PluginIndexEntryGroup[];
@@ -175,9 +175,6 @@ export function PluginRuleCheckPanel({
           <span className="inline-flex items-center gap-1 text-amber-400">
             <Warning size={14} weight="bold" /> 警告 {counts.warn}
           </span>
-          <span className="text-white/35">
-            {pluginGroupLabel(group, safeActiveIdx)} · {group.plugins.length} 个插件
-          </span>
         </div>
         {onReload && (
           <Button
@@ -231,10 +228,6 @@ export function PluginRuleCheckPanel({
           </li>
         </ul>
       </div>
-
-      <p className="text-xs text-white/35">
-        自动检查结果仅用于审核参考，不会阻止合并。
-      </p>
 
       <div className="flex flex-col gap-2">
         {rows.map((row, index) => {
