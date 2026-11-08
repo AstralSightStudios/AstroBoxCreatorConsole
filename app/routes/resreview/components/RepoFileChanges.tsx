@@ -16,6 +16,8 @@ interface RepoFileChangesProps {
   baseCommitHash?: string;
   manifest?: ManifestV2;
   isNew: boolean;
+  /** 对比模式下是否默认展开所有文件 diff。 */
+  defaultExpanded?: boolean;
   onFileComment?: (path: string) => void;
 }
 
@@ -27,7 +29,16 @@ interface RepoFileItem {
 
 const TEXT_EXT = /\.(json|txt|md|yml|yaml|xml|html|css|js|ts|jsx|tsx|sh|env|cfg|ini|conf|log|csv|gitignore|editorconfig)$/i;
 
-export function RepoFileChanges({ owner, repo, commitHash, baseCommitHash, manifest, isNew, onFileComment }: RepoFileChangesProps) {
+export function RepoFileChanges({
+  owner,
+  repo,
+  commitHash,
+  baseCommitHash,
+  manifest,
+  isNew,
+  defaultExpanded = true,
+  onFileComment,
+}: RepoFileChangesProps) {
   const [diffFiles, setDiffFiles] = useState<GithubPullFile[] | null>(null);
   const [fileItems, setFileItems] = useState<RepoFileItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +76,7 @@ export function RepoFileChanges({ owner, repo, commitHash, baseCommitHash, manif
           setFileItems(
             data.files.map((f) => ({
               path: f.filename,
-              expanded: true,
+              expanded: defaultExpanded,
               referenced: referencedFiles.includes(f.filename),
             })),
           );
@@ -79,7 +90,7 @@ export function RepoFileChanges({ owner, repo, commitHash, baseCommitHash, manif
     }
 
     return () => { cancelled = true; };
-  }, [owner, repo, commitHash, baseCommitHash, isNew]);
+  }, [owner, repo, commitHash, baseCommitHash, isNew, defaultExpanded]);
 
   const toggleFile = useCallback((path: string) => {
     setFileItems((prev) =>
@@ -114,6 +125,7 @@ export function RepoFileChanges({ owner, repo, commitHash, baseCommitHash, manif
             owner={owner}
             repo={repo}
             commitHash={commitHash}
+            showUnreferenced={Boolean(manifest)}
             onToggle={toggleFile}
             onFileComment={onFileComment}
           />
@@ -130,6 +142,7 @@ function RepoFileRow({
   owner,
   repo,
   commitHash,
+  showUnreferenced,
   onToggle,
   onFileComment,
 }: {
@@ -139,6 +152,7 @@ function RepoFileRow({
   owner: string;
   repo: string;
   commitHash: string;
+  showUnreferenced: boolean;
   onToggle: (path: string) => void;
   onFileComment?: (path: string) => void;
 }) {
@@ -198,7 +212,7 @@ function RepoFileRow({
         <span className="min-w-0 flex-1 break-all font-mono-sarasa text-white">
           {item.path}
         </span>
-        {!item.referenced && (
+        {showUnreferenced && !item.referenced && (
           <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-200/70">
             未引用
           </span>
