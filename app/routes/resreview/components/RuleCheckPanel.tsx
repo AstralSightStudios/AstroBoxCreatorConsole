@@ -651,7 +651,7 @@ function ImageSizesBlock({
                 >
                   像素 {img.width ? `${img.width}×${img.height}` : "-"}
                   {img.ratio != null ? ` · 比例 ${img.ratio.toFixed(2)}` : ""}
-                  {img.ratioValid === false && `（应为 ${img.label === "icon" ? "1:1" : "3:2"}）`}
+                  {img.ratioValid === false && `（应为 ${img.label === "icon" ? "1:1" : "1.50"}）`}
                   {img.width == null && " · 未取到尺寸"}
                 </span>
               )}

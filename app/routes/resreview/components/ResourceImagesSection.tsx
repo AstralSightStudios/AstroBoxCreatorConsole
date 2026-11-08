@@ -8,6 +8,7 @@ import {
   useProxiedMediaUrl,
 } from "~/logic/media-proxy";
 import { inspectImageFile, type ImageMeta as ImageContentMeta } from "~/logic/publish/image-meta";
+import { hasCoverRatio } from "~/logic/publish/pre-publish-checks";
 import type { PrResourcePreview } from "../types";
 
 interface ImageMeta {
@@ -155,7 +156,13 @@ function useImageMeta() {
     formatImageDimensions,
     formatAspectRatio,
     isIconRatioValid: (url: string) => isRatioValid(url, 1),
-    isCoverRatioValid: (url: string) => isRatioValid(url, 1.5),
+    // cover 与「自动检查」共用同一判定：宽/高保留两位小数等于 1.50。
+    // 原来这里的 ±0.01 容差会把 1.49、1.51 也标成合格，和自动检查结论相反。
+    isCoverRatioValid: (url: string) => {
+      const meta = imageMetaMap[url];
+      if (!meta?.width || !meta?.height) return true;
+      return hasCoverRatio(meta.width, meta.height);
+    },
   };
 }
 

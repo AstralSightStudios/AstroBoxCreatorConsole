@@ -173,7 +173,7 @@ export interface ImageSizeInfo {
   width?: number;
   height?: number;
   ratio?: number;
-  /** icon 应为 1:1，cover 应为 3:2（两位小数 1.50）；preview 无固定要求故为 undefined。 */
+  /** icon 应为 1:1，cover 宽/高保留两位小数应为 1.50；preview 无固定要求故为 undefined。 */
   ratioValid?: boolean;
   /** 命中禁用格式（SVG）。审核明细行据此标红，跳转按钮也会亮起。 */
   bannedFormat?: boolean;
@@ -1792,7 +1792,7 @@ export async function runResourceRuleChecks(options: {
   });
 
   // --- check: 图片宽高比 ---
-  // 加载 icon / cover 真实像素尺寸以校验宽高比（icon 1:1，cover 3:2）。
+  // 加载 icon / cover 真实像素尺寸以校验宽高比（icon 1:1，cover 两位小数 1.50）。
   await Promise.all(
     imageSizes
       .filter((img) => img.label === "icon" || img.label === "cover")
@@ -1816,7 +1816,7 @@ export async function runResourceRuleChecks(options: {
   const ratioInvalid = ratioTargets.filter((i) => i.ratioValid === false);
   const ratioMissing = ratioTargets.filter((i) => i.width == null);
   checks.push({
-    title: "图片宽高比（icon 应为 1:1，cover 应为 3:2）",
+    title: "图片宽高比（icon 应为 1:1，cover 应为 1.50）",
     status:
       ratioInvalid.length > 0
         ? "fail"
