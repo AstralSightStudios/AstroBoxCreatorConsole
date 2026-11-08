@@ -1,10 +1,10 @@
 import {
   ArrowClockwiseIcon,
-  ArrowSquareOutIcon,
   CheckCircleIcon,
   ClockIcon,
   CopyIcon,
   FileArrowUpIcon,
+  GithubLogoIcon,
   ListMagnifyingGlassIcon,
   PencilSimpleIcon,
   WarningOctagonIcon,
@@ -483,9 +483,25 @@ function PublishResourceCard({
             <p className="line-clamp-2 min-w-0 text-sm font-semibold leading-5 text-white">
               {item.name}
             </p>
-            <Badge color="gray" variant="soft" className="shrink-0">
-              {formatResourceType(item.restype)}
-            </Badge>
+            <div className="flex shrink-0 items-center gap-1">
+              <Badge color="gray" variant="soft">
+                {formatResourceType(item.restype)}
+              </Badge>
+              {item.prUrl && (
+                <button
+                  type="button"
+                  aria-label="在 GitHub 查看该 PR"
+                  title="在 GitHub 查看该 PR"
+                  className="rounded p-0.5 text-white/30 transition-colors hover:bg-white/10 hover:text-white/70"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openExternal(item.prUrl!);
+                  }}
+                >
+                  <GithubLogoIcon size={15} weight="duotone" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="mt-1 flex min-w-0 items-center gap-1.5">
@@ -518,29 +534,11 @@ function PublishResourceCard({
             ) : null}
           </div>
 
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/40">
-            {item.prUrl ? (
-              <button
-                type="button"
-                title="在 GitHub 查看该 PR"
-                className="inline-flex items-center gap-0.5 text-sky-300 underline underline-offset-2 transition hover:text-sky-200"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openExternal(item.prUrl!);
-                }}
-              >
-                PR #{item.prNumber}
-                <ArrowSquareOutIcon size={11} weight="bold" />
-              </button>
-            ) : (
-              <span>PR #{item.prNumber}</span>
-            )}
-            <span>
-              提交于{" "}
-              {item.createdAt
-                ? new Date(item.createdAt).toLocaleDateString("zh-CN")
-                : "--"}
-            </span>
+          <div className="mt-1 text-xs text-white/40">
+            PR #{item.prNumber} · 提交于{" "}
+            {item.createdAt
+              ? new Date(item.createdAt).toLocaleDateString("zh-CN")
+              : "--"}
           </div>
 
           {item.prState === "closed" && !item.refused ? (
