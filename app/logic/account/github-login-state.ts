@@ -177,9 +177,13 @@ export async function startGithubLogin(
         window.location.reload();
     } catch (error) {
         const message = error instanceof Error ? error.message : "GitHub登录失败";
+        // cancelGithubLogin 已经重置状态，未跟踪的取消不应再写回错误。
+        if (message === "Login cancelled") {
+            return;
+        }
         updateState({
             status: "error",
-            target: currentState.target,
+            target,
             statusMessage: message,
             error: message,
         });
