@@ -1,6 +1,11 @@
+import { GithubLogoIcon } from "@phosphor-icons/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { rawGithubUrlToBlobUrl } from "~/logic/github-raw";
 import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
+import { useOverlayHistoryDismiss } from "~/logic/ui/overlay-history";
 import { ScrollArea } from "~/components/scroll-area";
 import {
   fetchProxiedMediaUrl,
@@ -10,6 +15,13 @@ import {
 import { inspectImageFile, type ImageMeta as ImageContentMeta } from "~/logic/publish/image-meta";
 import { hasCoverRatio } from "~/logic/publish/pre-publish-checks";
 import type { PrResourcePreview } from "../types";
+
+/** 在系统浏览器打开 GitHub 文件页；非 Tauri 环境回退 window.open。 */
+function openExternalSource(url: string) {
+  openUrl(url).catch(() =>
+    window.open(url, "_blank", "noopener,noreferrer"),
+  );
+}
 
 interface ImageMeta {
   width: number;
@@ -50,8 +62,13 @@ function PreviewLightbox({
   onClose: () => void;
 }) {
   const proxiedUrl = useProxiedMediaUrl(url);
+  const { portalContainer } = useUiScaleViewport();
   const [actual, setActual] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
+  const githubUrl = rawGithubUrlToBlobUrl(url);
+
+  // 返回手势只关闭大图，不再退掉审核页。
+  useOverlayHistoryDismiss(true, onClose);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -63,12 +80,15 @@ function PreviewLightbox({
     };
   }, [onClose]);
 
-  return (
+  if (!portalContainer) return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="图片预览"
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/85 backdrop-blur-sm"
+      style={{ zIndex: 65 }}
       onClick={onClose}
     >
       <ScrollArea horizontal className="h-full w-full overscroll-contain">
@@ -97,19 +117,44 @@ function PreviewLightbox({
             setReplayKey((value) => value + 1);
           }}
           className="fixed bottom-5 left-1/2 z-10 -translate-x-1/2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs text-white/80 transition hover:bg-white/20"
+          style={{ bottom: "max(1.25rem, var(--ui-safe-area-bottom))" }}
         >
           重播动图
         </button>
       )}
-      <button
-        type="button"
-        onClick={onClose}
-        className="fixed right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70 hover:bg-white/20 transition"
-        aria-label="关闭"
+      <div
+        className="fixed z-10 flex items-center gap-2"
+        style={{
+          top: "max(1rem, var(--ui-safe-area-top))",
+          right: "max(1rem, var(--ui-safe-area-right))",
+        }}
       >
-        <svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" /></svg>
-      </button>
-    </div>
+        {githubUrl && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openExternalSource(githubUrl);
+            }}
+            className="flex h-9 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 text-xs text-white/80 transition hover:bg-white/20 hover:text-white"
+            aria-label="在 GitHub 查看源文件"
+            title="在 GitHub 查看源文件"
+          >
+            <GithubLogoIcon size={16} weight="fill" />
+            <span className="hidden sm:inline">查看源文件</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70 transition hover:bg-white/20"
+          aria-label="关闭"
+        >
+          <svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" /></svg>
+        </button>
+      </div>
+    </div>,
+    portalContainer,
   );
 }
 
@@ -311,7 +356,10 @@ export function ResourceImagesSection({
   return (
     <>
       <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-        <div className="mb-2 text-xs font-semibold text-white/55">图片资源（Raw）</div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs">
+          <span className="font-semibold text-white/55">图片资源</span>
+          <span className="text-white/35">点击 Icon / Cover 在 GitHub 查看源文件</span>
+        </div>
         <div className="space-y-3">
           {(resource.iconUrl || resource.coverUrl) && (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
@@ -324,9 +372,18 @@ export function ResourceImagesSection({
                       {" "}宽高比：{formatAspectRatio(resource.iconUrl)}
                     </span>
                   </div>
-                  <a href={resource.iconUrl} target="_blank" rel="noopener noreferrer" className="mx-auto mt-2 flex h-[200px] w-[200px] items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40">
+                  <button
+                    type="button"
+                    title="在 GitHub 查看 Icon 源文件"
+                    onClick={() =>
+                      openExternalSource(
+                        rawGithubUrlToBlobUrl(resource.iconUrl) ?? resource.iconUrl,
+                      )
+                    }
+                    className="mx-auto mt-2 flex h-[200px] w-[200px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40 transition hover:border-white/30"
+                  >
                     <DimensionTrackedImage rawUrl={resource.iconUrl} alt="Icon 预览" className="h-full w-full rounded-full object-contain p-3" onLoad={handleIconLoad} />
-                  </a>
+                  </button>
                 </div>
               )}
               {resource.coverUrl && (
@@ -338,9 +395,18 @@ export function ResourceImagesSection({
                       {" "}宽高比：{formatAspectRatio(resource.coverUrl)}
                     </span>
                   </div>
-                  <a href={resource.coverUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-black/40">
+                  <button
+                    type="button"
+                    title="在 GitHub 查看 Cover 源文件"
+                    onClick={() =>
+                      openExternalSource(
+                        rawGithubUrlToBlobUrl(resource.coverUrl) ?? resource.coverUrl,
+                      )
+                    }
+                    className="mt-2 block w-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-white/30"
+                  >
                     <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} />
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
@@ -389,7 +455,22 @@ export function ResourceImagesSection({
                             </span>
                           )}
                         </button>
-                        <div className="mt-2 break-all text-xs text-white/45">{url.split("/").pop() || `预览 ${index + 1}`}</div>
+                        <div className="mt-2 flex min-w-0 items-center justify-center gap-1 text-xs text-white/45">
+                          <span className="min-w-0 break-all">{url.split("/").pop() || `预览 ${index + 1}`}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openExternalSource(
+                                rawGithubUrlToBlobUrl(url) ?? url,
+                              )
+                            }
+                            className="shrink-0 rounded p-0.5 text-white/35 transition hover:bg-white/10 hover:text-blue-300"
+                            aria-label="在 GitHub 查看源文件"
+                            title="在 GitHub 查看源文件"
+                          >
+                            <GithubLogoIcon size={13} weight="fill" />
+                          </button>
+                        </div>
                         {contentMeta?.animated && (
                           <div className="mt-1 text-[10px] text-sky-300/80">
                             {formatLabel}

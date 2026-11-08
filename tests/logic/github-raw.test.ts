@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { rawGithubUrlToApiUrl } from "../../app/logic/github-raw";
+import {
+  rawGithubUrlToApiUrl,
+  rawGithubUrlToBlobUrl,
+} from "../../app/logic/github-raw";
 
 describe("rawGithubUrlToApiUrl", () => {
   test("单段 ref（提交 SHA / 分支名）", () => {
@@ -43,6 +46,40 @@ describe("rawGithubUrlToApiUrl", () => {
     expect(rawGithubUrlToApiUrl("https://example.com/a/b/c/d")).toBeNull();
     expect(
       rawGithubUrlToApiUrl("https://raw.githubusercontent.com/owner/repo/main"),
+    ).toBeNull();
+  });
+});
+
+describe("rawGithubUrlToBlobUrl", () => {
+  test("单段 ref 转 GitHub 文件页", () => {
+    expect(
+      rawGithubUrlToBlobUrl(
+        "https://raw.githubusercontent.com/owner/repo/abc1234/icon.png",
+      ),
+    ).toBe("https://github.com/owner/repo/blob/abc1234/icon.png");
+    expect(
+      rawGithubUrlToBlobUrl(
+        "https://raw.githubusercontent.com/owner/repo/main/dist/cover.png",
+      ),
+    ).toBe("https://github.com/owner/repo/blob/main/dist/cover.png");
+  });
+
+  test("保留 refs/heads 形式并避免路径二次转义", () => {
+    expect(
+      rawGithubUrlToBlobUrl(
+        "https://raw.githubusercontent.com/owner/repo/refs/heads/main/a%20b/preview%201.png",
+      ),
+    ).toBe(
+      "https://github.com/owner/repo/blob/refs/heads/main/a%20b/preview%201.png",
+    );
+  });
+
+  test("非 raw 地址返回 null", () => {
+    expect(rawGithubUrlToBlobUrl("https://example.com/a/b/c/d")).toBeNull();
+    expect(
+      rawGithubUrlToBlobUrl(
+        "https://raw.githubusercontent.com/owner/repo/main",
+      ),
     ).toBeNull();
   });
 });
