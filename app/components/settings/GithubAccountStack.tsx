@@ -61,7 +61,7 @@ export default function GithubAccountStack({
   const extraReaders = readers.length - visibleReaders.length;
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="ml-auto flex shrink-0 items-center gap-1.5">
       <button
         type="button"
         onClick={onManage}

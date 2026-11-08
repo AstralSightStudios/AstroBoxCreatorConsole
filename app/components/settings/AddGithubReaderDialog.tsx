@@ -100,9 +100,7 @@ export default function AddGithubReaderDialog({
     if (githubLogin.target === "reader") {
       cancelGithubLogin();
     }
-    // 只在对话框关闭时清理，不干扰正在进行的输入。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, githubLogin.target]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -292,7 +290,7 @@ export default function AddGithubReaderDialog({
                     </Button>
                   </div>
                   <p className="text-[11px] leading-relaxed text-white/45">
-                    选择 Public Repositories (read-only) 即可；建议设置过期时间。Token 只保存在本机，不会上传到服务端。
+                    选择 Public Repositories (read-only) 即可；建议设置过期时间。Token 只保存在本机，不会写入应用服务端。
                   </p>
                   {patError && (
                     <Callout.Root color="red" size="1">
