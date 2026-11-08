@@ -8,8 +8,7 @@ import { motion } from "framer-motion";
 import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
 import { formatTime } from "../utils";
-import { reviewSourceLabel, type ReviewSource } from "../source";
-
+import type { ReviewSource } from "../source";
 interface PullRequestCardProps {
   pull: GithubPullRequest;
   source: ReviewSource;
@@ -123,15 +122,11 @@ export function PullRequestCard({
             </span>
           </div>
           <div className="mt-2 flex items-center justify-end gap-2">
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] ${
-                source === "plugin"
-                  ? "bg-violet-500/15 text-violet-100"
-                  : "bg-white/10 text-white/55"
-              }`}
-            >
-              {reviewSourceLabel(source)}
-            </span>
+            {source === "plugin" && (
+              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] text-violet-100">
+                插件
+              </span>
+            )}
             <ReviewStatusBadge state={status} />
             {(comments.length ?? 0) > 0 && (
               <span className="inline-flex items-center gap-1 text-xs text-white/45">

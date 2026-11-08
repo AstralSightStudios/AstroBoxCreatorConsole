@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import type { ReviewState } from "~/logic/publish/review-status";
 import {
   reviewPullKey,
-  reviewSourceLabel,
   type ReviewPullRequest,
 } from "../source";
 import { ReviewStatusBadgeMini } from "./StatusBadges";
@@ -143,15 +142,11 @@ export function PullRequestSwitcher({
                   <div className="mt-1 flex items-center justify-between gap-2 text-xs text-white/50">
                     <span className="truncate">{pull.user?.login}</span>
                     <span className="inline-flex shrink-0 items-center gap-1.5">
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                          pull.source === "plugin"
-                            ? "bg-violet-500/15 text-violet-100"
-                            : "bg-white/10 text-white/50"
-                        }`}
-                      >
-                        {reviewSourceLabel(pull.source)}
-                      </span>
+                      {pull.source === "plugin" && (
+                        <span className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-violet-100">
+                          插件
+                        </span>
+                      )}
                       {pull.state === "closed" && (
                         <span
                           className={`text-[10px] ${

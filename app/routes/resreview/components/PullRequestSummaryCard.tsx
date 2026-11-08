@@ -83,7 +83,7 @@ export function PullRequestSummaryCard({
             </h2>
             {isPlugin && (
               <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs text-violet-100">
-                ABNG 插件
+                插件
               </span>
             )}
           </div>

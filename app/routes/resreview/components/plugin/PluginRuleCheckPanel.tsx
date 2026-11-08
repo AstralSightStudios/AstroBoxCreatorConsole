@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ArrowsClockwise,
   Check,
+  Info,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -27,6 +28,15 @@ interface CheckRow {
   detail: string;
 }
 
+function describeParsedLine(group: PluginIndexEntryGroup): string {
+  if (!group.parsed) return "";
+  const entry = group.parsed;
+  const refText = entry.shortForm
+    ? "github.com 短格式，固定按 main 分支"
+    : `${entry.refKind}/${entry.branch}`;
+  return `解析为 ${entry.owner}/${entry.repo} @ ${refText}。`;
+}
+
 function buildRows(group: PluginIndexEntryGroup): CheckRow[] {
   const rows: CheckRow[] = [];
   const lineErrors = group.lineIssues.filter((issue) => issue.level === "error");
@@ -39,12 +49,19 @@ function buildRows(group: PluginIndexEntryGroup): CheckRow[] {
         ? lineErrors.map((issue) => issue.message).join("；")
         : lineWarns.length > 0
           ? lineWarns.map((issue) => issue.message).join("；")
-          : "地址格式符合插件源 index.txt 规范。",
+          : describeParsedLine(group) || "地址格式符合插件源 index.txt 规范。",
   });
+  const folderPreview = group.folders.slice(0, 4).join("、");
+  const folderSuffix =
+    group.folders.length > 4 ? ` 等 ${group.folders.length} 个` : "";
   rows.push({
     title: "作者仓库 index.txt",
     status: group.loadError ? "fail" : group.folders.length > 0 ? "pass" : "fail",
-    detail: group.loadError || `解析到 ${group.folders.length} 个构建产物文件夹。`,
+    detail: group.loadError
+      ? group.loadError
+      : group.folders.length > 0
+        ? `解析到 ${group.folders.length} 个构建产物文件夹：${folderPreview}${folderSuffix}。`
+        : "没有解析到构建产物文件夹。",
   });
 
   if (group.plugins.length === 0) {
@@ -182,6 +199,38 @@ export function PluginRuleCheckPanel({
           官方插件索引读取失败，无法完整检查同名冲突：{publishedError}
         </div>
       )}
+
+      <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5 text-xs leading-relaxed text-white/55">
+        <div className="mb-1.5 flex items-center gap-1.5 text-white/70">
+          <Info size={14} weight="bold" />
+          新增行格式要求
+        </div>
+        <ul className="list-disc space-y-1 pl-4">
+          <li>
+            一行一个作者插件仓库根地址，推荐完整 raw 形式：
+            <code className="break-all font-mono-sarasa text-white/75">
+              https://raw.githubusercontent.com/&lt;owner&gt;/&lt;repo&gt;/refs/heads/&lt;branch&gt;/
+            </code>
+          </li>
+          <li>
+            必须在一行内写完且以 <code className="font-mono-sarasa text-white/75">/</code>{" "}
+            结尾；不能包含空格或 <code className="font-mono-sarasa text-white/75">manifest.json</code>；
+            分支名不能包含 <code className="font-mono-sarasa text-white/75">/</code>。
+          </li>
+          <li>不能与上游 index.txt 已有行或本次 PR 的其他新增行重复。</li>
+          <li>
+            该地址指向的仓库根目录需要 <code className="font-mono-sarasa text-white/75">index.txt</code>，
+            每行一个构建产物文件夹；每个文件夹内需要{" "}
+            <code className="font-mono-sarasa text-white/75">manifest.json</code>，
+            其 icon / entry / additional_files 必须存在且非空，entry 以{" "}
+            <code className="font-mono-sarasa text-white/75">.wasm</code> 结尾。
+          </li>
+          <li>
+            也接受 <code className="font-mono-sarasa text-white/75">https://github.com/&lt;owner&gt;/&lt;repo&gt;</code>{" "}
+            短格式，但会固定按 main 分支解析，建议使用完整 raw 地址。
+          </li>
+        </ul>
+      </div>
 
       <p className="text-xs text-white/35">
         自动检查结果仅用于审核参考，不会阻止合并。

@@ -50,10 +50,6 @@ export function reviewRepoRef(source: ReviewSource): GithubRepoRef {
   };
 }
 
-export function reviewSourceLabel(source: ReviewSource): string {
-  return source === "plugin" ? "ABNG 插件" : "资源";
-}
-
 export function withReviewSource(
   pull: GithubPullRequest,
   source: ReviewSource,
