@@ -323,7 +323,7 @@ function ThreadView({
             <Composer programId={programId} threadId={threadId} onSent={appendMessage} />
 
             <Dialog.Root open={Boolean(lightbox)} onOpenChange={(open) => !open && setLightbox(null)}>
-                <Dialog.Content maxWidth="min(92vw, 1100px)" className="p-2!">
+                <Dialog.Content maxWidth="min(92vw, 1100px)" className="relative p-2!">
                     <Dialog.Title className="sr-only">图片预览</Dialog.Title>
                     {lightbox && (
                         <img
@@ -332,6 +332,15 @@ function ThreadView({
                             className="max-h-[82vh] w-full rounded-[10px] object-contain"
                         />
                     )}
+                    <Dialog.Close>
+                        <button
+                            type="button"
+                            aria-label="关闭图片预览"
+                            className="absolute right-3 top-3 grid size-9 place-items-center rounded-full border border-white/15 bg-black/55 text-white/80 backdrop-blur-sm transition hover:bg-black/75 hover:text-white"
+                        >
+                            <XIcon size={17} weight="bold" />
+                        </button>
+                    </Dialog.Close>
                 </Dialog.Content>
             </Dialog.Root>
         </div>

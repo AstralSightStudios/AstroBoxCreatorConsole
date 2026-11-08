@@ -412,6 +412,7 @@ export default function InboxDrawer({
       description="查看资源审核通知"
       handleLabel="收起信箱"
       sideOnDesktop
+      historyDismiss={false}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 pb-[max(0.875rem,var(--ui-safe-area-bottom))]">
         {panelContent}

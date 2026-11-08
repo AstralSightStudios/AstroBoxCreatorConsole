@@ -1,8 +1,9 @@
-import { Badge, Button, Code, Dialog, Select, Spinner, TextField } from "@radix-ui/themes";
+import { Badge, Button, Code, Select, Spinner, TextField } from "@radix-ui/themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FeedAdminApi, type FeedFeature, type FeedItem, type FeedJob, type FeedStatus } from "~/api/astrobox/feed";
 import { AdminPage, Panel, formatDateTime, inputClass } from "~/components/admin/AdminPage";
+import { Dialog } from "~/components/ScaleAwareThemes";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

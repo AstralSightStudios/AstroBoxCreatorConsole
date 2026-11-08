@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type ReactNode } from "react";
 import { Drawer } from "vaul";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { useOverlayHistoryDismiss } from "~/logic/ui/overlay-history";
 import DynamicDrawerHandle, {
   type DynamicDrawerHandleRef,
 } from "./DynamicDrawerHandle";
@@ -25,6 +26,11 @@ export interface FloatingDrawerProps {
   children: ReactNode;
   /** 面板容器附加类名。 */
   panelClassName?: string;
+  /**
+   * 是否让系统返回手势/返回键关闭抽屉。默认开启；已经自行管理历史记录的
+   * 抽屉（如信箱）传 false，避免压入两条临时记录。
+   */
+  historyDismiss?: boolean;
 }
 
 const SHEET_PANEL_CLASS =
@@ -62,9 +68,13 @@ export default function FloatingDrawer({
   handleLabel,
   children,
   panelClassName,
+  historyDismiss = true,
 }: FloatingDrawerProps) {
   const { isDesktop, portalContainer } = useUiScaleViewport();
   const handleRef = useRef<DynamicDrawerHandleRef>(null);
+
+  // Android 返回手势/返回键先关闭抽屉，而不是直接退掉当前页面。
+  useOverlayHistoryDismiss(open && historyDismiss, onClose);
 
   const useSidePanel = sideOnDesktop && isDesktop;
   const isSheet = !useSidePanel;
