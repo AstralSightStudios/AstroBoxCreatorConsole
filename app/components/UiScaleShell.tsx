@@ -9,6 +9,7 @@ import {
     type PropsWithChildren,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ConsoleThemeScope } from "~/components/ConsoleTheme";
 import { UiScaleProvider } from "~/components/UiScaleContext";
 import {
     calculateUiScaleMetrics,
@@ -219,10 +220,12 @@ export default function UiScaleShell({
                     style={stageStyle}
                 >
                     {children}
-                    <div
-                        ref={setPortalContainer}
-                        className="ui-scale-portal-host"
-                    />
+                    <ConsoleThemeScope>
+                        <div
+                            ref={setPortalContainer}
+                            className="ui-scale-portal-host"
+                        />
+                    </ConsoleThemeScope>
                 </div>
             </UiScaleProvider>
         </div>

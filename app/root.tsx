@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Link, Navigate, Outlet, useLocation } from "react-router";
 import { Button, Flex, Heading, Theme } from "@radix-ui/themes";
 import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { CONSOLE_THEME_PROPS } from "./components/ConsoleTheme";
 import UiScaleShell from "./components/UiScaleShell";
 import PageTransition from "./components/transition/page-transition";
 import {
@@ -158,7 +159,7 @@ export default function RootLayout() {
 
     return (
         <UiScaleShell disabled={canUseConsole && isWallpaperEditor}>
-            <Theme appearance={appearance} panelBackground="translucent" radius="medium" accentColor="blue">
+            <Theme {...CONSOLE_THEME_PROPS}>
                 <AstroboxAccountRefresher />
                 <AutoUpdateChecker />
                 <AutoBetaUpdateChecker />
