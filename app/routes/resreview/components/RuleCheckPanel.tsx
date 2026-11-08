@@ -89,14 +89,15 @@ const STATUS_META: Record<
 
 export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: RuleCheckPanelProps) {
   const accountState = useAccountState();
-  // 选号会更新 lastUsedAt；这里按账号状态缓存，避免每次渲染换 token 导致规则检查重跑。
-  const token = useMemo(
-    () => getGithubReadToken() || "",
-    [accountState],
-  );
-  const astroboxToken = accountState.astrobox?.token;
   const [activeIdx, setActiveIdx] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
+  // 选号会更新 lastUsedAt；按账号状态和重新检查次数缓存，避免普通渲染换 token
+  // 导致规则检查重跑，同时在手动重新检查时允许换一个读取账号。
+  const token = useMemo(
+    () => getGithubReadToken() || "",
+    [accountState, reloadTick],
+  );
+  const astroboxToken = accountState.astrobox?.token;
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, resources.length - 1));
   const resource = resources[safeActiveIdx];
   const { loading, result, error } = useResourceRuleChecks(

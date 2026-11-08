@@ -860,6 +860,7 @@ export default function ResourceReviewPage() {
     if (sameAuditTarget) {
       setDetailError("");
       setResourcePreviews([]);
+      timelineCacheRef.current.delete(number);
       void loadDetail(number);
       return;
     }
