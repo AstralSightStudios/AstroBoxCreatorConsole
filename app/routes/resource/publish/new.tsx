@@ -2470,7 +2470,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         fixedSelections,
       );
       if (!submitGate.ok) {
-        const message = "请至少勾选一项本次已修复的 NEEDFIX 问题后再提交。";
+        const message =
+          "请至少勾选一项本次已修复的问题。只有勾选的修复项才会进入第二次审核，未勾选可能被审核忽略。";
         setPrStatus("error");
         setPrMessage(message);
         toast.error(message);

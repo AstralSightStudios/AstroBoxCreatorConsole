@@ -287,7 +287,8 @@ export interface NeedFixSubmitGate {
 
 /**
  * 修改已有 PR 的提交门槛：存在未修复的 NEEDFIX 时，本次提交至少要勾选
- * 一项已修复；没有 NEEDFIX 的 PR 不做限制。
+ * 一项已修复。勾选是让审核知道「这项已处理」的凭据；一项都不勾选直接提交，
+ * 审核有概率忽略本次修改。没有 NEEDFIX 的 PR 不做限制。
  */
 export function evaluateNeedFixSubmitGate(
     items: readonly NeedFixItem[],
