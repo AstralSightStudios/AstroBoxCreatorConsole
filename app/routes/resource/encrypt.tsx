@@ -26,13 +26,13 @@ export default function ResourceEncrypt() {
 
         <PlatformSettingsCard isVip={isVip} />
 
-        <EncryptedFilesCard isVip={isVip} />
-
         {isVip && <AfdianReissueManager />}
 
         {isVip && <CdkManager />}
 
         {isVip && <ExternalAuthorizationManager />}
+
+        <EncryptedFilesCard isVip={isVip} />
       </div>
     </Page>
   );
