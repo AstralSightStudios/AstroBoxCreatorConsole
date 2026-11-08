@@ -71,6 +71,10 @@ import {
   type PackageVersionInfo,
 } from "~/logic/publish/package-version";
 import { resolveImportedPackage } from "~/logic/publish/package-import";
+import {
+  canTogglePackageEncryption,
+  rowsSharePackage,
+} from "~/logic/publish/package-sharing";
 
 const DOWNLOAD_FIELD_HELP: FieldHelpItem[] = [
   {
@@ -104,7 +108,8 @@ const DOWNLOAD_FIELD_HELP: FieldHelpItem[] = [
     group: "附加选项",
     label: "加密上传",
     icon: <LockIcon size={16} weight="duotone" />,
-    description: "开启后包体加密上传，用户需要激活才能使用。",
+    description:
+      "开启后包体加密上传，用户需要激活才能使用。一键填充后多台设备共用同一份包体，加密状态也随之共用：任意一行切换开关，所有共用该包体的设备行都会一起切换。",
   },
   {
     group: "附加选项",
@@ -121,6 +126,22 @@ const DOWNLOAD_FIELD_HELP: FieldHelpItem[] = [
       "多设备资源可批量添加设备行，或将第一行的配置快速复制到其他设备行。",
   },
 ];
+
+/**
+ * 加密开关被禁用时的解释文案：区分「还没导入包体」与「沿用仓库旧包」。
+ * 只要共用包体的行里有一行本次会上传新包体，整组开关都可用，无需提示。
+ */
+function encryptionLockedTitle(
+  item: DownloadInput,
+  downloads: DownloadInput[],
+): string | undefined {
+  const sharedRows = downloads.filter((row) => rowsSharePackage(row, item));
+  if (sharedRows.some((row) => canTogglePackageEncryption(row))) return undefined;
+  if (sharedRows.some((row) => Boolean(row.file))) {
+    return "该包体沿用仓库中的已有文件，本次发布不会重新上传，加密状态不可更改";
+  }
+  return "请先导入包体，再设置加密状态";
+}
 
 /** `1.2.3（65536）`：展示版本 + 由包体派生的 versionCode。 */
 function formatVersionWithCode(version?: string, versionCode?: number): string {
@@ -634,7 +655,7 @@ export function DownloadsSection({
               <AlertDialog.Content maxWidth="420px">
                 <AlertDialog.Title>一键填充配置</AlertDialog.Title>
                 <AlertDialog.Description size="2">
-                  将第一行已填写的版本号、包体文件、加密上传设置和更新日志复制到所有其他设备行。此操作会覆盖已有配置，确定继续吗？
+                  将第一行已填写的版本号、包体文件、加密上传设置和更新日志复制到所有其他设备行。所有行会共用同一份包体，加密状态也随之共用：之后任意一行切换开关，其他行会一起切换。此操作会覆盖已有配置，确定继续吗？
                 </AlertDialog.Description>
                 <div className="flex justify-end gap-3 mt-4">
                   <AlertDialog.Cancel>
@@ -953,20 +974,44 @@ export function DownloadsSection({
                   {isVip && allowEncryption && (
                     <div className="flex shrink-0 items-center gap-2 max-lg:ml-auto">
                       <span className="text-xs text-white/65">加密上传</span>
+                      {/*
+                        加密是整份包体的属性：一键填充把同一个包体复制到所有行，
+                        发布时也按同一路径上传、只登记一份密钥。因此开关必须按
+                        「共用包体」分组联动——只切一行会让同一路径既加密又不加密，
+                        服务端还会漏登记其余设备行的密钥。禁用状态同样按分组判定：
+                        组内只要有一行是本次会上传的新包体，整组都可切换。
+                      */}
                       <Switch
                         checked={Boolean(item.encryptOnUpload)}
-                        disabled={Boolean(item.existingFileName)}
+                        disabled={
+                          !downloads.some(
+                            (row) =>
+                              rowsSharePackage(row, item) &&
+                              canTogglePackageEncryption(row),
+                          )
+                        }
+                        title={encryptionLockedTitle(item, downloads)}
                         onCheckedChange={(checked) => {
+                          const sharedRows = downloads.filter((row) =>
+                            rowsSharePackage(row, item),
+                          );
                           log.info("download/row", "切换加密上传", {
                             data: {
                               deviceId: item.platformId,
                               encryptOnUpload: checked,
+                              sharedDeviceIds: sharedRows
+                                .filter((row) => row.uid !== item.uid)
+                                .map((row) => row.platformId),
                             },
                           });
-                          onUpdateRow(item.uid, (row) => ({
-                            ...row,
-                            encryptOnUpload: checked,
-                          }));
+                          // 共用同一包体的行必须同开同关。逐行更新走函数式
+                          // setState，父组件会按顺序合并，不会互相覆盖。
+                          for (const row of sharedRows) {
+                            onUpdateRow(row.uid, (current) => ({
+                              ...current,
+                              encryptOnUpload: checked,
+                            }));
+                          }
                         }}
                       />
                       {/*

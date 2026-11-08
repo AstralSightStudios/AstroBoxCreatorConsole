@@ -1733,8 +1733,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         ...row,
         version: template.version,
         file: template.file,
-        // 带入新包体时必须清掉旧文件名：编辑模式下各行都带existingFileName，
-        // 不清会与新file 并存，导致加密开关被禁用（disabled 依据 existingFileName）。
+        // 带入新包体时必须清掉旧文件名：编辑模式下各行都带 existingFileName，
+        // 不清会与新 file 并存，行内「当前」文件名和实际引用的包体对不上。
         // 手动挑包体（pickDownloadFile）同样会清，此处保持一致。
         existingFileName: template.file ? undefined : row.existingFileName,
         encryptOnUpload: template.encryptOnUpload ?? row.encryptOnUpload,
