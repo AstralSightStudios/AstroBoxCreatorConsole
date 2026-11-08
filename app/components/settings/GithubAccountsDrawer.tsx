@@ -220,10 +220,21 @@ export default function GithubAccountsDrawer({
 
         <div className="mt-5">
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
-            <h2 className="text-sm font-semibold text-white">读取账号</h2>
-            <span className="text-[11px] text-white/40">
-              {readers.length > 0 ? `${readers.length} 个` : "未添加"}
-            </span>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2 className="text-sm font-semibold text-white">读取账号</h2>
+              <span className="text-[11px] text-white/40">
+                {readers.length > 0 ? `${readers.length} 个` : "未添加"}
+              </span>
+            </div>
+            <Button
+              disabled={!canAdd}
+              onClick={onAdd}
+              aria-label="添加读取账号"
+              title={canAdd ? "添加读取账号" : gateMessage}
+            >
+              <PlusIcon size={14} />
+              添加读取账号
+            </Button>
           </div>
 
           {readers.length === 0 ? (
@@ -280,38 +291,20 @@ export default function GithubAccountsDrawer({
           )}
         </div>
 
-        <div className="mt-4 flex flex-col gap-2">
-          <div className="rounded-[14px] border border-dashed border-white/15 bg-white/[0.03] p-3">
-            <Button
-              className="w-full"
-              disabled={!canAdd}
-              onClick={onAdd}
-              aria-label="添加读取账号"
-            >
-              <PlusIcon size={14} />
-              添加读取账号
-            </Button>
-            {!canAdd && gateMessage && (
-              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
-                {gateMessage}
-              </p>
+        <div className="mt-3 flex justify-end">
+          <Button
+            variant="soft"
+            color="gray"
+            disabled={refreshingQuota}
+            onClick={() => void onRefreshQuota()}
+          >
+            {refreshingQuota ? (
+              <Spinner size="1" />
+            ) : (
+              <ArrowClockwiseIcon size={14} />
             )}
-          </div>
-          <div className="flex justify-end">
-            <Button
-              variant="soft"
-              color="gray"
-              disabled={refreshingQuota}
-              onClick={() => void onRefreshQuota()}
-            >
-              {refreshingQuota ? (
-                <Spinner size="1" />
-              ) : (
-                <ArrowClockwiseIcon size={14} />
-              )}
-              刷新额度
-            </Button>
-          </div>
+            刷新额度
+          </Button>
         </div>
       </div>
     </FloatingDrawer>
