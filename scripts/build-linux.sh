@@ -58,9 +58,18 @@ repackage_rpm() {
 
     echo "  Repackaging $(basename "$abs_rpm")..."
 
-    local version release
+    local version release original_name
     version=$(rpm -q --qf '%{VERSION}' -p "$abs_rpm" 2>/dev/null || echo "0.0.0")
     release=$(rpm -q --qf '%{RELEASE}' -p "$abs_rpm" 2>/dev/null || echo "1")
+    original_name=$(rpm -q --qf '%{NAME}' -p "$abs_rpm" 2>/dev/null || true)
+
+    # 包名从 Tauri 默认值改为 astrobox-creator-console 后，
+    # 通过 Obsoletes/Provides 保证旧包可以正常升级替换，而不是并排安装。
+    local compat_lines=""
+    if [ -n "$original_name" ] && [ "$original_name" != "$PKG_NAME" ]; then
+        compat_lines="Obsoletes: ${original_name} < ${version}-${release}
+Provides: ${original_name} = ${version}-${release}"
+    fi
 
     cp "$abs_rpm" "$build_dir/"
     cd "$build_dir"
@@ -79,10 +88,11 @@ repackage_rpm() {
         esac
     done
 
-    # rpm 的 %files 按空白分词，desktop 等含空格的文件名需转义，
-    # 否则 rpmbuild 会报 "File must begin with /" 并触发静默降级。
+    # rpm 的 %files 按空白分词，desktop 等含空格的文件名必须用双引号包裹。
+    # 仅用反斜杠转义空格仍会被 rpmbuild 拆开，报 "File must begin with /"
+    # 后触发静默降级，导致包内 Name 仍是 Tauri 默认值。
     local file_list_file="$build_dir/filelist"
-    (cd "$content_dir" && find . -type f | sed 's|^\.||' | sed 's/ /\\ /g') > "$file_list_file"
+    (cd "$content_dir" && find . -type f | sed 's|^\.||' | sed 's/"/\\"/g; s/^/"/; s/$/"/') > "$file_list_file"
 
     cat > "$spec_file" << EOF
 Name: ${PKG_NAME}
@@ -91,6 +101,7 @@ Release: $release
 Summary: AstroBox CreatorConsole - Creator Console for AstroBox ecosystem
 License: AGPL-3.0
 Group: Applications/System
+${compat_lines}
 
 %description
 AstroBox CreatorConsole is an all-in-one creator console for the AstroBox ecosystem.
@@ -105,25 +116,37 @@ EOF
     mkdir -p "$build_dir/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
     local build_log
+    # 关闭 rpmbuild 的 brp 后处理，避免 strip 改写已打包的二进制，
+    # 也避免自动生成原包里没有的 /usr/lib/.build-id 链接。
     build_log=$(rpmbuild --define "_topdir $build_dir/rpmbuild" \
+                         --define "__os_install_post %{nil}" \
+                         --define "_build_id_links none" \
                          -bb "$spec_file" 2>&1) || {
-        echo "    Warning: rpmbuild failed, falling back to simple rename"
+        echo "    Error: rpmbuild failed"
         echo "$build_log" | tail -20
-        cp "$abs_rpm" "$abs_out"
         rm -rf "$build_dir"
-        return
+        return 1
     }
 
     local new_rpm
     new_rpm=$(find "$build_dir/rpmbuild/RPMS" -name "${PKG_NAME}-*.rpm" -type f | head -1)
-    if [ -n "$new_rpm" ]; then
-        mv "$new_rpm" "$abs_out"
-        rm -f "$abs_rpm"
-    else
-        echo "    Warning: Could not find repackaged rpm, falling back to simple rename"
-        cp "$abs_rpm" "$abs_out"
+    if [ -z "$new_rpm" ]; then
+        echo "    Error: Could not find repackaged rpm"
+        rm -rf "$build_dir"
+        return 1
     fi
 
+    # 兜底校验，避免再次静默产出 Tauri 默认包名的 RPM。
+    local built_name
+    built_name=$(rpm -qp --qf '%{NAME}' "$new_rpm" 2>/dev/null || true)
+    if [ "$built_name" != "$PKG_NAME" ]; then
+        echo "    Error: repackaged rpm Name is '${built_name}', expected '${PKG_NAME}'"
+        rm -rf "$build_dir"
+        return 1
+    fi
+
+    mv "$new_rpm" "$abs_out"
+    rm -f "$abs_rpm"
     rm -rf "$build_dir"
 }
 
@@ -297,7 +320,7 @@ check_deps() {
 
     if [[ " ${SELECTED_TARGETS[*]} " =~ " rpm " ]]; then
         command -v rpmbuild >/dev/null 2>&1 || missing+=("rpmbuild")
-        command -v rpm2archive >/dev/null 2>&1 || missing+=("rpm2archive")
+        command -v rpm2cpio >/dev/null 2>&1 || missing+=("rpm2cpio")
     fi
 
     if [[ " ${SELECTED_TARGETS[*]} " =~ " arch " ]]; then
