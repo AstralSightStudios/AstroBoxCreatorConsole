@@ -73,6 +73,7 @@ export function ResourceDetailTab({
   focusResourceId,
   imageHighlight,
   onImageHighlightHandled,
+  imagesEnabled = true,
 }: {
   resources: PrResourcePreview[];
   /** 回查资源 ID：多资源 PR 默认切到目标行，并在标签上标记回查目标。 */
@@ -80,6 +81,11 @@ export function ResourceDetailTab({
   /** 自动检查 Tab 传下来的待高亮图片标签（icon / cover / preview N）。 */
   imageHighlight?: string | null;
   onImageHighlightHandled?: () => void;
+  /**
+   * PR 详情还在加载（manifest / 时间线等）时为 false：先展示文字信息，
+   * 图片等 loading 结束再开始下载，避免和收尾请求抢带宽。
+   */
+  imagesEnabled?: boolean;
 }) {
   const focusIndex = useMemo(() => {
     const needle = focusResourceId?.trim().toLowerCase();
@@ -117,6 +123,7 @@ export function ResourceDetailTab({
           resource={resource}
           imageHighlight={imageHighlight}
           onImageHighlightHandled={onImageHighlightHandled}
+          imagesEnabled={imagesEnabled}
         />
       </div>
     );
@@ -152,6 +159,7 @@ export function ResourceDetailTab({
         resource={resource}
         imageHighlight={imageHighlight}
         onImageHighlightHandled={onImageHighlightHandled}
+        imagesEnabled={imagesEnabled}
       />
     </div>
   );
@@ -163,10 +171,12 @@ function ResourceDetailView({
   resource,
   imageHighlight,
   onImageHighlightHandled,
+  imagesEnabled,
 }: {
   resource: PrResourcePreview;
   imageHighlight?: string | null;
   onImageHighlightHandled?: () => void;
+  imagesEnabled: boolean;
 }) {
   const navigate = useNavigate();
   const manifest = resource.manifest;
@@ -436,6 +446,7 @@ function ResourceDetailView({
         resource={resource}
         highlightLabel={imageHighlight}
         onHighlightHandled={onImageHighlightHandled}
+        enabled={imagesEnabled}
       />
 
     </div>

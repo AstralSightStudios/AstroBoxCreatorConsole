@@ -237,6 +237,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                   focusResourceId={focusResourceId}
                   imageHighlight={imageHighlight}
                   onImageHighlightHandled={clearImageHighlight}
+                  imagesEnabled={!loadingDetail}
                 />
               )}
             </Tabs.Content>

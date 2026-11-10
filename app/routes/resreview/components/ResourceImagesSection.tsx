@@ -36,26 +36,33 @@ let imageInspectQueue: Promise<void> = Promise.resolve();
 interface EagerMediaState {
   rawUrl: string;
   src: string;
-  status: "loading" | "ready" | "error";
+  status: "idle" | "loading" | "ready" | "error";
 }
 
 /**
  * 进入资源详情就立即请求图片，不再用 IntersectionObserver 等待滚动。
  *
+ * `enabled=false` 时只渲染占位、不发请求：资源信息先展示，等 PR 详情
+ * 加载结束（loadingDetail 关闭）后再开始下载图片。
+ *
  * 底层由 media-proxy 统一限制并发（6），这里的 retry 会重新走一次
  * 「raw → Contents API → 主账号兜底」的链路。
  */
-function useEagerMedia(rawUrl: string) {
+function useEagerMedia(rawUrl: string, enabled: boolean) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<EagerMediaState>({
     rawUrl,
     src: "",
-    status: "loading",
+    status: "idle",
   });
 
   useEffect(() => {
     if (!rawUrl) {
       setState({ rawUrl, src: "", status: "ready" });
+      return;
+    }
+    if (!enabled) {
+      setState({ rawUrl, src: "", status: "idle" });
       return;
     }
     let cancelled = false;
@@ -71,13 +78,13 @@ function useEagerMedia(rawUrl: string) {
     return () => {
       cancelled = true;
     };
-  }, [rawUrl, attempt]);
+  }, [rawUrl, attempt, enabled]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const current =
     state.rawUrl === rawUrl
       ? state
-      : { rawUrl, src: "", status: "loading" as const };
+      : { rawUrl, src: "", status: "idle" as const };
 
   return { src: current.src, status: current.status, retry };
 }
@@ -87,13 +94,15 @@ function DimensionTrackedImage({
   alt,
   className,
   onLoad,
+  enabled = true,
 }: {
   rawUrl: string;
   alt: string;
   className?: string;
   onLoad?: React.ReactEventHandler<HTMLImageElement>;
+  enabled?: boolean;
 }) {
-  const { src, status, retry } = useEagerMedia(rawUrl);
+  const { src, status, retry } = useEagerMedia(rawUrl, enabled);
   return (
     <>
       <img
@@ -291,11 +300,14 @@ export function ResourceImagesSection({
   resource,
   highlightLabel,
   onHighlightHandled,
+  enabled = true,
 }: {
   resource: PrResourcePreview;
   /** 自动检查 Tab 传下来的待高亮标签：`icon` / `cover` / `preview N`。 */
   highlightLabel?: string | null;
   onHighlightHandled?: () => void;
+  /** PR 详情仍在加载时为 false：先展示资源信息，图片稍后再开始下载。 */
+  enabled?: boolean;
 }) {
   const { logicalHeight } = useUiScaleViewport();
   const {
@@ -460,7 +472,7 @@ export function ResourceImagesSection({
                     }
                     className="relative mx-auto mt-2 flex h-[200px] w-[200px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40 transition hover:border-white/30"
                   >
-                    <DimensionTrackedImage rawUrl={resource.iconUrl} alt="Icon 预览" className="h-full w-full rounded-full object-contain p-3" onLoad={handleIconLoad} />
+                    <DimensionTrackedImage rawUrl={resource.iconUrl} alt="Icon 预览" className="h-full w-full rounded-full object-contain p-3" onLoad={handleIconLoad} enabled={enabled} />
                   </button>
                 </div>
               )}
@@ -483,7 +495,7 @@ export function ResourceImagesSection({
                     }
                     className="relative mt-2 block w-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-white/30"
                   >
-                    <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} />
+                    <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} enabled={enabled} />
                   </button>
                 </div>
               )}
@@ -526,7 +538,7 @@ export function ResourceImagesSection({
                     return (
                       <div key={url} data-preview-slide="1" className={`shrink-0 snap-center rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-center sm:px-3 sm:py-2`}>
                         <button type="button" onClick={() => setLightboxUrl(url)} className="relative inline-block cursor-zoom-in overflow-hidden rounded-md border border-white/10 bg-black/40 p-0" style={ratio ? { width: `min(${meta!.width}px, ${logicalHeight * 0.4 * ratio}px, ${cap})` } : undefined}>
-                          <DimensionTrackedImage rawUrl={url} alt={`Preview ${index + 1}`} className="block h-auto w-full" onLoad={handlePreviewLoad(url)} />
+                          <DimensionTrackedImage rawUrl={url} alt={`Preview ${index + 1}`} className="block h-auto w-full" onLoad={handlePreviewLoad(url)} enabled={enabled} />
                           {contentMeta?.animated && (
                             <span className="absolute left-1.5 top-1.5 rounded border border-sky-300/30 bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
                               动图

@@ -680,27 +680,8 @@ export default function ResourceReviewPage() {
               orgMembers,
               pull?.user?.login,
             );
-      const nextResourcePreviews =
-        source === "resource" && pull &&
-        (publishMode === "staging" || hasSubmissionFiles(nextFiles))
-          ? await loadStagingPrResourcePreviews(
-              nextFiles,
-              getGithubReadToken() || "",
-              pull,
-              auditMode
-                ? {
-                    baseEntries: baseline?.entries ?? [],
-                    allowDefaultBase: false,
-                  }
-                : undefined,
-            )
-          : source === "resource"
-            ? await loadPrResourcePreviews(
-                nextFiles,
-                getGithubReadToken() || "",
-              )
-            : [];
-      if (callId !== loadDetailRef.current) return;
+      // 文件列表与评论不依赖资源 manifest，先落状态：资源信息还在解析时，
+      // 「改动文件」「评论」等标签页已经可以展示内容。
       setCommentsByPr((prev) => ({ ...prev, [key]: nextComments }));
       if (source === "plugin") {
         setPluginReviewsByKey((prev) => ({
@@ -709,7 +690,47 @@ export default function ResourceReviewPage() {
         }));
       }
       setFiles(nextFiles);
+
+      // 资源行解析完成一个就先展示一个，不必等全部 manifest 都返回。
+      const previewSlots: Array<PrResourcePreview | undefined> = [];
+      const publishPreview = (preview: PrResourcePreview, index: number) => {
+        if (callId !== loadDetailRef.current) return;
+        previewSlots[index] = preview;
+        setResourcePreviews(
+          previewSlots.filter(
+            (item): item is PrResourcePreview => Boolean(item),
+          ),
+        );
+      };
+      const readToken = getGithubReadToken() || "";
+      const nextResourcePreviews =
+        source === "resource" && pull &&
+        (publishMode === "staging" || hasSubmissionFiles(nextFiles))
+          ? await loadStagingPrResourcePreviews(
+              nextFiles,
+              readToken,
+              pull,
+              auditMode
+                ? {
+                    baseEntries: baseline?.entries ?? [],
+                    allowDefaultBase: false,
+                    onPreview: publishPreview,
+                  }
+                : { onPreview: publishPreview },
+            )
+          : source === "resource"
+            ? await loadPrResourcePreviews(
+                nextFiles,
+                readToken,
+                publishPreview,
+              )
+            : [];
+      if (callId !== loadDetailRef.current) return;
       setResourcePreviews(nextResourcePreviews);
+
+      // 资源行已经就绪，先结束 loading 再执行标签副作用；图片等展示资源
+      // 由 loadingDetail 关闭后再开始请求，避免和收尾请求抢带宽。
+      setLoadingDetail(false);
 
       // 回查只读取历史提交，不能因为历史评论里的 REFUSE/CLOSE/REOPEN 标签
       // 再次改变 PR 状态；这些副作用只在普通资源审核模式执行。

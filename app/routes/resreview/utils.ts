@@ -412,9 +412,16 @@ export function deriveOriginalId(entry: CatalogEntry, removedEntries: CatalogEnt
   return undefined;
 }
 
+/** 单个资源行解析完成后立即回调，便于页面边加载边展示。 */
+export type PreviewProgress = (
+  preview: PrResourcePreview,
+  index: number,
+) => void;
+
 export async function loadPrResourcePreviews(
   files: GithubPullFile[],
   token: string,
+  onPreview?: PreviewProgress,
 ): Promise<PrResourcePreview[]> {
   const entries = extractCatalogEntriesFromFiles(files);
   const removedEntries = extractOldCatalogEntriesFromFiles(files);
@@ -425,8 +432,9 @@ export async function loadPrResourcePreviews(
     async ({ entry, index }) => {
       const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
       const originalId = deriveOriginalId(entry, removedEntries);
+      let preview: PrResourcePreview;
       if (index >= MAX_PREVIEWS) {
-        return {
+        preview = {
           entry,
           originalId,
           ref,
@@ -436,35 +444,38 @@ export async function loadPrResourcePreviews(
           previewUrls: [],
           packages: [],
         } satisfies PrResourcePreview;
+      } else {
+        try {
+          const manifest = await fetchManifest(entry, token);
+          const iconPath = manifest.item?.icon || entry.icon;
+          const coverPath = manifest.item?.cover || entry.cover;
+          preview = {
+            entry,
+            originalId,
+            ref,
+            manifest,
+            iconUrl: buildResourceRawUrl(entry, ref, iconPath),
+            coverUrl: buildResourceRawUrl(entry, ref, coverPath),
+            previewUrls: (manifest.item?.preview ?? [])
+              .map((path: string) => buildResourceRawUrl(entry, ref, path))
+              .filter(Boolean),
+            packages: collectPackages(entry, ref, manifest),
+          } satisfies PrResourcePreview;
+        } catch (err) {
+          preview = {
+            entry,
+            originalId,
+            ref,
+            manifestError: getErrorMessage(err),
+            iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
+            coverUrl: buildResourceRawUrl(entry, ref, entry.cover),
+            previewUrls: [],
+            packages: [],
+          } satisfies PrResourcePreview;
+        }
       }
-      try {
-        const manifest = await fetchManifest(entry, token);
-        const iconPath = manifest.item?.icon || entry.icon;
-        const coverPath = manifest.item?.cover || entry.cover;
-        return {
-          entry,
-          originalId,
-          ref,
-          manifest,
-          iconUrl: buildResourceRawUrl(entry, ref, iconPath),
-          coverUrl: buildResourceRawUrl(entry, ref, coverPath),
-          previewUrls: (manifest.item?.preview ?? [])
-            .map((path: string) => buildResourceRawUrl(entry, ref, path))
-            .filter(Boolean),
-          packages: collectPackages(entry, ref, manifest),
-        } satisfies PrResourcePreview;
-      } catch (err) {
-        return {
-          entry,
-          originalId,
-          ref,
-          manifestError: getErrorMessage(err),
-          iconUrl: buildResourceRawUrl(entry, ref, entry.icon),
-          coverUrl: buildResourceRawUrl(entry, ref, entry.cover),
-          previewUrls: [],
-          packages: [],
-        } satisfies PrResourcePreview;
-      }
+      onPreview?.(preview, index);
+      return preview;
     },
   );
 }
@@ -474,6 +485,8 @@ export interface StagingPreviewOptions {
   baseEntries?: CatalogEntry[];
   /** 没有显式 baseEntries 时是否回退到默认分支当前目录。 */
   allowDefaultBase?: boolean;
+  /** 单个资源行解析完成后回调，便于详情页边加载边展示。 */
+  onPreview?: PreviewProgress;
 }
 
 function predictSubmissionAction(request: SubmissionRequest): string {
@@ -565,10 +578,12 @@ export async function loadStagingPrResourcePreviews(
     throw lastError ?? new Error("无法读取 PR 提交文件，且没有可用的合入提交兜底。");
   };
 
+  const { onPreview } = options ?? {};
+
   return runWithConcurrency(
-    submissionPaths,
+    submissionPaths.map((submissionPath, index) => ({ submissionPath, index })),
     4,
-    async (submissionPath) => {
+    async ({ submissionPath, index }) => {
       const csvFile = await readSubmissionFile(
         submissionCsvPath(submissionPath),
       );
@@ -584,11 +599,12 @@ export async function loadStagingPrResourcePreviews(
         : undefined;
       const ref = entry.repo_commit_hash || MAIN_RESOURCE_BRANCH;
 
+      let preview: PrResourcePreview;
       try {
         const manifest = await fetchManifest(entry, token);
         const iconPath = manifest.item?.icon || entry.icon;
         const coverPath = manifest.item?.cover || entry.cover;
-        return {
+        preview = {
           entry,
           baseEntry,
           originalId: request.original_id || undefined,
@@ -604,7 +620,7 @@ export async function loadStagingPrResourcePreviews(
           packages: collectPackages(entry, ref, manifest),
         } satisfies PrResourcePreview;
       } catch (err) {
-        return {
+        preview = {
           entry,
           baseEntry,
           originalId: request.original_id || undefined,
@@ -618,6 +634,8 @@ export async function loadStagingPrResourcePreviews(
           packages: [],
         } satisfies PrResourcePreview;
       }
+      onPreview?.(preview, index);
+      return preview;
     },
   );
 }
