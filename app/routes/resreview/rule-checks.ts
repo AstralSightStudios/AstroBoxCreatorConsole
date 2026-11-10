@@ -7,6 +7,7 @@ import {
   toProxiedApiUrl,
 } from "~/logic/github-raw";
 import { fetchProxiedMediaUrl } from "~/logic/media-proxy";
+import { isImmutableMediaUrl } from "~/logic/media-cache";
 import { listRepoFileSizesAtCommit, type GithubPullFile } from "~/api/github/pr-review";
 import {
   loadDeviceOptions,
@@ -394,6 +395,9 @@ async function fetchBytes(
     const result = await invoke<FetchMediaResponse>("fetch_media", {
       request: { url, headers },
     });
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`HTTP ${result.status}`);
+    }
     let bytes = base64ToBytes(result.body_base64);
     if (maxBytes != null && bytes.length > maxBytes) bytes = bytes.subarray(0, maxBytes);
     return bytes;
@@ -428,16 +432,17 @@ export async function fetchResourceBytes(
 
 /**
  * 通过 Image 元素加载图片获取真实像素尺寸（用于宽高比校验）。
- * 先经 media-proxy 带鉴权取回 blob（走 Contents API），再交给 Image 读取尺寸，
- * 避免直接请求 raw CDN 被限流。
+ * 先经 media-proxy 取回 blob（raw 优先、Contents API 兜底），再交给
+ * Image 读取尺寸；展示层已经下载过的图片直接复用同一份缓存的字节。
  */
 async function loadImageDimensions(
   rawUrl: string,
   timeoutMs = 12_000,
+  forceFresh = false,
 ): Promise<{ width: number; height: number } | undefined> {
   let displayUrl: string;
   try {
-    displayUrl = await fetchProxiedMediaUrl(rawUrl);
+    displayUrl = await fetchProxiedMediaUrl(rawUrl, { forceFresh });
   } catch {
     // 鉴权取回失败（未登录/超限）时不再回退 raw CDN，直接放弃尺寸探测。
     return undefined;
@@ -466,6 +471,26 @@ async function loadImageDimensions(
     img.src = displayUrl;
     setTimeout(() => finish(undefined), timeoutMs);
   });
+}
+
+/**
+ * 读取图片字节用于格式/动图识别。
+ *
+ * 复用媒体链路与持久缓存，避免展示层下载过一遍后自动检查再完整下载一遍。
+ * 分支引用的图片（`main` 等）内容可能变化，调用方会传入 forceFresh。
+ */
+async function fetchImageBytes(
+  rawUrl: string,
+  maxBytes?: number,
+  forceFresh = false,
+): Promise<Uint8Array> {
+  const blobUrl = await fetchProxiedMediaUrl(rawUrl, { forceFresh });
+  const blob = await (await fetch(blobUrl)).blob();
+  let bytes = new Uint8Array(await blob.arrayBuffer());
+  if (maxBytes != null && bytes.length > maxBytes) {
+    bytes = bytes.subarray(0, maxBytes);
+  }
+  return bytes;
 }
 
 // ---------------------------------------------------------------------------
@@ -966,8 +991,15 @@ export async function runResourceRuleChecks(options: {
   prFiles: GithubPullFile[];
   token: string;
   astroboxToken?: string;
+  /**
+   * 强制重新下载图片。手动「重新检查」会传 true；分支引用的图片在
+   * 检查内部也会自动强制刷新，保证审核结论对应当前分支内容。
+   */
+  forceFresh?: boolean;
 }): Promise<ResourceRuleCheckResult> {
-  const { preview, prFiles, token, astroboxToken } = options;
+  const { preview, prFiles, token, astroboxToken, forceFresh = false } = options;
+  const shouldForceImage = (url: string) =>
+    forceFresh || !isImmutableMediaUrl(url);
   const checks: RuleCheckItem[] = [];
   const entry = preview.entry;
   const manifest = preview.manifest;
@@ -1798,7 +1830,11 @@ export async function runResourceRuleChecks(options: {
       .filter((img) => img.label === "icon" || img.label === "cover")
       .map(async (img) => {
         if (!img.url) return;
-        const dims = await loadImageDimensions(img.url);
+        const dims = await loadImageDimensions(
+          img.url,
+          12_000,
+          shouldForceImage(img.url),
+        );
         if (!dims) return;
         img.width = dims.width;
         img.height = dims.height;
@@ -1848,7 +1884,11 @@ export async function runResourceRuleChecks(options: {
       ? PREVIEW_ANIMATED_MAX_BYTES
       : Math.max(SVG_SNIFF_BYTES, 64 * 1024);
     try {
-      const bytes = await fetchResourceBytes(img.url, token, maxBytes);
+      const bytes = await fetchImageBytes(
+        img.url,
+        maxBytes,
+        shouldForceImage(img.url),
+      );
       const meta = inspectImageBytes(bytes);
       img.format = meta.format;
       img.animated = meta.animated;

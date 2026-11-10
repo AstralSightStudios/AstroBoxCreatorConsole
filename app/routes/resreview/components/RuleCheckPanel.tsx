@@ -88,7 +88,13 @@ function useResourceRuleChecks(
     let cancelled = false;
     // 重新检查时保留上一次结果，只把按钮切到「检查中」，避免面板瞬间闪空。
     setState((previous) => ({ loading: true, result: previous.result }));
-    runResourceRuleChecks({ preview: resource, prFiles, token, astroboxToken })
+    runResourceRuleChecks({
+      preview: resource,
+      prFiles,
+      token,
+      astroboxToken,
+      forceFresh: forced,
+    })
       .then((result) => {
         // 先写缓存再判断取消：即使组件因切换 PR 被卸载，结果也能在切回时复用。
         writeRuleCheckCache(cacheKey, result);
