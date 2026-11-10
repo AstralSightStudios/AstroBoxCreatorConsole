@@ -198,11 +198,13 @@ async fn fetch_media(
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(|value| value.to_string());
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
-
-    if !status.is_success() {
-        return Err(format!("media request failed ({status})"));
-    }
+    // 非 2xx 也把状态码交给前端：图片链路需要据此决定是否换读取账号
+    // 或降级到 Contents API。错误响应体没有用处，不读取也不编码。
+    let bytes = if status.is_success() {
+        response.bytes().await.map_err(|err| err.to_string())?
+    } else {
+        Default::default()
+    };
 
     Ok(FetchMediaResponse {
         status: status.as_u16(),

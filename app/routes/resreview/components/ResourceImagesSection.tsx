@@ -1,4 +1,4 @@
-import { GithubLogoIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -9,7 +9,6 @@ import { useOverlayHistoryDismiss } from "~/logic/ui/overlay-history";
 import { ScrollArea } from "~/components/scroll-area";
 import {
   fetchProxiedMediaUrl,
-  useLazyProxiedMediaUrl,
   useProxiedMediaUrl,
 } from "~/logic/media-proxy";
 import { inspectImageFile, type ImageMeta as ImageContentMeta } from "~/logic/publish/image-meta";
@@ -28,6 +27,61 @@ interface ImageMeta {
   height: number;
 }
 
+/**
+ * 动图/格式解析会读取最多 4MB 字节并逐帧扫描；图片改为进入页面即全部
+ * 加载后，必须串行执行，避免十几张图同时解析把主线程卡住。
+ */
+let imageInspectQueue: Promise<void> = Promise.resolve();
+
+interface EagerMediaState {
+  rawUrl: string;
+  src: string;
+  status: "loading" | "ready" | "error";
+}
+
+/**
+ * 进入资源详情就立即请求图片，不再用 IntersectionObserver 等待滚动。
+ *
+ * 底层由 media-proxy 统一限制并发（6），这里的 retry 会重新走一次
+ * 「raw → Contents API → 主账号兜底」的链路。
+ */
+function useEagerMedia(rawUrl: string) {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<EagerMediaState>({
+    rawUrl,
+    src: "",
+    status: "loading",
+  });
+
+  useEffect(() => {
+    if (!rawUrl) {
+      setState({ rawUrl, src: "", status: "ready" });
+      return;
+    }
+    let cancelled = false;
+    setState({ rawUrl, src: "", status: "loading" });
+    // 重试时绕过缓存，排除上次写入的空/损坏 blob。
+    fetchProxiedMediaUrl(rawUrl, { forceFresh: attempt > 0 })
+      .then((src) => {
+        if (!cancelled) setState({ rawUrl, src, status: "ready" });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ rawUrl, src: "", status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rawUrl, attempt]);
+
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const current =
+    state.rawUrl === rawUrl
+      ? state
+      : { rawUrl, src: "", status: "loading" as const };
+
+  return { src: current.src, status: current.status, retry };
+}
+
 function DimensionTrackedImage({
   rawUrl,
   alt,
@@ -39,16 +93,38 @@ function DimensionTrackedImage({
   className?: string;
   onLoad?: React.ReactEventHandler<HTMLImageElement>;
 }) {
-  const { ref, resolvedUrl } = useLazyProxiedMediaUrl<HTMLImageElement>(rawUrl);
+  const { src, status, retry } = useEagerMedia(rawUrl);
   return (
-    <img
-      ref={ref}
-      src={resolvedUrl || undefined}
-      alt={alt}
-      className={`${className ?? ""} ${resolvedUrl ? "" : "min-h-24 min-w-16 bg-white/[0.03]"}`}
-      onLoad={onLoad}
-      loading="lazy"
-    />
+    <>
+      <img
+        src={src || undefined}
+        alt={alt}
+        className={`${className ?? ""} ${src ? "" : "min-h-24 min-w-16 bg-white/[0.03]"}`}
+        onLoad={onLoad}
+      />
+      {status === "error" && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="图片加载失败，点击重试"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            retry();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            retry();
+          }}
+          className="absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md bg-black/60 px-2 text-center text-[11px] text-white/85 transition hover:bg-black/70"
+        >
+          <ArrowClockwiseIcon size={16} />
+          加载失败，点击重试
+        </span>
+      )}
+    </>
   );
 }
 
@@ -232,21 +308,23 @@ export function ResourceImagesSection({
   } = useImageMeta();
   const [contentMetaMap, setContentMetaMap] = useState<Record<string, ImageContentMeta>>({});
   const inspectedUrlsRef = useRef(new Set<string>());
-  const inspectPreviewMeta = useCallback(async (url: string) => {
+  const inspectPreviewMeta = useCallback((url: string) => {
     if (inspectedUrlsRef.current.has(url)) return;
     inspectedUrlsRef.current.add(url);
-    try {
-      // 图片已经通过 useProxiedMediaUrl 加载过，这里读的是同一个 blob 缓存，
-      // 不会再发一次 GitHub 请求。
-      const proxied = await fetchProxiedMediaUrl(url);
-      const blob = await (await fetch(proxied)).blob();
-      const meta = await inspectImageFile(blob);
-      setContentMetaMap((previous) =>
-        previous[url] ? previous : { ...previous, [url]: meta },
-      );
-    } catch {
-      // 取不到内容不影响图片展示；审核仍可从 rule-checks 的 magic 结果判断。
-    }
+    imageInspectQueue = imageInspectQueue.then(async () => {
+      try {
+        // 图片已经通过 useProxiedMediaUrl 加载过，这里读的是同一个 blob 缓存，
+        // 不会再发一次 GitHub 请求。
+        const proxied = await fetchProxiedMediaUrl(url);
+        const blob = await (await fetch(proxied)).blob();
+        const meta = await inspectImageFile(blob);
+        setContentMetaMap((previous) =>
+          previous[url] ? previous : { ...previous, [url]: meta },
+        );
+      } catch {
+        // 取不到内容不影响图片展示；审核仍可从 rule-checks 的 magic 结果判断。
+      }
+    });
   }, []);
   const [previewActiveIndex, setPreviewActiveIndex] = useState(0);
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -380,7 +458,7 @@ export function ResourceImagesSection({
                         rawGithubUrlToBlobUrl(resource.iconUrl) ?? resource.iconUrl,
                       )
                     }
-                    className="mx-auto mt-2 flex h-[200px] w-[200px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40 transition hover:border-white/30"
+                    className="relative mx-auto mt-2 flex h-[200px] w-[200px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40 transition hover:border-white/30"
                   >
                     <DimensionTrackedImage rawUrl={resource.iconUrl} alt="Icon 预览" className="h-full w-full rounded-full object-contain p-3" onLoad={handleIconLoad} />
                   </button>
@@ -403,7 +481,7 @@ export function ResourceImagesSection({
                         rawGithubUrlToBlobUrl(resource.coverUrl) ?? resource.coverUrl,
                       )
                     }
-                    className="mt-2 block w-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-white/30"
+                    className="relative mt-2 block w-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-white/30"
                   >
                     <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} />
                   </button>
