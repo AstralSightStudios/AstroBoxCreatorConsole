@@ -96,7 +96,9 @@ jobs:
         run: |
           docker run --rm -v "${{ github.workspace }}":/work -w /work archlinux:base-devel \
             bash -lc 'set -e
-              pacman -Sy --noconfirm --needed curl
+              # Arch 是滚动发行版，必须先完整升级，避免 -Sy 只刷新数据库后
+              # 安装新 openssl 时与镜像内旧的 libcrypto.so=3-64 依赖冲突。
+              pacman -Syu --noconfirm --needed curl
               chmod -R a+rwX /work/scripts/archpkg
               mkdir -p /work/dist/linux
               chmod a+rwX /work/dist /work/dist/linux
