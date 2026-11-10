@@ -15,6 +15,7 @@ import {
   DownloadSimpleIcon,
   FolderOpenIcon,
   ShareNetworkIcon,
+  TrashIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -52,6 +53,15 @@ import {
   UI_SCALE_OPTIONS,
   useUiScale,
 } from "~/config/uiScale";
+import { MEDIA_CACHE_LIMIT_OPTIONS } from "~/config/mediaCache";
+import {
+  clearMediaCache,
+  formatMediaCacheSize,
+  getMediaCacheLimitMb,
+  setMediaCacheLimitMb,
+  useMediaCacheStats,
+} from "~/logic/media-cache";
+import { clearMediaProxyCache } from "~/logic/media-proxy";
 import {
   saveStartupPage,
   STARTUP_PAGE_OPTIONS,
@@ -859,6 +869,40 @@ export default function Settings({
   const [betaUpdateDialogOpen, setBetaUpdateDialogOpen] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [checkingBetaUpdate, setCheckingBetaUpdate] = useState(false);
+  const mediaCacheStats = useMediaCacheStats();
+  const [mediaCacheLimitMb, setMediaCacheLimitMbState] = useState(() =>
+    getMediaCacheLimitMb(),
+  );
+  const [clearingMediaCache, setClearingMediaCache] = useState(false);
+
+  const handleSelectMediaCacheLimit = (value: string) => {
+    const limitMb = Number(value);
+    setMediaCacheLimitMb(limitMb);
+    setMediaCacheLimitMbState(limitMb);
+    toast.success(
+      limitMb > 0
+        ? `图片缓存上限已设为 ${
+            MEDIA_CACHE_LIMIT_OPTIONS.find((option) => option.mb === limitMb)
+              ?.label ?? `${limitMb} MB`
+          }`
+        : "已关闭图片持久缓存",
+    );
+  };
+
+  const handleClearMediaCache = async () => {
+    setClearingMediaCache(true);
+    try {
+      clearMediaProxyCache();
+      await clearMediaCache();
+      toast.success("图片缓存已清空");
+    } catch (error) {
+      toast.error(
+        `清空图片缓存失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setClearingMediaCache(false);
+    }
+  };
 
   // 启动页候选与导航项同源，按当前账号权限过滤后再按导航分组合并，
   // 保证「选得到的启动页」永远等于「导航里存在的页面」。
@@ -1186,6 +1230,54 @@ export default function Settings({
               />
             ))}
           </div>
+        </SectionCard>
+
+        {/* 图片缓存 */}
+        <SectionCard
+          title="图片缓存"
+          description={`当前已用 ${formatMediaCacheSize(mediaCacheStats.usedBytes)} · ${mediaCacheStats.entries} 张`}
+        >
+          <SelectRow
+            title="缓存容量上限"
+            subtitle="只缓存以提交 SHA 定位的图片；分支引用的图片不落盘，手动重新检查也会强制刷新"
+          >
+            <Select.Root
+              value={String(mediaCacheLimitMb)}
+              onValueChange={handleSelectMediaCacheLimit}
+            >
+              <Select.Trigger aria-label="图片缓存容量上限" />
+              <Select.Content>
+                {MEDIA_CACHE_LIMIT_OPTIONS.map((option) => (
+                  <Select.Item key={option.mb} value={String(option.mb)}>
+                    {option.label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </SelectRow>
+          <button
+            type="button"
+            onClick={() => void handleClearMediaCache()}
+            disabled={clearingMediaCache || mediaCacheStats.usedBytes === 0}
+            className="group flex w-full items-center gap-3 px-2 py-3 text-left transition hover:bg-white/[0.035] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[13.5px] font-medium text-white">
+                清空图片缓存
+              </span>
+              <span className="truncate text-[12px] text-white/45">
+                删除本地已缓存的审核页图片，下次进入会重新下载
+              </span>
+            </div>
+            {clearingMediaCache ? (
+              <Spinner size="1" />
+            ) : (
+              <TrashIcon
+                size={16}
+                className="shrink-0 text-white/30 transition group-hover:text-white/65"
+              />
+            )}
+          </button>
         </SectionCard>
 
         {/* AstroBox 登录方式 */}
