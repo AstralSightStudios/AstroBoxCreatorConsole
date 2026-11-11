@@ -14,9 +14,10 @@ import {
   TicketIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Pager, usePagination } from "~/components/pager";
 import {
   fetchAfdianOrders,
   filterAfdianOrdersBySku,
@@ -71,7 +72,6 @@ const [syncing, setSyncing] = useState(false);
 const [reissuing, setReissuing] = useState(false);
 const [error, setError] = useState("");
 const [candidateSearch, setCandidateSearch] = useState("");
-const [candidatePage, setCandidatePage] = useState(1);
 
 const { data: resourceConfigs } = useQuery({
   queryKey: ["sellerResourceConfigsForAfdianReissue"],
@@ -130,27 +130,12 @@ const filteredSelectableCandidates = useMemo(
   () => filteredCandidates.filter((candidate) => candidate.canReissue),
   [filteredCandidates],
 );
-const candidatePageSize = 50;
-const candidatePageCount = Math.max(
-  1,
-  Math.ceil(filteredCandidates.length / candidatePageSize),
-);
-const visibleCandidates = useMemo(
-  () =>
-    filteredCandidates.slice(
-      (candidatePage - 1) * candidatePageSize,
-      candidatePage * candidatePageSize,
-    ),
-  [candidatePage, filteredCandidates],
-);
-
-useEffect(() => {
-  setCandidatePage(1);
-}, [candidateSearch, candidates]);
-
-useEffect(() => {
-  setCandidatePage((previous) => Math.min(previous, candidatePageCount));
-}, [candidatePageCount]);
+// 一次对账可能有上千条订单：分页展示，搜索词变化回到第 1 页，补发后订单状态刷新则停留当前页
+const {
+  slice: candidatePage,
+  setPage: setCandidatePage,
+  setPageSize: setCandidatePageSize,
+} = usePagination(filteredCandidates, { pageSize: 50, resetKey: candidateSearch });
 
 const toggleSelected = (key: string, checked: boolean) => {
   setSelectedKeys((previous) => {
@@ -429,7 +414,7 @@ return (
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
-                    {visibleCandidates.map((candidate) => (
+                    {candidatePage.items.map((candidate) => (
                       <Table.Row key={candidate.key}>
                         <Table.Cell>
                           <Checkbox
@@ -477,30 +462,13 @@ return (
                   没有匹配当前搜索条件的订单。
                 </div>
               )}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-white/55">
-                <span>
-                  显示 {filteredCandidates.length === 0 ? 0 : (candidatePage - 1) * candidatePageSize + 1}–{Math.min(candidatePage * candidatePageSize, filteredCandidates.length)} / {filteredCandidates.length}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="1"
-                    variant="soft"
-                    onClick={() => setCandidatePage((previous) => Math.max(1, previous - 1))}
-                    disabled={candidatePage <= 1 || reissuing}
-                  >
-                    上一页
-                  </Button>
-                  <span>第 {candidatePage} / {candidatePageCount} 页</span>
-                  <Button
-                    size="1"
-                    variant="soft"
-                    onClick={() => setCandidatePage((previous) => Math.min(candidatePageCount, previous + 1))}
-                    disabled={candidatePage >= candidatePageCount || reissuing}
-                  >
-                    下一页
-                  </Button>
-                </div>
-              </div>
+              <Pager
+                slice={candidatePage}
+                onPageChange={setCandidatePage}
+                onPageSizeChange={setCandidatePageSize}
+                pageSizeOptions={[20, 50, 100]}
+                disabled={reissuing}
+              />
             </>
           )}
           {candidates.length === 0 && !syncing && (

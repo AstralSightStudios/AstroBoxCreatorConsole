@@ -21,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Pager, usePagination } from "~/components/pager";
 import {
   createCdkBatch,
   listSellerCdks,
@@ -63,6 +64,7 @@ const [resourceId, setResourceId] = useState("");
 const [deviceId, setDeviceId] = useState("");
 const [quantity, setQuantity] = useState("10");
 const [statusFilter, setStatusFilter] = useState<"all" | CdkStatus>("all");
+const [keyword, setKeyword] = useState("");
 const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
 
 const {
@@ -161,6 +163,24 @@ const availableCodes = useMemo(
   () => cdks.filter((item) => item.status === "available").map((item) => item.code),
   [cdks],
 );
+
+const visibleCdks = useMemo(() => {
+  const query = keyword.trim().toLowerCase();
+  if (!query) return cdks;
+  return cdks.filter((item) =>
+    [item.code, item.deviceId, item.redeemedByUserId].some((value) =>
+      value?.toLowerCase().includes(query),
+    ),
+  );
+}, [cdks, keyword]);
+// 一次最多拉 500 个，整张表铺开很难找：分页，换资源 / 状态 / 搜索词回到第 1 页
+const {
+  slice: page,
+  setPage,
+  setPageSize,
+} = usePagination(visibleCdks, {
+  resetKey: [resourceId, statusFilter, keyword].join("\u0000"),
+});
 
 return (
   <SectionCard
@@ -323,6 +343,14 @@ return (
                 <Select.Item value="redeemed">已兑换</Select.Item>
               </Select.Content>
             </Select.Root>
+            <TextField.Root
+              size="1"
+              placeholder="搜索 CDK / 设备 / 兑换者"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              radius="large"
+              className="w-56 max-w-full"
+            />
             <Button
               size="1"
               variant="soft"
@@ -384,7 +412,7 @@ return (
             </div>
           )}
 
-          {resourceId && !cdksLoading && !cdksError && cdks.length > 0 && (
+          {resourceId && !cdksLoading && !cdksError && visibleCdks.length > 0 && (
             <div className="w-full overflow-x-auto">
               <Table.Root className="w-full min-w-150">
                 <Table.Header>
@@ -400,7 +428,7 @@ return (
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {cdks.map((item) => (
+                  {page.items.map((item) => (
                     <Table.Row key={item.code}>
                       <Table.Cell>
                         <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono-sarasa text-xs text-white/85">
@@ -439,6 +467,16 @@ return (
                 </Table.Body>
               </Table.Root>
             </div>
+          )}
+
+          {resourceId && !cdksLoading && !cdksError && cdks.length > 0 && visibleCdks.length === 0 && (
+            <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-white/60">
+              没有符合搜索条件的 CDK。
+            </div>
+          )}
+
+          {resourceId && !cdksLoading && !cdksError && (
+            <Pager slice={page} onPageChange={setPage} onPageSizeChange={setPageSize} />
           )}
         </>
       )}

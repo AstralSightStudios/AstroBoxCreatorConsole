@@ -5,6 +5,7 @@ import {
   Callout,
   Dialog,
   Spinner,
+  TextField,
 } from "~/components/ScaleAwareThemes";
 import {
   ArrowSquareOutIcon,
@@ -12,13 +13,15 @@ import {
   CopyIcon,
   GithubLogoIcon,
   InfoIcon,
+  MagnifyingGlassIcon,
   TrashIcon,
   WarningOctagonIcon,
 } from "@phosphor-icons/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Collapsible } from "radix-ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Pager, usePagination } from "~/components/pager";
 import {
   deleteSellerResourceFileKey,
   listSellerResourceFileKeys,
@@ -34,6 +37,9 @@ import {
   type ResourceCatalogContext,
 } from "~/logic/publish/resources";
 import { SectionCard } from "~/routes/resource/publish/components/shared";
+
+/** 资源超过这个数量才显示搜索框，资源少时不占地方。 */
+const SEARCH_THRESHOLD = 6;
 
 /**
  * 单个资源一次拉取的密钥映射上限。超过上限时页面上会提示
@@ -570,6 +576,23 @@ export function EncryptedFilesCard({ isVip }: EncryptedFilesCardProps) {
     enabled: isVip,
   });
 
+  const [keyword, setKeyword] = useState("");
+  const filteredResources = useMemo(() => {
+    const query = keyword.trim().toLowerCase();
+    if (!query) return encryptedResources;
+    return encryptedResources.filter((group) =>
+      [group.resource.entry.name, group.resource.entry.id].some((value) =>
+        value?.toLowerCase().includes(query),
+      ),
+    );
+  }, [encryptedResources, keyword]);
+  // 资源一多页面会被折叠行撑得很长：按资源分页，搜索词变化回到第 1 页
+  const {
+    slice: page,
+    setPage,
+    setPageSize,
+  } = usePagination(filteredResources, { pageSize: 10, resetKey: keyword });
+
   const encryptedError = encryptedErrorRaw
     ? (encryptedErrorRaw as Error).message || "加载失败"
     : "";
@@ -664,7 +687,25 @@ export function EncryptedFilesCard({ isVip }: EncryptedFilesCardProps) {
         !encryptedError &&
         encryptedResources.length > 0 && (
           <div className="flex flex-col gap-2">
-            {encryptedResources.map((group) => (
+            {encryptedResources.length >= SEARCH_THRESHOLD && (
+              <TextField.Root
+                size="2"
+                placeholder="搜索资源名称 / ID"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                radius="large"
+              >
+                <TextField.Slot>
+                  <MagnifyingGlassIcon size={16} />
+                </TextField.Slot>
+              </TextField.Root>
+            )}
+            {filteredResources.length === 0 && (
+              <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-white/60">
+                没有符合搜索条件的资源。
+              </div>
+            )}
+            {page.items.map((group) => (
               <div
                 key={group.resource.entry.id}
                 className="rounded-lg border border-white/10 bg-black/20"
@@ -676,6 +717,13 @@ export function EncryptedFilesCard({ isVip }: EncryptedFilesCardProps) {
                 />
               </div>
             ))}
+            <Pager
+              slice={page}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[10, 20, 50]}
+              className="pt-1"
+            />
           </div>
         )}
     </SectionCard>

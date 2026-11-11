@@ -18,6 +18,7 @@ import {
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Pager, usePagination } from "~/components/pager";
 import {
   listSellerEntitlements,
   restoreSellerEntitlement,
@@ -127,6 +128,15 @@ export function EntitlementManager() {
     return filterEntitlementGroups(byStatus, keyword, deviceLabel);
     // deviceLabel 依赖设备目录，目录加载完成后需要重新过滤
   }, [groups, statusFilter, keyword, deviceNames, deviceResolver]);
+  // 买家一多整页会拉得很长：表格分页，换资源 / 设备 / 状态 / 搜索词都回到第 1 页
+  const {
+    slice: page,
+    setPage,
+    setPageSize,
+  } = usePagination(visible, {
+    resetKey: [resourceId, deviceFilter, statusFilter, keyword].join("\u0000"),
+  });
+
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["sellerEntitlements", resourceId] });
 
   const revokeMutation = useMutation({
@@ -343,7 +353,7 @@ export function EntitlementManager() {
                         </Table.Row>
                       </Table.Header>
                       <Table.Body>
-                        {visible.map((group) => {
+                        {page.items.map((group) => {
                           const busy = pendingKey === group.key;
                           return (
                             <Table.Row key={group.key}>
@@ -442,6 +452,8 @@ export function EntitlementManager() {
                     </Table.Root>
                   </div>
                 )}
+
+                <Pager slice={page} onPageChange={setPage} onPageSizeChange={setPageSize} />
               </>
             )}
           </>
