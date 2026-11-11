@@ -166,6 +166,10 @@ export interface AdminResourceEntitlement {
   sourcePlatform: CommercePlatform;
   sourceRef: string;
   meta: unknown;
+  /** 创作者吊销时间，未吊销为空串（旧版服务端没有该字段）。 */
+  revokedAt?: string;
+  revokedBy?: string;
+  revokeReason?: string;
   createdAt: string;
   updatedAt: string;
 }

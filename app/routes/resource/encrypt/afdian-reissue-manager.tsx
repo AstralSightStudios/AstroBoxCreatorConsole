@@ -36,6 +36,7 @@ function afdianReasonLabel(reason: string) {
     missing_webhook: "疑似漏单",
     order_granted_but_entitlement_missing: "订单已记录但权益缺失",
     already_granted: "已拥有权益",
+    revoked_by_seller: "权限已被你吊销",
     buyer_not_bound: "买家尚未绑定 AstroBox",
     seller_inactive: "卖家当前不可接新单",
     sku_mapping_invalid: "SKU 映射已失效",

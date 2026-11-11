@@ -252,6 +252,79 @@ export function listSellerCdks(body: ListSellerCdkBody = {}) {
     );
 }
 
+export type EntitlementSourceType = "order" | "cdk";
+export type SellerEntitlementStatus = "active" | "revoked";
+
+/** 一条买家权益记录（同一买家同一设备可能有订单、CDK 多条来源）。 */
+export interface SellerEntitlement {
+    buyerUserId: string;
+    /** 买家显示名，没有则退回用户名；账号已删除时为空。 */
+    buyerName: string;
+    buyerAvatar: string;
+    sellerUserId: string;
+    resourceId: string;
+    deviceId: string;
+    sourceType: EntitlementSourceType;
+    sourcePlatform: CommercePlatform;
+    sourceRef: string;
+    /** 未吊销为空串。 */
+    revokedAt: string;
+    revokeReason: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ListSellerEntitlementsBody {
+    resourceId?: string;
+    deviceId?: string;
+    buyerUserId?: string;
+    status?: SellerEntitlementStatus;
+    limit?: number;
+}
+
+export interface EntitlementTarget {
+    resourceId: string;
+    deviceId: string;
+    buyerUserId: string;
+}
+
+export interface RevokeEntitlementBody extends EntitlementTarget {
+    reason?: string;
+}
+
+export interface EntitlementChangeResult extends EntitlementTarget {
+    /** 本次实际改动的记录数；已是目标状态时为 0。 */
+    affected: number;
+}
+
+export function listSellerEntitlements(body: ListSellerEntitlementsBody = {}) {
+    return sendApiRequest<SellerEntitlement[]>(
+        "/order/seller/entitlement/list",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+/** 吊销买家对某资源某设备的安装权限（软删除，可恢复）。 */
+export function revokeSellerEntitlement(body: RevokeEntitlementBody) {
+    return sendApiRequest<EntitlementChangeResult>(
+        "/order/seller/entitlement/revoke",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
+export function restoreSellerEntitlement(body: EntitlementTarget) {
+    return sendApiRequest<EntitlementChangeResult>(
+        "/order/seller/entitlement/restore",
+        "POST",
+        undefined,
+        body,
+    );
+}
+
 export interface AfdianReissueCandidate {
   key: string;
   externalOrderId: string;

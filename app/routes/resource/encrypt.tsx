@@ -7,6 +7,7 @@ import { PlatformSettingsCard } from "./encrypt/platform-settings";
 import { EncryptedFilesCard } from "./encrypt/encrypted-files";
 import { AfdianReissueManager } from "./encrypt/afdian-reissue-manager";
 import { CdkManager } from "./encrypt/cdk-manager";
+import { EntitlementManager } from "./encrypt/entitlement-manager";
 import { ExternalAuthorizationManager } from "./encrypt/external-authorization-manager";
 
 export default function ResourceEncrypt() {
@@ -29,6 +30,8 @@ export default function ResourceEncrypt() {
         {isVip && <AfdianReissueManager />}
 
         {isVip && <CdkManager />}
+
+        {isVip && <EntitlementManager />}
 
         {isVip && <ExternalAuthorizationManager />}
 

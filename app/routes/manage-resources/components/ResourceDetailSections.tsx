@@ -933,6 +933,11 @@ export function EntitlementsPanel({
                 <Badge size="1" variant="soft" color="blue">
                   {formatCommercePlatform(item.sourcePlatform)}
                 </Badge>
+                {item.revokedAt && (
+                  <Badge size="1" variant="soft" color="red">
+                    已吊销
+                  </Badge>
+                )}
                 <span className="text-xs text-white/45">
                   {formatDateTime(item.createdAt)}
                 </span>
@@ -947,6 +952,12 @@ export function EntitlementsPanel({
                 <Field label="来源单号">
                   <Mono value={item.sourceRef} />
                 </Field>
+                {item.revokedAt && (
+                  <Field label="吊销时间">
+                    {formatDateTime(item.revokedAt)}
+                    {item.revokeReason ? ` · ${item.revokeReason}` : ""}
+                  </Field>
+                )}
               </FieldGrid>
             </RowCard>
           ))}
