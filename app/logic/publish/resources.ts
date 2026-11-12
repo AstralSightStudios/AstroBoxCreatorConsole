@@ -81,6 +81,33 @@ export interface ResourceEditContext {
 }
 
 /**
+ * 编辑上下文的内容指纹。
+ *
+ * `location.state` 在每次 `popstate` 时都会由 `history.state.usr` 重新反序列化，
+ * 即使回到的是同一条历史记录，`location.state.editContext` 也会是一个内容相同、
+ * 引用不同的新对象。若直接用它触发同步，抽屉/弹窗关闭（内部 `history.back()`）
+ * 就会让编辑页把整份远端数据重新加载一遍。这里只比较真正决定「编辑哪个资源」
+ * 的字段，用于跳过这类无意义的重新同步。
+ */
+export function getEditContextIdentity(
+    context: ResourceEditContext | null | undefined,
+): string {
+    if (!context) return "";
+    const entry = context.catalog.entry;
+    return [
+        context.mode,
+        context.prNumber ?? "",
+        entry.id,
+        entry.repo_owner,
+        entry.repo_name,
+        entry.repo_commit_hash,
+        context.prHead?.owner ?? "",
+        context.prHead?.repo ?? "",
+        context.prHead?.ref ?? "",
+    ].join("\u0001");
+}
+
+/**
  * 「资源 ID / 资源类型」是否允许修改：以编辑会话开始时的资源 ID 是否已进入
  * 已合入的上游目录文件（仓库根目录的 index_v2.csv）为准。
  * - 全新发布（无编辑上下文）：必然未合入，允许修改；

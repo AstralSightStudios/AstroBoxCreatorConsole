@@ -157,6 +157,7 @@ import {
   type ResourceEditContext,
   buildResourcePrTitle,
   canEditResourceIdentity,
+  getEditContextIdentity,
   listedResourceIdOf,
   buildInProgressEditContextFromPr,
   resolveIdMigration,
@@ -948,6 +949,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     baseUrl: string;
   } | null>(null);
   const restoredFromSessionRef = useRef(false);
+  // 已应用的编辑上下文指纹，用于忽略 popstate 反序列化出的同内容新对象。
+  const editContextIdentityRef = useRef(getEditContextIdentity(editContext));
 
   // 资源流程会话日志：进入向导即新建会话文件，离开未完成自动标记 abandoned。
   usePublishFlowSession({
@@ -970,7 +973,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (!isEditMode) return;
     const state =
       (location.state as { editContext?: ResourceEditContext } | null) || null;
-    setEditContext(state?.editContext ?? null);
+    const next = state?.editContext ?? null;
+    const identity = getEditContextIdentity(next);
+    // 抽屉/弹窗关闭会调用 history.back()，触发 popstate。React Router 会从
+    // history.state 重新反序列化出一个内容相同的新对象；如果直接 setEditContext，
+    // 下面依赖 editContext 的远端加载 effect 就会整页重跑，并在结束时把步骤重置
+    // 回第 1 步。按内容指纹去重即可忽略这类无意义的重新同步。
+    if (identity === editContextIdentityRef.current) return;
+    editContextIdentityRef.current = identity;
+    setEditContext(next);
   }, [isEditMode, location.state]);
 
   // Restore wizard form + wallpaper config after returning from the wallpaper editor page.
