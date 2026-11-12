@@ -283,20 +283,26 @@ export interface NeedFixSubmitGate {
     ok: boolean;
     /** 本次勾选为已修复的 NEEDFIX 数量。 */
     selectedCount: number;
+    /** 本次仍未勾选为已修复的 NEEDFIX 数量。 */
+    pendingCount: number;
 }
 
 /**
- * 修改已有 PR 的提交门槛：存在未修复的 NEEDFIX 时，本次提交至少要勾选
- * 一项已修复。勾选是让审核知道「这项已处理」的凭据；一项都不勾选直接提交，
- * 审核有概率忽略本次修改。没有 NEEDFIX 的 PR 不做限制。
+ * 修改已有 PR 的提交门槛：存在未修复的 NEEDFIX 时，必须全部勾选为已修复。
+ *
+ * 审核状态只有在所有 NEEDFIX 都收到 FIXED 标记后才会变成「已修复待复核」，
+ * 只勾选其中一项不会触发新一轮审核，因此这里要求全部勾选。没有 NEEDFIX 的
+ * PR 不做限制。
  */
 export function evaluateNeedFixSubmitGate(
     items: readonly NeedFixItem[],
     selections: Readonly<Record<string, boolean>>,
 ): NeedFixSubmitGate {
     const selectedCount = items.filter((item) => selections[item.id]).length;
+    const pendingCount = items.length - selectedCount;
     return {
-        ok: items.length === 0 || selectedCount > 0,
+        ok: pendingCount === 0,
         selectedCount,
+        pendingCount,
     };
 }

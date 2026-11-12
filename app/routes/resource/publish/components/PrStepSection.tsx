@@ -40,6 +40,8 @@ export function PrStepSection({
 }: PrStepSectionProps) {
   const isReopen = mode === "reopen";
   const isUpdate = mode === "update" || isReopen;
+  const fixedCount = needFixItems.filter((item) => fixedSelections[item.id]).length;
+  const pendingCount = needFixItems.length - fixedCount;
   return (
     <SectionCard
       title={
@@ -65,13 +67,19 @@ export function PrStepSection({
             <p className="text-sm font-semibold text-amber-200">
               {isReopen
                 ? "重新打开 PR 前需修复全部问题（请全部勾选）"
-                : "本次更新已修复的问题（勾选后才会进入第二次审核）"}
+                : "本次更新已修复的问题（需全部勾选）"}
             </p>
-            {!isReopen && (
-              <p className="text-xs leading-relaxed text-amber-200/70">
-                请勾选本次已修复的项。只有勾选的修复项才会进入第二次审核；未勾选的部分可能被审核忽略。
-              </p>
-            )}
+            <p className="text-xs leading-relaxed text-amber-200/70">
+              {isReopen
+                ? "只有全部勾选为已修复，才允许重新打开 PR 并进入新一轮审核。"
+                : "只有全部勾选为已修复，PR 才会变更为「已修复待审核」并进入新一轮审核；只勾选部分项目不会触发审核。"}
+              {pendingCount > 0
+                ? ` 当前已勾选 ${fixedCount} / ${needFixItems.length} 项，还剩 ${pendingCount} 项未勾选。`
+                : ` 已勾选全部 ${needFixItems.length} 项。`}
+            </p>
+            <p className="text-xs leading-relaxed text-amber-200/70">
+              请如实勾选：反复虚假勾选「已修复」，可能会被直接拒绝提交资源。
+            </p>
             {needFixItems.map((item) => (
               <div key={item.id} className="flex flex-col gap-1.5">
                 <label className="flex items-start gap-2 text-sm text-white/85">

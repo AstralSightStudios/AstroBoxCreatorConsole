@@ -296,6 +296,7 @@ describe("needfix submit gate", () => {
     expect(evaluateNeedFixSubmitGate([], {})).toEqual({
       ok: true,
       selectedCount: 0,
+      pendingCount: 0,
     });
   });
 
@@ -303,21 +304,22 @@ describe("needfix submit gate", () => {
     expect(evaluateNeedFixSubmitGate([item("a"), item("b")], {})).toEqual({
       ok: false,
       selectedCount: 0,
+      pendingCount: 2,
     });
   });
 
-  test("至少勾选一项已修复即可提交", () => {
+  test("只勾选部分已修复时拒绝提交", () => {
     expect(
       evaluateNeedFixSubmitGate([item("a"), item("b")], { b: true }),
-    ).toEqual({ ok: true, selectedCount: 1 });
+    ).toEqual({ ok: false, selectedCount: 1, pendingCount: 1 });
   });
 
-  test("全部勾选也可以通过", () => {
+  test("全部勾选才可以通过", () => {
     expect(
       evaluateNeedFixSubmitGate([item("a"), item("b")], {
         a: true,
         b: true,
       }),
-    ).toEqual({ ok: true, selectedCount: 2 });
+    ).toEqual({ ok: true, selectedCount: 2, pendingCount: 0 });
   });
 });

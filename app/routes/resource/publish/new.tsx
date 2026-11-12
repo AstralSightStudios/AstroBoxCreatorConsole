@@ -2610,15 +2610,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         return;
       }
     }
-    // 存在未修复的 NEEDFIX 时，本次提交至少要勾选一项已修复；无 NEEDFIX 不限制。
+    // 审核中的 PR 必须如实勾选全部已修复的 NEEDFIX，否则不会进入新一轮审核。
     if (mode === "in_progress") {
       const submitGate = evaluateNeedFixSubmitGate(
         needFixItems,
         fixedSelections,
       );
       if (!submitGate.ok) {
-        const message =
-          "请至少勾选一项本次已修复的问题。只有勾选的修复项才会进入第二次审核，未勾选可能被审核忽略。";
+        const message = `提交前需要如实勾选全部已修复的问题，还有 ${submitGate.pendingCount} 项未勾选。只有全部勾选为已修复，PR 才会进入新一轮审核。`;
         setPrStatus("error");
         setPrMessage(message);
         toast.error(message);
