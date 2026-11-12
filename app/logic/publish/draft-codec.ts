@@ -17,6 +17,7 @@ import type {
   DraftWallpaperAsset,
 } from "./publish-drafts";
 import type { WallpaperAssetFile } from "~/logic/wallpaper/types";
+import { fetchProxiedMediaBlob } from "~/logic/media-proxy";
 
 async function fileToDataUrl(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -180,9 +181,11 @@ export async function loadRemoteMediaItem(
   url: string,
 ): Promise<UploadItem> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const blob = await response.blob();
+    // 复用审核页的媒体代理：桌面端经 Tauri 带 GitHub 身份读取，可在
+    // raw.githubusercontent.com 直连失败时降级到 Contents API；同时命中
+    // 会话内缓存与 IndexedDB 持久缓存（仅提交 SHA 引用），编辑页重进时
+    // 不再重新下载。
+    const blob = await fetchProxiedMediaBlob(url);
     const file = new File(
       [blob],
       path.split("/").pop() || "image",

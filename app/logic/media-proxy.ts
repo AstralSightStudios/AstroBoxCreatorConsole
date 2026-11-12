@@ -346,6 +346,28 @@ export async function fetchProxiedMediaUrl(
   }
 }
 
+/**
+ * 取回代理媒体的 Blob。
+ *
+ * 与 `fetchProxiedMediaUrl` 共用会话内缓存、IndexedDB 持久缓存、并发队列和
+ * GitHub 账号降级链路；调用方需要文件内容而不是 blob URL 时用它。
+ */
+export async function fetchProxiedMediaBlob(
+  url: string,
+  options: MediaFetchOptions = {},
+): Promise<Blob> {
+  if (!url) throw new MediaFetchError("图片地址为空");
+  const objectUrl = await fetchProxiedMediaUrl(url, options);
+  const response = await fetch(objectUrl);
+  if (!response.ok) {
+    throw new MediaFetchError(
+      `图片读取失败（HTTP ${response.status}）`,
+      response.status,
+    );
+  }
+  return await response.blob();
+}
+
 export function useProxiedMediaUrl(url: string | undefined) {
   const [resolved, setResolved] = useState<string>("");
   const lastUrlRef = useRef<string | undefined>(undefined);
