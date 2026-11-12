@@ -11,6 +11,7 @@ import {
   resolveEncryptTab,
   type EncryptTab,
 } from "~/logic/encrypt-tabs";
+import { AfdianAutoReissueCard } from "./encrypt/afdian-auto-reissue-card";
 import { AfdianReissueManager } from "./encrypt/afdian-reissue-manager";
 import { CdkManager } from "./encrypt/cdk-manager";
 import { EncryptedFilesCard } from "./encrypt/encrypted-files";
@@ -50,7 +51,12 @@ export default function ResourceEncrypt() {
     files: () => <EncryptedFilesCard isVip={isVip} />,
     cdk: () => <CdkManager />,
     buyers: () => <EntitlementManager />,
-    reissue: () => <AfdianReissueManager />,
+    reissue: () => (
+      <>
+        <AfdianAutoReissueCard />
+        <AfdianReissueManager />
+      </>
+    ),
     external: () => <ExternalAuthorizationManager />,
   };
 

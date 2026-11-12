@@ -390,6 +390,56 @@ export function reissueAfdianOrders(body: { items: AfdianReissueItem[] }) {
   );
 }
 
+// ---- 爱发电自动补单（服务端托管凭据，每 15 分钟补一次） ----
+
+export interface AfdianAutoReissueStats {
+  fetched: number;
+  matched: number;
+  checked: number;
+  granted: number;
+  waitingBinding: number;
+  failed: number;
+  truncated: boolean;
+}
+
+/** 服务端不会返回 token，连掩码都没有。 */
+export interface AfdianAutoReissueStatus {
+  configured: boolean;
+  enabled: boolean;
+  afdianUserId: string;
+  intervalMinutes: number;
+  /** ok / network / rejected / seller_inactive / error / disabled；还没跑过为空。 */
+  lastStatus: string;
+  lastError: string;
+  lastRunAt: string;
+  lastSuccessAt: string;
+  nextRunAt: string;
+  lastStats: AfdianAutoReissueStats;
+}
+
+export function getAfdianAutoReissueStatus() {
+  return sendApiRequest<AfdianAutoReissueStatus>(
+    "/order/seller/afdian/auto-reissue/status",
+    "POST",
+  );
+}
+
+export function saveAfdianAutoReissue(body: { afdianUserId: string; token: string }) {
+  return sendApiRequest<AfdianAutoReissueStatus>(
+    "/order/seller/afdian/auto-reissue/save",
+    "POST",
+    undefined,
+    body,
+  );
+}
+
+export function removeAfdianAutoReissue() {
+  return sendApiRequest<{ ok: boolean }>(
+    "/order/seller/afdian/auto-reissue/remove",
+    "POST",
+  );
+}
+
 // ---- 创作者自有网站授权 ----
 
 export interface DecryptPeriodLimits {

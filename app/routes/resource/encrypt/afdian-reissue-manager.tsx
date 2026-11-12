@@ -299,7 +299,7 @@ return (
     <div className="flex flex-col gap-4">
       <Callout.Root color="blue" variant="soft" className="bg-transparent! p-3!">
         <Callout.Text className="text-xs leading-relaxed text-white/70">
-          API token 仅在本次同步期间使用，不会上传 AstroBox 服务端或保存到本地。请从爱发电开发者后台复制 user_id 和 API token。
+          手动补发时，API token 仅在本次同步期间使用，不会上传 AstroBox 服务端或保存到本地。请从爱发电开发者后台复制 user_id 和 API token。
         </Callout.Text>
       </Callout.Root>
 
