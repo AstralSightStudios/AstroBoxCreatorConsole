@@ -141,6 +141,7 @@ import {
 import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
+import { ForceUpdateSection } from "./components/ForceUpdateSection";
 import {
   RepoStepSection,
   formatOccupiedResourceLabel,
@@ -1680,6 +1681,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         })),
         links,
         enableAstroBoxCreatorFeatures,
+        ext: parsedExt,
         hasPaidPlatformMapping,
       }),
     [
@@ -1697,6 +1699,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
       deviceVendorById,
       links,
       enableAstroBoxCreatorFeatures,
+      parsedExt,
       hasPaidPlatformMapping,
     ],
   );
@@ -3930,6 +3933,14 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onToggleCreatorFeatures={(value) => {
                   setEnableAstroBoxCreatorFeatures(value);
                   log.info("form/ext", `切换 Creator 功能: ${value ? "开启" : "关闭"}`);
+                }}
+              />
+              <ForceUpdateSection
+                extRaw={extRaw}
+                downloads={downloads}
+                onChange={(value) => {
+                  setExtRaw(value);
+                  logFieldChange("extRaw", "强制更新", value, 1000);
                 }}
               />
               {resourceType === "watchface" && (

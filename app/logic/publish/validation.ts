@@ -17,6 +17,7 @@ import {
   type ResourceType,
 } from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
+import { inspectForceUpdate } from "./force-update";
 import { validateResPackIdFormat } from "./res-pack-id";
 import { validateWatchfaceIdFormat } from "./watchface-id";
 export interface ValidationUploadItem {
@@ -67,6 +68,7 @@ export type PublishFieldKey =
   | "downloads"
   | "trialDownloads"
   | "creatorFeatures"
+  | "forceUpdate"
   | "links";
 
 export interface PublishValidationIssue {
@@ -99,6 +101,8 @@ export interface PublishValidationInput {
   trialDownloads: ValidationDownloadInput[];
   links: ValidationLinkInput[];
   enableAstroBoxCreatorFeatures: boolean;
+  /** 表单里解析好的自定义 ext 对象；用于校验 `forceUpdate` 等不在其它表单状态里的键。 */
+  ext?: unknown;
   /**
    * 下载配置里是否已有付费平台映射（爱发电 / CDK）。
    *
@@ -482,6 +486,11 @@ export function validatePublish(
       "creatorFeatures",
       "已开启「启用购买与资源加密相关功能」，但没有任何设备启用加密上传，下载配置里也没有该资源的付费平台映射。客户端会因此多请求一次拿不到内容的购买信息，请关闭该开关，或补上加密上传 / 付费平台映射。",
     );
+  }
+  // 强制更新声明写法有误时客户端一定会忽略它，不如在这里拦住。
+  // 绑定的版本与下载项对不上只是警告（老资源发新版后的残留），不在此拦截。
+  for (const problem of inspectForceUpdate(input.ext, input.downloads).problems) {
+    push("forceUpdate", `资源强制更新设置有误：${problem}。`);
   }
   issues.push(...validateUrlUnsafeFilenames(input));
   const linkErrors = input.links.map(validateLink);

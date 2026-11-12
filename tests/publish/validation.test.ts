@@ -593,6 +593,31 @@ describe("publish validation", () => {
   });
 });
 
+describe("publish validation: 资源强制更新", () => {
+  const forceIssues = (ext: unknown) =>
+    validatePublish({ ...validInput, ext }).issues.filter((issue) => issue.field === "forceUpdate");
+
+  test("没有声明或声明合法时不拦截", () => {
+    expect(forceIssues(undefined)).toEqual([]);
+    expect(forceIssues({})).toEqual([]);
+    expect(forceIssues({ forceUpdate: { version: "1.0", strategy: "prompt", reason: "修复闪退" } })).toEqual([]);
+    expect(forceIssues({ forceUpdate: { version: "1.0", strategy: "silent" } })).toEqual([]);
+  });
+
+  test("写法有误会拦截，并落到 forceUpdate 字段", () => {
+    const missingVersion = forceIssues({ forceUpdate: { strategy: "prompt" } });
+    expect(missingVersion).toHaveLength(1);
+    expect(missingVersion[0]?.message).toContain("资源强制更新设置有误");
+
+    expect(forceIssues({ forceUpdate: { version: "1.0", strategy: "force" } })).toHaveLength(1);
+    expect(forceIssues({ forceUpdate: "silent" })).toHaveLength(1);
+  });
+
+  test("绑定的版本对不上下载项只是警告，不拦截发布", () => {
+    expect(forceIssues({ forceUpdate: { version: "0.9", strategy: "silent" } })).toEqual([]);
+  });
+});
+
 describe("filename sanitization", () => {
   test("detects URL-unsafe characters", () => {
     expect(containsUrlUnsafeFilename("a#b.png")).toBe(true);

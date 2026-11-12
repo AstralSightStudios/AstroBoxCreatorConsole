@@ -33,6 +33,7 @@ import type { PrResourcePreview, RuleCheckItem } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { inspectForceUpdate } from "~/logic/publish/force-update";
 import { canopusEntryProblems } from "~/logic/publish/canopus-package";
 import {
   formatResourceType,
@@ -1193,6 +1194,49 @@ export async function runResourceRuleChecks(options: {
           ? `错误：${shown.join("；")}；AstroBox-NG 仅读取 id 与 recommended`
           : "分组键名与 id 字段均符合规范",
     });
+  }
+
+  // --- check: ext.forceUpdate 资源强制更新声明 ---
+  // 客户端对已安装本资源的用户：弹窗提示（prompt）或不提醒直接入队安装（silent）。
+  // 静默更新会在用户不知情下把这个版本装进设备，必须由审核人工确认包体可信。
+  if (manifest?.ext && typeof manifest.ext === "object" && "forceUpdate" in manifest.ext) {
+    const forceUpdate = inspectForceUpdate(
+      manifest.ext,
+      Object.values(manifest.downloads ?? {}).map((download) => ({
+        version: download?.version,
+        versionCode: download?.versionCode,
+      })),
+    );
+    const binding = [
+      forceUpdate.version && `版本 ${forceUpdate.version}`,
+      forceUpdate.versionCode !== null && `versionCode ${forceUpdate.versionCode}`,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    if (forceUpdate.problems.length > 0) {
+      checks.push({
+        title: "资源强制更新声明有效",
+        status: "fail",
+        detail: `${forceUpdate.problems.join("；")}；客户端会忽略该声明，请作者修正`,
+      });
+    } else if (forceUpdate.strategy === "silent") {
+      checks.push({
+        title: "资源强制更新：静默更新",
+        status: "manual",
+        detail: `${binding}。已安装的用户在连接设备后不会收到任何提示，该版本会被直接加入队列并安装；请重点确认该版本包体的安全性与必要性${
+          forceUpdate.warnings.length > 0 ? `。注意：${forceUpdate.warnings.join("；")}` : ""
+        }`,
+      });
+    } else {
+      checks.push({
+        title: "资源强制更新：弹窗提示",
+        status: forceUpdate.warnings.length > 0 ? "warn" : "pass",
+        detail:
+          forceUpdate.warnings.length > 0
+            ? `${binding}；${forceUpdate.warnings.join("；")}`
+            : `${binding}；理由：${forceUpdate.reason.trim() || "（未填写）"}`,
+      });
+    }
   }
 
   // --- check: ext.bundledResources 捆绑配置有效性 ---
