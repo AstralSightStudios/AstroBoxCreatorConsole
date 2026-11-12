@@ -141,6 +141,7 @@ import {
 import { LinksSection } from "./components/LinksSection";
 import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
+import { CanopusManagerSection } from "./components/CanopusManagerSection";
 import { ForceUpdateSection } from "./components/ForceUpdateSection";
 import {
   RepoStepSection,
@@ -3935,6 +3936,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   log.info("form/ext", `切换 Creator 功能: ${value ? "开启" : "关闭"}`);
                 }}
               />
+              {resourceType === "canopus" && (
+                <CanopusManagerSection
+                  extRaw={extRaw}
+                  onChange={(value) => {
+                    setExtRaw(value);
+                    logFieldChange("extRaw", "Canopus 管理器要求", value, 1000);
+                  }}
+                />
+              )}
               <ForceUpdateSection
                 extRaw={extRaw}
                 downloads={downloads}

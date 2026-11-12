@@ -34,6 +34,7 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import { inspectForceUpdate } from "~/logic/publish/force-update";
+import { formatCanopusManagerVersion, inspectCanopusManager } from "~/logic/publish/canopus-manager";
 import { canopusEntryProblems } from "~/logic/publish/canopus-package";
 import {
   formatResourceType,
@@ -1194,6 +1195,31 @@ export async function runResourceRuleChecks(options: {
           ? `错误：${shown.join("；")}；AstroBox-NG 仅读取 id 与 recommended`
           : "分组键名与 id 字段均符合规范",
     });
+  }
+
+  // --- check: ext.canopusManager 模块要求的最低 Canopus 管理器版本 ---
+  // 写错的值客户端会静默当作「不限」，等于作者的版本要求没有生效。
+  if (manifest?.ext && typeof manifest.ext === "object" && "canopusManager" in manifest.ext) {
+    const canopusManager = inspectCanopusManager(manifest.ext, restype);
+    if (canopusManager.problems.length > 0) {
+      checks.push({
+        title: "Canopus 管理器版本要求有效",
+        status: "fail",
+        detail: `${canopusManager.problems.join("；")}；客户端会忽略该声明，请作者修正`,
+      });
+    } else if (canopusManager.warnings.length > 0) {
+      checks.push({
+        title: "Canopus 管理器版本要求有效",
+        status: "warn",
+        detail: canopusManager.warnings.join("；"),
+      });
+    } else {
+      checks.push({
+        title: "Canopus 管理器版本要求有效",
+        status: "pass",
+        detail: `最低管理器版本 ${formatCanopusManagerVersion(canopusManager.code!)}（versionCode ${canopusManager.code}）`,
+      });
+    }
   }
 
   // --- check: ext.forceUpdate 资源强制更新声明 ---

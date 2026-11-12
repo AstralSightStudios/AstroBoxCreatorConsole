@@ -79,6 +79,8 @@ export interface ManifestExtObject extends Record<string, unknown> {
     wallpaperGenerator?: {
         configUrl: string;
     };
+    /** 模块（canopus）资源要求的最低 Canopus 管理器版本："x.y.z" 或表盘 versionCode，见 canopus-manager.ts。 */
+    canopusManager?: { minVersion?: string | number };
 }
 
 function normalizeBundledList(

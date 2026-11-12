@@ -18,6 +18,7 @@ import {
 } from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
 import { inspectForceUpdate } from "./force-update";
+import { CANOPUS_MODULE_RESTYPE, inspectCanopusManager } from "./canopus-manager";
 import { validateResPackIdFormat } from "./res-pack-id";
 import { validateWatchfaceIdFormat } from "./watchface-id";
 export interface ValidationUploadItem {
@@ -69,6 +70,7 @@ export type PublishFieldKey =
   | "trialDownloads"
   | "creatorFeatures"
   | "forceUpdate"
+  | "canopusManager"
   | "links";
 
 export interface PublishValidationIssue {
@@ -491,6 +493,13 @@ export function validatePublish(
   // 绑定的版本与下载项对不上只是警告（老资源发新版后的残留），不在此拦截。
   for (const problem of inspectForceUpdate(input.ext, input.downloads).problems) {
     push("forceUpdate", `资源强制更新设置有误：${problem}。`);
+  }
+  // 模块要求的最低 Canopus 管理器版本写错时客户端会静默当作「不限」，不如在这里拦住。
+  // 只对模块类资源校验：其它类型的表单里没有这一项，用户没法在界面上改它。
+  if (input.resourceType === CANOPUS_MODULE_RESTYPE) {
+    for (const problem of inspectCanopusManager(input.ext, input.resourceType).problems) {
+      push("canopusManager", `Canopus 管理器版本要求有误：${problem}。`);
+    }
   }
   issues.push(...validateUrlUnsafeFilenames(input));
   const linkErrors = input.links.map(validateLink);

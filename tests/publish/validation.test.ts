@@ -618,6 +618,31 @@ describe("publish validation: 资源强制更新", () => {
   });
 });
 
+describe("publish validation: 模块的最低 Canopus 管理器版本", () => {
+  const canopusIssues = (resourceType: "canopus" | "watchface", ext: unknown) =>
+    validatePublish({ ...validInput, resourceType, ext }).issues.filter((issue) => issue.field === "canopusManager");
+
+  test("没填或写得对：不拦截", () => {
+    expect(canopusIssues("canopus", {})).toEqual([]);
+    expect(canopusIssues("canopus", { canopusManager: { minVersion: "2.0.3" } })).toEqual([]);
+    expect(canopusIssues("canopus", { canopusManager: { minVersion: 131075 } })).toEqual([]);
+  });
+
+  test("模块资源写错会拦截（客户端会静默当成不限），并落到 canopusManager 字段", () => {
+    for (const bad of ["2", "1.256.0", "v", "2.0.3-beta"]) {
+      const issues = canopusIssues("canopus", { canopusManager: { minVersion: bad } });
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.message).toContain("Canopus 管理器版本要求有误");
+    }
+    expect(canopusIssues("canopus", { canopusManager: {} })).toHaveLength(1);
+    expect(canopusIssues("canopus", { canopusManager: "2.0.3" })).toHaveLength(1);
+  });
+
+  test("其它类型的资源表单里没有这一项，残留的值不拦截", () => {
+    expect(canopusIssues("watchface", { canopusManager: { minVersion: "oops" } })).toEqual([]);
+  });
+});
+
 describe("filename sanitization", () => {
   test("detects URL-unsafe characters", () => {
     expect(containsUrlUnsafeFilename("a#b.png")).toBe(true);
