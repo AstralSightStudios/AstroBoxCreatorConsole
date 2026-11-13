@@ -34,6 +34,11 @@ import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
 import { inspectForceUpdate } from "~/logic/publish/force-update";
+import {
+  checkPluginInstallMarket,
+  describePluginInstallMarketIssue,
+  inspectPluginInstall,
+} from "~/logic/publish/plugin-install";
 import { formatCanopusManagerVersion, inspectCanopusManager } from "~/logic/publish/canopus-manager";
 import { canopusEntryProblems } from "~/logic/publish/canopus-package";
 import {
@@ -1262,6 +1267,51 @@ export async function runResourceRuleChecks(options: {
             ? `${binding}；${forceUpdate.warnings.join("；")}`
             : `${binding}；理由：${forceUpdate.reason.trim() || "（未填写）"}`,
       });
+    }
+  }
+
+  // --- check: ext.pluginInstall 插件接管下载/安装 ---
+  // 用户点下载/安装按钮时，客户端把资源、设备和作者写的 data 交给指定插件，由插件决定怎么装
+  // （自己入队、传数据到设备、让用户去插件页核销……）。这等于把安装流程交给了一个第三方，
+  // 必须由审核人工确认该插件可信、在插件市场可获取，且 data 里没有夹带不该有的内容。
+  if (manifest?.ext && typeof manifest.ext === "object" && "pluginInstall" in manifest.ext) {
+    const pluginInstall = inspectPluginInstall(manifest.ext);
+    if (pluginInstall.problems.length > 0) {
+      checks.push({
+        title: "插件接管安装声明有效",
+        status: "fail",
+        detail: `${pluginInstall.problems.join("；")}；客户端会忽略该声明，请作者修正`,
+      });
+    } else {
+      // 插件要在市场里、且是 Level 4 以上，用户点按钮时才有人接得住；索引加载不到就交给人工。
+      let marketStatus: ReturnType<typeof checkPluginInstallMarket> = { state: "unknown" };
+      let marketError = "";
+      try {
+        marketStatus = checkPluginInstallMarket(pluginInstall.plugin, await fetchNgPluginIndex());
+      } catch (err) {
+        marketError = err instanceof Error ? err.message : String(err);
+      }
+      const marketIssue = describePluginInstallMarketIssue(pluginInstall.plugin, marketStatus);
+      const fallbackText = pluginInstall.fallback === "download" ? "退回常规下载" : "提示用户并停下";
+      const summary = `下载/安装按钮由插件「${pluginInstall.plugin}」接管（data ${pluginInstall.dataBytes} 字节；插件不可用时${fallbackText}）`;
+      if (marketIssue) {
+        checks.push({
+          title: "插件接管安装：插件可用",
+          // 退回常规下载时只是接管失效，用户仍能装；会提示并停下则用户彻底装不了
+          status: pluginInstall.fallback === "download" ? "warn" : "fail",
+          detail: `${summary}。${marketIssue}`,
+        });
+      } else {
+        checks.push({
+          title: "插件接管安装",
+          status: "manual",
+          detail: `${summary}。${
+            marketStatus.state === "ok"
+              ? `插件在市场中可获取（API Level ${marketStatus.apiLevel}）`
+              : `未能核对插件市场（${marketError || "索引不可用"}）`
+          }。请确认该插件可信，data 内容合理，且常规下载包体本身也合规`,
+        });
+      }
     }
   }
 

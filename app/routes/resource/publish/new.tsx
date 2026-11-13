@@ -143,6 +143,7 @@ import { DownloadsSection } from "./components/DownloadsSection";
 import { ExtSection } from "./components/ExtSection";
 import { CanopusManagerSection } from "./components/CanopusManagerSection";
 import { ForceUpdateSection } from "./components/ForceUpdateSection";
+import { PluginInstallSection } from "./components/PluginInstallSection";
 import {
   RepoStepSection,
   formatOccupiedResourceLabel,
@@ -3951,6 +3952,13 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 onChange={(value) => {
                   setExtRaw(value);
                   logFieldChange("extRaw", "强制更新", value, 1000);
+                }}
+              />
+              <PluginInstallSection
+                extRaw={extRaw}
+                onChange={(value) => {
+                  setExtRaw(value);
+                  logFieldChange("extRaw", "插件接管安装", value, 1000);
                 }}
               />
               {resourceType === "watchface" && (

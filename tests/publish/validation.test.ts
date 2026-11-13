@@ -618,6 +618,29 @@ describe("publish validation: 资源强制更新", () => {
   });
 });
 
+describe("publish validation: 插件接管安装", () => {
+  const pluginIssues = (ext: unknown) =>
+    validatePublish({ ...validInput, ext }).issues.filter((issue) => issue.field === "pluginInstall");
+
+  test("没有声明或声明合法时不拦截", () => {
+    expect(pluginIssues(undefined)).toEqual([]);
+    expect(pluginIssues({})).toEqual([]);
+    expect(pluginIssues({ pluginInstall: { plugin: "my-plugin" } })).toEqual([]);
+    expect(pluginIssues({ pluginInstall: { plugin: "my-plugin", fallback: "download", data: { sku: "a" } } })).toEqual([]);
+  });
+
+  test("写法有误会拦截（客户端会整体忽略），并落到 pluginInstall 字段", () => {
+    const noPlugin = pluginIssues({ pluginInstall: {} });
+    expect(noPlugin).toHaveLength(1);
+    expect(noPlugin[0]?.message).toContain("插件接管安装设置有误");
+
+    expect(pluginIssues({ pluginInstall: { plugin: "a/b" } })).toHaveLength(1);
+    expect(pluginIssues({ pluginInstall: { plugin: "p", fallback: "retry" } })).toHaveLength(1);
+    expect(pluginIssues({ pluginInstall: { plugin: "p", data: "x".repeat(16 * 1024) } })).toHaveLength(1);
+    expect(pluginIssues({ pluginInstall: "my-plugin" })).toHaveLength(1);
+  });
+});
+
 describe("publish validation: 模块的最低 Canopus 管理器版本", () => {
   const canopusIssues = (resourceType: "canopus" | "watchface", ext: unknown) =>
     validatePublish({ ...validInput, resourceType, ext }).issues.filter((issue) => issue.field === "canopusManager");
