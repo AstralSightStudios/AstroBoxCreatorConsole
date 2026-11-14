@@ -73,7 +73,9 @@ function mergeResourcePages(
     byKey.set(`${item.prNumber}:${item.id}`, item);
   }
   return Array.from(byKey.values()).sort((a, b) =>
-    (b.createdAt || "").localeCompare(a.createdAt || ""),
+    (b.updatedAt || b.createdAt || "").localeCompare(
+      a.updatedAt || a.createdAt || "",
+    ),
   );
 }
 
@@ -701,7 +703,7 @@ export default function ResourcePublish() {
                     <Table.ColumnHeaderCell>名称</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>类型</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>提交日期</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>最近更新</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
                   </Table.Row>
                 </Table.Header>
@@ -778,10 +780,10 @@ export default function ResourcePublish() {
                           )}
                         </Table.Cell>
                         <Table.Cell>
-                          {item.createdAt
-                            ? new Date(item.createdAt).toLocaleDateString(
-                                "zh-CN",
-                              )
+                          {item.updatedAt || item.createdAt
+                            ? new Date(
+                                item.updatedAt || item.createdAt!,
+                              ).toLocaleDateString("zh-CN")
                             : "--"}
                         </Table.Cell>
                         <Table.Cell>
@@ -1032,9 +1034,11 @@ function PublishResourceCard({
           </div>
 
           <div className="mt-1 text-xs text-white/40">
-            提交于{" "}
-            {item.createdAt
-              ? new Date(item.createdAt).toLocaleDateString("zh-CN")
+            更新于{" "}
+            {item.updatedAt || item.createdAt
+              ? new Date(item.updatedAt || item.createdAt!).toLocaleDateString(
+                  "zh-CN",
+                )
               : "--"}
           </div>
 

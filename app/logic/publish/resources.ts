@@ -45,6 +45,8 @@ export interface PublishingResource {
     status: ReviewState;
     needs: NeedFixItem[];
     createdAt?: string;
+    /** PR 最近更新时间，列表按此倒序并展示「最近更新」。 */
+    updatedAt?: string;
     prNumber: number;
     prTitle: string;
     prUrl: string;
@@ -777,6 +779,7 @@ async function loadInProgressLegacyResourcesForCurrentUser(
                     status: review.state,
                     needs: review.items,
                     createdAt: pr.created_at,
+                    updatedAt: pr.updated_at,
                     prNumber: pr.number,
                     prTitle: pr.title,
                     prUrl: pr.html_url || "",
@@ -808,7 +811,9 @@ async function loadInProgressLegacyResourcesForCurrentUser(
     });
 
     return results.flat().sort((a, b) =>
-        (b.createdAt || "").localeCompare(a.createdAt || ""),
+        (b.updatedAt || b.createdAt || "").localeCompare(
+            a.updatedAt || a.createdAt || "",
+        ),
     );
 }
 
@@ -876,6 +881,7 @@ async function loadInProgressStagingResourcesForCurrentUser(
                     status: review.state,
                     needs: review.items,
                     createdAt: pr.created_at,
+                    updatedAt: pr.updated_at,
                     prNumber: pr.number,
                     prTitle: pr.title,
                     prUrl: pr.html_url || "",
@@ -914,6 +920,8 @@ async function loadInProgressStagingResourcesForCurrentUser(
     });
 
     return results.flat().sort((a, b) =>
-        (b.createdAt || "").localeCompare(a.createdAt || ""),
+        (b.updatedAt || b.createdAt || "").localeCompare(
+            a.updatedAt || a.createdAt || "",
+        ),
     );
 }
