@@ -122,7 +122,7 @@ export interface RegisterIdMigrationIntentBody {
 }
 
 /**
- * 已上架资源连类型一起换 ID 时，提交 PR 前登记。PR 合入、目录里旧 ID 换成新 ID 后，
+ * 已上架资源换 ID 时，提交 PR 前登记。PR 合入、目录里旧 ID 换成新 ID 后，
  * 服务端把旧 ID 上的下载量、评分、评论、付费配置与购买记录等搬到新 ID。
  */
 export function registerIdMigrationIntent(body: RegisterIdMigrationIntentBody) {
@@ -132,4 +132,28 @@ export function registerIdMigrationIntent(body: RegisterIdMigrationIntentBody) {
     undefined,
     body,
   );
+}
+
+export interface IdMigrationRecord {
+  fromId: string;
+  toId: string;
+  status: "pending" | "applied" | "rejected";
+  /** 被拒的原因：source_still_listed / author_mismatch / target_exists */
+  reason: string | null;
+  registeredAt: string;
+  appliedAt: string | null;
+  /** pending 登记的过期时间 */
+  expiresAt: string | null;
+}
+
+/**
+ * 某个资源 ID 涉及的换 ID 记录（作为旧 ID 或新 ID），最近的在前。
+ * 只返回当前账号登记的、或当前账号是旧资源主作者的记录。
+ */
+export async function getIdMigrationStatus(id: string): Promise<IdMigrationRecord[]> {
+  const result = await sendApiRequest<{ items: IdMigrationRecord[] }>(
+    `/resource/id_migration/status?id=${encodeURIComponent(id)}`,
+    "GET",
+  );
+  return result.items;
 }

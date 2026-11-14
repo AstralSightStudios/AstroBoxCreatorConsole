@@ -174,4 +174,21 @@ describe("resolveIdentityLocks", () => {
     test("目录行没有类型时保守锁定 ID", () => {
         expect(resolveIdentityLocks({ ...listed, listedType: "", resourceType: "canopus" }).idLocked).toBe(true);
     });
+
+    test("已上架资源：创作者确认「修改资源 ID」后，不改类型也能改 ID", () => {
+        expect(
+            resolveIdentityLocks({ ...listed, resourceType: "watchface", idChangeRequested: true }),
+        ).toEqual({ typeLocked: false, idLocked: false });
+        // 没确认就一直锁着
+        expect(
+            resolveIdentityLocks({ ...listed, resourceType: "watchface", idChangeRequested: false }).idLocked,
+        ).toBe(true);
+    });
+
+    test("目录行读不出类型时，即使点了「修改资源 ID」也不放开", () => {
+        expect(
+            resolveIdentityLocks({ ...listed, listedType: null, resourceType: "watchface", idChangeRequested: true })
+                .idLocked,
+        ).toBe(true);
+    });
 });

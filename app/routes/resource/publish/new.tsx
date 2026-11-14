@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PUBLISH_CONFIG, buildRepoName } from "~/config/publish";
 import { REPO_ENVS, useRepoEnvId } from "~/config/repoEnv";
 import { log } from "~/logic/logging";
@@ -172,9 +173,14 @@ import {
   evaluateReopenGate,
 } from "~/logic/publish/review-status";
 import {
+  getIdMigrationStatus,
   registerIdMigrationIntent,
   registerVersionResetIntent,
 } from "~/api/astrobox/resource";
+import {
+  describeIdMigrationIntentError,
+  summarizeIdMigrations,
+} from "~/logic/publish/id-migration";
 import {
   DEFAULT_VERSION_RESET_OPTIONS,
   canOfferVersionReset,
@@ -861,6 +867,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   }, [downloads]);
 
   const [extRaw, setExtRaw] = useState("{}");
+  // 已上架资源的 ID 默认锁定；创作者在「修改资源 ID」里确认过后果才放开。
+  const [idChangeRequested, setIdChangeRequested] = useState(false);
   const [bundledResources, setBundledResources] = useState<
     BundledResourceInput[]
   >([]);
@@ -1053,6 +1061,8 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     if (identity === editContextIdentityRef.current) return;
     editContextIdentityRef.current = identity;
     setEditContext(next);
+    // 换了一个资源来编辑：上一个资源放开过的 ID 修改不带过来
+    setIdChangeRequested(false);
   }, [isEditMode, location.state]);
 
   // Restore wizard form + wallpaper config after returning from the wallpaper editor page.
@@ -1118,10 +1128,31 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     canEditIdentity,
     listedType,
     resourceType,
+    idChangeRequested,
   });
+  // 创作者主动放开的（而不是因为改了类型才放开的）：界面上给一个「恢复原 ID」
+  const idChangeUnlocked =
+    idChangeRequested &&
+    isEditing &&
+    !canEditIdentity &&
+    Boolean(listedType) &&
+    resourceType === listedType;
   const idMigration = useMemo(
     () => resolveIdMigration({ editContext, itemId }),
     [editContext, itemId],
+  );
+  // 这个资源已有的换 ID 记录：登记了还没生效的、被拒绝的、最近一次迁移完成的
+  const queryClient = useQueryClient();
+  const { data: idMigrationRecords = [] } = useQuery({
+    queryKey: ["resource-id-migrations", listedResourceId],
+    queryFn: () => getIdMigrationStatus(listedResourceId!),
+    enabled: Boolean(listedResourceId) && Boolean(accountState.astrobox?.token),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const idMigrationNotes = useMemo(
+    () => summarizeIdMigrations(idMigrationRecords),
+    [idMigrationRecords],
   );
   const missingEditContext = isEditMode && !editContext;
 
@@ -2856,9 +2887,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           );
         } catch (error) {
           throw new Error(
-            `资源 ID 迁移登记失败（${idMigration.fromId} → ${idMigration.toId}）：${(error as Error).message}`,
+            `资源 ID 迁移登记失败（${idMigration.fromId} → ${idMigration.toId}）：${describeIdMigrationIntentError((error as Error).message)}`,
           );
         }
+        void queryClient.invalidateQueries({ queryKey: ["resource-id-migrations"] });
+      } else if (
+        listedResourceId &&
+        idMigrationRecords.some(
+          (record) => record.status === "pending" && record.fromId === listedResourceId,
+        )
+      ) {
+        // 之前登记过换 ID、这次又改回了原 ID：撤销登记，免得一条用不上的登记挂到过期。
+        // 撤销不成不影响提交——新 ID 没有随 PR 上线，登记本来也不会被执行。
+        await registerIdMigrationIntent({ fromId: listedResourceId, toId: "" })
+          .then(() => queryClient.invalidateQueries({ queryKey: ["resource-id-migrations"] }))
+          .catch((error) => console.warn("revoke id migration intent failed", error));
       }
 
       if (mode === "in_progress") {
@@ -3936,6 +3979,20 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                   isEditing && !canEditIdentity && identityLocks.idLocked
                 }
                 idMigration={idMigration}
+                idMigrationNotes={idMigrationNotes}
+                idChangeUnlocked={idChangeUnlocked}
+                onRequestIdChange={() => {
+                  setIdChangeRequested(true);
+                  log.info("form/itemId", "放开已上架资源的 ID 修改");
+                }}
+                onCancelIdChange={() => {
+                  setIdChangeRequested(false);
+                  if (listedResourceId && itemId.trim() !== listedResourceId) {
+                    setItemId(listedResourceId);
+                    invalidateUploadedAssets("资源 ID 已恢复");
+                  }
+                  log.info("form/itemId", "放弃修改已上架资源的 ID");
+                }}
                 onItemIdChange={(value) => {
                   handleItemIdChange(value);
                   logFieldChange("itemId", "资源 ID", value);

@@ -153,7 +153,7 @@ export function listedResourceIdOf(
 }
 
 /**
- * 本次提交是否把已上架资源换到了新 ID（只有改资源类型时才允许，例如表盘改成模块）。
+ * 本次提交是否把已上架资源换到了新 ID（改了资源类型，或创作者主动选择「修改资源 ID」）。
  * 换 ID 时要在提交 PR 前向服务端登记，合入后服务端才会把旧 ID 上的数据搬到新 ID。
  */
 export function resolveIdMigration(options: {
@@ -169,9 +169,12 @@ export function resolveIdMigration(options: {
 /**
  * 资源类型与资源 ID 输入框是否锁定。
  * - 未合入目录（canEditIdentity 为 true）：都可以改；
- * - 已合入目录：类型可以改；ID 只有在类型改成别的之后才能改。不同类型的 ID 格式不同
- *   （表盘是 9798 开头的 12 位数字，模块是小写字母开头的名称），换类型往往只能连 ID 一起换，
- *   服务端会在合入后把旧 ID 上的数据搬过去；类型不变时没有理由换 ID，继续锁定。
+ * - 已合入目录：类型可以改；ID 默认锁定，两种情况下放开——
+ *   1. 类型改成了别的。不同类型的 ID 格式不同（表盘是 9798 开头的 12 位数字，模块是小写字母
+ *      开头的名称），换类型往往只能连 ID 一起换；
+ *   2. 创作者点了「修改资源 ID」并确认过后果（idChangeRequested）。
+ *   两种情况服务端都会在合入后把旧 ID 上的数据搬过去，客户端会提示装着旧 ID 的用户重装。
+ *   默认锁定是为了不让人顺手改掉：换 ID 对已安装的用户不是无感的。
  */
 export function resolveIdentityLocks(options: {
     isEditing: boolean;
@@ -179,14 +182,19 @@ export function resolveIdentityLocks(options: {
     /** 目录行里的资源类型（编辑会话加载时的类型） */
     listedType: string | null | undefined;
     resourceType: string;
+    /** 创作者已确认要修改已上架资源的 ID */
+    idChangeRequested?: boolean;
 }): { typeLocked: boolean; idLocked: boolean } {
     if (!options.isEditing || options.canEditIdentity) {
         return { typeLocked: false, idLocked: false };
     }
     const listedType = (options.listedType ?? "").trim();
+    // 目录行的类型读不出来时保持锁定：连原来是什么都不知道，不能放开改
+    if (!listedType) return { typeLocked: false, idLocked: true };
     return {
         typeLocked: false,
-        idLocked: !listedType || options.resourceType === listedType,
+        idLocked:
+            options.resourceType === listedType && options.idChangeRequested !== true,
     };
 }
 

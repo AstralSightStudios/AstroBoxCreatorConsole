@@ -1,4 +1,5 @@
 import {
+  AlertDialog,
   Button,
   Callout,
   Select,
@@ -32,13 +33,14 @@ import {
 } from "~/logic/publish/validation";
 import { textContainsLink } from "~/logic/publish/description-links";
 import type { ResourceType } from "~/logic/publish/resource-type";
+import type { IdMigrationNote } from "~/logic/publish/id-migration";
 
 function describeItemId(resourceType: ResourceType): FieldHelpItem {
   if (resourceType === "quick_app") {
     return {
       label: "资源 ID（快应用）",
       description:
-        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。未合入目录前可修改，修改后需用新包名重新打包再上传；合入目录后只有改资源类型时才能连 ID 一起换。",
+        "即快应用的包名，需与包体内的包名一致，否则资源无法自动检查更新。填法就是把你产品的域名反过来：官网是 www.yourname.com，就填 com.yourname.appname。未合入目录前可修改，修改后需用新包名重新打包再上传；合入目录后默认锁定，确需更换请点输入框下方的「修改资源 ID」。",
       links: [
         {
           label: "Oracle Java 语言规范 · 包命名",
@@ -55,19 +57,19 @@ function describeItemId(resourceType: ResourceType): FieldHelpItem {
     return {
       label: "资源 ID（表盘）",
       description:
-        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件，合入目录后只有改资源类型时才能连 ID 一起换；未合入前可修改，修改后重新上传包体会自动改写。",
+        "表盘的唯一标识，12 位纯数字且以 9798 开头，可点「生成ID」自动生成。该 ID 会写入表盘文件；未合入前可修改，修改后重新上传包体会自动改写。合入目录后默认锁定，确需更换请点输入框下方的「修改资源 ID」。",
     };
   }
   if (resourceType === "res_pack") {
     return {
       label: "资源 ID（资源包）",
-      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。合入目录后不要改动，否则设备上会出现两个主题目录（只有改资源类型时才能连 ID 一起换）；未合入前可修改，修改后重新上传包体会自动改写。`,
+      description: `必须是小写字母、数字、下划线或连字符，长度 1–${RES_PACK_THEME_ID_MAX_LENGTH}。发布时会写入包内 corona.json 的 themeId，并提示改写结果。合入目录后尽量不要改动，否则设备上会出现两个主题目录；未合入前可修改，修改后重新上传包体会自动改写。确需更换请点输入框下方的「修改资源 ID」。`,
     };
   }
   return {
     label: "资源 ID（模块）",
     description:
-      "模块的唯一标识，直接填写模块名称即可。须以小写字母开头，只含小写字母、数字和下划线，最长 16 个字符。合入目录后只有改资源类型时才能连 ID 一起换；未合入前可修改，修改后重新上传 manifest 即可。",
+      "模块的唯一标识，直接填写模块名称即可。须以小写字母开头，只含小写字母、数字和下划线，最长 16 个字符。未合入前可修改，修改后重新上传 manifest 即可。合入目录后默认锁定，确需更换请点输入框下方的「修改资源 ID」。",
   };
 }
 
@@ -78,7 +80,7 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
       label: "资源类型",
       icon: <SquaresFourIcon size={16} weight="duotone" />,
       description:
-        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源包与模块目前仅支持小米设备。尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改。已合入目录（发布上线）的资源也可以改类型，例如表盘改成模块；类型的 ID 格式不同时要连 ID 一起换，PR 合入后下载量、评分、评论、付费配置与购买记录会迁移到新 ID。修改后需重新上传包体与 manifest 才能提交。",
+        "决定校验规则和资源 ID 格式：快应用校验包名、表盘校验 12 位数字 ID、模块仅支持字母数字下划线中划线、资源包要求小写标识并写入 themeId。资源包与模块目前仅支持小米设备。尚未合入目录的首次提交（含审核中的 PR），资源 ID 与类型都允许修改。已合入目录（发布上线）的资源也可以改类型，例如表盘改成模块；类型的 ID 格式不同时要连 ID 一起换。换 ID 的 PR 合入后，下载量、评分、评论、付费配置与购买记录会迁移到新 ID，AstroBox 会提示已安装旧 ID 的用户卸载旧资源并安装新资源。修改后需重新上传包体与 manifest 才能提交。",
     },
     {
       group: "基本信息",
@@ -138,6 +140,14 @@ interface BasicInfoSectionProps {
   listedIdLocked?: boolean;
   /** 本次提交会把已上架资源换到新 ID */
   idMigration?: { fromId: string; toId: string } | null;
+  /** 已上架资源、ID 锁定时的「修改资源 ID」入口；确认后果之后调用 */
+  onRequestIdChange?: () => void;
+  /** 创作者已主动放开 ID 修改（而不是因为改了类型） */
+  idChangeUnlocked?: boolean;
+  /** 放弃修改，恢复目录里的原 ID 并重新锁定 */
+  onCancelIdChange?: () => void;
+  /** 这个资源已有的换 ID 记录（登记中 / 已迁移 / 被拒绝） */
+  idMigrationNotes?: IdMigrationNote[];
   onItemIdChange: (value: string) => void;
   /** ID 输入失焦时刷新一次目录占用数据，避免长时间停留导致缓存过期误报。 */
   onItemIdBlur?: () => void;
@@ -166,6 +176,10 @@ export function BasicInfoSection({
   typeReadOnly,
   listedIdLocked,
   idMigration,
+  onRequestIdChange,
+  idChangeUnlocked,
+  onCancelIdChange,
+  idMigrationNotes,
   onItemIdChange,
   onItemIdBlur,
   onItemNameChange,
@@ -178,6 +192,7 @@ export function BasicInfoSection({
   onGenerateId,
 }: BasicInfoSectionProps) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [idChangeConfirmOpen, setIdChangeConfirmOpen] = useState(false);
   const fieldHelp = useMemo(() => buildFieldHelp(resourceType), [resourceType]);
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
   const hasDescriptionLink = useMemo(
@@ -319,8 +334,29 @@ export function BasicInfoSection({
                 <p className="text-xs text-red-400 mt-1">{idError}</p>
               )}
               {listedIdLocked && (
-                <p className="text-xs text-white/45 mt-1">
-                  已上架资源的 ID 不能单独修改；改了资源类型后可以连 ID 一起换。
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-white/45">
+                  <span>已上架资源的 ID 默认锁定。</span>
+                  {onRequestIdChange && (
+                    <button
+                      type="button"
+                      className="text-sky-300 underline-offset-2 hover:text-sky-200 hover:underline"
+                      onClick={() => setIdChangeConfirmOpen(true)}
+                    >
+                      修改资源 ID
+                    </button>
+                  )}
+                </p>
+              )}
+              {idChangeUnlocked && onCancelIdChange && (
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-amber-200/90">
+                  <span>正在修改已上架资源的 ID。</span>
+                  <button
+                    type="button"
+                    className="text-sky-300 underline-offset-2 hover:text-sky-200 hover:underline"
+                    onClick={onCancelIdChange}
+                  >
+                    放弃修改，恢复原 ID
+                  </button>
                 </p>
               )}
             </div>
@@ -349,10 +385,29 @@ export function BasicInfoSection({
           <Callout.Text>
             资源 ID 将从「{idMigration.fromId}」换成「{idMigration.toId}」。PR
             合入后，旧 ID 上的下载量、评分、评论、合集、付费配置与购买记录会自动迁移到新
-            ID；用户设备上已安装的旧资源不会自动更新成新资源。提交前请勿修改第一作者，
-            否则迁移会被拒绝。
+            ID；AstroBox 会提示已安装旧 ID 的用户卸载旧资源并安装新资源（需要用户确认，
+            不会自动完成）。包体需要按新 ID 重新上传。提交前请勿修改第一作者，否则迁移会被拒绝。
           </Callout.Text>
         </Callout.Root>
+      )}
+      {idMigrationNotes && idMigrationNotes.length > 0 && (
+        <div className="flex flex-col gap-1 px-1.5">
+          <p className="text-xs font-medium text-white/60">资源 ID 变更记录</p>
+          {idMigrationNotes.map((note) => (
+            <p
+              key={note.text}
+              className={`text-xs ${
+                note.tone === "rejected"
+                  ? "text-red-300"
+                  : note.tone === "pending"
+                    ? "text-amber-200"
+                    : "text-white/50"
+              }`}
+            >
+              {note.text}
+            </p>
+          ))}
+        </div>
       )}
       <Field label="资源简介" fieldKey="description" hint="参与算法与推流，必填">
         <TextArea
@@ -421,6 +476,47 @@ export function BasicInfoSection({
           </div>
         </div>
       </Field>
+      <AlertDialog.Root open={idChangeConfirmOpen} onOpenChange={setIdChangeConfirmOpen}>
+        <AlertDialog.Content className="max-w-[520px]">
+          <AlertDialog.Title>修改已上架资源的 ID</AlertDialog.Title>
+          <AlertDialog.Description size="2">
+            资源 ID 是检查更新、覆盖安装和统计数据共用的标识，换 ID 之前请确认：
+          </AlertDialog.Description>
+          <div className="mt-2 text-sm text-white/75">
+              <ul className="list-disc space-y-1.5 pl-5">
+                <li>
+                  PR 合入后，旧 ID 上的下载量、评分、评论、合集、付费配置与购买记录会自动迁移到新
+                  ID，通常在十分钟内完成。
+                </li>
+                <li>
+                  已经安装旧 ID 的用户不会无感升级：AstroBox
+                  会提示「资源 ID 已变更」，由用户确认后卸载旧资源、安装新资源。
+                </li>
+                <li>
+                  包体要按新 ID 重新上传：快应用需要用新包名重新打包，表盘与资源包重新上传后会自动改写。
+                </li>
+                <li>提交前不要更换第一作者，否则迁移会被拒绝，数据留在旧 ID 上。</li>
+                <li>旧 ID 让出后可能被别的资源使用，想改回去需要再走一次同样的流程。</li>
+              </ul>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <AlertDialog.Cancel>
+              <Button variant="soft" color="gray">
+                取消
+              </Button>
+            </AlertDialog.Cancel>
+            <Button
+              color="amber"
+              onClick={() => {
+                setIdChangeConfirmOpen(false);
+                onRequestIdChange?.();
+              }}
+            >
+              我已了解，修改 ID
+            </Button>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
       <div className="grid gap-3 lg:grid-cols-1">
         <Field label="付费类型">
           <Select.Root

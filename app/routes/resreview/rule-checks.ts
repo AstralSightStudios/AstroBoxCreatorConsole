@@ -1259,6 +1259,18 @@ export async function runResourceRuleChecks(options: {
 
   // --- check: ext.forceUpdate 资源强制更新声明 ---
   // 客户端对已安装本资源的用户：弹窗提示（prompt）或不提醒直接入队安装（silent）。
+  // 已上架资源换 ID：统计、评分、评论、购买记录会跟着搬到新 ID，装着旧 ID 的用户要被客户端
+  // 引导着卸载重装，对用户不是无感的，值得审核员看一眼理由是否充分。
+  // （资源包换 ID 还会在设备上留下旧主题目录，下面资源包的检查里另有一项专门提示。）
+  const renamedFrom = toNonEmptyString(preview.originalId);
+  if (renamedFrom && csvId && renamedFrom !== csvId) {
+    checks.push({
+      title: "已上架资源更换了资源 ID",
+      status: "manual",
+      detail: `资源 ID 从「${renamedFrom}」改为「${csvId}」。合入后旧 ID 上的下载量、评分、评论、付费配置与购买记录会迁移到新 ID，AstroBox 会提示已安装旧 ID 的用户卸载旧资源并安装新资源。请确认更换理由充分，且新 ID 没有冒用其他作者或品牌的名称`,
+    });
+  }
+
   // 静默更新会在用户不知情下把这个版本装进设备，必须由审核人工确认包体可信。
   if (manifest?.ext && typeof manifest.ext === "object" && "forceUpdate" in manifest.ext) {
     const forceUpdate = inspectForceUpdate(
