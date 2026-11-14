@@ -569,6 +569,9 @@ export default function AdminHotUpdatePage() {
                   <span className="block text-white/45">
                     低于该版本的用户会被整屏拦住，下载安装完成后才能继续使用（无视灰度比例）。默认的普通更新会在用户切到后台 / 闲置时无感切换。
                   </span>
+                  <span className="block text-white/45">
+                    强制标记生效期间，该渠道每次检查更新都要下发完整文件清单（已是最新的客户端平时只拿到 204）。更新铺开后请在列表里「取消强制」，把流量降回去。
+                  </span>
                 </span>
               </label>
               <div className="flex items-center justify-between">
