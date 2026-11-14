@@ -204,12 +204,41 @@ async function withMediaSlot<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new MediaFetchError(message)),
+      timeoutMs,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function fetchViaTauri(attempt: MediaAttempt): Promise<Blob> {
   let result: FetchMediaResponse;
   try {
-    result = await invoke<FetchMediaResponse>("fetch_media", {
-      request: { url: attempt.url, headers: attempt.headers },
-    });
+    // Tauri invoke 本身没有超时；底层 reqwest 卡住时前端会一直等，
+    // 导致图片永远不进入失败态、也无法出现重试入口。
+    result = await withTimeout(
+      invoke<FetchMediaResponse>("fetch_media", {
+        request: { url: attempt.url, headers: attempt.headers },
+      }),
+      REQUEST_TIMEOUT_MS,
+      `图片请求超时（${Math.round(REQUEST_TIMEOUT_MS / 1000)} 秒无响应）`,
+    );
   } catch (error) {
     throw new MediaFetchError(
       `图片网络请求失败：${error instanceof Error ? error.message : String(error)}`,

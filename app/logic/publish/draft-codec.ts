@@ -8,7 +8,6 @@ import type { UploadItem } from "~/routes/resource/publish/components/shared";
 import type { DownloadInput } from "~/routes/resource/publish/components/types";
 import {
   createExistingUploadItem,
-  createImageUploadItem,
   createUploadItem,
 } from "~/routes/resource/publish/components/uploadUtils";
 import type {
@@ -191,19 +190,24 @@ export async function loadRemoteMediaItem(
       path.split("/").pop() || "image",
       { type: blob.type || imageMimeFromPath(path) },
     );
-    const item = await createImageUploadItem(file);
+    // 尺寸不在这里额外解码：编辑页的预览卡片与图标/封面会在图片 onLoad 时
+    // 自动补全宽高，少一次全图解码能让首屏明显更快。
     return {
-      ...item,
+      ...createUploadItem(file),
       pathOverride: path,
+      remoteUrl: url,
       skipUpload: true,
       source: "existing",
     };
   } catch (error) {
     console.warn("[edit-media] failed to download remote image", path, error);
-    return createExistingUploadItem(
-      path.split("/").pop() || "image",
-      url,
-      path,
-    );
+    return {
+      ...createExistingUploadItem(
+        path.split("/").pop() || "image",
+        url,
+        path,
+      ),
+      remoteUrl: url,
+    };
   }
 }

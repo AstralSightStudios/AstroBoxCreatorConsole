@@ -23,6 +23,7 @@ import { reportFailure, reportSuccess } from "~/logic/logging/feedback";
 import {
   endResourceSession,
   flowSpan,
+  flowStep,
   logFieldChange,
   getActiveResourceSession,
   resumeResourceSession,
@@ -257,6 +258,7 @@ import {
   serializeMediaItem,
   serializeWallpaperAsset,
 } from "~/logic/publish/draft-codec";
+import { fetchProxiedMediaUrl } from "~/logic/media-proxy";
 import {
   buildDownloadInputsFromManifest,
   collectCatalogDevices,
@@ -791,7 +793,6 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   };
 
-
   const [authors, setAuthors] = useState<AuthorInput[]>([
     { name: "", bindABAccount: true },
   ]);
@@ -933,6 +934,73 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
    * 避免历史 manifest 缺失的 versionCode 没写进本次提交。
    */
   const versionBackfillRef = useRef<Promise<void> | null>(null);
+  /** 延迟启动 versionCode 回填，避免首屏图片请求和包体下载互相抢带宽。 */
+  const versionBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  /** 图片加载失败后重走一次带鉴权的媒体代理，成功则替换为新的 blob URL。 */
+  const handleRetryMedia = useCallback(
+    async (kind: "preview" | "icon" | "cover", id: string) => {
+      const item =
+        kind === "preview"
+          ? previews.find((entry) => entry.id === id)
+          : kind === "icon"
+            ? icon
+            : cover;
+      if (!item) return;
+
+      const remoteUrl =
+        item.remoteUrl?.trim() ||
+        (item.pathOverride && editContext
+          ? buildRawFileUrl(
+              editContext.catalog.entry.repo_owner,
+              editContext.catalog.entry.repo_name,
+              editContext.catalog.entry.repo_commit_hash ||
+                MAIN_RESOURCE_BRANCH,
+              item.pathOverride,
+            )
+          : "");
+
+      let nextUrl = "";
+      try {
+        if (remoteUrl) {
+          nextUrl = await fetchProxiedMediaUrl(remoteUrl, {
+            forceFresh: true,
+          });
+        } else if (item.file?.size) {
+          nextUrl = URL.createObjectURL(item.file);
+        } else {
+          throw new Error("缺少图片原始地址");
+        }
+      } catch (error) {
+        log.warn("media/retry", `图片重试失败：${item.name}`, {
+          data: { error: (error as Error)?.message ?? String(error) },
+        });
+        toast.error("图片重试失败，请检查网络后重试。");
+        throw error;
+      }
+
+      const next = {
+        ...item,
+        url: nextUrl,
+        remoteUrl: remoteUrl || item.remoteUrl,
+        width: undefined,
+        height: undefined,
+      };
+      if (kind === "preview") {
+        setPreviews((items) =>
+          items.map((entry) => (entry.id === id ? next : entry)),
+        );
+      } else if (kind === "icon") {
+        setIcon((current) => (current?.id === id ? next : current));
+      } else {
+        setCover((current) => (current?.id === id ? next : current));
+      }
+    },
+    [previews, icon, cover, editContext],
+  );
+
   const [lastManifest, setLastManifest] = useState<ManifestBuildResult | null>(
     null,
   );
@@ -1325,6 +1393,15 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
         setWallpaperInitial(null);
       }
       try {
+        const startedAt = performance.now();
+        const mark = (step: string, data?: Record<string, unknown>) => {
+          flowStep("info", "edit/load", `编辑页载入：${step}`, {
+            data: {
+              durationMs: Math.round(performance.now() - startedAt),
+              ...data,
+            },
+          });
+        };
         const token = loadAccountState().github?.token;
         if (!token) {
           throw new Error("GitHub 未登录，无法加载资源。");
@@ -1373,41 +1450,74 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
           })) || [],
         );
 
-        const previewItems: UploadItem[] = await Promise.all(
-          (manifest.item.preview || []).map((path, index) =>
-            loadRemoteMediaItem(
-              path,
-              buildRawFileUrl(repo.owner, repo.name, ref, path),
-            ).catch(() =>
-              createExistingUploadItem(
-                path.split("/").pop() || `preview-${index + 1}`,
-                buildRawFileUrl(repo.owner, repo.name, ref, path),
-                path,
-              ),
-            ),
+        const rawUrlFor = (path: string) =>
+          buildRawFileUrl(repo.owner, repo.name, ref, path);
+        const createPlaceholder = (path: string, fallbackName: string) => ({
+          ...createExistingUploadItem(
+            path.split("/").pop() || fallbackName,
+            "",
+            path,
           ),
+          remoteUrl: rawUrlFor(path),
+        });
+
+        // 先用占位项把界面撑起来；远端图片在后台逐个替换为可显示的
+        // blob URL，避免一张图慢或挂住时整个编辑页一直停在加载态。
+        const previewItems = (manifest.item.preview || []).map((path, index) =>
+          createPlaceholder(path, `preview-${index + 1}`),
         );
         setPreviews(previewItems);
 
         const iconPath = manifest.item.icon;
-        setIcon(
-          iconPath
-            ? await loadRemoteMediaItem(
-                iconPath,
-                buildRawFileUrl(repo.owner, repo.name, ref, iconPath),
-              )
-            : null,
-        );
+        const iconItem = iconPath ? createPlaceholder(iconPath, "icon") : null;
+        setIcon(iconItem);
 
         const coverPath = manifest.item.cover;
-        setCover(
-          coverPath
-            ? await loadRemoteMediaItem(
-                coverPath,
-                buildRawFileUrl(repo.owner, repo.name, ref, coverPath),
-              )
-            : null,
-        );
+        const coverItem = coverPath
+          ? createPlaceholder(coverPath, "cover")
+          : null;
+        setCover(coverItem);
+
+        const hydrateMedia = (
+          placeholder: UploadItem,
+          apply: (item: UploadItem) => void,
+        ) => {
+          const path = placeholder.pathOverride ?? "";
+          const remoteUrl = placeholder.remoteUrl ?? "";
+          if (!path || !remoteUrl) return;
+          void loadRemoteMediaItem(path, remoteUrl)
+            .then((loaded) => {
+              if (active) apply({ ...loaded, id: placeholder.id });
+            })
+            .catch(() => {
+              // loadRemoteMediaItem 内部已有失败兜底，这里只防止未处理拒绝。
+            });
+        };
+
+        previewItems.forEach((item) => {
+          hydrateMedia(item, (next) =>
+            setPreviews((items) =>
+              items.map((entry) => (entry.id === item.id ? next : entry)),
+            ),
+          );
+        });
+        if (iconItem) {
+          hydrateMedia(iconItem, (next) =>
+            setIcon((current) =>
+              current?.id === iconItem.id ? next : current,
+            ),
+          );
+        }
+        if (coverItem) {
+          hydrateMedia(coverItem, (next) =>
+            setCover((current) =>
+              current?.id === coverItem.id ? next : current,
+            ),
+          );
+        }
+        mark("图片转入后台加载", {
+          previews: previewItems.length,
+        });
 
         const ext = isManifestExtObject(manifest.ext) ? manifest.ext : {};
         let downloadRows = buildDownloadInputsFromManifest({
@@ -1485,41 +1595,59 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
               row.versionCode === undefined,
           )
         ) {
-          versionBackfillRef.current = collectVersionCodeBackfills({
-            rows: backfillRows,
-            loadPackage: loadExistingPackage,
-            catalogMode: editContext.mode === "catalog",
-            onError: (row, error) => {
-              log.warn(
-                "publish/version-backfill",
-                `读取仓库包体版本失败：${row.existingFileName ?? ""}`,
-                {
-                  data: {
-                    error: (error as Error)?.message ?? String(error),
-                  },
+          // 包体动辄几十 MB，回填不是首屏必需；先让图片/壁纸请求发出去，
+          // 再启动包体下载，避免它们互相抢带宽。
+          versionBackfillRef.current = new Promise<void>((resolve) => {
+            versionBackfillTimerRef.current = setTimeout(() => {
+              versionBackfillTimerRef.current = null;
+              if (!active) {
+                resolve();
+                return;
+              }
+              void collectVersionCodeBackfills({
+                rows: backfillRows,
+                loadPackage: loadExistingPackage,
+                catalogMode: editContext.mode === "catalog",
+                onError: (row, error) => {
+                  log.warn(
+                    "publish/version-backfill",
+                    `读取仓库包体版本失败：${row.existingFileName ?? ""}`,
+                    {
+                      data: {
+                        error: (error as Error)?.message ?? String(error),
+                      },
+                    },
+                  );
                 },
-              );
-            },
-          })
-            .then((backfills) => {
-              if (!active || backfills.length === 0) return;
-              setDownloads((prev) =>
-                applyVersionCodeBackfills(prev, backfills),
-              );
-              setTrialDownloads((prev) =>
-                applyVersionCodeBackfills(prev, backfills),
-              );
-              log.info(
-                "publish/version-backfill",
-                "已从仓库包体补齐 versionCode",
-                { data: { count: backfills.length } },
-              );
-            })
-            .catch((error) => {
-              log.warn("publish/version-backfill", "versionCode 回填失败", {
-                data: { error: (error as Error)?.message ?? String(error) },
-              });
-            });
+              })
+                .then((backfills) => {
+                  if (!active || backfills.length === 0) return;
+                  setDownloads((prev) =>
+                    applyVersionCodeBackfills(prev, backfills),
+                  );
+                  setTrialDownloads((prev) =>
+                    applyVersionCodeBackfills(prev, backfills),
+                  );
+                  log.info(
+                    "publish/version-backfill",
+                    "已从仓库包体补齐 versionCode",
+                    { data: { count: backfills.length } },
+                  );
+                })
+                .catch((error) => {
+                  log.warn(
+                    "publish/version-backfill",
+                    "versionCode 回填失败",
+                    {
+                      data: {
+                        error: (error as Error)?.message ?? String(error),
+                      },
+                    },
+                  );
+                })
+                .finally(resolve);
+            }, 400);
+          });
         }
         setDownloads(downloadRows);
         setTrialDownloads(trialDownloadRows);
@@ -1570,6 +1698,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     return () => {
       active = false;
       versionBackfillRef.current = null;
+      if (versionBackfillTimerRef.current) {
+        clearTimeout(versionBackfillTimerRef.current);
+        versionBackfillTimerRef.current = null;
+      }
     };
   }, [editContext, isEditMode]);
 
@@ -3857,6 +3989,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                  onRemoveIcon={handleRemoveIcon}
                  onRemoveCover={handleRemoveCover}
                  onMediaDimensions={handleMediaDimensions}
+                 onRetryMedia={handleRetryMedia}
                />
               {/* defaultAuthorName 在编辑模式同样下发：manifest 里回填的署名可能是
                   改过名的旧值，改名弹窗只提醒不阻拦，得留一条一键改回去的路。 */}

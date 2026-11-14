@@ -246,11 +246,24 @@ function mediaAssetFingerprint(file: File): string {
     return `${file.name}|${file.size}|${file.type}`;
 }
 
+/**
+ * 仓库已有媒体按路径去重。
+ *
+ * 编辑页会先放一个空的占位 File，再异步下载图片；此时同名文件的大小/类型
+ * 都相同，按文件指纹去重会把两张不同图片误判成同一张。existing 资产本身
+ * 不会重新上传，用 pathOverride 作为指纹才可靠。
+ */
+function assetFingerprint(asset: AssetDescriptor): string {
+    return asset.skipUpload
+        ? `existing:${asset.path}`
+        : mediaAssetFingerprint(asset.file);
+}
+
 function reuseDuplicateAsset(
     asset: AssetDescriptor,
     seen: Map<string, AssetDescriptor>,
 ): AssetDescriptor {
-    const fingerprint = mediaAssetFingerprint(asset.file);
+    const fingerprint = assetFingerprint(asset);
     const existing = seen.get(fingerprint);
     if (existing) {
         return { ...asset, path: existing.path, skipUpload: true };

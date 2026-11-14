@@ -1,4 +1,5 @@
 import {
+  ArrowClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   CropIcon,
@@ -16,7 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "~/components/ScaleAwareThemes";
+import { Dialog, Spinner } from "~/components/ScaleAwareThemes";
 import { PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
@@ -44,6 +45,10 @@ interface MediaSectionProps {
     width: number,
     height: number,
   ) => void;
+  onRetryMedia: (
+    kind: "preview" | "icon" | "cover",
+    id: string,
+  ) => Promise<void>;
 }
 
 const MEDIA_FIELD_HELP: FieldHelpItem[] = [
@@ -107,6 +112,92 @@ function formatFileSize(size?: number): string {
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+/**
+ * 编辑页的远端媒体加载是异步的：占位项先上屏，代理地址拿到后再替换 url。
+ * 加载失败时提供与审核页一致的覆盖层重试，避免只能退出重进。
+ */
+function MediaImage({
+  item,
+  className,
+  onLoad,
+  onRetry,
+}: {
+  item: UploadItem;
+  className?: string;
+  onLoad?: (width: number, height: number) => void;
+  onRetry: () => Promise<void>;
+}) {
+  const [failed, setFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+    setRetrying(false);
+  }, [item.url]);
+
+  return (
+    <>
+      {item.url ? (
+        <img
+          src={item.url}
+          alt={item.name}
+          className={className}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth && image.naturalHeight) {
+              onLoad?.(image.naturalWidth, image.naturalHeight);
+            }
+          }}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span
+          className={`flex min-h-24 min-w-16 items-center justify-center bg-white/[0.03] ${className ?? ""}`}
+          aria-label="图片加载中"
+        >
+          <Spinner size="2" />
+        </span>
+      )}
+      {failed && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="图片加载失败，点击重试"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (retrying) return;
+            setRetrying(true);
+            void onRetry()
+              .then(() => setFailed(false))
+              .catch(() => {})
+              .finally(() => setRetrying(false));
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (retrying) return;
+            setRetrying(true);
+            void onRetry()
+              .then(() => setFailed(false))
+              .catch(() => {})
+              .finally(() => setRetrying(false));
+          }}
+          className="absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md bg-black/60 px-2 text-center text-[11px] text-white/85 transition hover:bg-black/70"
+        >
+          {retrying ? (
+            <Spinner size="1" />
+          ) : (
+            <ArrowClockwiseIcon size={16} />
+          )}
+          {retrying ? "重试中..." : "加载失败，点击重试"}
+        </span>
+      )}
+    </>
+  );
+}
+
 function MediaTile({
   label,
   hint,
@@ -119,6 +210,8 @@ function MediaTile({
   dropActive,
   onPick,
   onRemove,
+  onDimensions,
+  onRetry,
 }: {
   label: string;
   hint: string;
@@ -132,6 +225,8 @@ function MediaTile({
   dropActive?: boolean;
   onPick: () => void;
   onRemove: () => void;
+  onDimensions?: (width: number, height: number) => void;
+  onRetry?: () => Promise<void>;
 }) {
   return (
     <div
@@ -166,16 +261,15 @@ function MediaTile({
       ) : media ? (
         <div
           data-media-image={fieldKey}
-          className={`flex min-h-56 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25 ${
+          className={`relative flex min-h-56 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/25 ${
             mediaClassName || ""
           }`}
         >
-          <img
-            src={media.url}
-            alt={media.name}
-            className={
-              imageClassName || "h-full w-full object-cover"
-            }
+          <MediaImage
+            item={media}
+            className={imageClassName || "h-full w-full object-cover"}
+            onLoad={onDimensions}
+            onRetry={onRetry ?? (async () => {})}
           />
         </div>
       ) : (
@@ -225,6 +319,7 @@ function PreviewCard({
   onMove,
   onRemove,
   onLoad,
+  onRetry,
 }: {
   item: UploadItem;
   index: number;
@@ -236,6 +331,7 @@ function PreviewCard({
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
   onLoad?: (width: number, height: number) => void;
+  onRetry?: () => Promise<void>;
 }) {
   return (
     <div
@@ -250,17 +346,11 @@ function PreviewCard({
         className="relative block w-full overflow-hidden rounded-lg border border-white/10 bg-black/25"
         onClick={onOpen}
       >
-        <img
-          src={item.url}
-          alt={item.name}
+        <MediaImage
+          item={item}
           className="h-64 w-full object-contain"
-          onLoad={(event) => {
-            if (!onLoad) return;
-            const image = event.currentTarget;
-            if (image.naturalWidth && image.naturalHeight) {
-              onLoad(image.naturalWidth, image.naturalHeight);
-            }
-          }}
+          onLoad={onLoad}
+          onRetry={onRetry ?? (async () => {})}
         />
         {item.imageMeta?.animated && (
           <span className="absolute left-2 top-2 rounded border border-sky-300/30 bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
@@ -349,6 +439,7 @@ export function MediaSection({
   onRemoveIcon,
   onRemoveCover,
   onMediaDimensions,
+  onRetryMedia,
 }: MediaSectionProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const previewScrollerRef = useRef<HTMLDivElement>(null);
@@ -805,6 +896,12 @@ export function MediaSection({
             imageClassName="max-h-full max-w-full object-contain"
             onPick={() => void pickMediaFiles("icon")}
             onRemove={onRemoveIcon}
+            onDimensions={(width, height) =>
+              icon
+                ? onMediaDimensions("icon", icon.id, width, height)
+                : undefined
+            }
+            onRetry={() => onRetryMedia("icon", icon?.id ?? "")}
           />
           <MediaTile
             label="封面"
@@ -816,6 +913,12 @@ export function MediaSection({
             mediaClassName="aspect-[3/2]"
             onPick={() => void pickMediaFiles("cover")}
             onRemove={onRemoveCover}
+            onDimensions={(width, height) =>
+              cover
+                ? onMediaDimensions("cover", cover.id, width, height)
+                : undefined
+            }
+            onRetry={() => onRetryMedia("cover", cover?.id ?? "")}
           />
         </div>
 
@@ -934,6 +1037,7 @@ export function MediaSection({
                         onMediaDimensions("preview", item.id, width, height);
                       }
                     }}
+                    onRetry={() => onRetryMedia("preview", item.id)}
                   />
                 );
               })}

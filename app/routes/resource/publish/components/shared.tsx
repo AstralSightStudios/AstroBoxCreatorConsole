@@ -82,6 +82,8 @@ export interface UploadItem {
   url: string;
   file: File;
   pathOverride?: string;
+  /** 远端媒体的原始 URL；重试图片加载时用它重新走代理链路。 */
+  remoteUrl?: string;
   skipUpload?: boolean;
   source?: "upload" | "existing";
   width?: number;
