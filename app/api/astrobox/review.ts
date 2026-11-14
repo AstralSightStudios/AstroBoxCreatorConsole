@@ -1,4 +1,5 @@
 import { sendApiRequest } from "./request";
+import type { ReviewQueue } from "~/logic/review-assist/queue";
 import type { ReviewGuidelines } from "~/logic/review-assist/guidelines";
 import type {
   ReviewPreset,
@@ -22,6 +23,8 @@ export const reviewAiRunsQueryKey = (prNumber: number, resourceId: string) =>
   ["review-assist", "ai-runs", prNumber, resourceId] as const;
 
 export const ReviewAssistApi = {
+  /** 读取后台已计算的队列，不触发模型调用。 */
+  queue: () => sendApiRequest<ReviewQueue>("/admin/review/queue", "GET"),
   /** `refresh` 为真时让服务端立刻去文档内容仓核对最新版本。 */
   guidelines: (refresh = false) =>
     sendApiRequest<ReviewGuidelines>(

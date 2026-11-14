@@ -89,6 +89,8 @@ import {
 } from "./source";
 import { COMMUNITY_REPO_CONFIG } from "~/config/community";
 import { PullRequestCard } from "./components/PullRequestCard";
+import { useReviewQueue } from "./components/assist/useReviewQueue";
+import { currentQueueEntry, missingQueuePulls, sortReviewQueue } from "~/logic/review-assist/queue";
 import ReviewersDrawer from "./components/ReviewersDrawer";
 import ReviewFilterDrawer from "./components/ReviewFilterDrawer";
 import BatchNoticeFailuresDrawer from "./components/BatchNoticeFailuresDrawer";
@@ -106,6 +108,7 @@ import {
   isSelfApproveError,
   extractOldCatalogEntriesFromFiles,
   runWithConcurrency,
+  formatTime,
 } from "./utils";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import type { CatalogEntry } from "~/logic/publish/catalog";
@@ -268,6 +271,8 @@ export default function ResourceReviewPage() {
   const canReviewResource = hasCommunityRepoManagePermission(resourcePermission);
   const canReviewPlugin = hasCommunityRepoManagePermission(pluginPermission);
   const canReview = canReviewResource || canReviewPlugin;
+  const reviewQueue = useReviewQueue(canReviewResource && env.id === "official" && !auditMode, `${env.owner}/${env.repoName}`);
+  const [intelligentSort, setIntelligentSort] = useState(true);
   const isInitialLoading =
     checkingPermission ||
     (!auditMode && loadingPulls && pulls.length === 0);
@@ -411,6 +416,15 @@ export default function ResourceReviewPage() {
         ...resourcePulls.map((pull) => ({ ...pull, source: "resource" as const })),
         ...pluginPulls.map((pull) => ({ ...pull, source: "plugin" as const })),
       ];
+      // 补入服务端找到的旧 PR；逐个核对开放状态，避免轮询间隔内已关闭的条目重新出现。
+      const missing = missingQueuePulls(combined, reviewQueue.data);
+      const older = await runWithConcurrency(missing, 6, async (pull) => {
+        try {
+          const current = await getPullRequest(pull.number, reviewRepoRef("resource"));
+          return current.state === "open" && current.head.repo ? { ...current, source: "resource" as const } : null;
+        } catch { return null; }
+      });
+      combined.push(...older.filter((pull) => pull !== null));
 
       const entries = await runWithConcurrency(
         combined,
@@ -501,6 +515,7 @@ export default function ResourceReviewPage() {
   const handleRefreshList = () => {
     // 手动刷新强制重新拉取时间线，不受 updated_at 缓存影响。
     timelineCacheRef.current.clear();
+    if (reviewQueue.isEnabled) void reviewQueue.refetch();
     setRotate((prev) => prev + 360);
     setRefreshTick((prev) => prev + 1);
   };
@@ -756,7 +771,7 @@ export default function ResourceReviewPage() {
     // 回查只需要目标 PR，不加载开放 PR 列表，避免无谓请求与列表状态干扰。
     if (!canReview || auditMode) return;
     void loadPulls();
-  }, [canReview, canReviewResource, canReviewPlugin, refreshTick, orgMembers, auditMode]);
+  }, [canReview, canReviewResource, canReviewPlugin, refreshTick, orgMembers, auditMode, reviewQueue.data?.syncedAt]);
 
   useEffect(() => {
     setGeneralComment("");
@@ -847,10 +862,7 @@ export default function ResourceReviewPage() {
   ]);
 
   const visiblePulls = useMemo(() => {
-    // 两个来源的 PR 混排，统一按最近更新时间倒序，避免插件永远排在资源后面。
-    const list = [...pulls].sort((a, b) =>
-      (b.updated_at || "").localeCompare(a.updated_at || ""),
-    );
+    const list = sortReviewQueue(pulls, reviewQueue.entries, intelligentSort && reviewQueue.available);
     const sourceFiltered =
       sourceFilter === "all"
         ? list
@@ -860,7 +872,7 @@ export default function ResourceReviewPage() {
       const status = statusByKey[reviewPullKey(pull)] ?? "waiting_review";
       return status === stateFilter;
     });
-  }, [commentsByPr, pulls, stateFilter, sourceFilter, statusByKey]);
+  }, [commentsByPr, pulls, stateFilter, sourceFilter, statusByKey, intelligentSort, reviewQueue.available, reviewQueue.entries]);
 
   const refreshDetail = () => {
     if (!openNumber) return;
@@ -1845,6 +1857,8 @@ export default function ResourceReviewPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-0.5 text-sm text-white/60">
                   <span>目标仓库：{env.owner}/{env.repoName}</span>
+                  {reviewQueue.message && <span className="text-amber-200/80">{reviewQueue.message}</span>}
+                  {reviewQueue.available && <span>{intelligentSort ? "资源按答复时限与提交表现排序" : "资源按最近更新时间排序"} · 48 小时内答复{reviewQueue.data?.syncedAt ? ` · 同步于 ${formatTime(reviewQueue.data.syncedAt)}` : ""}</span>}
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-3">
                   {selectMode ? (
@@ -1912,6 +1926,11 @@ export default function ResourceReviewPage() {
                             <FunnelSimple size={15} />
                             筛选
                           </DropdownMenu.Item>
+                          {reviewQueue.available && (
+                            <DropdownMenu.Item onSelect={() => setIntelligentSort(value => !value)}>
+                              {intelligentSort ? "改按最近更新排序" : "使用智能优先级排序"}
+                            </DropdownMenu.Item>
+                          )}
                           <DropdownMenu.Separator />
                           <DropdownMenu.Item
                             className="gap-2"
@@ -1977,6 +1996,8 @@ export default function ResourceReviewPage() {
                               status={statusByKey[key] ?? "waiting_review"}
                               comments={comments}
                               reviewers={reviewers}
+                              priority={reviewQueue.available ? currentQueueEntry(pull, reviewQueue.entries) : undefined}
+                              now={reviewQueue.now}
                               selectable={selectMode}
                               selected={selectedKeys.has(key)}
                               onClick={() => handleSelectPull(pull)}

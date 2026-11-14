@@ -9,6 +9,7 @@ import { PrStatusBadge, ReviewStatusBadge } from "./StatusBadges";
 import { CommentIcon } from "./icons";
 import { formatTime } from "../utils";
 import type { ReviewSource } from "../source";
+import { deadlineLabel, priorityLabels, type ReviewQueueEntry } from "~/logic/review-assist/queue";
 interface PullRequestCardProps {
   pull: GithubPullRequest;
   source: ReviewSource;
@@ -16,6 +17,8 @@ interface PullRequestCardProps {
   comments: GithubIssueComment[];
   /** 该 PR 上发送 NEEDFIX / CHANGES_REQUESTED 的负责审核者分布。 */
   reviewers: NeedFixAuthorStat[];
+  priority?: ReviewQueueEntry;
+  now?: number;
   /** 选择模式：底部审核栏左侧留出复选框格，点击卡片勾选而非进入详情。 */
   selectable?: boolean;
   selected?: boolean;
@@ -48,6 +51,8 @@ export function PullRequestCard({
   status,
   comments,
   reviewers,
+  priority,
+  now = Date.now(),
   selectable = false,
   selected = false,
   onClick,
@@ -122,6 +127,14 @@ export function PullRequestCard({
             </span>
           </div>
         </div>
+        {priority && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className={`rounded-full px-2.5 py-1 ${priority.tier === "overdue" ? "bg-red-500/15 text-red-200" : priority.tier === "due_soon" ? "bg-amber-500/15 text-amber-100" : priority.tier === "priority" ? "bg-emerald-500/15 text-emerald-100" : "bg-white/5 text-white/60"}`}>
+              {priorityLabels[priority.tier]}
+            </span>
+            {priority.deadlineAt && priority.tier !== "draft" && <span className="text-white/60">{deadlineLabel(priority.deadlineAt, now)}</span>}
+          </div>
+        )}
         <div className="mt-auto flex items-center justify-end gap-2">
           {source === "plugin" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-medium text-violet-100">
@@ -138,6 +151,26 @@ export function PullRequestCard({
           )}
         </div>
       </motion.button>
+
+      {priority && (
+        <details className="border-t border-white/10 px-4 py-2 text-xs text-white/60">
+          <summary className="cursor-pointer py-1">排序依据{priority.stale ? " · 当前版本待分析" : ""}</summary>
+          <ul className="mt-2 space-y-1 pl-4 list-disc">
+            {priority.reasons.map((reason, index) => <li key={index}>{reason}</li>)}
+          </ul>
+          {priority.assessment?.summary && <p className="mt-2 leading-relaxed">{priority.assessment.summary}</p>}
+          {priority.assessment?.signals.map(signal => (
+            <blockquote key={signal.kind} className="mt-2 border-l-2 border-white/20 pl-2">{signal.reason}：「{signal.quote}」</blockquote>
+          ))}
+          {(priority.authorEvidence ?? []).map((evidence, index) => (
+            <p key={`${evidence.number}-${index}`} className="mt-2">
+              <a href={evidence.url} target="_blank" rel="noreferrer" className="underline">PR #{evidence.number}</a>
+              {" · "}{evidence.reason}：「{evidence.quote}」
+            </p>
+          ))}
+          {priority.stale && <p className="mt-2 text-white/40">后台按变化与预算分批分析；48 小时答复时限持续计算。</p>}
+        </details>
+      )}
 
       {/*
         底部审核栏与卡片正文同属一个容器，用横向分割线连接（不再留空隙）。
