@@ -32,6 +32,14 @@ describe("pre-publish checks: checkPreviewCount", () => {
     expect(checkPreviewCount(3)).toBeNull();
     expect(checkPreviewCount(5)).toBeNull();
   });
+
+  test("复用封面的预览图会说明不计入数量", () => {
+    const message = checkPreviewCount(2, 1);
+    expect(message).toContain("至少上传 3 张");
+    expect(message).toContain("复用封面文件，不计入");
+    // 已满足下限时不再出现任何提示。
+    expect(checkPreviewCount(3, 1)).toBeNull();
+  });
 });
 
 describe("pre-publish checks: checkIconDimensions", () => {

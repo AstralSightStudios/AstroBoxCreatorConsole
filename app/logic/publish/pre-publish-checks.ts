@@ -174,10 +174,23 @@ export function checkPreviewTotalSize(totalBytes: number): PreviewIssue | null {
  */
 export const PUBLISH_PREVIEWS_MIN = 3;
 
-/** 预览图数量检查：达到下限返回 null，否则返回给创作者看的文案。 */
-export function checkPreviewCount(count: number): string | null {
+/**
+ * 预览图数量检查：达到下限返回 null，否则返回给创作者看的文案。
+ *
+ * `reusedCoverCount` 是其中与封面相同、被排除在数量之外的预览图张数。
+ * 这些图只是复用了封面文件，不能拿来凑最低数量，文案里要说明原因，
+ * 否则创作者会疑惑明明上传了足够张数却被拦下。
+ */
+export function checkPreviewCount(
+  count: number,
+  reusedCoverCount = 0,
+): string | null {
   if (count >= PUBLISH_PREVIEWS_MIN) return null;
-  return `请至少上传 ${PUBLISH_PREVIEWS_MIN} 张预览图。预览图是用户判断资源效果的主要依据，少于 ${PUBLISH_PREVIEWS_MIN} 张无法展示足够的界面与功能细节。`;
+  const reusedNote =
+    reusedCoverCount > 0
+      ? `其中 ${reusedCoverCount} 张与封面相同，已复用封面文件，不计入预览图数量。`
+      : "";
+  return `请至少上传 ${PUBLISH_PREVIEWS_MIN} 张预览图。预览图是用户判断资源效果的主要依据，少于 ${PUBLISH_PREVIEWS_MIN} 张无法展示足够的界面与功能细节。${reusedNote}`;
 }
 
 /** 尺寸可缺失：读取失败时 width/height 为空，判定函数会给出「无法读取」。 */

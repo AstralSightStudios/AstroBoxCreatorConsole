@@ -10,6 +10,7 @@ import {
   isBannedImageName,
 } from "./pre-publish-checks";
 import type { ImageMeta } from "./image-meta";
+import { countIndependentPreviews } from "./preview-reuse";
 import {
   formatResourceType,
   isDeviceVendorSupportedByResourceType,
@@ -29,6 +30,8 @@ export interface ValidationUploadItem {
   width?: number;
   height?: number;
   skipUpload?: boolean;
+  /** 仓库已有素材的落点路径；与封面对比是否复用同一文件时使用。 */
+  pathOverride?: string;
   /** 上传阶段识别的内容信息；动图按动图阈值校验。 */
   imageMeta?: ImageMeta;
 }
@@ -420,7 +423,13 @@ export function validatePublish(
   // 格式硬拦截放在尺寸/体积之前：SVG 无论规格是否合规都不能提交，
   // 让创作者先换格式，再去调宽高比。
   issues.push(...validateBannedImageFormats(input));
-  const previewCountError = checkPreviewCount(input.previews.length);
+  // 复用封面的预览图只是同一条仓库素材，不计入最低数量：否则「封面 + 两张
+  // 截图」就能凑够三张，商店页实际仍只有两张截图。
+  const independentPreviews = countIndependentPreviews(input.previews, input.cover);
+  const previewCountError = checkPreviewCount(
+    independentPreviews.count,
+    independentPreviews.reusedCoverCount,
+  );
   if (previewCountError) push("previews", previewCountError);
   issues.push(...validatePreviewMedia(input.previews));
   const hasCover = input.usePreviewAsCover

@@ -20,6 +20,10 @@ import { useEffect, useRef, useState } from "react";
 import PaidCoverTag from "~/components/resource/PaidCoverTag";
 import { Dialog, Spinner } from "~/components/ScaleAwareThemes";
 import { PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
+import {
+  countIndependentPreviews,
+  previewReusesCover,
+} from "~/logic/publish/preview-reuse";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
 import type { PublishFieldKey } from "~/logic/publish/validation";
 import type { FieldHelpItem, UploadItem } from "./shared";
@@ -60,7 +64,7 @@ const MEDIA_FIELD_HELP: FieldHelpItem[] = [
     label: "上传方式",
     icon: <UploadSimpleIcon size={16} weight="duotone" />,
     description:
-      "点击选择或将图片拖入对应区域。同一文件会自动复用，无需重复上传。",
+      "点击选择或将图片拖入对应区域。与封面相同的图片会复用封面文件，不再重复上传。",
   },
   {
     group: "上传",
@@ -86,7 +90,7 @@ const MEDIA_FIELD_HELP: FieldHelpItem[] = [
     group: "规格",
     label: "预览图",
     icon: <ImagesSquareIcon size={16} weight="duotone" />,
-    description: `至少 ${PUBLISH_PREVIEWS_MIN} 张；图标与封面各需一张。`,
+    description: `至少 ${PUBLISH_PREVIEWS_MIN} 张；图标与封面各需一张。与封面相同的图片会复用封面文件，不计入最低数量。`,
   },
   {
     group: "规格",
@@ -321,6 +325,7 @@ function PreviewCard({
   count,
   width,
   showProgress,
+  reusesCover,
   onGripPointerDown,
   onOpen,
   onMove,
@@ -333,6 +338,8 @@ function PreviewCard({
   count: number;
   width: number;
   showProgress: boolean;
+  /** 这张图与封面是同一素材，不参与预览图最低数量计算。 */
+  reusesCover?: boolean;
   onGripPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onMove: (direction: -1 | 1) => void;
@@ -362,6 +369,11 @@ function PreviewCard({
         {item.imageMeta?.animated && (
           <span className="absolute left-2 top-2 rounded border border-sky-300/30 bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
             动图
+          </span>
+        )}
+        {reusesCover && (
+          <span className="absolute right-2 top-2 rounded border border-amber-300/30 bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
+            复用封面
           </span>
         )}
         {item.processing && (
@@ -505,6 +517,10 @@ export function MediaSection({
 
   const lightboxItem =
     lightboxIndex != null ? previews[lightboxIndex] ?? null : null;
+
+  // 与封面相同的预览图复用同一仓库文件，不能拿来凑最低数量；卡片上会打标，
+  // 数量文案也只统计独立预览图。
+  const independentPreviews = countIndependentPreviews(previews, cover);
 
   useEffect(() => {
     const node = previewScrollerRef.current;
@@ -950,14 +966,17 @@ export function MediaSection({
               {previews.length > 0 && (
                 <span
                   className={`text-xs ${
-                    previews.length < PUBLISH_PREVIEWS_MIN
+                    independentPreviews.count < PUBLISH_PREVIEWS_MIN
                       ? "text-amber-300/80"
                       : "text-white/45"
                   }`}
                 >
-                  共 {previews.length} 张
-                  {previews.length < PUBLISH_PREVIEWS_MIN
-                    ? `（还需 ${PUBLISH_PREVIEWS_MIN - previews.length} 张）`
+                  共 {independentPreviews.count} 张有效
+                  {independentPreviews.count < PUBLISH_PREVIEWS_MIN
+                    ? `（还需 ${PUBLISH_PREVIEWS_MIN - independentPreviews.count} 张）`
+                    : ""}
+                  {independentPreviews.reusedCoverCount > 0
+                    ? `（复用封面 ${independentPreviews.reusedCoverCount} 张不计入）`
                     : ""}
                 </span>
               )}
@@ -1030,6 +1049,7 @@ export function MediaSection({
                     count={previews.length}
                     width={previewWidthFor(item)}
                     showProgress={item.id === previewProcessingId}
+                    reusesCover={previewReusesCover(item, cover)}
                     onGripPointerDown={(event) => startGripDrag(event, item.id, index)}
                     onOpen={(event) => {
                       lightboxTriggerRef.current = event.currentTarget;
@@ -1089,6 +1109,7 @@ export function MediaSection({
                         count={previews.length}
                         width={lifted.width}
                         showProgress={item.id === previewProcessingId}
+                        reusesCover={previewReusesCover(item, cover)}
                         onGripPointerDown={() => {}}
                         onOpen={() => {}}
                         onMove={() => {}}

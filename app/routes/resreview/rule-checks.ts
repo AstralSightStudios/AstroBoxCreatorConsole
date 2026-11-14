@@ -63,6 +63,7 @@ import {
   isBannedImageName,
   isSvgContent,
 } from "~/logic/publish/pre-publish-checks";
+import { countIndependentPreviewUrls } from "~/logic/publish/preview-reuse";
 import {
   extensionForFormat,
   imageExtension,
@@ -1100,9 +1101,19 @@ export async function runResourceRuleChecks(options: {
 
   // --- check: 预览图数量下限 ---
   // 与发布页共用 PUBLISH_PREVIEWS_MIN：发布页在提交前拦截，这里在合入前兜底。
+  // 与封面指向同一文件的预览图只是复用封面，不能占用最低数量名额，否则
+  // 「封面 + 两张截图」就能通过检查，商店页实际仍只有两张截图。
   // manifest 缺失时预览图数量必然为 0，但根因是 manifest 没解析出来，
   // manifest 存在性检查已经判失败，这里只给警告，避免同一问题重复标红。
-  const previewCount = preview.previewUrls.filter((url) => url.trim()).length;
+  const previewCounts = countIndependentPreviewUrls(
+    preview.previewUrls,
+    preview.coverUrl,
+  );
+  const previewCount = previewCounts.count;
+  const reusedCoverNote =
+    previewCounts.reusedCoverCount > 0
+      ? `（另有 ${previewCounts.reusedCoverCount} 张与封面相同，复用封面文件，不计入数量）`
+      : "";
   const previewCountMissing = previewCount < PUBLISH_PREVIEWS_MIN;
   checks.push({
     title: `预览图不少于 ${PUBLISH_PREVIEWS_MIN} 张`,
@@ -1110,8 +1121,8 @@ export async function runResourceRuleChecks(options: {
     detail: !manifest
       ? "manifest 未解析，无法确认预览图数量"
       : previewCountMissing
-        ? `manifest 仅声明 ${previewCount} 张预览图，发布要求至少 ${PUBLISH_PREVIEWS_MIN} 张`
-        : `manifest 声明 ${previewCount} 张预览图`,
+        ? `manifest 仅声明 ${previewCount} 张有效预览图${reusedCoverNote}，发布要求至少 ${PUBLISH_PREVIEWS_MIN} 张`
+        : `manifest 声明 ${previewCount} 张有效预览图${reusedCoverNote}`,
     anchor: manifest && previewCountMissing ? "images" : undefined,
   });
 

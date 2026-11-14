@@ -15,6 +15,10 @@ import { COVER_MAX_BYTES, PUBLISH_PREVIEWS_MIN } from "../../app/logic/publish/p
 
 const image = { file: new Blob(), width: 100, height: 100 };
 const coverImage = { file: new Blob(), width: 150, height: 100 };
+
+function imageFile(name: string, size = 16, type = "image/png"): File {
+  return new File([new Uint8Array(size)], name, { type });
+}
 const validPreviews = [
   { ...coverImage, id: "preview-1" },
   { ...coverImage, id: "preview-2" },
@@ -109,6 +113,42 @@ describe("publish validation", () => {
     }
     // 恰好 3 张通过
     expect(validatePublish(validInput).errors).toEqual([]);
+  });
+
+  test("复用封面的预览图不占用最低数量名额", () => {
+    const coverFile = imageFile("cover.png", 16);
+    const reused = { ...coverImage, id: "p-reused", name: "cover.png", file: coverFile };
+    const cover = { ...coverImage, name: "cover.png", file: coverFile };
+    const base = {
+      ...validInput,
+      usePreviewAsCover: false,
+      coverPreviewId: null,
+      cover,
+    };
+    const independentPreviews = [
+      { ...coverImage, id: "p-2", name: "shot-2.png", file: imageFile("shot-2.png", 16) },
+      { ...coverImage, id: "p-3", name: "shot-3.png", file: imageFile("shot-3.png", 16) },
+    ];
+
+    const blocked = validatePublish({
+      ...base,
+      previews: [reused, ...independentPreviews],
+    }).issues;
+    const previewIssue = blocked.find((issue) => issue.field === "previews");
+    expect(previewIssue?.message).toContain(`至少上传 ${PUBLISH_PREVIEWS_MIN} 张预览图`);
+    expect(previewIssue?.message).toContain("复用封面文件，不计入");
+
+    // 再补一张独立预览图后满足下限。
+    expect(
+      validatePublish({
+        ...base,
+        previews: [
+          reused,
+          ...independentPreviews,
+          { ...coverImage, id: "p-4", name: "shot-4.png", file: imageFile("shot-4.png", 16) },
+        ],
+      }).errors,
+    ).toEqual([]);
   });
 
   test("预览图逐张问题携带 previewId，便于定位到单张图片", () => {
