@@ -203,17 +203,73 @@ export interface OpenSubmissionMatch {
 /** 并发扫描开放 PR 时同时读取的文件数上限，避免触发二级速率限制。 */
 const OPEN_SUBMISSION_LOOKUP_CONCURRENCY = 4;
 
-async function pullReferencesResource(
+interface OpenSubmissionReference {
+    resourceId: string;
+    match: OpenSubmissionMatch;
+}
+
+function addSubmissionReference(
+    references: Map<string, OpenSubmissionReference>,
+    pull: { number: number; title: string },
+    resourceId: string | null | undefined,
+    mode: OpenSubmissionMode,
+) {
+    const id = resourceId?.trim();
+    if (!id) return;
+    const key = id.toLowerCase();
+    if (references.has(key)) return;
+    references.set(key, {
+        resourceId: id,
+        match: {
+            prNumber: pull.number,
+            prTitle: pull.title,
+            mode,
+        },
+    });
+}
+
+/** 解析一份提交明细，收集它引用的资源 ID。 */
+function collectSubmissionReferences(
+    references: Map<string, OpenSubmissionReference>,
+    pull: { number: number; title: string },
+    filePath: string,
+    text: string,
+) {
+    try {
+        if (filePath.endsWith(".json")) {
+            const request = parseSubmissionRequestJson(text);
+            if (
+                request.mode === "edit" ||
+                request.mode === "delete"
+            ) {
+                addSubmissionReference(
+                    references,
+                    pull,
+                    request.original_id,
+                    request.mode,
+                );
+            }
+        } else {
+            const parsed = parseSubmissionCsv(text);
+            addSubmissionReference(references, pull, parsed.id, "unknown");
+        }
+    } catch {
+        // 历史/脏数据解析失败：跳过该文件，不误判为冲突。
+    }
+}
+
+/** 通过 REST 读取一个 PR 的全部提交明细引用；GraphQL 失败时的兜底链路。 */
+async function pullResourceReferences(
     token: string,
     pull: { number: number; title: string },
-    resourceId: string,
-): Promise<OpenSubmissionMatch | null> {
+): Promise<OpenSubmissionReference[]> {
     const files = await githubFetch<
         Array<{ filename?: string; sha?: string }>
     >(
         `https://api.github.com/repos/${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}/pulls/${pull.number}/files?per_page=100`,
         { headers: { Authorization: `Bearer ${token}` } },
     );
+    const references = new Map<string, OpenSubmissionReference>();
     for (const file of files) {
         const filePath = file.filename ?? "";
         if (!isSubmissionFilePath(filePath)) continue;
@@ -221,55 +277,464 @@ async function pullReferencesResource(
         try {
             const text = await fetchBlobText(token, file.sha);
             if (!text) continue;
-            if (filePath.endsWith(".json")) {
-                const request = parseSubmissionRequestJson(text);
-                if (
-                    (request.mode === "edit" ||
-                        request.mode === "delete") &&
-                    typeof request.original_id === "string" &&
-                    sameResourceId(request.original_id, resourceId)
-                ) {
-                    return {
-                        prNumber: pull.number,
-                        prTitle: pull.title,
-                        mode: request.mode,
-                    };
-                }
-            } else {
-                const parsed = parseSubmissionCsv(text);
-                if (sameResourceId(parsed.id, resourceId)) {
-                    return {
-                        prNumber: pull.number,
-                        prTitle: pull.title,
-                        mode: "unknown",
-                    };
-                }
-            }
+            collectSubmissionReferences(references, pull, filePath, text);
         } catch {
             // 历史/脏数据解析失败：跳过该文件，不误判为冲突。
             continue;
         }
     }
-    return null;
+    return [...references.values()];
+}
+
+async function pullReferencesResource(
+    token: string,
+    pull: { number: number; title: string },
+    resourceId: string,
+): Promise<OpenSubmissionMatch | null> {
+    const target = resourceId.trim().toLowerCase();
+    if (!target) return null;
+    const references = await pullResourceReferences(token, pull);
+    return (
+        references.find(
+            (reference) => reference.resourceId.trim().toLowerCase() === target,
+        )?.match ?? null
+    );
+}
+
+interface OpenSubmissionIndex {
+    key: string;
+    fetchedAt: number;
+    matches: Map<string, OpenSubmissionMatch>;
+}
+
+/** 开放 PR 预检索引的复用窗口；管理页停留期间点击编辑可直接命中。 */
+const OPEN_SUBMISSION_INDEX_TTL_MS = 60_000;
+/** 单资源查询结果（含“无冲突”）的短缓存。 */
+const OPEN_SUBMISSION_LOOKUP_TTL_MS = 30_000;
+/** GraphQL 单次查询里批量读取的提交文件数；过大容易被网关截断。 */
+const OPEN_SUBMISSION_GRAPHQL_BLOB_CHUNK = 50;
+/** GraphQL 不可用后的降级窗口，避免每次点击都先失败一次再走 REST。 */
+const OPEN_SUBMISSION_GRAPHQL_FAILURE_COOLDOWN_MS = 60_000;
+
+let openSubmissionGraphqlDisabledUntil = 0;
+let openSubmissionIndex: OpenSubmissionIndex | null = null;
+let openSubmissionIndexInFlight:
+    | { key: string; promise: Promise<OpenSubmissionIndex> }
+    | null = null;
+const openSubmissionLookupCache = new Map<
+    string,
+    { fetchedAt: number; value: OpenSubmissionMatch | null }
+>();
+
+function openSubmissionCacheKey() {
+    const login =
+        loadAccountState().github?.username?.trim().toLowerCase() ?? "";
+    return `${PUBLISH_CONFIG.targetPrRepoOwner}/${PUBLISH_CONFIG.targetPrRepoName}|${login}`;
+}
+
+interface GraphqlPullNode {
+    number?: number | null;
+    title?: string | null;
+    headRefOid?: string | null;
+    files?: {
+        nodes?: Array<{ path?: string | null } | null> | null;
+    } | null;
+}
+
+interface GraphqlPullConnection {
+    pageInfo?: {
+        hasNextPage?: boolean | null;
+        endCursor?: string | null;
+    } | null;
+    nodes?: Array<GraphqlPullNode | null> | null;
+}
+
+interface OpenPullWithFiles {
+    number: number;
+    title: string;
+    headRefOid: string;
+    files: string[];
+}
+
+interface OpenPullsData {
+    repository?: {
+        pullRequests?: GraphqlPullConnection | null;
+    } | null;
+}
+
+interface GraphqlResponse<T> {
+    data?: T | null;
+    errors?: Array<{ message?: string | null }> | null;
+}
+
+async function githubGraphql<T>(
+    token: string,
+    query: string,
+    variables?: Record<string, unknown>,
+): Promise<T> {
+    const response = await githubFetch<GraphqlResponse<T>>(
+        "https://api.github.com/graphql",
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query, variables }),
+        },
+    );
+    if (response.errors?.length) {
+        throw new Error(
+            response.errors
+                .map((error) => error.message ?? "GraphQL 请求失败")
+                .join("；"),
+        );
+    }
+    if (!response.data) {
+        throw new Error("GitHub GraphQL 返回为空。");
+    }
+    return response.data;
+}
+
+const OPEN_SUBMISSION_PULLS_QUERY = `
+query OpenSubmissionPulls($owner: String!, $repo: String!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: OPEN, first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        title
+        headRefOid
+        files(first: 100) { nodes { path } }
+      }
+    }
+  }
+}`;
+
+/** 一次 GraphQL 查询拿到所有开放 PR 的提交文件路径。 */
+async function fetchOpenSubmissionPulls(
+    token: string,
+): Promise<OpenPullWithFiles[]> {
+    const owner = PUBLISH_CONFIG.targetPrRepoOwner;
+    const repo = PUBLISH_CONFIG.targetPrRepoName;
+    const result: OpenPullWithFiles[] = [];
+    let cursor: string | null = null;
+
+    for (let page = 0; page < 10; page += 1) {
+        const data: OpenPullsData = await githubGraphql<OpenPullsData>(
+            token,
+            OPEN_SUBMISSION_PULLS_QUERY,
+            { owner, repo, cursor },
+        );
+        const connection: GraphqlPullConnection | null | undefined =
+            data.repository?.pullRequests;
+        if (!connection) break;
+
+        for (const node of connection.nodes ?? []) {
+            if (!node?.number) continue;
+            result.push({
+                number: node.number,
+                title: node.title ?? "",
+                headRefOid: node.headRefOid?.trim() ?? "",
+                files: (node.files?.nodes ?? [])
+                    .map(
+                        (file: { path?: string | null } | null) =>
+                            file?.path ?? "",
+                    )
+                    .filter(Boolean),
+            });
+        }
+
+        if (!connection.pageInfo?.hasNextPage) break;
+        const nextCursor: string | null | undefined =
+            connection.pageInfo.endCursor;
+        if (!nextCursor || nextCursor === cursor) break;
+        cursor = nextCursor;
+    }
+    return result;
+}
+
+function buildSubmissionBlobQuery(
+    owner: string,
+    repo: string,
+    items: Array<{ pull: OpenPullWithFiles; path: string }>,
+) {
+    const fields = items
+        .map((item, index) => {
+            const expression = `${item.pull.headRefOid}:${item.path}`;
+            return `    f${index}: object(expression: ${JSON.stringify(expression)}) { ... on Blob { text } }`;
+        })
+        .join("\n");
+    return `query OpenSubmissionBlobs {\n  repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) {\n${fields}\n  }\n}`;
 }
 
 /**
- * 扫描所有开放 PR，返回第一个已引用该资源 ID 的提交（edit 的 original_id
- * 或 csv 行 id 命中即视为冲突）。解析失败的历史/脏数据跳过；无命中返回 null。
- * 供「管理」页进入编辑前预检：已有进行中 PR 时直接引导到审核页继续编辑。
+ * 用 GraphQL 构建「开放 PR → 资源 ID」索引。
  *
- * 扫描是点击后最慢的一步，因此并发读取（4 个 worker）并在每检查完一个 PR 时
- * 通过 onProgress 汇报进度；命中后其余 worker 会在下一个检查点停止。
+ * 相比逐个 PR 拉 files + blob（28 个 PR 约 85 次请求），这里通常只需要
+ * 1 次 PR 列表查询 + 1～2 次批量 blob 查询。
+ */
+async function buildOpenSubmissionIndex(
+    token: string,
+): Promise<OpenSubmissionIndex> {
+    const key = openSubmissionCacheKey();
+    const pulls = await fetchOpenSubmissionPulls(token);
+    const matches = new Map<string, OpenSubmissionMatch>();
+    const pending: Array<{ pull: OpenPullWithFiles; path: string }> = [];
+    const missingPrNumbers = new Set<number>();
+
+    for (const pull of pulls) {
+        if (!pull.headRefOid) {
+            missingPrNumbers.add(pull.number);
+            continue;
+        }
+        for (const path of pull.files) {
+            if (!isSubmissionFilePath(path)) continue;
+            pending.push({ pull, path });
+        }
+    }
+
+    const owner = PUBLISH_CONFIG.targetPrRepoOwner;
+    const repo = PUBLISH_CONFIG.targetPrRepoName;
+    for (
+        let start = 0;
+        start < pending.length;
+        start += OPEN_SUBMISSION_GRAPHQL_BLOB_CHUNK
+    ) {
+        const chunk = pending.slice(
+            start,
+            start + OPEN_SUBMISSION_GRAPHQL_BLOB_CHUNK,
+        );
+        try {
+            const data = await githubGraphql<{
+                repository?: Record<
+                    string,
+                    { text?: string | null } | null
+                > | null;
+            }>(token, buildSubmissionBlobQuery(owner, repo, chunk));
+            const repository = data.repository ?? {};
+            chunk.forEach((item, index) => {
+                const text = repository[`f${index}`]?.text;
+                if (!text) {
+                    missingPrNumbers.add(item.pull.number);
+                    return;
+                }
+                const references = new Map<
+                    string,
+                    OpenSubmissionReference
+                >();
+                collectSubmissionReferences(
+                    references,
+                    item.pull,
+                    item.path,
+                    text,
+                );
+                for (const [id, reference] of references) {
+                    if (!matches.has(id)) matches.set(id, reference.match);
+                }
+            });
+        } catch (error) {
+            log.warn(
+                "publish/edit-entry",
+                "批量读取提交明细失败，改为 REST 兜底",
+                {
+                    data: {
+                        error: (error as Error)?.message ?? String(error),
+                        files: chunk.length,
+                    },
+                },
+            );
+            for (const item of chunk) {
+                missingPrNumbers.add(item.pull.number);
+            }
+        }
+    }
+
+    // GraphQL 读不到的 PR 走原有 REST 链路；通常只有极少数历史/异常 PR。
+    const fallbackPulls = pulls.filter((pull) =>
+        missingPrNumbers.has(pull.number),
+    );
+    let next = 0;
+    const worker = async () => {
+        while (next < fallbackPulls.length) {
+            const index = next;
+            next += 1;
+            const pull = fallbackPulls[index];
+            if (!pull) continue;
+            try {
+                const references = await pullResourceReferences(token, pull);
+                for (const reference of references) {
+                    const id = reference.resourceId.trim().toLowerCase();
+                    if (!matches.has(id)) matches.set(id, reference.match);
+                }
+            } catch (error) {
+                log.warn(
+                    "publish/edit-entry",
+                    `读取开放 PR #${pull.number} 的提交明细失败，已跳过`,
+                    {
+                        data: {
+                            error: (error as Error)?.message ?? String(error),
+                        },
+                    },
+                );
+            }
+        }
+    };
+    await Promise.all(
+        Array.from(
+            {
+                length: Math.min(
+                    OPEN_SUBMISSION_LOOKUP_CONCURRENCY,
+                    fallbackPulls.length,
+                ),
+            },
+            () => worker(),
+        ),
+    );
+
+    return { key, fetchedAt: Date.now(), matches };
+}
+
+async function ensureOpenSubmissionIndex(
+    token: string,
+): Promise<OpenSubmissionIndex> {
+    if (Date.now() < openSubmissionGraphqlDisabledUntil) {
+        throw new Error("GitHub GraphQL 暂不可用，使用 REST 兜底。");
+    }
+    const key = openSubmissionCacheKey();
+    const cached = openSubmissionIndex;
+    if (
+        cached &&
+        cached.key === key &&
+        Date.now() - cached.fetchedAt < OPEN_SUBMISSION_INDEX_TTL_MS
+    ) {
+        return cached;
+    }
+    const pending = openSubmissionIndexInFlight;
+    if (pending?.key === key) return pending.promise;
+
+    const promise = buildOpenSubmissionIndex(token);
+    openSubmissionIndexInFlight = { key, promise };
+    try {
+        const index = await promise;
+        openSubmissionIndex = index;
+        return index;
+    } finally {
+        if (openSubmissionIndexInFlight?.promise === promise) {
+            openSubmissionIndexInFlight = null;
+        }
+    }
+}
+
+/** 清空开放 PR 预检缓存；创建/更新 PR 后调用，避免命中旧结果。 */
+export function invalidateOpenSubmissionCache() {
+    openSubmissionIndex = null;
+    openSubmissionIndexInFlight = null;
+    openSubmissionLookupCache.clear();
+}
+
+/**
+ * 后台预取「开放 PR → 资源 ID」索引。
+ *
+ * 管理页列表加载完成后调用；用户点击编辑时通常已经命中，不再触发任何扫描。
+ */
+export async function prefetchOpenSubmissionIndex(
+    token?: string,
+): Promise<void> {
+    const authToken = token ?? loadAccountState().github?.token;
+    if (!authToken) return;
+    const startedAt = performance.now();
+    try {
+        const index = await ensureOpenSubmissionIndex(authToken);
+        log.info("publish/edit-entry", "开放 PR 预检索引已就绪", {
+            data: {
+                matchedResources: index.matches.size,
+                durationMs: Math.round(performance.now() - startedAt),
+            },
+        });
+    } catch (error) {
+        openSubmissionGraphqlDisabledUntil =
+            Date.now() + OPEN_SUBMISSION_GRAPHQL_FAILURE_COOLDOWN_MS;
+        log.warn("publish/edit-entry", "开放 PR 预检索引构建失败", {
+            data: { error: (error as Error)?.message ?? String(error) },
+        });
+    }
+}
+
+/**
+ * 查找引用该资源 ID 的开放提交。优先使用 GraphQL 批量索引（2～3 次请求），
+ * GraphQL 不可用时回退原有 4 并发 REST 扫描。
+ *
+ * 返回结果同时用于「管理」页进入编辑前的预检：已有进行中 PR 时直接引导到
+ * 审核页继续编辑。解析失败的历史/脏数据跳过；无命中返回 null。
  */
 export async function findOpenSubmissionForResourceId(
     token: string,
     resourceId: string,
     onProgress?: (progress: OpenSubmissionLookupProgress) => void,
 ): Promise<OpenSubmissionMatch | null> {
+    const target = resourceId.trim().toLowerCase();
+    if (!target) return null;
+    const key = openSubmissionCacheKey();
+    const lookupKey = `${key}|${target}`;
+    const now = Date.now();
+
+    const cachedLookup = openSubmissionLookupCache.get(lookupKey);
+    if (
+        cachedLookup &&
+        now - cachedLookup.fetchedAt < OPEN_SUBMISSION_LOOKUP_TTL_MS
+    ) {
+        return cachedLookup.value;
+    }
+
+    if (
+        openSubmissionIndex?.key === key &&
+        now - openSubmissionIndex.fetchedAt < OPEN_SUBMISSION_INDEX_TTL_MS
+    ) {
+        const value = openSubmissionIndex.matches.get(target) ?? null;
+        openSubmissionLookupCache.set(lookupKey, { fetchedAt: now, value });
+        return value;
+    }
+
+    const startedAt = performance.now();
+    try {
+        const index = await ensureOpenSubmissionIndex(token);
+        const value = index.matches.get(target) ?? null;
+        openSubmissionLookupCache.set(lookupKey, {
+            fetchedAt: Date.now(),
+            value,
+        });
+        log.info("publish/edit-entry", "GraphQL 开放 PR 预检完成", {
+            data: {
+                resourceId,
+                durationMs: Math.round(performance.now() - startedAt),
+                matched: Boolean(value),
+                matchedResources: index.matches.size,
+            },
+        });
+        return value;
+    } catch (error) {
+        openSubmissionGraphqlDisabledUntil =
+            Date.now() + OPEN_SUBMISSION_GRAPHQL_FAILURE_COOLDOWN_MS;
+        log.warn(
+            "publish/edit-entry",
+            "GraphQL 预检失败，回退 REST 扫描",
+            {
+                data: { error: (error as Error)?.message ?? String(error) },
+            },
+        );
+    }
+
     const pulls = await listOpenPulls(token);
     const total = pulls.length;
     onProgress?.({ done: 0, total });
-    if (total === 0) return null;
+    if (total === 0) {
+        openSubmissionLookupCache.set(lookupKey, {
+            fetchedAt: Date.now(),
+            value: null,
+        });
+        return null;
+    }
 
     let next = 0;
     let done = 0;
@@ -282,7 +747,7 @@ export async function findOpenSubmissionForResourceId(
             const match = await pullReferencesResource(
                 token,
                 pulls[index],
-                resourceId,
+                target,
             );
             done += 1;
             onProgress?.({ done, total });
@@ -299,6 +764,18 @@ export async function findOpenSubmissionForResourceId(
             () => worker(),
         ),
     );
+    openSubmissionLookupCache.set(lookupKey, {
+        fetchedAt: Date.now(),
+        value: found,
+    });
+    log.info("publish/edit-entry", "REST 开放 PR 预检完成", {
+        data: {
+            resourceId,
+            durationMs: Math.round(performance.now() - startedAt),
+            matched: Boolean(found),
+            pulls: total,
+        },
+    });
     return found;
 }
 
@@ -631,7 +1108,7 @@ export async function createSubmissionPullRequest(params: {
     title: string;
     body?: string;
 }) {
-    return createPullRequest({
+    const pr = await createPullRequest({
         token: params.token,
         baseOwner: PUBLISH_CONFIG.targetPrRepoOwner,
         baseRepo: PUBLISH_CONFIG.targetPrRepoName,
@@ -642,6 +1119,9 @@ export async function createSubmissionPullRequest(params: {
         title: params.title,
         body: params.body,
     });
+    // 新 PR 已进入开放列表，旧预检索引不再可信。
+    invalidateOpenSubmissionCache();
+    return pr;
 }
 
 export async function updateSubmissionEntryOnBranch(params: {

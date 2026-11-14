@@ -29,7 +29,11 @@ import {
   type ResourceCatalogContext,
   type ResourceEditContext,
 } from "~/logic/publish/resources";
-import { findOpenSubmissionForResourceId } from "~/logic/publish/staging-submission";
+import {
+  findOpenSubmissionForResourceId,
+  prefetchOpenSubmissionIndex,
+} from "~/logic/publish/staging-submission";
+import { log } from "~/logic/logging";
 import { useEffect, useState } from "react";
 import { formatResourceType } from "~/logic/publish/resource-type";
 
@@ -65,7 +69,16 @@ export default function ResourceManage() {
     };
   }, []);
 
+  // 列表就绪后在后台预取开放 PR 索引，点击编辑时通常可直接命中。
+  useEffect(() => {
+    if (loading || error) return;
+    const token = loadAccountState().github?.token;
+    if (!token) return;
+    void prefetchOpenSubmissionIndex(token);
+  }, [loading, error]);
+
   const handleSelect = async (catalog: ResourceCatalogContext) => {
+    const startedAt = performance.now();
     setSelectError("");
     if (isLegacyItemId(catalog.entry.id)) {
       setSelectError("旧版资源（LegacyItem）暂不支持在控制台编辑。");
@@ -81,10 +94,13 @@ export default function ResourceManage() {
     try {
       const token = loadAccountState().github?.token;
       if (token) {
+        const scanStartedAt = performance.now();
+        let scannedPulls = 0;
         const open = await findOpenSubmissionForResourceId(
           token,
           catalog.entry.id,
           ({ done, total }) => {
+            scannedPulls = total;
             if (total > 0) {
               setSelectProgress(
                 `正在检查进行中的提交（${done}/${total}）…`,
@@ -92,6 +108,15 @@ export default function ResourceManage() {
             }
           },
         );
+        log.info("publish/edit-entry", "开放 PR 预检完成", {
+          data: {
+            resourceId: catalog.entry.id,
+            durationMs: Math.round(performance.now() - scanStartedAt),
+            scannedPulls,
+            matched: Boolean(open),
+            prNumber: open?.prNumber ?? null,
+          },
+        });
         if (open) {
           if (open.mode === "delete") {
             toast.warning(
