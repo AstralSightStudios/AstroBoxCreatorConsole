@@ -3980,6 +3980,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 icon={icon}
                 iconUploading={iconUploading}
                 cover={cover}
+                paidType={effectivePaidType}
                 onPreviewUpload={handlePreviewUpload}
                 onRemovePreview={handleRemovePreview}
                 onReorderPreview={handleReorderPreview}

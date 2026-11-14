@@ -1,0 +1,109 @@
+/*
+ * 资源封面右上角付费标签。
+ * 形状、模糊背景与文字排版全部对齐 AstroBox 的
+ * web/src/components/reslist/rescard.module.css 中 .resourcePaidLabel。
+ *
+ * AstroBox 的封面基准宽度是 176px（190px 卡片减左右各 7px 内边距），
+ * 标签尺寸是相对封面的固定比例。ABCC 的封面预览远大于客户端卡片，
+ * 因此这里用容器查询单位按封面宽度等比缩放，而不是写死 27px。
+ */
+
+@font-face {
+    font-family: "Etira Compact Medium";
+    src: url("./Etira-Compact_Medium.woff2") format("woff2");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+.host {
+    position: absolute;
+    z-index: 10;
+    inset: 0;
+    container-type: inline-size;
+    pointer-events: none;
+}
+
+.tag {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    box-sizing: border-box;
+    max-width: 100%;
+    /* 27 / 176 */
+    height: 27px;
+    height: 15.3409cqw;
+    align-items: center;
+    justify-content: flex-end;
+    /* 4 / 176 */
+    padding-inline-end: 4px;
+    padding-inline-end: 2.2727cqw;
+    --paid-label-bg: color-mix(
+        in srgb,
+        var(--color-bg) 60%,
+        var(--text-color) 7%
+    );
+    --paid-label-filter: blur(10px) saturate(1.5);
+    --paid-label-mask-image:
+        url("./paid-label-left.svg"),
+        url("./paid-label-center.svg"),
+        url("./paid-label-right.svg");
+    --paid-label-mask-position:
+        left top,
+        right top,
+        right top;
+    --paid-label-mask-repeat: no-repeat;
+    /* 42x40 / 32x40 / 20x40，其中中间宽度 = 100% - 20 */
+    --paid-label-mask-size:
+        42px 40px,
+        calc(100% - 20px) 40px,
+        20px 40px;
+    --paid-label-mask-size:
+        23.8636cqw 22.7273cqw,
+        calc(100% - 11.3636cqw) 22.7273cqw,
+        11.3636cqw 22.7273cqw;
+    color: color-mix(in srgb, var(--text-color) 75%, transparent);
+    /* 14 / 176 */
+    font-size: 14px;
+    font-size: 7.9545cqw;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.tag::before {
+    position: absolute;
+    z-index: 0;
+    top: 0;
+    right: 0;
+    /* -32 / 176 */
+    left: -32px;
+    left: -18.1818cqw;
+    /* 40 / 176 */
+    height: 40px;
+    height: 22.7273cqw;
+    background: var(--paid-label-bg);
+    content: "";
+    backdrop-filter: var(--paid-label-filter);
+    -webkit-backdrop-filter: var(--paid-label-filter);
+    mask-image: var(--paid-label-mask-image);
+    mask-position: var(--paid-label-mask-position);
+    mask-repeat: var(--paid-label-mask-repeat);
+    mask-size: var(--paid-label-mask-size);
+    mask-mode: alpha;
+    -webkit-mask-image: var(--paid-label-mask-image);
+    -webkit-mask-position: var(--paid-label-mask-position);
+    -webkit-mask-repeat: var(--paid-label-mask-repeat);
+    -webkit-mask-size: var(--paid-label-mask-size);
+}
+
+.text {
+    position: relative;
+    z-index: 1;
+    white-space: nowrap;
+    /* 0 7 / 0 -10 */
+    margin: 0 7px 0 -10px;
+    margin: 0 3.9773cqw 0 -5.6818cqw;
+    font-family: "Etira Compact Medium", MiSans, sans-serif;
+}

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { inputClass } from "~/components/admin/AdminPage";
 import NavIconButton from "~/components/nav-icon-button";
+import PaidCoverTag from "~/components/resource/PaidCoverTag";
 import Page from "~/layout/page";
 import {
   adminUserDisplayName,
@@ -347,6 +348,7 @@ export default function ManageResourceDetailPage() {
                   alt={entry.name}
                   className="max-h-[40vh] w-full object-contain"
                 />
+                <PaidCoverTag paidType={entry.paid_type} />
               </button>
             </section>
           )}

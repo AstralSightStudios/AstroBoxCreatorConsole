@@ -2,6 +2,7 @@ import { ArrowClockwiseIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import PaidCoverTag from "~/components/resource/PaidCoverTag";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
 import { rawGithubUrlToBlobUrl } from "~/logic/github-raw";
 import { scrollAndFlash } from "~/logic/publish/scroll-highlight";
@@ -496,6 +497,7 @@ export function ResourceImagesSection({
                     className="relative mt-2 block w-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-black/40 transition hover:border-white/30"
                   >
                     <DimensionTrackedImage rawUrl={resource.coverUrl} alt="Cover 预览" className="max-h-[var(--ui-viewport-height-30pct)] w-full object-contain" onLoad={handleCoverLoad} enabled={enabled} />
+                    <PaidCoverTag paidType={resource.entry.paid_type} />
                   </button>
                 </div>
               )}

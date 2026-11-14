@@ -17,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
+import PaidCoverTag from "~/components/resource/PaidCoverTag";
 import { Dialog, Spinner } from "~/components/ScaleAwareThemes";
 import { PUBLISH_PREVIEWS_MIN } from "~/logic/publish/pre-publish-checks";
 import { useMediaFileDrop } from "~/logic/publish/use-media-file-drop";
@@ -31,6 +32,8 @@ interface MediaSectionProps {
   icon: UploadItem | null;
   iconUploading?: boolean;
   cover: UploadItem | null;
+  /** 目录里的付费类型；封面预览据此显示与客户端一致的右上角付费标签。 */
+  paidType?: string;
   onPreviewUpload: (files: File[]) => void | Promise<void>;
   onRemovePreview: (id: string) => void;
   onReorderPreview: (fromId: string, toId: string) => void;
@@ -208,6 +211,7 @@ function MediaTile({
   imageClassName,
   fieldKey,
   dropActive,
+  mediaOverlay,
   onPick,
   onRemove,
   onDimensions,
@@ -220,6 +224,8 @@ function MediaTile({
   emptyClassName?: string;
   mediaClassName?: string;
   imageClassName?: string;
+  /** 图片上方与客户端一致的角标（目前只有封面用付费标签）。 */
+  mediaOverlay?: React.ReactNode;
   /** 校验失败时滚动闪烁的锚点，取值见 PublishFieldKey。 */
   fieldKey?: PublishFieldKey;
   dropActive?: boolean;
@@ -271,6 +277,7 @@ function MediaTile({
             onLoad={onDimensions}
             onRetry={onRetry ?? (async () => {})}
           />
+          {mediaOverlay}
         </div>
       ) : (
         <button
@@ -430,6 +437,7 @@ export function MediaSection({
   icon,
   iconUploading,
   cover,
+  paidType,
   onPreviewUpload,
   onRemovePreview,
   onReorderPreview,
@@ -911,6 +919,7 @@ export function MediaSection({
             media={cover}
             emptyClassName="aspect-[3/2]"
             mediaClassName="aspect-[3/2]"
+            mediaOverlay={<PaidCoverTag paidType={paidType} />}
             onPick={() => void pickMediaFiles("cover")}
             onRemove={onRemoveCover}
             onDimensions={(width, height) =>
