@@ -34,6 +34,7 @@ import {
   type IndexV2Entry,
 } from "~/logic/catalog/index-v2";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { TextWithLinkHighlights } from "~/components/TextWithLinkHighlights";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import {
   countLabel,
@@ -365,7 +366,11 @@ export function ManifestPanel({
     <Panel title="资源仓库信息">
       <dl className="flex flex-col gap-2.5">
         <DetailRow label="资源描述">
-          {item.description?.trim() || <span className="text-white/35">--</span>}
+          {item.description?.trim() ? (
+            <TextWithLinkHighlights text={item.description} className="break-all" />
+          ) : (
+            <span className="text-white/35">--</span>
+          )}
         </DetailRow>
         <DetailRow label="作者">
           {authors.length === 0 ? (

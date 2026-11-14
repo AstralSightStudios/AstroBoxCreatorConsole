@@ -30,6 +30,7 @@ import {
   PUBLISH_TAGS_MIN,
   PUBLISH_TAGS_SUGGESTED_MAX,
 } from "~/logic/publish/validation";
+import { textContainsLink } from "~/logic/publish/description-links";
 import type { ResourceType } from "~/logic/publish/resource-type";
 
 function describeItemId(resourceType: ResourceType): FieldHelpItem {
@@ -179,6 +180,10 @@ export function BasicInfoSection({
   const [helpOpen, setHelpOpen] = useState(false);
   const fieldHelp = useMemo(() => buildFieldHelp(resourceType), [resourceType]);
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasDescriptionLink = useMemo(
+    () => textContainsLink(description),
+    [description],
+  );
   useEffect(() => {
     const el = descriptionRef.current;
     if (!el) return;
@@ -358,6 +363,11 @@ export function BasicInfoSection({
           onChange={(e) => onDescriptionChange(e.target.value)}
           radius="large"
         />
+        {hasDescriptionLink && (
+          <span className="text-xs text-amber-200/80">
+            简介中检测到疑似链接。审核自动检查会给出警告，请确认链接是否确有必要。
+          </span>
+        )}
       </Field>
       <Field
         label="标签"

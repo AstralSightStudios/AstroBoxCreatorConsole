@@ -4,6 +4,7 @@ import { useAccountState } from "~/logic/account/store";
 import { getGithubReadToken } from "~/logic/account/github-tokens";
 import { AstroboxLinkIcon } from "~/components/phosphor-icon";
 import { formatResourceType } from "~/logic/publish/resource-type";
+import { TextWithLinkHighlights } from "~/components/TextWithLinkHighlights";
 import {
   useAuthorsProStatuses,
   hasCreatorPro,
@@ -268,7 +269,12 @@ function ResourceDetailView({
             <InfoRow label="资源名称" value={manifestItem?.name || entry.name || "-"} />
             <InfoRow label="资源 ID" value={manifestItem?.id || entry.id || "-"} />
             <InfoRow label="资源类型" value={formatResourceType(manifestItem?.restype || entry.restype)} />
-            <InfoRow label="资源描述" value={manifestItem?.description || "-"} />
+            <InfoRow label="资源描述">
+              <TextWithLinkHighlights
+                text={manifestItem?.description || "-"}
+                className="min-w-0 break-all text-sm font-medium text-white"
+              />
+            </InfoRow>
             <InfoRow label="付费类型" value={formatPaidType(entry.paid_type)} />
             {paidRatioStatus.state === "non-compliant" && (
               <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">

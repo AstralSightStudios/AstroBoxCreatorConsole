@@ -64,6 +64,7 @@ import {
   isSvgContent,
 } from "~/logic/publish/pre-publish-checks";
 import { countIndependentPreviewUrls } from "~/logic/publish/preview-reuse";
+import { findTextLinks } from "~/logic/publish/description-links";
 import {
   extensionForFormat,
   imageExtension,
@@ -1140,6 +1141,24 @@ export async function runResourceRuleChecks(options: {
     detail: manifest
       ? "manifest 解析成功"
       : preview.manifestError || "仓库缺少 manifest_v2.json 或解析失败",
+  });
+
+  // --- check: 资源简介不含链接 ---
+  // 简介只用于介绍资源功能，客户端不会把简介里的链接做成商店页入口；夹带外链
+  // 通常意味着引流、广告或站外下载。这里只给警告，是否要求修改由审核员判断。
+  const descriptionLinks = manifest
+    ? findTextLinks(toNonEmptyString(manifestItem?.description))
+    : [];
+  checks.push({
+    title: "资源简介不含链接",
+    status: !manifest ? "manual" : descriptionLinks.length > 0 ? "warn" : "pass",
+    detail: !manifest
+      ? "manifest 未解析，无法检查简介是否含链接"
+      : descriptionLinks.length > 0
+        ? `简介中检测到 ${descriptionLinks.length} 个疑似链接：${descriptionLinks.join(
+            "、",
+          )}。简介用于介绍资源功能，请确认是否需要移除。`
+        : "简介中未检测到链接",
   });
 
   // --- check: manifest 名称与 CSV 名称一致 ---
