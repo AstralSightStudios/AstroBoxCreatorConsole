@@ -8,6 +8,7 @@ import {
     logoutAccount,
 } from "~/logic/account/store";
 import { notifyAstroboxSessionExpired } from "~/logic/account/session-notice";
+import { nativeReviewAdapter, shouldUseNativeReviewTransport } from "./native-review-request";
 
 // 统一的接口错误：尽量把服务端返回的真实信息透出来，而不是 axios 默认的
 // "Request failed with status code 4xx"。保留 status/response 兼容历史上读
@@ -307,6 +308,7 @@ export async function sendApiRequest<T>(
             method,
             data,
             headers,
+            ...(shouldUseNativeReviewTransport(url) ? { adapter: nativeReviewAdapter } : {}),
             _autoRefresh: token === undefined,
         } as RetryableAxiosRequestConfig);
 
@@ -317,7 +319,9 @@ export async function sendApiRequest<T>(
             const fallback = status
                 ? `请求失败（HTTP ${status}）`
                 : error.message || "请求失败";
-            const message = extractServerMessage(error.response?.data, fallback);
+            const message = status === 413 && url.startsWith("/admin/review/")
+                ? "审核素材请求体过大（HTTP 413），请减少素材后重试"
+                : extractServerMessage(error.response?.data, fallback);
 
             throw new ApiError(message, {
                 status,

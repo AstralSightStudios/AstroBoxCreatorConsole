@@ -5,6 +5,7 @@ use ecb::Encryptor;
 mod afdian;
 mod afdian_notifications;
 mod ai;
+mod astrobox;
 mod buildinfo;
 mod logger;
 mod logs_archive;
@@ -288,9 +289,11 @@ fn set_ui_scale_active(app: tauri::AppHandle, active: bool) -> Result<(), String
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let ai_http_client = ai::AiHttpClient::new().expect("无法初始化 AI 网络客户端");
+    let astrobox_http_client = astrobox::AstroboxHttpClient::new().expect("无法初始化 AstroBox 网络客户端");
     tauri::Builder::default()
         .manage(AppHttpClient(reqwest::Client::new()))
         .manage(ai_http_client)
+        .manage(astrobox_http_client)
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -342,6 +345,7 @@ pub fn run() {
             ai::ai_api_key_delete,
             ai::ai_http_request,
             ai::ai_docs_search,
+            astrobox::astrobox_review_request,
             encrypt_aes_256_ecb,
             app_build_info,
             write_text_file,
