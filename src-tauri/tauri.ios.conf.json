@@ -1,0 +1,12 @@
+{
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": ["astroboxcc"],
+          "appLink": false
+        }
+      ]
+    }
+  }
+}

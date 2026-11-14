@@ -23,12 +23,12 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleURLName</key>
-			<string>moe.astralsight.astroboxcc</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>astroboxcc</string>
 			</array>
+			<key>CFBundleURLName</key>
+			<string>astroboxcc</string>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
