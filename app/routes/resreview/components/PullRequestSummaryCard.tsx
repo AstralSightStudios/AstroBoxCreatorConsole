@@ -6,7 +6,9 @@ import { deriveReviewStatus } from "~/logic/publish/review-status";
 import { PrStatusBadge, StatusBadge } from "./StatusBadges";
 import { formatTime } from "../utils";
 import type { ReviewSource } from "../source";
-import { UserCircle, GithubLogo, PuzzlePiece } from "@phosphor-icons/react";
+import { ChatCenteredText, UserCircle, GithubLogo, PuzzlePiece } from "@phosphor-icons/react";
+import { appendToDraft } from "~/logic/review-assist/guidelines";
+import { PresetPickerDialog } from "./assist/PresetPicker";
 
 interface PullRequestSummaryCardProps {
   source?: ReviewSource;
@@ -64,7 +66,20 @@ export function PullRequestSummaryCard({
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [requestReason, setRequestReason] = useState("");
   const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
+  // 关闭 / 拒绝原因也可以直接选预制回复（「未回复关闭」「质量问题拒绝」这类话每次都一样）
+  const [presetTarget, setPresetTarget] = useState<"close" | "refuse" | null>(null);
   if (!openPull) return null;
+  const presetButton = (target: "close" | "refuse") =>
+    isPlugin ? null : (
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-xs text-sky-200 hover:text-sky-100"
+        onClick={() => setPresetTarget(target)}
+      >
+        <ChatCenteredText size={13} weight="duotone" />
+        预制回复
+      </button>
+    );
   const badgeState: "open" | "closed" | "merged" =
     openPull.state === "closed"
       ? openPull.merged_at
@@ -253,9 +268,10 @@ export function PullRequestSummaryCard({
               ? "关闭后会以普通评论记录关闭原因，不会生成 ABCC 标签。"
               : "关闭后将以 CLOSE 标签评论记录关闭原因，创作者可在资源审核列表重新打开。"}
           </Dialog.Description>
-          <label className="mt-3 block text-sm text-white/70">
-            关闭原因（可选）
-          </label>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <label className="block text-sm text-white/70">关闭原因（可选）</label>
+            {presetButton("close")}
+          </div>
           <TextArea
             className="mt-1.5 min-h-[100px] resize-y border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
             placeholder="例如：该提交不符合资源规范，请按审核意见修改后重新打开。"
@@ -342,9 +358,10 @@ export function PullRequestSummaryCard({
           <Dialog.Description size="2" className="text-white/60">
             拒绝后将关闭 PR 并记录 REFUSE 标签，该 PR 不再显示在审核列表中，创作者也无法从工具内重新打开。
           </Dialog.Description>
-          <label className="mt-3 block text-sm text-white/70">
-            拒绝原因（可选）
-          </label>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <label className="block text-sm text-white/70">拒绝原因（可选）</label>
+            {presetButton("refuse")}
+          </div>
           <TextArea
             className="mt-1.5 min-h-[100px] resize-y border border-white/10 bg-black/20 text-sm text-white/80 outline-none placeholder:text-white/30"
             placeholder="例如：该资源不符合社区收录规范，本次申请不予通过。"
@@ -373,6 +390,18 @@ export function PullRequestSummaryCard({
           </div>
         </Dialog.Content>
       </Dialog.Root>
+
+      <PresetPickerDialog
+        open={presetTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setPresetTarget(null);
+        }}
+        preferred={presetTarget ? [presetTarget] : undefined}
+        onInsert={(text) => {
+          if (presetTarget === "close") setCloseReason((current) => appendToDraft(current, text));
+          if (presetTarget === "refuse") setRefuseReason((current) => appendToDraft(current, text));
+        }}
+      />
 
       <Dialog.Root
         open={rollbackDialogOpen}

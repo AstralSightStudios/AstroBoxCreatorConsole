@@ -85,6 +85,35 @@ export function writeRuleCheckCache(
   }
 }
 
+/**
+ * 不看账号，只按「同一个资源、同一次提交」找最近一次的检查结果。
+ *
+ * 缓存键里带着读取账号的散列（换账号可能改变仓库可见范围），而读取账号会在多个之间轮换，
+ * 面板之外的调用方（AI 审核草稿要附带自动检查结论）拿不到面板当时用的是哪一个。
+ * 它们只是引用结论，用最近一次的结果即可。
+ */
+export function findRuleCheckResult(
+  resource: PrResourcePreview,
+  prFiles: GithubPullFile[],
+  now: number = Date.now(),
+): ResourceRuleCheckResult | undefined {
+  const reference = buildRuleCheckCacheKey(resource, prFiles, "").split("\n");
+  // 键的各段见 buildRuleCheckCacheKey：5、6 两段是账号散列，其余必须一致
+  const matches = (key: string) => {
+    const parts = key.split("\n");
+    return (
+      parts.length === reference.length &&
+      parts.every((part, index) => index === 5 || index === 6 || part === reference[index])
+    );
+  };
+  let latest: CacheEntry | undefined;
+  for (const [key, entry] of cache) {
+    if (now - entry.at >= CACHE_TTL_MS || !matches(key)) continue;
+    if (!latest || entry.at > latest.at) latest = entry;
+  }
+  return latest?.result;
+}
+
 /** 测试与显式清空场景使用；日常「重新检查」只覆盖当前资源的条目。 */
 export function clearRuleCheckCache(): void {
   cache.clear();

@@ -15,8 +15,10 @@ import {
 } from "@phosphor-icons/react";
 import type { GithubIssueComment } from "~/api/github/pr-review";
 import { useUiScaleViewport } from "~/components/UiScaleContext";
+import { appendToDraft } from "~/logic/review-assist/guidelines";
 import { renderCommentMarkdownHtml, buildReplyBody, parseReviewCommentBody } from "../utils/comment";
 import { makeNeedFixId } from "../utils";
+import { ReviewAssistBar, type ReviewAssistContext } from "./assist/ReviewAssistBar";
 
 export interface ReplyTarget {
   comment: GithubIssueComment;
@@ -49,6 +51,8 @@ export interface CommentComposerProps {
   onNoticeDraftChange?: (draft: NoticeDraft) => void;
   /** 插件审核：普通评论模式，不生成 ABCC 标签、不展示通知区域。 */
   plain?: boolean;
+  /** 资源审核的辅助入口（预制回复 / 引用准则 / AI 草稿）；不传则不显示。 */
+  assist?: ReviewAssistContext | null;
 }
 
 function scrollToComment(commentId: number) {
@@ -86,6 +90,7 @@ export function CommentComposer({
   noticeDraft = null,
   onNoticeDraftChange,
   plain = false,
+  assist = null,
 }: CommentComposerProps) {
   const { logicalHeight } = useUiScaleViewport();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -175,6 +180,23 @@ export function CommentComposer({
     if (checked) {
       tagIdRef.current = makeNeedFixId();
     }
+  };
+
+  // 预制回复 / 准则引用 / AI 草稿：接到已有文字后面，并按回复的性质切换 NEEDFIX 标签。
+  const handleAssistInsert = (text: string, options?: { needFix?: boolean }) => {
+    onChange(appendToDraft(value, text));
+    setTab("write");
+    if (!plain && options?.needFix !== undefined && !editingTarget) {
+      handleTagToggle(options.needFix);
+    }
+    requestAnimationFrame(() => {
+      const target = textareaRef.current;
+      if (!target) return;
+      target.focus();
+      // 光标落在末尾，紧接着补充针对这个资源的说明
+      target.setSelectionRange(target.value.length, target.value.length);
+      target.scrollTop = target.scrollHeight;
+    });
   };
 
   const handleSubmit = () => {
@@ -283,6 +305,10 @@ export function CommentComposer({
             </SegmentedControl.Item>
           </SegmentedControl.Root>
         </div>
+
+        {!plain && assist ? (
+          <ReviewAssistBar context={assist} draft={value} onInsert={handleAssistInsert} />
+        ) : null}
 
         {tab === "write" ? (
           <>

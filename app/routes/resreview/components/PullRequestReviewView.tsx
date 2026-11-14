@@ -1,5 +1,5 @@
 import { Tabs } from "@radix-ui/themes";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Chats,
   ClockCounterClockwise,
@@ -133,6 +133,21 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
   }, [handleTabChange]);
 
   const clearImageHighlight = useCallback(() => setImageHighlight(null), []);
+
+  // 提交回查看的是已经合入的历史提交，不需要再起草审核意见
+  const assistContext = useMemo(
+    () =>
+      openPull && !auditMode
+        ? {
+            pull: openPull,
+            resources: resourcePreviews,
+            prFiles: files,
+            comments: openComments,
+            focusResourceId,
+          }
+        : null,
+    [openPull, auditMode, resourcePreviews, files, openComments, focusResourceId],
+  );
 
   const handleFileComment = useCallback((filePath: string) => {
     onGeneralCommentChange(`> 文件: \`${filePath}\`\n\n`);
@@ -295,6 +310,7 @@ export function PullRequestReviewView(props: PullRequestReviewViewProps) {
                   onCancelEdit={onCancelEdit}
                   noticeDraft={noticeDraft}
                   onNoticeDraftChange={onNoticeDraftChange}
+                  assist={assistContext}
                 />
                 {loadingDetail ? (
                   <LoadingIndicator className="py-6" />

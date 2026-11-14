@@ -4,6 +4,7 @@ import type { CatalogEntry } from "../../app/logic/publish/catalog";
 import {
   buildRuleCheckCacheKey,
   clearRuleCheckCache,
+  findRuleCheckResult,
   readRuleCheckCache,
   writeRuleCheckCache,
 } from "../../app/routes/resreview/rule-check-cache";
@@ -114,5 +115,50 @@ describe("规则检查结果缓存", () => {
     }
     expect(readRuleCheckCache("key-0", 100)).toBeUndefined();
     expect(readRuleCheckCache("key-24", 100)).toEqual(checkResult());
+  });
+});
+
+describe("findRuleCheckResult（不看账号，按同一次提交找结果）", () => {
+  const marked = (title: string): ResourceRuleCheckResult => ({
+    checks: [{ title, status: "pass", detail: "" }],
+    packageChecks: [],
+    imageSizes: [],
+  });
+
+  test("换了读取账号也能找到同一次提交的结果", () => {
+    const now = 1_000_000;
+    writeRuleCheckCache(
+      buildRuleCheckCacheKey(preview(), pullFiles(), "reader-token-a", "astro-a"),
+      marked("a"),
+      now,
+    );
+    // AI 草稿拿不到面板当时用的是哪个读取账号
+    expect(findRuleCheckResult(preview(), pullFiles(), now + 1000)).toEqual(marked("a"));
+  });
+
+  test("同一次提交有多份结果时取最近的", () => {
+    const now = 1_000_000;
+    writeRuleCheckCache(buildRuleCheckCacheKey(preview(), pullFiles(), "token-a"), marked("old"), now);
+    writeRuleCheckCache(buildRuleCheckCacheKey(preview(), pullFiles(), "token-b"), marked("new"), now + 5000);
+    expect(findRuleCheckResult(preview(), pullFiles(), now + 6000)).toEqual(marked("new"));
+  });
+
+  test("别的资源、别的 commit、别的 PR 文件都不算", () => {
+    const now = 1_000_000;
+    writeRuleCheckCache(buildRuleCheckCacheKey(preview(), pullFiles(), "token-a"), marked("a"), now);
+    expect(
+      findRuleCheckResult(preview({ entry: catalogEntry({ id: "res-2" }) }), pullFiles(), now),
+    ).toBeUndefined();
+    expect(
+      findRuleCheckResult(preview({ entry: catalogEntry({ repo_commit_hash: "def456" }) }), pullFiles(), now),
+    ).toBeUndefined();
+    expect(findRuleCheckResult(preview(), pullFiles("sha-2"), now)).toBeUndefined();
+    expect(findRuleCheckResult(preview({ originalId: "res-0" }), pullFiles(), now)).toBeUndefined();
+  });
+
+  test("过期的结果不返回", () => {
+    const now = 1_000_000;
+    writeRuleCheckCache(buildRuleCheckCacheKey(preview(), pullFiles(), "token-a"), marked("a"), now);
+    expect(findRuleCheckResult(preview(), pullFiles(), now + 10 * 60 * 1000)).toBeUndefined();
   });
 });
