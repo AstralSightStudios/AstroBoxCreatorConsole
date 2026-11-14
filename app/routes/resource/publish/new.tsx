@@ -182,6 +182,14 @@ import {
   summarizeIdMigrations,
 } from "~/logic/publish/id-migration";
 import {
+  NSFW_TAG,
+  hasNsfwTag,
+  readNsfwReason,
+  setNsfwTag,
+  visibleTags,
+  writeNsfwReason,
+} from "~/logic/publish/nsfw";
+import {
   DEFAULT_VERSION_RESET_OPTIONS,
   canOfferVersionReset,
   hasVersionResetSelection,
@@ -817,6 +825,10 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
   >(undefined);
   const effectivePaidType = paidType;
   const tags = useMemo(() => parseTagText(tagsInput), [tagsInput]);
+  // 敏感内容标记和普通标签一起存在目录行的 tags 里，但它不是给人看的标签：
+  // 界面上用开关表示，标签列表里不显示。
+  const displayTags = useMemo(() => visibleTags(tags), [tags]);
+  const nsfwEnabled = useMemo(() => hasNsfwTag(tags), [tags]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceError, setDeviceError] = useState("");
   const [isDeviceLoading, setIsDeviceLoading] = useState(true);
@@ -1154,6 +1166,7 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     () => summarizeIdMigrations(idMigrationRecords),
     [idMigrationRecords],
   );
+  const nsfwReason = useMemo(() => readNsfwReason(extRaw), [extRaw]);
   const missingEditContext = isEditMode && !editContext;
 
   useEffect(() => {
@@ -2322,9 +2335,26 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     }
   }, [resourceType, idGenerating, existingCatalogIds]);
 
+  const handleNsfwChange = (enabled: boolean) => {
+    log.info("form/nsfw", `敏感内容: ${enabled ? "开启" : "关闭"}`);
+    setTagsInput((prev) => setNsfwTag(parseTagText(prev), enabled).join(";"));
+    // 关掉时把 manifest 里的原因一并删掉：标记和原因必须成对
+    setExtRaw((prev) => writeNsfwReason(prev, enabled ? readNsfwReason(prev) : null));
+  };
+
+  const handleNsfwReasonChange = (reason: string) => {
+    setExtRaw((prev) => writeNsfwReason(prev, reason));
+  };
+
   const addTag = () => {
     const nextTag = tagInput.trim();
     if (!nextTag) return;
+    // 手动把系统标记当标签输入：等同于打开「敏感内容」开关
+    if (nextTag === NSFW_TAG) {
+      handleNsfwChange(true);
+      setTagInput("");
+      return;
+    }
     if (tags.some((tag) => tag.toLowerCase() === nextTag.toLowerCase())) {
       setTagInput("");
       return;
@@ -2332,18 +2362,21 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
     log.info("form/tags", `添加标签: ${nextTag}`);
     setTagsInput((prev) => {
       const existing = parseTagText(prev);
-      return [...existing, nextTag].join(";");
+      // 系统标记始终留在最后，普通标签插在它前面
+      return setNsfwTag([...visibleTags(existing), nextTag], hasNsfwTag(existing)).join(";");
     });
     setTagInput("");
   };
 
+  // index 是界面上（不含系统标记）的标签序号
   const removeTag = (index: number) => {
-    const removed = tags[index];
+    const removed = displayTags[index];
     if (removed) log.info("form/tags", `移除标签: ${removed}`);
     setTagsInput((prev) => {
-      const next = parseTagText(prev);
+      const existing = parseTagText(prev);
+      const next = visibleTags(existing);
       next.splice(index, 1);
-      return next.join(";");
+      return setNsfwTag(next, hasNsfwTag(existing)).join(";");
     });
   };
 
@@ -3967,8 +4000,12 @@ function ResourceComposerPage({ mode = "new" }: { mode?: "new" | "edit" }) {
                 itemId={itemId}
                 itemName={itemName}
                 description={description}
-                tags={tags}
+                tags={displayTags}
                 tagInput={tagInput}
+                nsfwEnabled={nsfwEnabled}
+                nsfwReason={nsfwReason}
+                onNsfwChange={handleNsfwChange}
+                onNsfwReasonChange={handleNsfwReasonChange}
                 paidType={effectivePaidType}
                 resourceType={resourceType}
                 idError={idError}

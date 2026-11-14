@@ -1,3 +1,4 @@
+import { inspectNsfw, visibleTags } from "./nsfw";
 import {
   BANNED_IMAGE_NOTICE,
   checkAnimatedPreview,
@@ -74,6 +75,7 @@ export type PublishFieldKey =
   | "trialDownloads"
   | "creatorFeatures"
   | "forceUpdate"
+  | "nsfw"
   | "pluginInstall"
   | "canopusManager"
   | "links";
@@ -246,7 +248,10 @@ export function validatePushQuality(
     });
   }
   // 调用方可能传入未清洗的原始分段，这里按有效标签计数，避免空串骗过下限。
-  const effectiveCount = tags.map((tag) => tag.trim()).filter(Boolean).length;
+  // 敏感内容标记是给程序看的系统标记，不是参与搜索与推流的标签，不计数。
+  const effectiveCount = visibleTags(tags)
+    .map((tag) => tag.trim())
+    .filter(Boolean).length;
   if (effectiveCount < PUBLISH_TAGS_MIN) {
     issues.push({
       field: "tags",
@@ -504,6 +509,10 @@ export function validatePublish(
   // 绑定的版本与下载项对不上只是警告（老资源发新版后的残留），不在此拦截。
   for (const problem of inspectForceUpdate(input.ext, input.downloads).problems) {
     push("forceUpdate", `资源强制更新设置有误：${problem}。`);
+  }
+  // 敏感内容的标记（目录标签）与原因（manifest）必须成对，缺一边客户端都处理不对。
+  for (const problem of inspectNsfw(input.tags, input.ext).problems) {
+    push("nsfw", problem);
   }
   // 插件接管下载/安装的声明写法有误时客户端会整体忽略它（用户点按钮走常规下载），
   // 作者以为已经接管了其实没有，不如在这里拦住。

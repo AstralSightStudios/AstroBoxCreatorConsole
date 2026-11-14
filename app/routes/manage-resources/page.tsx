@@ -1,3 +1,4 @@
+import { visibleTags } from "~/logic/publish/nsfw";
 import { GithubLogoIcon, PackageIcon } from "@phosphor-icons/react";
 import { Callout, Spinner, TextField } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
@@ -207,9 +208,9 @@ function ResourceCard({
         <p className="mt-1 truncate font-mono text-xs text-white/45">
           {entry.id}
         </p>
-        {entry.tags.filter(Boolean).length > 0 && (
+        {visibleTags(entry.tags).filter(Boolean).length > 0 && (
           <p className="mt-1 truncate text-xs text-white/40">
-            标签：{entry.tags.filter(Boolean).join(" · ")}
+            标签：{visibleTags(entry.tags).filter(Boolean).join(" · ")}
           </p>
         )}
       </div>

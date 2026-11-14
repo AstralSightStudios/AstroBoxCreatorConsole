@@ -74,6 +74,29 @@ describe("publish validation", () => {
     expect(validatePushQuality("简介", ["a", " ", "b", ""])).toHaveLength(1);
   });
 
+  test("敏感内容标记不算标签", () => {
+    // 2 个真正的标签 + 系统标记：仍然不够 3 个
+    expect(validatePushQuality("简介", ["a", "b", "<__NSFW__>"])).toHaveLength(1);
+    expect(validatePushQuality("简介", ["a", "b", "c", "<__NSFW__>"])).toEqual([]);
+  });
+
+  test("敏感内容的标记与原因必须成对", () => {
+    const nsfwIssues = (tags: string[], ext: unknown) =>
+      validatePublish({ ...validInput, tags, ext }).issues.filter((issue) => issue.field === "nsfw");
+
+    expect(nsfwIssues(["a", "b", "c"], {})).toEqual([]);
+    expect(nsfwIssues(["a", "b", "c", "<__NSFW__>"], { nsfw: { reason: "含血腥画面" } })).toEqual([]);
+
+    const noReason = nsfwIssues(["a", "b", "c", "<__NSFW__>"], {});
+    expect(noReason).toHaveLength(1);
+    expect(noReason[0].message).toContain("没有填写原因");
+    expect(nsfwIssues(["a", "b", "c", "<__NSFW__>"], { nsfw: { reason: "   " } })).toHaveLength(1);
+
+    const noTag = nsfwIssues(["a", "b", "c"], { nsfw: { reason: "含血腥画面" } });
+    expect(noTag).toHaveLength(1);
+    expect(noTag[0].message).toContain("客户端不会模糊封面");
+  });
+
   test("第一个作者必须有用户名且关联 AstroBox 账号", () => {
     const emptyNameIssues = validatePublish({
       ...validInput,

@@ -12,6 +12,8 @@ import {
   isVipActive,
   type AuthorProStatus,
 } from "../owner-pro";
+import { EyeSlash } from "@phosphor-icons/react";
+import { inspectNsfw, visibleTags } from "~/logic/publish/nsfw";
 import { pickRatioAuthorName, usePaidRatioStatus } from "../utils/paid-ratio";
 import type { PrResourcePreview } from "../types";
 import { ResourceDownloadsSection } from "./ResourceDownloadsSection";
@@ -183,6 +185,17 @@ function ResourceDetailView({
   const manifest = resource.manifest;
   const manifestItem = manifest?.item;
   const entry = resource.entry;
+  // 目录标签里的敏感内容标记是系统标记，不当普通标签展示，单独显示成一块
+  const allTags = useMemo(
+    () =>
+      (entry.tags || "")
+        .split(";")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    [entry.tags],
+  );
+  const tagList = useMemo(() => visibleTags(allTags), [allTags]);
+  const nsfw = useMemo(() => inspectNsfw(allTags, manifest?.ext), [allTags, manifest?.ext]);
 
   const links = useMemo(() => {
     const raw = manifest?.links;
@@ -315,9 +328,9 @@ function ResourceDetailView({
             {/* Tags */}
             <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
               <span className="text-xs text-white/55">标签</span>
-              {entry.tags ? (
+              {tagList.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {entry.tags.split(";").map((t) => t.trim()).filter(Boolean).map((tag, i) => (
+                  {tagList.map((tag, i) => (
                     <span
                       key={i}
                       className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/80"
@@ -330,6 +343,22 @@ function ResourceDetailView({
                 <span className="text-xs text-white/45">未设置标签</span>
               )}
             </div>
+
+            {/* 敏感内容声明：目录标签里的系统标记 + manifest 里的原因 */}
+            {(nsfw.tagged || nsfw.reason) && (
+              <div className="flex flex-col gap-1 rounded-lg border border-rose-400/25 bg-rose-500/10 px-3 py-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-100">
+                  <EyeSlash size={14} weight="duotone" />
+                  敏感内容（NSFW）
+                </span>
+                <span className="break-words text-sm text-white/85">
+                  {nsfw.reason || "未填写原因"}
+                </span>
+                <span className="text-xs text-white/50">
+                  客户端会默认模糊封面，并在进入详情页前向用户展示以上原因。
+                </span>
+              </div>
+            )}
 
             {/* Authors */}
             <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">

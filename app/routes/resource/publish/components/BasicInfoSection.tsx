@@ -3,6 +3,7 @@ import {
   Button,
   Callout,
   Select,
+  Switch,
   TextArea,
   TextField,
   SegmentedControl,
@@ -10,6 +11,7 @@ import {
 import {
   CurrencyCircleDollarIcon,
   DiceFiveIcon,
+  EyeSlashIcon,
   FingerprintIcon,
   SquaresFourIcon,
   TagIcon,
@@ -33,6 +35,7 @@ import {
 } from "~/logic/publish/validation";
 import { textContainsLink } from "~/logic/publish/description-links";
 import type { ResourceType } from "~/logic/publish/resource-type";
+import { NSFW_REASON_MAX } from "~/logic/publish/nsfw";
 import type { IdMigrationNote } from "~/logic/publish/id-migration";
 
 function describeItemId(resourceType: ResourceType): FieldHelpItem {
@@ -107,6 +110,19 @@ function buildFieldHelp(resourceType: ResourceType): FieldHelpItem[] {
       description: `必填，至少 ${PUBLISH_TAGS_MIN} 个。参与搜索与推流，是资源被用户找到的重要途径。请填写与资源功能贴合的标签，建议不超过 ${PUBLISH_TAGS_SUGGESTED_MAX} 个。`,
     },
     {
+      group: "展示与分类",
+      label: "敏感内容（NSFW）",
+      icon: <EyeSlashIcon size={16} weight="duotone" />,
+      description:
+        "资源含血腥、恐怖等可能令人不适的内容时请打开，并写明原因。AstroBox 会默认模糊这类资源的封面（用户可在设置里选择直接显示），并在用户进入详情页前展示你填写的原因，确认后才继续。该声明不能让违规内容过审：色情、低俗等越过内容准则 1.1 的内容仍然不能上架；资源的名称、图标也仍须适合所有用户。",
+      links: [
+        {
+          label: "资源内容规范 · 令人反感的内容",
+          href: "https://abox.run/docs/creator-tools/resource-std/content#11-令人反感的内容",
+        },
+      ],
+    },
+    {
       group: "付费",
       label: "付费类型",
       icon: <CurrencyCircleDollarIcon size={16} weight="duotone" />,
@@ -148,6 +164,12 @@ interface BasicInfoSectionProps {
   onCancelIdChange?: () => void;
   /** 这个资源已有的换 ID 记录（登记中 / 已迁移 / 被拒绝） */
   idMigrationNotes?: IdMigrationNote[];
+  /** 是否声明为敏感内容 */
+  nsfwEnabled: boolean;
+  /** 敏感内容原因，写入 manifest 的 ext.nsfw.reason */
+  nsfwReason: string;
+  onNsfwChange: (enabled: boolean) => void;
+  onNsfwReasonChange: (reason: string) => void;
   onItemIdChange: (value: string) => void;
   /** ID 输入失焦时刷新一次目录占用数据，避免长时间停留导致缓存过期误报。 */
   onItemIdBlur?: () => void;
@@ -180,6 +202,10 @@ export function BasicInfoSection({
   idChangeUnlocked,
   onCancelIdChange,
   idMigrationNotes,
+  nsfwEnabled,
+  nsfwReason,
+  onNsfwChange,
+  onNsfwReasonChange,
   onItemIdChange,
   onItemIdBlur,
   onItemNameChange,
@@ -476,6 +502,43 @@ export function BasicInfoSection({
           </div>
         </div>
       </Field>
+      <div data-publish-field="nsfw" className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="text-sm font-medium text-white">敏感内容（NSFW）</p>
+            <p className="text-xs text-white/60">
+              资源含血腥、恐怖等可能令人不适的内容时请打开。AstroBox
+              会默认模糊它的封面，并在用户进入详情页前提示原因，确认后才继续。
+            </p>
+          </div>
+          <Switch checked={nsfwEnabled} onCheckedChange={onNsfwChange} />
+        </div>
+        {nsfwEnabled && (
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-white/10 pt-3">
+            <p className="text-xs text-white/60">
+              原因（必填，会原样展示给用户）
+              <span className="ml-2 text-white/40">
+                {Array.from(nsfwReason).length}/{NSFW_REASON_MAX}
+              </span>
+            </p>
+            <TextField.Root
+              placeholder="例如：含血腥画面 / 恐怖元素 / 突然惊吓"
+              value={nsfwReason}
+              onChange={(e) =>
+                onNsfwReasonChange(
+                  Array.from(e.target.value).slice(0, NSFW_REASON_MAX).join(""),
+                )
+              }
+              radius="large"
+              className={!nsfwReason.trim() ? "!border-red-400/60" : ""}
+            />
+            <p className="text-xs text-amber-200/90">
+              这项声明不能让违规内容过审：色情、低俗等越过内容准则 1.1
+              的内容仍然不能上架，资源名称与图标也仍须适合所有用户。
+            </p>
+          </div>
+        )}
+      </div>
       <AlertDialog.Root open={idChangeConfirmOpen} onOpenChange={setIdChangeConfirmOpen}>
         <AlertDialog.Content className="max-w-[520px]">
           <AlertDialog.Title>修改已上架资源的 ID</AlertDialog.Title>

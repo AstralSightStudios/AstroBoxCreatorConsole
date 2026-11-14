@@ -103,6 +103,7 @@ import {
   partitionPendingManifestSkus,
 } from "./utils/purchase-gate";
 import { inspectResPack } from "~/logic/publish/crpack-validate";
+import { inspectNsfw } from "~/logic/publish/nsfw";
 import {
   findEnabledPaidSkus,
   findPaidTypeMismatch,
@@ -1268,6 +1269,29 @@ export async function runResourceRuleChecks(options: {
       title: "已上架资源更换了资源 ID",
       status: "manual",
       detail: `资源 ID 从「${renamedFrom}」改为「${csvId}」。合入后旧 ID 上的下载量、评分、评论、付费配置与购买记录会迁移到新 ID，AstroBox 会提示已安装旧 ID 的用户卸载旧资源并安装新资源。请确认更换理由充分，且新 ID 没有冒用其他作者或品牌的名称`,
+    });
+  }
+
+  // 敏感内容声明：目录标签里的系统标记与 manifest 里的原因必须成对；声明了也要人工确认
+  // 内容没有越过准则 1.1 的底线（色情等内容加了标记同样不能上架）。
+  const nsfw = inspectNsfw(
+    toNonEmptyString(entry.tags)
+      .split(";")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    manifest?.ext,
+  );
+  if (nsfw.problems.length > 0) {
+    checks.push({
+      title: "敏感内容（NSFW）声明完整",
+      status: "fail",
+      detail: nsfw.problems.join("；"),
+    });
+  } else if (nsfw.tagged) {
+    checks.push({
+      title: "敏感内容（NSFW）声明",
+      status: "manual",
+      detail: `创作者声明含敏感内容，原因：${nsfw.reason}。客户端会默认模糊封面并在进入详情页前提示。请确认原因与实际内容相符、内容未越过准则 1.1（色情、低俗等加了声明也不能上架），且名称与图标仍适合所有用户`,
     });
   }
 

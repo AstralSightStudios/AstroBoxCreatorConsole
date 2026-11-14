@@ -1,3 +1,4 @@
+import { hasNsfwTag } from "~/logic/publish/nsfw";
 import { PackageIcon } from "@phosphor-icons/react";
 import { Badge } from "@radix-ui/themes";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -68,6 +69,11 @@ export function ResourceBadges({
           color={PAID_TYPE_COLORS[entry.paid_type]}
         >
           {formatIndexPaidType(entry.paid_type)}
+        </Badge>
+      )}
+      {hasNsfwTag(entry.tags) && (
+        <Badge size={size} variant="soft" color="crimson" title="创作者声明含敏感内容">
+          敏感内容
         </Badge>
       )}
     </>

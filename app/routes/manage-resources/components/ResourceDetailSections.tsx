@@ -1,3 +1,4 @@
+import { visibleTags } from "~/logic/publish/nsfw";
 import {
   ArrowSquareOutIcon,
   CopyIcon,
@@ -280,7 +281,7 @@ export function ResourceInfoPanel({ entry }: { entry: IndexV2Entry }) {
           {formatIndexPaidType(entry.paid_type)}
         </DetailRow>
         <DetailRow label="标签">
-          <TokenList tokens={entry.tags} />
+          <TokenList tokens={visibleTags(entry.tags)} />
         </DetailRow>
         <DetailRow label="设备厂商">
           <TokenList tokens={entry.device_vendors} />
