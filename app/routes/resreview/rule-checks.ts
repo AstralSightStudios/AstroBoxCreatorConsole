@@ -43,6 +43,10 @@ import {
   type ManifestSchemaIssue,
 } from "~/logic/publish/manifest-schema";
 import { normalizeLinkUrl } from "~/logic/publish/validation";
+import {
+  extractSubmissionPathFromFilePath,
+  submissionCsvPath,
+} from "~/logic/publish/submission-protocol";
 import { inspectForceUpdate } from "~/logic/publish/force-update";
 import {
   checkPluginInstallMarket,
@@ -1088,11 +1092,11 @@ function pushSchemaCheck(
   });
 }
 
-/** 从 PR patch 中取出 index_v2.csv 的新增行，用于逐行严格校验。 */
+/** 从 PR patch 中取出承载资源目录行的新增行，用于逐行严格校验。 */
 function collectAddedCatalogRows(prFiles: GithubPullFile[]): string[] {
   const rows: string[] = [];
   for (const file of prFiles) {
-    if (!file.filename?.endsWith(PUBLISH_CONFIG.catalogFilePath)) continue;
+    if (!isCatalogRowFile(file.filename)) continue;
     if (!file.patch) continue;
     for (const line of file.patch.split(/\r?\n/)) {
       if (!line.startsWith("+") || line.startsWith("+++")) continue;
@@ -1103,6 +1107,22 @@ function collectAddedCatalogRows(prFiles: GithubPullFile[]): string[] {
     }
   }
   return rows;
+}
+
+/**
+ * PR 中承载资源目录行的文件。
+ *
+ * - 旧流程直接修改 `index_v2.csv`，行就在它的 patch 里；
+ * - 新流程把表头和单行数据写进 `tmp/<login>/<repo>/resource.csv`，
+ *   合入时由仓库 Action 再把这一行写进 `index_v2.csv`。
+ *
+ * 只扫 `index_v2.csv` 会把新流程全部误判成「未取到资源行」。
+ */
+function isCatalogRowFile(filename?: string): boolean {
+  if (!filename) return false;
+  if (isCatalogFile(filename)) return true;
+  const submissionPath = extractSubmissionPathFromFilePath(filename);
+  return Boolean(submissionPath) && filename === submissionCsvPath(submissionPath!);
 }
 
 export async function runResourceRuleChecks(options: {
@@ -1181,7 +1201,8 @@ export async function runResourceRuleChecks(options: {
             .join(" | ")}`,
   });
 
-  // --- check: CSV 新增行符合 AstroBox 目录解析规则 ---
+  // --- check: 资源目录行符合 AstroBox 目录解析规则 ---
+  // 新流程的行在 tmp/<login>/<repo>/resource.csv，旧流程直接改 index_v2.csv；两者都要校验。
   // AstroBox 的 parse_index 会静默跳过列数不符、身份字段为空、restype/paid_type
   // 非法的行；资源会直接从目录里消失，比详情页报错更难排查。
   const addedCatalogRows = collectAddedCatalogRows(prFiles);
@@ -1191,7 +1212,7 @@ export async function runResourceRuleChecks(options: {
     ),
   );
   checks.push({
-    title: "index_v2.csv 新增行可被 AstroBox 解析",
+    title: "资源目录行可被 AstroBox 解析",
     status:
       addedCatalogRows.length === 0
         ? "manual"
@@ -1200,7 +1221,7 @@ export async function runResourceRuleChecks(options: {
           : "pass",
     detail:
       addedCatalogRows.length === 0
-        ? "未从 patch 中读取到新增资源行"
+        ? "未从 PR 中读取到资源目录行（index_v2.csv 或 tmp/*/*/resource.csv）"
         : catalogRowIssues.length > 0
           ? `${catalogRowIssues.slice(0, 3).join("；")}${
               catalogRowIssues.length > 3
