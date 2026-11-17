@@ -337,11 +337,11 @@ function isCatalogFile(filename?: string): boolean {
   );
 }
 
-/** 扫描 PR 改动中 index_v2.csv 新增行是否包含零宽字符，返回命中的行内容。 */
+/** 扫描 PR 改动中资源目录行（index_v2.csv 或提交用 resource.csv）是否包含零宽字符。 */
 export function scanCsvPatchForZeroWidth(files: GithubPullFile[]): string[] {
   const hits: string[] = [];
   for (const file of files) {
-    if (!isCatalogFile(file.filename)) continue;
+    if (!isCatalogRowFile(file.filename)) continue;
     if (!file.patch) continue;
     for (const line of file.patch.split(/\r?\n/)) {
       if (!line.startsWith("+") || line.startsWith("+++")) continue;
@@ -1191,7 +1191,7 @@ export async function runResourceRuleChecks(options: {
   // --- check: CSV 新增行无零宽字符 ---
   const zwcHits = scanCsvPatchForZeroWidth(prFiles);
   checks.push({
-    title: "index_v2.csv 新增行无零宽字符",
+    title: "资源目录行无零宽字符",
     status: zwcHits.length === 0 ? "pass" : "fail",
     detail:
       zwcHits.length === 0
