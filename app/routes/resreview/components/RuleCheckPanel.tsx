@@ -131,6 +131,9 @@ export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: Ru
   const accountState = useAccountState();
   const [activeIdx, setActiveIdx] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
+  // 通过项默认折叠：审核员主要看失败/警告，几十项全绿铺开会把问题项挤出屏幕。
+  // 状态放在 Panel 层，切换资源、重新检查时保持用户的选择。
+  const [showPassedChecks, setShowPassedChecks] = useState(false);
   // 选号会更新 lastUsedAt；按账号状态和重新检查次数缓存，避免普通渲染换 token
   // 导致规则检查重跑，同时在手动重新检查时允许换一个读取账号。
   const token = useMemo(
@@ -198,6 +201,8 @@ export function RuleCheckPanel({ resources, prFiles, onJumpToResourceImage }: Ru
           loading={loading}
           onReload={reload}
           onJumpToResourceImage={onJumpToResourceImage ?? (() => {})}
+          showPassed={showPassedChecks}
+          onTogglePassed={() => setShowPassedChecks((value) => !value)}
         />
       )}
     </div>
@@ -217,11 +222,15 @@ function RuleCheckResultView({
   loading,
   onReload,
   onJumpToResourceImage,
+  showPassed,
+  onTogglePassed,
 }: {
   result: ResourceRuleCheckResult;
   loading: boolean;
   onReload: () => void;
   onJumpToResourceImage: (label: string) => void;
+  showPassed: boolean;
+  onTogglePassed: () => void;
 }) {
   const { checks, packageChecks, imageSizes, repoTruncated, paidRatioChecks } = result;
 
@@ -238,6 +247,14 @@ function RuleCheckResultView({
   }, [checks]);
 
   const hasFail = counts.fail > 0;
+
+  // 折叠策略：只看失败/警告/人工项；通过项收进一条提示里，需要核对时再展开。
+  const visibleChecks = useMemo(
+    () => (showPassed ? checks : checks.filter((check) => check.status !== "pass")),
+    [checks, showPassed],
+  );
+  const hiddenPassCount = showPassed ? 0 : counts.pass;
+  const allPassed = checks.length > 0 && visibleChecks.length === 0;
 
   // 详情容器锚点：点检查项右侧的跳转按钮时滚动到对应容器并闪烁。
   // 闪烁样式复用发布流程「前往修改」的 scrollAndFlash，两处观感一致。
@@ -284,14 +301,24 @@ function RuleCheckResultView({
             仓库文件过多，文件树被截断，部分文件存在性/体积可能不准
           </span>
         )}
-        <button
-          onClick={onReload}
-          disabled={loading}
-          className="ml-auto inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 disabled:opacity-50 transition"
-        >
-          <ArrowsClockwise size={12} />
-          {loading ? "检查中..." : "重新检查"}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {counts.pass > 0 && (
+            <button
+              onClick={onTogglePassed}
+              className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-white/60 transition hover:bg-white/10 hover:text-white"
+            >
+              {showPassed ? "隐藏通过项" : `显示通过项 ${counts.pass}`}
+            </button>
+          )}
+          <button
+            onClick={onReload}
+            disabled={loading}
+            className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/20 disabled:opacity-50 transition"
+          >
+            <ArrowsClockwise size={12} />
+            {loading ? "检查中..." : "重新检查"}
+          </button>
+        </div>
       </div>
 
       {hasFail && (
@@ -300,16 +327,31 @@ function RuleCheckResultView({
         </div>
       )}
 
-      {/* 检查清单 */}
+      {/* 检查清单：默认只展示非通过项，通过项折叠成一行提示 */}
       <div className="flex flex-col gap-1.5">
-        {checks.map((check, i) => (
+        {allPassed && (
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+            <Check size={14} weight="bold" className="shrink-0 text-emerald-400" />
+            全部 {counts.pass} 项自动检查通过
+          </div>
+        )}
+        {visibleChecks.map((check, index) => (
           <CheckRow
-            key={i}
+            key={`${check.title}-${index}`}
             check={check}
             onJump={jumpToAnchor}
             canJump={Boolean(check.anchor) && anchorAvailable(check.anchor!)}
           />
         ))}
+        {hiddenPassCount > 0 && (
+          <button
+            type="button"
+            onClick={onTogglePassed}
+            className="rounded-lg border border-dashed border-white/10 px-3 py-2 text-left text-xs text-white/40 transition hover:border-white/20 hover:text-white/70"
+          >
+            已折叠 {hiddenPassCount} 项通过检查，点击展开
+          </button>
+        )}
       </div>
 
       {/* 包体校验详情 */}
