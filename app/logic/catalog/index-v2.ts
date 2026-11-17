@@ -168,6 +168,71 @@ function isRawPaidType(value: string): value is "" | "paid" | "force_paid" {
   return value === "" || value === "paid" || value === "force_paid";
 }
 
+export interface IndexCsvRowIssue {
+  /** 出问题的列名，或 `列数` / `身份字段` 这类整体问题。 */
+  path: string;
+  reason: string;
+}
+
+/**
+ * 单行 `index_v2.csv` 的严格检查，与 AstroBox `parse_index` 的跳过条件一致。
+ *
+ * 审核侧只拿到 PR patch 的新增行，无法看到完整表头，因此这里按固定列序校验：
+ * 列数不符、身份字段为空、枚举非法都会让 AstroBox 直接跳过该行 —— 资源会从
+ * 目录里静默消失，比“点进去报错”更难排查。
+ */
+export function inspectIndexCsvRow(row: string): IndexCsvRowIssue[] {
+  const records = parseCsvRecords(row);
+  const fields = records[0] ?? [];
+  if (fields.length !== REQUIRED_COLUMNS.length) {
+    return [
+      {
+        path: "列数",
+        reason: `应为 ${REQUIRED_COLUMNS.length} 列，实际 ${fields.length} 列；AstroBox 会跳过该行`,
+      },
+    ];
+  }
+
+  const value = (index: number) => fields[index] ?? "";
+  const issues: IndexCsvRowIssue[] = [];
+
+  const emptyIdentity = [
+    ["id", value(0)],
+    ["repo_owner", value(3)],
+    ["repo_name", value(4)],
+    ["repo_commit_hash", value(5)],
+  ]
+    .filter(([, field]) => !String(field).trim())
+    .map(([name]) => name);
+  if (emptyIdentity.length > 0) {
+    issues.push({
+      path: "身份字段",
+      reason: `${emptyIdentity.join("、")} 为空；AstroBox 会跳过该行`,
+    });
+  }
+
+  const restype = value(2);
+  if (!isResourceType(restype)) {
+    issues.push({
+      path: "restype",
+      reason: `「${restype}」不是合法资源类型（${RESOURCE_TYPES.join(" / ")}）；AstroBox 会跳过该行`,
+    });
+  }
+
+  const paidType = value(11);
+  if (!isRawPaidType(paidType)) {
+    issues.push({
+      path: "paid_type",
+      reason:
+        paidType === "free"
+          ? '免费资源应留空，写 "free" 会让 AstroBox 跳过该行'
+          : `「${paidType}」不是合法付费类型（"" / paid / force_paid）；AstroBox 会跳过该行`,
+    });
+  }
+
+  return issues;
+}
+
 function splitSemicolon(value: string) {
   return value.split(";").map((part) => part.trim());
 }

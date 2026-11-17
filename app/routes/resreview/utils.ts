@@ -280,9 +280,26 @@ function canonicalEntryKey(entry: CatalogEntry): string {
   ]);
 }
 
+/**
+ * AstroBox 的 `resolve_repo_asset_url` 对绝对地址原样使用，只有相对路径才拼到
+ * 仓库 Raw 根上。CDN 图、Base64 图、外链图都是合法写法，不能一律拼接。
+ */
+export function isAbsoluteAssetUrl(path: string): boolean {
+  const value = (path || "").trim();
+  return (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("tauri:") ||
+    value.startsWith("/")
+  );
+}
+
 export function buildResourceRawUrl(entry: CatalogEntry, ref: string, path?: string) {
   const cleanPath = (path || "").trim();
   if (!cleanPath) return "";
+  if (isAbsoluteAssetUrl(cleanPath)) return cleanPath;
   return buildRawFileUrl(entry.repo_owner, entry.repo_name, ref, cleanPath);
 }
 
@@ -290,20 +307,24 @@ export function getManifestReferencedFiles(manifest?: ManifestV2): string[] {
   if (!manifest?.item) return [];
   const files = new Set<string>();
   files.add(PUBLISH_CONFIG.manifestFileName);
-  if (manifest.item.icon) files.add(manifest.item.icon);
-  if (manifest.item.cover) files.add(manifest.item.cover);
+  const addPath = (path?: string) => {
+    const value = (path || "").trim();
+    // 绝对地址不是仓库文件，不能拿去仓库文件树里比对存在性。
+    if (value && !isAbsoluteAssetUrl(value)) files.add(value);
+  };
+  addPath(manifest.item.icon);
+  addPath(manifest.item.cover);
   for (const p of manifest.item.preview ?? []) {
-    if (p) files.add(p);
+    addPath(p);
   }
   for (const info of Object.values(manifest.downloads ?? {})) {
-    const fileName = (info as { file_name?: string })?.file_name;
-    if (fileName) files.add(fileName);
+    addPath((info as { file_name?: string })?.file_name);
   }
   const trialDownloads = manifest.ext?.trialDownloads as
     | Record<string, { file_name?: string }>
     | undefined;
   for (const info of Object.values(trialDownloads ?? {})) {
-    if (info.file_name) files.add(info.file_name);
+    addPath(info.file_name);
   }
   return Array.from(files);
 }

@@ -30,9 +30,19 @@ import {
   collectUnboundAuthorNames,
 } from "~/logic/publish/author-match";
 import type { PrResourcePreview, RuleCheckItem } from "./types";
+import { CATALOG_CSV_HEADER } from "./types";
 import type { ManifestV2 } from "~/logic/publish/manifest-loader";
 import { fetchManifestForCatalogEntry } from "~/logic/publish/manifest-loader";
 import { normalizeBundledResources } from "~/logic/publish/manifest";
+import { inspectIndexCsvRow } from "~/logic/catalog/index-v2";
+import {
+  inspectBundledResourcesStructure,
+  inspectDownloadsStructure,
+  inspectManifestStructure,
+  inspectRuntimeConstraints,
+  type ManifestSchemaIssue,
+} from "~/logic/publish/manifest-schema";
+import { normalizeLinkUrl } from "~/logic/publish/validation";
 import { inspectForceUpdate } from "~/logic/publish/force-update";
 import {
   checkPluginInstallMarket,
@@ -747,12 +757,42 @@ interface LinkIssue {
   reason: string;
 }
 
+/**
+ * AstroBox 用 `openUrl(link.url)` 直接交给系统打开，不会帮作者补全域名。
+ * 因此必须能在 `new URL` 下解析，且协议为 http(s)；相对路径、`javascript:`
+ * 等写法在客户端点了不会有任何反应，甚至会被系统拒绝。
+ */
+function inspectLinkUrl(
+  raw: string,
+): { ok: boolean; insecure?: boolean; reason?: string } {
+  const value = normalizeLinkUrl(raw);
+  try {
+    const parsed = new URL(value);
+    if (!parsed.hostname) return { ok: false, reason: "缺少域名" };
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { ok: false, reason: `不支持的协议 ${parsed.protocol}` };
+    }
+    return { ok: true, insecure: parsed.protocol === "http:" };
+  } catch {
+    return { ok: false, reason: "不是合法的绝对链接（需以 https:// 开头）" };
+  }
+}
+
 function validateLinks(links: unknown): { status: RuleCheckItem["status"]; detail: string } {
-  if (!Array.isArray(links) || links.length === 0) {
-    return { status: "pass", detail: "未配置外部链接（links 可选）" };
+  if (!Array.isArray(links)) {
+    // 缺失/非数组会让 AstroBox 整份解析失败，交给 manifest 结构检查统一判定，
+    // 这里不再重复标红。
+    return {
+      status: "manual",
+      detail: "links 缺失或不是数组，由 manifest 结构检查判定",
+    };
+  }
+  if (links.length === 0) {
+    return { status: "pass", detail: "未配置外部链接（links 为空数组）" };
   }
 
   const issues: LinkIssue[] = [];
+  const insecureIndexes: number[] = [];
   links.forEach((link, index) => {
     const row = (link && typeof link === "object" ? link : {}) as {
       title?: unknown;
@@ -770,7 +810,16 @@ function validateLinks(links: unknown): { status: RuleCheckItem["status"]; detai
       return;
     }
     if (!title) issues.push({ index, reason: "缺少 title" });
-    if (!url) issues.push({ index, reason: "缺少 url" });
+    if (!url) {
+      issues.push({ index, reason: "缺少 url" });
+    } else {
+      const parsed = inspectLinkUrl(url);
+      if (!parsed.ok) {
+        issues.push({ index, reason: `url「${url}」${parsed.reason}` });
+      } else if (parsed.insecure) {
+        insecureIndexes.push(index);
+      }
+    }
     if (!icon) {
       issues.push({ index, reason: "缺少 icon" });
     } else if (!isValidLinkIcon(icon)) {
@@ -781,13 +830,21 @@ function validateLinks(links: unknown): { status: RuleCheckItem["status"]; detai
     }
   });
 
-  if (issues.length === 0) {
-    return { status: "pass", detail: `${links.length} 条链接均完整且 icon 合法` };
+  if (issues.length > 0) {
+    return {
+      status: "fail",
+      detail: issues.map((i) => `#${i.index + 1}：${i.reason}`).join("；"),
+    };
   }
-  return {
-    status: "fail",
-    detail: issues.map((i) => `#${i.index + 1}：${i.reason}`).join("；"),
-  };
+  if (insecureIndexes.length > 0) {
+    return {
+      status: "warn",
+      detail: `${links.length} 条链接均合法，但 ${insecureIndexes
+        .map((i) => `#${i + 1}`)
+        .join("、")} 使用 http，建议改为 https 以兼容系统打开策略`,
+    };
+  }
+  return { status: "pass", detail: `${links.length} 条链接均为合法 HTTPS 链接且 icon 可渲染` };
 }
 
 // ---------------------------------------------------------------------------
@@ -797,13 +854,21 @@ function validateLinks(links: unknown): { status: RuleCheckItem["status"]; detai
 function getManifestDownloadKeys(manifest?: ManifestV2): {
   full: string[];
   trial: string[];
+  /** `default` 是 AstroBox 官方的兜底下载键，不参与设备标识校验。 */
+  hasDefault: boolean;
 } {
+  const isDefaultKey = (key: string) => key.trim().toLowerCase() === "default";
   const full = manifest?.downloads ? Object.keys(manifest.downloads) : [];
   const trialDownloads = manifest?.ext?.trialDownloads as
     | Record<string, { file_name?: string }>
     | undefined;
   const trial = trialDownloads ? Object.keys(trialDownloads) : [];
-  return { full, trial };
+  return {
+    full: full.filter((key) => !isDefaultKey(key)),
+    trial: trial.filter((key) => !isDefaultKey(key)),
+    hasDefault:
+      full.some(isDefaultKey) || trial.some(isDefaultKey),
+  };
 }
 
 function resolveCanonicalSet(
@@ -996,6 +1061,50 @@ function pushDisplayNameCheck(
   });
 }
 
+/** 把结构检查的 issue 列表压成一行可读结论，最多展示 3 条。 */
+function summarizeSchemaIssues(issues: ManifestSchemaIssue[], max = 3): string {
+  const shown = issues
+    .slice(0, max)
+    .map((issue) => (issue.path ? `${issue.path}：${issue.reason}` : issue.reason));
+  if (issues.length > shown.length) {
+    shown.push(`等共 ${issues.length} 处`);
+  }
+  return shown.join("；");
+}
+
+/** 结构检查统一的状态：有 error 判失败，只有 warning 判警告。 */
+function pushSchemaCheck(
+  checks: RuleCheckItem[],
+  title: string,
+  issues: ManifestSchemaIssue[],
+  passDetail: string,
+) {
+  const hasError = issues.some((issue) => issue.severity === "error");
+  const hasWarning = issues.some((issue) => issue.severity === "warning");
+  checks.push({
+    title,
+    status: hasError ? "fail" : hasWarning ? "warn" : "pass",
+    detail: issues.length > 0 ? summarizeSchemaIssues(issues) : passDetail,
+  });
+}
+
+/** 从 PR patch 中取出 index_v2.csv 的新增行，用于逐行严格校验。 */
+function collectAddedCatalogRows(prFiles: GithubPullFile[]): string[] {
+  const rows: string[] = [];
+  for (const file of prFiles) {
+    if (!file.filename?.endsWith(PUBLISH_CONFIG.catalogFilePath)) continue;
+    if (!file.patch) continue;
+    for (const line of file.patch.split(/\r?\n/)) {
+      if (!line.startsWith("+") || line.startsWith("+++")) continue;
+      const row = line.slice(1).trim();
+      // 完整表头行没有新增内容；被修改的表头会在行校验里因 restype 非法被拦下。
+      if (!row || row === CATALOG_CSV_HEADER) continue;
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 export async function runResourceRuleChecks(options: {
   preview: PrResourcePreview;
   prFiles: GithubPullFile[];
@@ -1072,6 +1181,35 @@ export async function runResourceRuleChecks(options: {
             .join(" | ")}`,
   });
 
+  // --- check: CSV 新增行符合 AstroBox 目录解析规则 ---
+  // AstroBox 的 parse_index 会静默跳过列数不符、身份字段为空、restype/paid_type
+  // 非法的行；资源会直接从目录里消失，比详情页报错更难排查。
+  const addedCatalogRows = collectAddedCatalogRows(prFiles);
+  const catalogRowIssues = addedCatalogRows.flatMap((row, index) =>
+    inspectIndexCsvRow(row).map(
+      (issue) => `新增行 ${index + 1} ${issue.path}：${issue.reason}`,
+    ),
+  );
+  checks.push({
+    title: "index_v2.csv 新增行可被 AstroBox 解析",
+    status:
+      addedCatalogRows.length === 0
+        ? "manual"
+        : catalogRowIssues.length > 0
+          ? "fail"
+          : "pass",
+    detail:
+      addedCatalogRows.length === 0
+        ? "未从 patch 中读取到新增资源行"
+        : catalogRowIssues.length > 0
+          ? `${catalogRowIssues.slice(0, 3).join("；")}${
+              catalogRowIssues.length > 3
+                ? `；等共 ${catalogRowIssues.length} 处`
+                : ""
+            }`
+          : `${addedCatalogRows.length} 行均符合 ${CATALOG_CSV_HEADER.split(",").length} 列目录格式`,
+  });
+
   // --- check: CSV/manifest 新增行无乱码 ---
   const garbledHits = scanPatchForGarbled(prFiles);
   checks.push({
@@ -1144,6 +1282,60 @@ export async function runResourceRuleChecks(options: {
       : preview.manifestError || "仓库缺少 manifest_v2.json 或解析失败",
   });
 
+  // --- check: manifest 满足 AstroBox 严格解析结构 ---
+  // JSON 能解析不代表 AstroBox 能用：ManifestV2 的 item/links/downloads/ext 四个
+  // 顶层键、item 的八个字段都是 serde 必填，缺一个就会让整份 manifest 解析失败，
+  // 用户点进详情页直接报错。下面几项只复刻 serde 行为，不做运营策略判断。
+  if (manifest) {
+    pushSchemaCheck(
+      checks,
+      "manifest_v2.json 满足 AstroBox 解析结构",
+      inspectManifestStructure(manifest),
+      "顶层字段、item、links 结构均符合 AstroBox 解析要求",
+    );
+
+    const downloadsIsMap =
+      manifest.downloads != null &&
+      typeof manifest.downloads === "object" &&
+      !Array.isArray(manifest.downloads);
+    const extHasTrialDownloads =
+      manifest.ext != null &&
+      typeof manifest.ext === "object" &&
+      !Array.isArray(manifest.ext) &&
+      "trialDownloads" in manifest.ext;
+    if (downloadsIsMap || extHasTrialDownloads) {
+      pushSchemaCheck(
+        checks,
+        "manifest downloads 可被 AstroBox 正确解析",
+        inspectDownloadsStructure(manifest),
+        "正式下载与试用下载条目结构完整",
+      );
+    }
+
+    if (restype === "canopus" || restype === "res_pack") {
+      const hasDownloadEntries =
+        downloadsIsMap &&
+        manifest.downloads != null &&
+        Object.keys(manifest.downloads).length > 0;
+      if (!hasDownloadEntries) {
+        checks.push({
+          title: "下载项满足 AstroBox 运行期约束",
+          status: "manual",
+          detail: "未检测到 downloads 条目，无法校验运行期约束",
+        });
+      } else {
+        pushSchemaCheck(
+          checks,
+          "下载项满足 AstroBox 运行期约束",
+          inspectRuntimeConstraints(manifest),
+          restype === "canopus"
+            ? "模块下载均为 .canopus 包且 versionCode 在 u32 范围内"
+            : "资源包 versionCode 未超过 JavaScript 安全整数上限",
+        );
+      }
+    }
+  }
+
   // --- check: 资源简介不含链接 ---
   // 简介只用于介绍资源功能，客户端不会把简介里的链接做成商店页入口；夹带外链
   // 通常意味着引流、广告或站外下载。这里只给警告，是否要求修改由审核员判断。
@@ -1188,6 +1380,22 @@ export async function runResourceRuleChecks(options: {
     status: manifestRestype && csvRestype ? (manifestRestype === csvRestype ? "pass" : "fail") : "warn",
     detail: manifestRestype && csvRestype ? `manifest: ${manifestRestype} / csv: ${csvRestype}` : "缺少可比对字段",
   });
+
+  // --- check: ext.bundledResources 结构可被 AstroBox 读取 ---
+  // AstroBox 用 serde_json::from_value(...).ok() 解析，任一字段非法都会静默丢弃
+  // 整段声明：作者以为配了前置/推荐资源，客户端实际什么都没装。
+  if (
+    manifest?.ext &&
+    typeof manifest.ext === "object" &&
+    "bundledResources" in manifest.ext
+  ) {
+    pushSchemaCheck(
+      checks,
+      "ext.bundledResources 可被 AstroBox 读取",
+      inspectBundledResourcesStructure(manifest.ext),
+      "required / recommended 分组与条目字段合法",
+    );
+  }
 
   // --- check: ext.bundledResources 采用 AstroBox-NG 规范字段 ---
   // NG 只读 id 与 recommended：历史提交若把插件标识写进 name、或用 recommend 键，
@@ -1519,7 +1727,11 @@ export async function runResourceRuleChecks(options: {
   // resolver 在上方已就绪，getManifestDownloadKeys / resolveCanonicalSet 均为纯同步函数，
   // 上移无副作用。下载行判定仍用 manifest 原始 key（fullDownloadDevices），
   // 规范化只用于设备存在性比对，避免与 SKU / fileKey 的规范化 id 空间混淆。
-  const { full: fullDeviceKeys, trial: trialDeviceKeys } = getManifestDownloadKeys(manifest);
+  const {
+    full: fullDeviceKeys,
+    trial: trialDeviceKeys,
+    hasDefault: hasDefaultDownloadKey,
+  } = getManifestDownloadKeys(manifest);
   const fullResolved = resolveCanonicalSet(fullDeviceKeys, resolver);
   const trialResolved = resolveCanonicalSet(trialDeviceKeys, resolver);
   const declaredDeviceIds = new Set([
@@ -1721,23 +1933,26 @@ export async function runResourceRuleChecks(options: {
 
   // --- check: manifest downloads 设备标识有效性 ---
   // fullDeviceKeys / fullResolved / trialResolved 已在付费检查之前算好，此处直接复用。
+  // `default` 是 AstroBox 官方兜底键，已被 getManifestDownloadKeys 排除，只保留标记。
   const allDeviceTokens = [...fullDeviceKeys, ...trialDeviceKeys];
+  const hasDownloadEntries = allDeviceTokens.length > 0 || hasDefaultDownloadKey;
   const unknownTokens = Array.from(
     new Set([...fullResolved.unknowns, ...trialResolved.unknowns]),
   );
   checks.push({
     title: "manifest downloads 设备标识有效",
-    status: allDeviceTokens.length === 0
+    status: !hasDownloadEntries
       ? "warn"
       : unknownTokens.length === 0
         ? "pass"
         : "fail",
-    detail:
-      allDeviceTokens.length === 0
-        ? "未检测到 downloads 字典"
-        : unknownTokens.length === 0
-          ? "设备标识均可识别（支持机型号 / 规范化 id）"
-          : `未知设备标识：${unknownTokens.join(", ")}`,
+    detail: !hasDownloadEntries
+      ? "未检测到 downloads 字典"
+      : unknownTokens.length === 0
+        ? allDeviceTokens.length === 0
+          ? "仅使用 default 兜底键，AstroBox 会为所有设备选择该包"
+          : "设备标识均可识别（支持机型号 / 规范化 id）"
+        : `未知设备标识：${unknownTokens.join(", ")}`,
   });
 
   // --- check: 小米专属资源类型的设备厂商 ---
@@ -1778,17 +1993,16 @@ export async function runResourceRuleChecks(options: {
   const missingFiles = referencedFiles.filter((f) => f && !sizeMap.has(f.replace(/^\/+/, "")));
   checks.push({
     title: "manifest downloads 文件存在性",
-    status: allDeviceTokens.length === 0
+    status: !hasDownloadEntries
       ? "warn"
       : missingFiles.length === 0
         ? "pass"
         : "fail",
-    detail:
-      allDeviceTokens.length === 0
-        ? "未检测到 downloads 字典"
-        : missingFiles.length === 0
-          ? "下载文件均存在"
-          : `缺失文件：${missingFiles.join(", ")}`,
+    detail: !hasDownloadEntries
+      ? "未检测到 downloads 字典"
+      : missingFiles.length === 0
+        ? "下载文件均存在"
+        : `缺失文件：${missingFiles.join(", ")}`,
   });
 
   // --- check: versionCode 随包体更新（warn，非强制） ---
@@ -2272,10 +2486,10 @@ export async function runResourceRuleChecks(options: {
       : `当前预览图总体积 ${formatBytes(totalPreviewBytes)}`,
   });
 
-  // --- check: 外部链接 links 完整且 icon 合法 ---
+  // --- check: 外部链接 links 完整、URL 合法且 icon 合法 ---
   const linkResult = validateLinks(manifest?.links);
   checks.push({
-    title: "外部链接 links 完整且 icon 可被 AstroBox 渲染",
+    title: "外部链接 links 完整且 URL / icon 合法",
     status: linkResult.status,
     detail: linkResult.detail,
   });
