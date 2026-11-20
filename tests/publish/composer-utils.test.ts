@@ -6,7 +6,7 @@ import {
   isManifestExtObject,
   parseTagText,
 } from "../../app/logic/publish/composer-utils";
-import { restoreDownloadInput } from "../../app/logic/publish/draft-codec";
+import { restoreDownloadInput, serializeDownloadInputs } from "../../app/logic/publish/draft-codec";
 
 describe("composer utils: collectCatalogDevices", () => {
   const vendorById = new Map<string, string | undefined>([
@@ -153,6 +153,18 @@ describe("composer utils: buildDownloadInputsFromManifest", () => {
     expect(empty.existingFileName).toBe("");
     expect(empty.versionLocked).toBe(false);
     expect(empty.updatelogs).toBeUndefined();
+  });
+
+  test("免包体条目恢复为可编辑版本，保存和恢复草稿后元数据保持完整", async () => {
+    const [row] = buildDownloadInputsFromManifest({
+      ...base,
+      downloads: { watch: { file_name: "", version: "1.2", versionCode: 7, updatelogs: [{ version: "1.2", content: "更新" }] } },
+    });
+    expect(row.file).toBeNull();
+    expect(row.versionLocked).toBe(false);
+    const [draft] = await serializeDownloadInputs([row]);
+    expect(restoreDownloadInput(draft)).toEqual(row);
+    expect(collectCatalogDevices([[row]], new Map())).toEqual([{ id: "watch", vendor: undefined }]);
   });
 
   test("returns empty array when downloads is missing", () => {

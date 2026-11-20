@@ -704,6 +704,38 @@ describe("publish validation: 插件接管安装", () => {
   });
 });
 
+describe("publish validation: 插件接管免上传包体", () => {
+  const pluginExt = { pluginInstall: { plugin: "Azki Server", data: { rid: "114514" }, fallback: "block" } };
+  const metadataOnly = [{ platformId: "device", version: "1.0", file: null }];
+
+  test("合法 block 声明允许每台设备仅填写版本", () => {
+    expect(validatePublish({ ...validInput, downloads: metadataOnly, ext: pluginExt }).errors).toEqual([]);
+    expect(validatePublish({ ...validInput, downloads: metadataOnly, ext: { pluginInstall: { plugin: "other" } } }).errors).toEqual([]);
+  });
+
+  test("没有设备行、设备未选或版本为空仍会拦截", () => {
+    for (const downloads of [[], [{ platformId: "", version: "1.0", file: null }], [{ platformId: "device", version: " ", file: null }]]) {
+      expect(validatePublish({ ...validInput, downloads, ext: pluginExt }).issues.some((issue) => issue.field === "downloads")).toBe(true);
+    }
+  });
+
+  test("download 兜底及非法声明不能免包体，已有包体的正常下载兜底不受影响", () => {
+    for (const pluginInstall of [
+      { plugin: "p", fallback: "download" },
+      { plugin: "a/b", fallback: "block" },
+      { plugin: "p", data: "x".repeat(16 * 1024) },
+    ]) {
+      expect(validatePublish({ ...validInput, downloads: metadataOnly, ext: { pluginInstall } }).errors.join()).toContain("缺少包体");
+    }
+    expect(validatePublish({ ...validInput, ext: { pluginInstall: { plugin: "p", fallback: "download" } } }).errors).toEqual([]);
+  });
+
+  test("试用包仍然必须上传文件", () => {
+    const issues = validatePublish({ ...validInput, downloads: metadataOnly, trialDownloads: metadataOnly, ext: pluginExt }).issues;
+    expect(issues).toEqual([{ field: "trialDownloads", message: "试用下载第 1 行缺少包体。" }]);
+  });
+});
+
 describe("publish validation: 模块的最低 Canopus 管理器版本", () => {
   const canopusIssues = (resourceType: "canopus" | "watchface", ext: unknown) =>
     validatePublish({ ...validInput, resourceType, ext }).issues.filter((issue) => issue.field === "canopusManager");

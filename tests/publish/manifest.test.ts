@@ -3,6 +3,8 @@ import {
   buildManifest,
   normalizeBundledResources,
 } from "../../app/logic/publish/manifest";
+import { buildDownloadInputsFromManifest } from "../../app/logic/publish/composer-utils";
+import { inspectDownloadsStructure, inspectManifestStructure, inspectRuntimeConstraints } from "../../app/logic/publish/manifest-schema";
 
 /** 构造与发布页一致的上传项：{ name, file }。 */
 function uploadInput(name: string, content: string) {
@@ -163,6 +165,82 @@ describe("manifest downloads updatelogs", () => {
     trialDownloads: [],
     enableAstroBoxCreatorFeatures: false,
   };
+
+  test("插件接管时保留免包体设备的元数据，不生成待上传文件，并可再次编辑", () => {
+    const ext = { pluginInstall: { plugin: "Azki Server", data: { rid: "114514" }, fallback: "block" } };
+    const result = buildManifest({
+      ...baseInput,
+      ext,
+      downloads: [
+        { platformId: " xmb9 ", version: " 1.2.0 ", versionCode: 65536, file: null, updatelogs: [{ version: " 1.2.0 ", content: " 更新安装流程 " }] },
+        { platformId: "xmws4", version: "1.0.0", file: null },
+      ],
+    });
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads).toEqual({
+      xmb9: { version: "1.2.0", versionCode: 65536, file_name: "", updatelogs: [{ version: "1.2.0", content: "更新安装流程" }] },
+      xmws4: { version: "1.0.0", file_name: "" },
+    });
+    expect(manifest.ext.pluginInstall).toEqual(ext.pluginInstall);
+    expect(result.downloadAssets).toEqual([]);
+    expect(result.trialDownloadAssets).toEqual([]);
+    expect(inspectManifestStructure(manifest)).toEqual([]);
+    expect(inspectDownloadsStructure(manifest)).toEqual([]);
+    expect(inspectRuntimeConstraints(manifest)).toEqual([]);
+
+    const restored = buildDownloadInputsFromManifest({ downloads: manifest.downloads, owner: "o", repo: "r", ref: "main" });
+    expect(restored.map((row) => [row.platformId, row.file, row.versionLocked])).toEqual([
+      ["xmb9", null, false], ["xmws4", null, false],
+    ]);
+    expect(JSON.parse(buildManifest({ ...baseInput, ext, downloads: restored }).manifestJson).downloads).toEqual(manifest.downloads);
+  });
+
+  test("插件接管允许混合元数据行与实际包体，试用下载仍只包含有文件的行", () => {
+    const result = buildManifest({
+      ...baseInput,
+      ext: { pluginInstall: { plugin: "p" } },
+      downloads: [
+        { platformId: "xmb9", version: "1.0", file: null },
+        { platformId: "xmws4", version: "2.0", file: uploadInput("module.canopus", "module") },
+      ],
+      trialDownloads: [
+        { platformId: "xmb9", version: "1.0", file: null },
+        { platformId: "xmws4", version: "1.0", file: uploadInput("trial.canopus", "trial") },
+      ],
+    });
+    const manifest = JSON.parse(result.manifestJson);
+    expect(manifest.downloads).toEqual({
+      xmb9: { version: "1.0", file_name: "" },
+      xmws4: { version: "2.0", file_name: "downloads/module.canopus" },
+    });
+    expect(result.downloadAssets.map((asset) => asset.platformId)).toEqual(["xmws4"]);
+    expect(manifest.ext.trialDownloads).toEqual({ xmws4: { version: "1.0", file_name: "downloads/trial/trial.canopus" } });
+    expect(inspectRuntimeConstraints(manifest)).toEqual([]);
+    manifest.downloads.xmws4.file_name = "downloads/invalid.bin";
+    expect(inspectRuntimeConstraints(manifest).some((issue) => issue.path.includes("xmws4"))).toBe(true);
+  });
+
+  test("草稿仅剩仓库文件名时继续引用旧文件，不误转为免包体条目", () => {
+    const result = buildManifest({
+      ...baseInput,
+      ext: { pluginInstall: { plugin: "p" } },
+      downloads: [{ platformId: "xmb9", version: "1.0", file: null, existingFileName: "downloads/existing.canopus" }],
+    });
+    expect(JSON.parse(result.manifestJson).downloads.xmb9.file_name).toBe("downloads/existing.canopus");
+    expect(result.downloadAssets).toEqual([]);
+  });
+
+  test("未启用合法插件接管或选择 download 兜底时，不生成免包体条目", () => {
+    for (const ext of [{}, { pluginInstall: { plugin: "p", fallback: "download" } }, { pluginInstall: { plugin: "a/b" } }]) {
+      const result = buildManifest({ ...baseInput, ext, downloads: [{ platformId: "xmb9", version: "1.0", file: null }] });
+      expect(JSON.parse(result.manifestJson).downloads).toEqual({});
+    }
+    expect(inspectRuntimeConstraints({
+      item: { restype: "canopus" },
+      ext: { pluginInstall: { plugin: "p", fallback: "download" } },
+      downloads: { xmb9: { version: "1.0", file_name: "" } },
+    })).toHaveLength(1);
+  });
 
   test("writes per-download update logs into manifest.downloads", () => {
     const result = buildManifest({

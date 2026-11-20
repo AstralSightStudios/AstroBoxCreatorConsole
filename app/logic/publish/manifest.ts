@@ -1,6 +1,7 @@
 import { PUBLISH_CONFIG } from "~/config/publish";
 import type { ManifestCanopusMeta } from "./canopus-package";
 import type { ResourceType } from "./resource-type";
+import { canOmitDownloadPackage } from "./plugin-install";
 
 export type { ManifestCanopusMeta };
 
@@ -27,6 +28,8 @@ export interface DownloadUploadInput {
     platformId: string;
     version: string;
     file: UploadAssetInput | null;
+    /** 草稿恢复后可能只保留仓库路径，不再持有占位 File。 */
+    existingFileName?: string;
     pathOverride?: string;
     skipUpload?: boolean;
     encryptOnUpload?: boolean;
@@ -195,28 +198,27 @@ export interface ManifestBuildResult {
     wallpaperAssets: AssetDescriptor[];
 }
 
+function buildDownloadInfo(
+    row: Pick<DownloadUploadInput, "version" | "versionCode" | "updatelogs" | "canopus">,
+    fileName: string,
+): ManifestDownloadInfo {
+    const entry: ManifestDownloadInfo = {
+        version: row.version.trim(),
+        file_name: fileName,
+    };
+    const versionCode = normalizeVersionCode(row.versionCode);
+    if (versionCode !== undefined) entry.versionCode = versionCode;
+    const updatelogs = normalizeUpdateLogs(row.updatelogs);
+    if (updatelogs) entry.updatelogs = updatelogs;
+    if (row.canopus) entry.canopus = row.canopus;
+    return entry;
+}
+
 function buildDownloadsObject(
     assets: DownloadAssetDescriptor[],
 ): Record<string, ManifestDownloadInfo> {
-    return assets.reduce(
-        (acc, current) => {
-            const entry: ManifestDownloadInfo = {
-                version: current.version,
-                file_name: current.path,
-            };
-            if (typeof current.versionCode === "number") {
-                entry.versionCode = current.versionCode;
-            }
-            if (current.updatelogs?.length) {
-                entry.updatelogs = current.updatelogs;
-            }
-            if (current.canopus) {
-                entry.canopus = current.canopus;
-            }
-            acc[current.platformId] = entry;
-            return acc;
-        },
-        {} as Record<string, ManifestDownloadInfo>,
+    return Object.fromEntries(
+        assets.map((asset) => [asset.platformId, buildDownloadInfo(asset, asset.path)]),
     );
 }
 
@@ -433,6 +435,15 @@ export function buildManifest(input: ManifestBuildInput): ManifestBuildResult {
     );
 
     const downloadsObject = buildDownloadsObject(downloadAssets);
+    if (canOmitDownloadPackage(input.ext)) {
+        for (const row of input.downloads) {
+            const platformId = row.platformId.trim();
+            if (!platformId || row.file) continue;
+            // 客户端仍依赖设备下载条目启用安装按钮，file_name 必须是字符串。
+            // 无包体时只写元数据，不创建占位文件，也不加入上传列表。
+            downloadsObject[platformId] = buildDownloadInfo(row, row.pathOverride || row.existingFileName || "");
+        }
+    }
     const trialDownloadsObject = buildDownloadsObject(trialDownloadAssets);
     const ext: ManifestExtObject = { ...input.ext };
 

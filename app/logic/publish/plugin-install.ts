@@ -30,6 +30,8 @@ export const PLUGIN_INSTALL_DATA_MAX_BYTES = 16 * 1024;
 /** 与客户端一致：插件名按 Unicode 码点最多这么多。 */
 export const PLUGIN_INSTALL_NAME_MAX_CHARS = 128;
 
+export const AZKI_INSTALL_PLUGIN = "Azki Server";
+
 export interface PluginInstallValue {
   plugin: string;
   fallback: PluginInstallFallback;
@@ -122,6 +124,12 @@ export function inspectPluginInstall(ext: unknown): PluginInstallInspection {
   return result;
 }
 
+/** 只有合法声明且禁止退回常规下载时，正式下载才可省略包体。 */
+export function canOmitDownloadPackage(ext: unknown): boolean {
+  const inspection = inspectPluginInstall(ext);
+  return inspection.present && inspection.problems.length === 0 && inspection.fallback === "block";
+}
+
 function parseExtObject(extRaw: string): Record<string, unknown> | null {
   const trimmed = extRaw.trim();
   if (!trimmed) return {};
@@ -189,6 +197,31 @@ export function writePluginInstall(extRaw: string, value: PluginInstallValue | n
     };
   }
   return Object.keys(next).length === 0 ? "{}" : JSON.stringify(next, null, 2);
+}
+
+/** Azki 快填从已有配置回显 ID；其它插件的数据不拿来当作 Azki ID。 */
+export function readAzkiResourceId(extRaw: string): string {
+  const ext = parseExtObject(extRaw);
+  if (!ext || !isRecord(ext.pluginInstall) || ext.pluginInstall.plugin !== AZKI_INSTALL_PLUGIN) return "";
+  const data = ext.pluginInstall.data;
+  return isRecord(data) && typeof data.rid === "string" ? data.rid : "";
+}
+
+/** 一次填写 Azki 插件、资源 ID 和禁止常规下载；保留 ext 及已有 Azki data 的其它字段。 */
+export function writeAzkiPluginInstall(extRaw: string, resourceId: string): string {
+  const ext = parseExtObject(extRaw);
+  const rid = resourceId.trim();
+  if (!ext || !rid) return extRaw;
+  const previous = isRecord(ext.pluginInstall) ? ext.pluginInstall : {};
+  const data = previous.plugin === AZKI_INSTALL_PLUGIN && isRecord(previous.data) ? previous.data : {};
+  return JSON.stringify({
+    ...ext,
+    pluginInstall: {
+      plugin: AZKI_INSTALL_PLUGIN,
+      data: { ...data, rid },
+      fallback: "block",
+    },
+  }, null, 2);
 }
 
 /** 只有 Level 4 的插件才能导出 `resource-install`；Level 2/3 的插件客户端会判为「不支持」。 */

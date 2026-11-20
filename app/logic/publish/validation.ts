@@ -20,7 +20,7 @@ import {
 } from "./resource-type";
 import { validateCanopusIdFormat } from "./canopus-id";
 import { inspectForceUpdate } from "./force-update";
-import { inspectPluginInstall } from "./plugin-install";
+import { canOmitDownloadPackage, inspectPluginInstall } from "./plugin-install";
 import { CANOPUS_MODULE_RESTYPE, inspectCanopusManager } from "./canopus-manager";
 import { validateResPackIdFormat } from "./res-pack-id";
 import { validateWatchfaceIdFormat } from "./watchface-id";
@@ -169,12 +169,13 @@ function validateDownloadRows(
   rows: ValidationDownloadInput[],
   label: string,
   field: PublishFieldKey,
+  packageOptional = false,
 ): PublishValidationIssue[] {
   return rows.flatMap((row, index) => {
     const missing = [
       !row.platformId.trim() && "设备",
       !row.version.trim() && "版本",
-      !row.file && !row.existingFileName?.trim() && "包体",
+      !packageOptional && !row.file && !row.existingFileName?.trim() && "包体",
     ].filter(Boolean);
     return missing.length
       ? [{ field, message: `${label}第 ${index + 1} 行缺少${missing.join("、")}。` }]
@@ -462,7 +463,7 @@ export function validatePublish(
     }
   }
   if (input.downloads.length === 0) push("downloads", "请至少添加一个正式下载设备。");
-  issues.push(...validateDownloadRows(input.downloads, "正式下载", "downloads"));
+  issues.push(...validateDownloadRows(input.downloads, "正式下载", "downloads", canOmitDownloadPackage(input.ext)));
   issues.push(...validateDownloadRows(input.trialDownloads, "试用下载", "trialDownloads"));
   issues.push(
     ...validateDownloadDeviceVendors(

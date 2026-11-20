@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   PLUGIN_INSTALL_DATA_MAX_BYTES,
+  canOmitDownloadPackage,
   checkPluginInstallMarket,
   describePluginInstallMarketIssue,
   inspectPluginInstall,
   isValidPluginName,
   parsePluginInstallData,
+  readAzkiResourceId,
   readPluginInstall,
+  writeAzkiPluginInstall,
   writePluginInstall,
 } from "../../app/logic/publish/plugin-install";
 
@@ -97,6 +100,57 @@ describe("read / write pluginInstall", () => {
     const written = writePluginInstall("{}", value);
     expect(inspectPluginInstall(JSON.parse(written)).problems).toEqual([]);
     expect(readPluginInstall(written)).toEqual(value);
+  });
+});
+
+describe("Azki 快速填写", () => {
+  test("按字符串保存资源 ID，并显式禁止普通下载兜底", () => {
+    const written = writeAzkiPluginInstall('{"other":true}', " 00114514 ");
+    expect(JSON.parse(written)).toEqual({
+      other: true,
+      pluginInstall: { plugin: "Azki Server", data: { rid: "00114514" }, fallback: "block" },
+    });
+    expect(readAzkiResourceId(written)).toBe("00114514");
+    expect(canOmitDownloadPackage(JSON.parse(written))).toBe(true);
+  });
+
+  test("更新已有 Azki ID 时保留其它数据，切换插件时清理旧插件的数据", () => {
+    const existing = JSON.stringify({ pluginInstall: { plugin: "Azki Server", data: { rid: "old", channel: "keep" }, fallback: "download" } });
+    expect(JSON.parse(writeAzkiPluginInstall(existing, "114514")).pluginInstall).toEqual({
+      plugin: "Azki Server", data: { rid: "114514", channel: "keep" }, fallback: "block",
+    });
+    const other = JSON.stringify({ pluginInstall: { plugin: "other", data: { rid: "other-id", sku: "x" } } });
+    expect(readAzkiResourceId(other)).toBe("");
+    expect(JSON.parse(writeAzkiPluginInstall(other, "114514")).pluginInstall.data).toEqual({ rid: "114514" });
+  });
+
+  test("空 ID 和非法 ext 不覆盖已有配置；没有可回显的字符串 ID 时返回空串", () => {
+    for (const extRaw of ["{}", "{broken", "[]", "null"]) {
+      expect(writeAzkiPluginInstall(extRaw, "  ")).toBe(extRaw);
+      expect(readAzkiResourceId(extRaw)).toBe("");
+    }
+    expect(writeAzkiPluginInstall("{broken", "114514")).toBe("{broken");
+    expect(readAzkiResourceId('{"pluginInstall":{"plugin":"Azki Server","data":{"rid":114514}}}')).toBe("");
+  });
+});
+
+describe("canOmitDownloadPackage", () => {
+  test("合法插件声明使用 block 或默认兜底时允许免包体", () => {
+    expect(canOmitDownloadPackage({ pluginInstall: { plugin: "p" } })).toBe(true);
+    expect(canOmitDownloadPackage({ pluginInstall: { plugin: "p", fallback: "block" } })).toBe(true);
+  });
+
+  test("常规下载兜底、缺失或非法插件声明仍需包体", () => {
+    for (const ext of [
+      undefined,
+      {},
+      { pluginInstall: null },
+      { pluginInstall: {} },
+      { pluginInstall: { plugin: "p", fallback: "download" } },
+      { pluginInstall: { plugin: "p", fallback: "retry" } },
+      { pluginInstall: { plugin: "a/b" } },
+      { pluginInstall: { plugin: "p", data: "x".repeat(PLUGIN_INSTALL_DATA_MAX_BYTES) } },
+    ]) expect(canOmitDownloadPackage(ext)).toBe(false);
   });
 });
 

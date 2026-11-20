@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlugsConnectedIcon, WarningIcon } from "@phosphor-icons/react";
-import { SegmentedControl, Select, Switch, TextArea, TextField } from "~/components/ScaleAwareThemes";
+import { Button, SegmentedControl, Select, Switch, TextArea, TextField } from "~/components/ScaleAwareThemes";
 import {
   fetchNgPluginIndex,
   ngPluginDisplayName,
@@ -15,7 +15,9 @@ import {
   describePluginInstallMarketIssue,
   inspectPluginInstall,
   parsePluginInstallData,
+  readAzkiResourceId,
   readPluginInstall,
+  writeAzkiPluginInstall,
   writePluginInstall,
   type PluginInstallFallback,
 } from "~/logic/publish/plugin-install";
@@ -47,7 +49,7 @@ const HELP: FieldHelpItem[] = [
     label: "插件不可用时",
     icon: <WarningIcon size={16} weight="duotone" />,
     description:
-      "插件被停用、没运行起来或用户的客户端过旧时：「提示用户并停下」不会下载任何东西；「退回常规下载」会照常下载你上传的包体，适合插件只是锦上添花的资源。",
+      "插件被停用、没运行起来或用户的客户端过旧时：「提示用户并停下」不会下载任何东西，正式下载只需填写支持设备与版本，可不上传包体；「退回常规下载」需要为每台设备提供包体。试用下载仍需提供包体。",
   },
   {
     group: "插件接管安装",
@@ -64,6 +66,9 @@ const HELP: FieldHelpItem[] = [
 export function PluginInstallSection({ extRaw, onChange }: PluginInstallSectionProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const value = useMemo(() => readPluginInstall(extRaw), [extRaw]);
+  const azkiResourceId = useMemo(() => readAzkiResourceId(extRaw), [extRaw]);
+  const [azkiRidDraft, setAzkiRidDraft] = useState(azkiResourceId);
+  useEffect(() => setAzkiRidDraft(azkiResourceId), [azkiResourceId]);
   const inspection = useMemo(() => {
     let ext: unknown = null;
     try {
@@ -141,6 +146,12 @@ export function PluginInstallSection({ extRaw, onChange }: PluginInstallSectionP
     onChange(next);
   };
 
+  const applyAzki = () => {
+    const next = writeAzkiPluginInstall(extRaw, azkiRidDraft);
+    setDataDraft(readPluginInstall(next)?.dataText ?? "");
+    write(next);
+  };
+
   const toggle = (checked: boolean) => {
     if (!checked) {
       setDataDraft("");
@@ -163,6 +174,33 @@ export function PluginInstallSection({ extRaw, onChange }: PluginInstallSectionP
       headerExtra={<FieldHelpButton onClick={() => setHelpOpen(true)} title="插件接管安装说明" />}
     >
       <div data-publish-field="pluginInstall" className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="azki-resource-id" className="text-sm font-medium text-white">Azki 资源 ID 快速填写</label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <TextField.Root
+              id="azki-resource-id"
+              value={azkiRidDraft}
+              placeholder="例如 114514"
+              radius="large"
+              spellCheck={false}
+              autoComplete="off"
+              className="min-w-0 flex-1"
+              onChange={(event) => setAzkiRidDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  applyAzki();
+                }
+              }}
+            />
+            <Button radius="large" variant="soft" disabled={!azkiRidDraft.trim()} onClick={applyAzki}>
+              应用 Azki 配置
+            </Button>
+          </div>
+          <p className="text-xs leading-relaxed text-white/50">
+            自动使用 Azki Server 安装此资源，插件不可用时停止安装。下方填写支持设备与版本后，可不上传正式包体。
+          </p>
+        </div>
         <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 flex-col gap-1">
@@ -224,6 +262,11 @@ export function PluginInstallSection({ extRaw, onChange }: PluginInstallSectionP
                   <SegmentedControl.Item value="block">{PLUGIN_INSTALL_FALLBACK_LABELS.block}</SegmentedControl.Item>
                   <SegmentedControl.Item value="download">{PLUGIN_INSTALL_FALLBACK_LABELS.download}</SegmentedControl.Item>
                 </SegmentedControl.Root>
+                <p className="text-xs leading-relaxed text-white/50">
+                  {value.fallback === "block"
+                    ? "正式包体可不上传，由插件完整负责安装；支持设备与版本仍需填写。"
+                    : "需为每台支持设备提供正式包体，供插件不可用时常规下载。"}
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5">

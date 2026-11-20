@@ -169,6 +169,8 @@ interface DownloadsSectionProps {
    */
   requireVersionIncrement?: boolean;
   allowEncryption?: boolean;
+  /** 合法插件接管且禁止常规下载兜底时，正式包体可选，设备和版本仍保留。 */
+  packageOptional?: boolean;
   /** 包体选择器接受的扩展名（逗号分隔）。仅作提示，真实识别靠包体格式。 */
   fileAccept?: string;
   /** 当前资源类型不支持某些厂商时，禁用项悬浮显示的系统气泡文案。 */
@@ -217,6 +219,7 @@ export function DownloadsSection({
   resourceId,
   requireVersionIncrement = true,
   allowEncryption = true,
+  packageOptional = false,
   fileAccept,
   disabledDeviceTitle,
   validateFile,
@@ -608,6 +611,11 @@ export function DownloadsSection({
         </Callout.Root>
       )}
       <div className="flex flex-col gap-3 max-w-full">
+        {packageOptional && (
+          <p className="px-1 text-sm leading-relaxed text-white/60">
+            已由插件接管安装，正式包体可不上传。请选择支持的设备并填写版本，安装由插件完成。
+          </p>
+        )}
         <div className="flex items-center gap-1.5 px-1">
           {onBatchSetDevices && (
             <Popover.Root
@@ -776,7 +784,7 @@ export function DownloadsSection({
                 </div>
 
                 <div className="flex flex-col gap-2.5 md:flex-row md:flex-wrap md:items-center md:gap-x-4 md:gap-y-2">
-                  {(item.file || item.existingFileName) && (
+                  {(packageOptional || item.file || item.existingFileName) && (
                     <div className="min-w-0 md:grow md:shrink md:basis-[300px]">
                       {item.versionLocked ? (
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -881,7 +889,7 @@ export function DownloadsSection({
                               placeholder="版本号"
                               value={item.version}
                               radius="large"
-                              disabled={!item.file}
+                              disabled={!packageOptional && !item.file}
                               className="min-w-0 w-full"
                               onChange={(e) => {
                                 const device = sortedDeviceOptions.find(
@@ -911,7 +919,7 @@ export function DownloadsSection({
                                   : ""
                               }
                               radius="large"
-                              disabled={!item.file}
+                              disabled={!packageOptional && !item.file}
                               className="min-w-0 w-full"
                               inputMode="numeric"
                               onChange={(e) => {
@@ -1036,7 +1044,7 @@ export function DownloadsSection({
                       />
                     </div>
                   )}
-                  <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
+                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 lg:ml-auto">
                     <Button
                       radius="large"
                       variant="soft"
@@ -1061,18 +1069,41 @@ export function DownloadsSection({
                     <Button
                       radius="large"
                       variant={
-                        item.file || item.existingFileName ? "outline" : "solid"
+                        packageOptional || item.file || item.existingFileName ? "outline" : "solid"
                       }
                       onClick={() => void pickDownloadFile(item.uid)}
                     >
                       <UploadSimpleIcon size={16} weight="bold" />
-                      {item.previousVersion !== undefined ||
-                      item.previousVersionCode !== undefined
-                        ? "更新包体"
-                        : item.file || item.existingFileName
-                          ? "更换包体"
-                          : "导入包体"}
+                      {item.file || item.existingFileName
+                        ? item.previousVersion !== undefined || item.previousVersionCode !== undefined
+                          ? "更新包体"
+                          : "更换包体"
+                        : packageOptional ? "导入包体（可选）" : "导入包体"}
                     </Button>
+                    {packageOptional && (item.file || item.existingFileName) && (
+                      <Button
+                        radius="large"
+                        variant="ghost"
+                        color="gray"
+                        onClick={() => onUpdateRow(item.uid, (row) => ({
+                          ...row,
+                          file: null,
+                          existingFileName: undefined,
+                          encryptOnUpload: false,
+                          versionLocked: false,
+                          versionSource: undefined,
+                          packageHash: undefined,
+                          packageIdentity: undefined,
+                          packageIdentityKind: undefined,
+                          packageWritable: undefined,
+                          packageUnwritableReason: undefined,
+                          packageSource: undefined,
+                          canopus: undefined,
+                        }))}
+                      >
+                        移除包体
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

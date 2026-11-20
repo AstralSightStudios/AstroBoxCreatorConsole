@@ -9,6 +9,8 @@
  * 这里只复刻 serde 的行为，不做运营策略判断；返回的 issue 由调用方决定展示方式。
  */
 
+import { canOmitDownloadPackage } from "./plugin-install";
+
 export type ManifestIssueSeverity = "error" | "warning";
 
 export interface ManifestSchemaIssue {
@@ -562,8 +564,11 @@ export function inspectRuntimeConstraints(
   if (!isRecord(manifest.downloads)) return [];
 
   const issues: ManifestSchemaIssue[] = [];
+  const packageOptional = canOmitDownloadPackage(manifest.ext);
   for (const [device, rawEntry] of Object.entries(manifest.downloads)) {
     if (!isRecord(rawEntry)) continue;
+    // 插件完整接管的元数据条目没有包体，不适用宿主的包体安装约束。
+    if (packageOptional && rawEntry.file_name === "") continue;
     const base = keyPath("downloads", device);
 
     if (restype === "canopus") {
