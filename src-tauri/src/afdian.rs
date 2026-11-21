@@ -2,7 +2,7 @@ use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use aes::Aes256;
 use base64::{engine::general_purpose, Engine as _};
 use cbc::Encryptor as CbcEncryptor;
-use chrono::{DateTime, Datelike, FixedOffset, Timelike, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Utc};
 use rand::{rngs::OsRng, RngCore};
 use rsa::{pkcs8::DecodePublicKey, Pkcs1v15Encrypt, RsaPublicKey};
 use rust_decimal::Decimal;
@@ -82,11 +82,21 @@ pub(crate) struct AfdianQuickCodeResult {
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AfdianIncomeOverview {
+    /// 「本月收入」主口径：dashboard.summary.month_amount（单请求快照，不依赖账单翻页）。
+    /// 字段缺失时回退到订单聚合值，因此正常路径下不会为 None。
     current_month: Option<String>,
-    previous_month: String,
+    /// 可提现余额（dashboard.balance_after_tax）。结算期该字段可能是文案，只保留数字形态。
     withdrawable: Option<String>,
-    today: String,
-    yesterday: String,
+    /// 待结算金额（dashboard.summary.unconfirmed_amount）。结算期内它就是待结算的上月收入，
+    /// 供首页卡片切「上月」口径；窗口外不参与任何展示。
+    unconfirmed_amount: Option<String>,
+    /// dashboard.balance 是否为「结算中」文案。这是服务端侧的结算期信号：
+    /// 本地时钟不可信（时区、改时间、进程跨午夜）时以它为准。
+    is_balance_settling: bool,
+    /// 今日/昨日收入来自订单聚合。订单接口失败时为 None（UI 显示 "--"），
+    /// 不能用 "0" 冒充，否则会把「没加载出来」误报成「今天没收入」。
+    today: Option<String>,
+    yesterday: Option<String>,
     as_of: String,
 }
 
@@ -496,28 +506,28 @@ pub(crate) async fn afdian_income_overview(
     http_client: tauri::State<'_, AppHttpClient>,
 ) -> Result<AfdianIncomeOverview, String> {
     let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
-    let timezone = FixedOffset::east_opt(8 * 60 * 60).expect("固定时区有效");
+    let timezone = shanghai_timezone();
     let now = Utc::now().with_timezone(&timezone);
-    let current_month_start = now.date_naive().with_day(1).expect("当月首日有效");
-    let previous_month_date = current_month_start.pred_opt().expect("上月最后一天有效");
-    let settlement_window = now.day() == 1 && now.hour() < 10;
-    let aggregation_start_key = if settlement_window {
-        previous_month_date.format("%Y%m01").to_string()
-    } else {
-        current_month_start.format("%Y%m%d").to_string()
-    };
+    let today = now.date_naive();
+    let month_start = today.with_day(1).expect("当月首日有效");
+    let yesterday = today.pred_opt().expect("昨日有效");
+    // 区间起点取「本月 1 日」与「昨日」的更早者：
+    // - 平时就是本月 1 日，给 month_amount 缺失时的订单聚合兜底留出整月数据；
+    // - 每月 1 日凌晨，昨日落在上月，只有取昨日才能算到「昨日收入」。
+    let range_start = start_of_day(month_start.min(yesterday), &timezone);
+    let range_end = start_of_day(today.succ_opt().expect("明日有效"), &timezone);
+
     let dashboard_url = format!("{IFDIAN_BASE_URL}/api/my/dashboard");
     let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
-    let orders = fetch_received_orders(
-        &http_client.0,
-        &session.auth_token,
-        &aggregation_start_key,
-        &timezone,
-    );
-    let (dashboard, orders) = tokio::try_join!(dashboard, orders)?;
+    let orders = fetch_received_orders(&http_client.0, &session.auth_token, range_start, range_end);
+    // 用 join! 而非 try_join!：dashboard 是基础接口，失败必须整体报错；
+    // 订单只是「今日/昨日」与聚合兜底的辅助数据源，失败时应降级（对应字段为 None），
+    // 而不是让「本月收入」这张已经拿到 month_amount 的卡一起挂掉。
+    let (dashboard, orders) = tokio::join!(dashboard, orders);
+    let dashboard = dashboard?;
     ensure_api_success(&dashboard, "结算信息加载失败")?;
 
-    Ok(aggregate_order_income(&orders, &dashboard, now))
+    Ok(aggregate_order_income(orders.ok().as_deref(), &dashboard, now))
 }
 
 #[tauri::command]
@@ -527,9 +537,13 @@ pub(crate) async fn afdian_management_overview(
     let session = load_session()?.ok_or_else(|| "请先登录爱发电账户".to_string())?;
     let timezone = shanghai_timezone();
     let now = Utc::now().with_timezone(&timezone);
+    let today = now.date_naive();
+    let today_start = start_of_day(today, &timezone);
+    let tomorrow_start = start_of_day(today.succ_opt().expect("明日有效"), &timezone);
     let dashboard_url = format!("{AFDIAN_BASE_URL}/api/my/dashboard");
     let dashboard = authenticated_get(&http_client.0, &dashboard_url, &session.auth_token, &[]);
-    let today_orders = fetch_today_income_orders(&http_client.0, &session.auth_token, &timezone);
+    let today_orders =
+        fetch_received_orders(&http_client.0, &session.auth_token, today_start, tomorrow_start);
     let daily_stats = fetch_management_daily_stats(&http_client.0, &session.auth_token, &timezone);
     let monthly_income = fetch_monthly_income(&http_client.0, &session.auth_token);
     let (dashboard, today_orders, daily_stats, monthly_income) =
@@ -1143,30 +1157,47 @@ fn parse_message_item(record: &Value) -> Option<AfdianMessageItem> {
     })
 }
 
+/// 拉取指定区间内的已结算账单，用于「今日/昨日收入」与「本月收入」的兜底聚合。
+///
+/// 口径（与爱发电网页端、以及本机 afdian 项目一致）：
+/// - `status=2`：只取已支付的订单，退款/冻结/待支付由服务端直接排除；
+/// - `begin_time`/`end_time`：由服务端裁剪区间，本地不再做任何基于时间戳的提前中止；
+/// - `sort_field=update_time`：翻页排序与本地分桶必须同源。旧实现按 `create_time` 排序并
+///   「本页出现早于区间起点的订单就 break」，一笔上月创建、本月才付款的续费单会让翻页提前
+///   中止，后面更早创建的已付订单全部丢失；按 `create_time` 分桶还会把「上月创建、今天到账」
+///   记到错误的月份。
+/// - 游标 `last_order_id`：首页不带，之后每页传上一页返回的游标；游标不再前进即停止。
 async fn fetch_received_orders(
     client: &reqwest::Client,
     token: &str,
-    aggregation_start_key: &str,
-    timezone: &FixedOffset,
+    begin: DateTime<FixedOffset>,
+    end_exclusive: DateTime<FixedOffset>,
 ) -> Result<Vec<Value>, String> {
     let orders_url = format!("{IFDIAN_BASE_URL}/api/my/sponsored-bill-filter");
+    let begin_value = begin.timestamp().to_string();
+    // 接口的 end_time 按闭区间处理：传「区间终点前一秒」，避免把下一秒的订单算进来。
+    let end_value = (end_exclusive.timestamp() - 1)
+        .max(begin.timestamp())
+        .to_string();
     let mut orders = Vec::new();
+    let mut last_order_id = String::new();
 
     for page in 1..=100 {
         let page_value = page.to_string();
-        let response = authenticated_get(
-            client,
-            &orders_url,
-            token,
-            &[
+        // 用作用域包住 query：last_order_id 在循环末尾会被重新赋值，
+        // 直接借用会让它在 await 之后仍然处于借用状态。
+        let response = {
+            let mut query: Vec<(&str, &str)> = vec![
                 ("page", page_value.as_str()),
-                ("sort_field", "create_time"),
+                ("sort_field", "update_time"),
                 ("sort_value", "desc"),
+                ("status", "2"),
+                ("begin_time", begin_value.as_str()),
+                ("end_time", end_value.as_str()),
                 ("is_redeem", "0"),
                 ("plan_id", ""),
                 ("sign_status", ""),
                 ("has_remark", "0"),
-                ("status", ""),
                 ("order_id", ""),
                 ("nick_name", ""),
                 ("user_id", ""),
@@ -1174,37 +1205,40 @@ async fn fetch_received_orders(
                 ("order_remark", ""),
                 ("express_no", ""),
                 ("last_cart_order_id", ""),
-                ("last_order_id", ""),
-                ("begin_time", ""),
-                ("end_time", ""),
-            ],
-        )
-        .await?;
+            ];
+            if !last_order_id.is_empty() {
+                query.push(("last_order_id", last_order_id.as_str()));
+            }
+            authenticated_get(client, &orders_url, token, &query).await?
+        };
         ensure_api_success(&response, "订单收入加载失败")?;
+
         let page_orders = response
             .pointer("/data/list")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let order_count = page_orders.len();
-        let reached_before_range = page_orders.iter().any(|order| {
-            order_date_key(order, timezone)
-                .is_some_and(|date_key| date_key.as_str() < aggregation_start_key)
-        });
+        let page_len = page_orders.len();
         orders.extend(page_orders);
 
-        let has_more = response.pointer("/data/has_more").and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_str().and_then(|raw| raw.parse().ok()))
-        });
-        if order_count == 0
-            || reached_before_range
-            || has_more == Some(0)
-            || (has_more.is_none() && order_count < 10)
+        let next_last_order_id = response
+            .pointer("/data/last_order_id")
+            .and_then(value_to_text)
+            .unwrap_or_default();
+        let has_more = response.pointer("/data/has_more").and_then(value_to_i64);
+        let exhausted = match has_more {
+            Some(value) => value != 1,
+            // has_more 偶尔缺失：本页不满一页即认为到底，避免空翻页。
+            None => page_len < 10,
+        };
+        if exhausted
+            || page_len == 0
+            || next_last_order_id.is_empty()
+            || next_last_order_id == last_order_id
         {
             break;
         }
+        last_order_id = next_last_order_id;
     }
 
     Ok(orders)
@@ -1368,70 +1402,16 @@ fn summarize_message_user_orders(
     }
 }
 
-async fn fetch_today_income_orders(
-    client: &reqwest::Client,
-    token: &str,
-    timezone: &FixedOffset,
-) -> Result<Vec<Value>, String> {
-    let today_key = Utc::now()
-        .with_timezone(timezone)
-        .format("%Y%m%d")
-        .to_string();
-    let mut orders = Vec::new();
-    let mut last_order_id: Option<String> = None;
-    let mut last_cart_order_id: Option<String> = None;
-
-    for page in 1..=50 {
-        let response = fetch_received_order_page(
-            client,
-            token,
-            page,
-            last_order_id.as_deref(),
-            last_cart_order_id.as_deref(),
-            "create_time",
-        )
-        .await?;
-        let page_orders = response
-            .pointer("/data/list")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let mut reached_previous_day = false;
-        for order in page_orders {
-            let date_key = order_date_key(&order, timezone);
-            match date_key.as_deref() {
-                Some(value) if value < today_key.as_str() => {
-                    reached_previous_day = true;
-                }
-                Some(value) if value == today_key && is_income_order(&order) => orders.push(order),
-                _ => {}
-            }
-        }
-        if reached_previous_day
-            || response.pointer("/data/has_more").and_then(value_to_i64) != Some(1)
-        {
-            break;
-        }
-        last_order_id = response
-            .pointer("/data/last_order_id")
-            .and_then(value_to_text);
-        last_cart_order_id = response
-            .pointer("/data/last_cart_order_id")
-            .and_then(value_to_text);
-        if last_order_id.as_deref().unwrap_or_default().is_empty() {
-            break;
-        }
-    }
-
-    Ok(orders)
-}
-
+/// 汇总今日已结算订单的金额与笔数。
+///
+/// 订单由 [`fetch_received_orders`] 按 `status=2` 从服务端过滤后带回，这里再做一次
+/// `is_settled_order` 校验与 `out_trade_no` 去重，作为防御性兜底。
 fn sum_income_orders(orders: &[Value]) -> (Decimal, usize) {
     let mut seen = HashSet::new();
     orders
         .iter()
         .fold((Decimal::ZERO, 0), |(amount, count), order| {
-            if !is_income_order(order) {
+            if !is_settled_order(order) {
                 return (amount, count);
             }
             if let Some(identity) = order_identity(order) {
@@ -1675,18 +1655,24 @@ fn api_message(response: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// 把 dashboard 快照与订单聚合结果合成首页收入概览。
+///
+/// 口径优先级：
+/// - 「本月收入」= `dashboard.summary.month_amount`（官方数字，单请求即可拿到）。
+///   只有该字段缺失时才回退到订单聚合，避免订单多或被限速时本月卡空着。
+/// - 「今日/昨日收入」只能来自订单聚合：`/api/my/stat` 对今天、昨天经常返回空。
+/// - 「可提现」= `dashboard.balance_after_tax`；结算期它可能是文案，非数字一律丢弃。
+/// - `unconfirmed_amount`（待结算上月收入）与 `is_balance_settling`（服务端结算期信号）
+///   原样透出，供前端在结算期切「上月」口径。
+///
+/// `orders` 为 `None` 表示订单接口失败：今日/昨日保持未知（`None`），
+/// 本月收入若能从 dashboard 取到则照常返回。
 fn aggregate_order_income(
-    orders: &[Value],
+    orders: Option<&[Value]>,
     dashboard: &Value,
     now: DateTime<FixedOffset>,
 ) -> AfdianIncomeOverview {
     let month_key = now.format("%Y%m").to_string();
-    let previous_month_key = now
-        .date_naive()
-        .with_day(1)
-        .and_then(|date| date.pred_opt())
-        .map(|date| date.format("%Y%m").to_string())
-        .unwrap_or_default();
     let today_key = now.format("%Y%m%d").to_string();
     let yesterday_key = now
         .date_naive()
@@ -1694,54 +1680,85 @@ fn aggregate_order_income(
         .map(|date| date.format("%Y%m%d").to_string())
         .unwrap_or_default();
     let timezone = *now.offset();
-    let mut seen_orders = HashSet::new();
-    let mut current_month = Decimal::ZERO;
-    let mut previous_month = Decimal::ZERO;
-    let mut today = Decimal::ZERO;
-    let mut yesterday = Decimal::ZERO;
 
-    for order in orders {
-        if let Some(identity) = order_identity(order) {
-            if !seen_orders.insert(identity) {
-                continue;
+    let (aggregated_month, today, yesterday) = match orders {
+        None => (None, None, None),
+        Some(orders) => {
+            let mut seen_orders = HashSet::new();
+            let mut month_total = Decimal::ZERO;
+            let mut today_total = Decimal::ZERO;
+            let mut yesterday_total = Decimal::ZERO;
+
+            for order in orders {
+                if let Some(identity) = order_identity(order) {
+                    if !seen_orders.insert(identity) {
+                        continue;
+                    }
+                }
+                // 服务端已按 status=2 过滤，这里再校验一次防止返回集被放宽。
+                if !is_settled_order(order) {
+                    continue;
+                }
+                // 分桶必须用 update_time：它才是「这笔钱什么时候到的」的权威时间。
+                let Some(date_key) = order_update_date_key(order, &timezone) else {
+                    continue;
+                };
+                let Some(amount) = order
+                    .get("total_amount")
+                    .and_then(value_to_amount)
+                    .and_then(|value| parse_decimal(&value))
+                else {
+                    continue;
+                };
+
+                if date_key.starts_with(&month_key) {
+                    month_total += amount;
+                }
+                if date_key == today_key {
+                    today_total += amount;
+                } else if date_key == yesterday_key {
+                    yesterday_total += amount;
+                }
             }
-        }
-        if !is_income_order(order) {
-            continue;
-        }
-        let Some(date_key) = order_date_key(order, &timezone) else {
-            continue;
-        };
-        let Some(amount) = order
-            .get("total_amount")
-            .and_then(value_to_amount)
-            .and_then(|value| parse_decimal(&value))
-        else {
-            continue;
-        };
 
-        if date_key.starts_with(&month_key) {
-            current_month += amount;
-        } else if date_key.starts_with(&previous_month_key) {
-            previous_month += amount;
+            (
+                Some(format_decimal(month_total)),
+                Some(format_decimal(today_total)),
+                Some(format_decimal(yesterday_total)),
+            )
         }
-        if date_key == today_key {
-            today += amount;
-        } else if date_key == yesterday_key {
-            yesterday += amount;
-        }
-    }
+    };
+
+    let month_amount = dashboard
+        .pointer("/data/summary/month_amount")
+        .and_then(value_to_amount)
+        .filter(|value| parse_decimal(value).is_some());
+    let unconfirmed_amount = dashboard
+        .pointer("/data/summary/unconfirmed_amount")
+        .and_then(value_to_amount)
+        .filter(|value| parse_decimal(value).is_some());
+    let balance = parse_dashboard_balance(dashboard.pointer("/data/balance"));
 
     AfdianIncomeOverview {
-        current_month: Some(format_decimal(current_month)),
-        previous_month: format_decimal(previous_month),
+        current_month: month_amount.or(aggregated_month),
         withdrawable: dashboard
             .pointer("/data/balance_after_tax")
-            .and_then(value_to_amount),
-        today: format_decimal(today),
-        yesterday: format_decimal(yesterday),
+            .and_then(value_to_amount)
+            .filter(|value| parse_decimal(value).is_some()),
+        unconfirmed_amount,
+        is_balance_settling: balance.is_settling,
+        today,
+        yesterday,
         as_of: now.to_rfc3339(),
     }
+}
+
+/// 收入口径只认「已支付」订单（status == 2）。
+///
+/// 与 [`is_income_order`] 刻意分开：后者把 8/9（待发货/已发货）也算作收入，
+/// 仍被私信用户资料链路使用，改动它会污染消息页的累计赞助金额。
+fn is_settled_order(order: &Value) -> bool {
+    order.get("status").and_then(value_to_i64) == Some(2)
 }
 
 fn is_income_order(order: &Value) -> bool {
@@ -1759,14 +1776,68 @@ fn order_identity(order: &Value) -> Option<String> {
         })
 }
 
-fn order_date_key(order: &Value, timezone: &FixedOffset) -> Option<String> {
-    let timestamp = order.get("create_time").and_then(value_to_timestamp)?;
+/// 订单收入的分桶日期。取的是 `update_time`，不是 `create_time`：
+/// 一笔上月创建、本月才付款成功的续费单，收入应计入本月。
+fn order_update_date_key(order: &Value, timezone: &FixedOffset) -> Option<String> {
+    let timestamp = order.get("update_time").and_then(value_to_timestamp)?;
     DateTime::<Utc>::from_timestamp(timestamp, 0)
         .map(|date| date.with_timezone(timezone).format("%Y%m%d").to_string())
 }
 
+/// `/api/my/dashboard` 里 `balance` 字段的两种形态。
+struct DashboardBalance {
+    /// 数字形态的余额；非数字（含结算文案）时为 None。
+    #[allow(dead_code)] // 当前命令只消费 is_settling，保留金额形态便于后续复用
+    amount: Option<String>,
+    /// 文案表示「结算中」时为 true，代表当前处于每月 1 日的结算期。
+    is_settling: bool,
+}
+
+/// 解析 dashboard 的 `balance`。
+///
+/// - 数字文本（允许首尾空格）→ `(Some, false)`
+/// - 非数字且含「结算」→ `(None, true)`：拿不到数字，但透出结算期信号
+/// - 缺失 / 空串 → `(None, false)`：字段不存在，不是结算信号
+/// - 其它非数字文案 → `(None, false)`：未知格式，不能误判成结算期
+///
+/// 只匹配「结算」两字而不是整句：平台改文案时不会静默失效。
+fn parse_dashboard_balance(value: Option<&Value>) -> DashboardBalance {
+    let Some(raw) = value.and_then(value_to_text) else {
+        return DashboardBalance {
+            amount: None,
+            is_settling: false,
+        };
+    };
+    let text = raw.trim();
+    if text.is_empty() {
+        return DashboardBalance {
+            amount: None,
+            is_settling: false,
+        };
+    }
+    // 数字形态优先：金额里不会出现「结算」，结算文案也不会是合法 Decimal。
+    if parse_decimal(text).is_some() {
+        return DashboardBalance {
+            amount: Some(text.to_string()),
+            is_settling: false,
+        };
+    }
+    DashboardBalance {
+        amount: None,
+        is_settling: text.contains("结算"),
+    }
+}
+
 fn shanghai_timezone() -> FixedOffset {
     FixedOffset::east_opt(8 * 60 * 60).expect("固定时区有效")
+}
+
+/// 取 +08:00 时区下某一天的零点，作为接口区间端点。
+fn start_of_day(date: chrono::NaiveDate, timezone: &FixedOffset) -> DateTime<FixedOffset> {
+    timezone
+        .from_local_datetime(&date.and_hms_opt(0, 0, 0).expect("零点有效"))
+        .single()
+        .expect("固定偏移时区无歧义")
 }
 
 fn timestamp_to_rfc3339(value: &Value, timezone: &FixedOffset) -> Option<String> {
@@ -1982,88 +2053,192 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn calculates_income_from_paid_orders() {
+    fn buckets_income_by_update_time() {
         let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
         let now = timezone.with_ymd_and_hms(2026, 8, 30, 12, 0, 0).unwrap();
         let orders = vec![
+            // 昨天创建、今天付款：必须计入今天，而不是昨天。
             json!({
-                "out_trade_no": "today-1",
+                "out_trade_no": "created-yesterday-paid-today",
                 "status": 2,
-                "create_time": timezone.with_ymd_and_hms(2026, 8, 30, 9, 0, 0).unwrap().timestamp(),
+                "create_time": timezone.with_ymd_and_hms(2026, 8, 29, 23, 0, 0).unwrap().timestamp(),
+                "update_time": timezone.with_ymd_and_hms(2026, 8, 30, 9, 0, 0).unwrap().timestamp(),
                 "total_amount": "10.00"
             }),
+            // 今天创建、昨天更新（例如草稿转支付）：按 update_time 归到昨天。
             json!({
-                "out_trade_no": "today-2",
-                "status": "8",
+                "out_trade_no": "created-today-updated-yesterday",
+                "status": "2",
                 "create_time": timezone.with_ymd_and_hms(2026, 8, 30, 10, 0, 0).unwrap().timestamp_millis(),
+                "update_time": timezone.with_ymd_and_hms(2026, 8, 29, 22, 0, 0).unwrap().timestamp_millis(),
                 "total_amount": "12.00"
             }),
             json!({
                 "out_trade_no": "yesterday",
-                "status": 9,
+                "status": 2,
                 "create_time": timezone.with_ymd_and_hms(2026, 8, 29, 23, 0, 0).unwrap().timestamp(),
+                "update_time": timezone.with_ymd_and_hms(2026, 8, 29, 23, 0, 0).unwrap().timestamp(),
                 "total_amount": 8.5
             }),
             json!({
                 "out_trade_no": "month",
                 "status": 2,
                 "create_time": timezone.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).unwrap().timestamp(),
+                "update_time": timezone.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).unwrap().timestamp(),
                 "total_amount": "1.20"
             }),
+            // 上月订单：本月、今日、昨日都不应计入。
             json!({
                 "out_trade_no": "previous-month",
                 "status": 2,
                 "create_time": timezone.with_ymd_and_hms(2026, 7, 31, 23, 0, 0).unwrap().timestamp(),
+                "update_time": timezone.with_ymd_and_hms(2026, 7, 31, 23, 0, 0).unwrap().timestamp(),
                 "total_amount": "40.00"
             }),
         ];
         let dashboard = json!({ "data": { "balance_after_tax": "0.00" } });
 
-        let overview = aggregate_order_income(&orders, &dashboard, now);
+        let overview = aggregate_order_income(Some(&orders), &dashboard, now);
 
+        // month_amount 缺失 → 回退订单聚合：10 + 12 + 8.5 + 1.2
         assert_eq!(overview.current_month.as_deref(), Some("31.7"));
-        assert_eq!(overview.previous_month, "40");
         assert_eq!(overview.withdrawable.as_deref(), Some("0.00"));
-        assert_eq!(overview.today, "22");
-        assert_eq!(overview.yesterday, "8.5");
+        assert_eq!(overview.today.as_deref(), Some("10"));
+        assert_eq!(overview.yesterday.as_deref(), Some("20.5"));
         assert_eq!(overview.as_of, "2026-08-30T12:00:00+08:00");
     }
 
     #[test]
-    fn defaults_missing_order_income_to_zero() {
+    fn prefers_dashboard_month_amount_over_orders() {
         let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
-        let now = timezone.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-        let overview = aggregate_order_income(&[], &json!({ "data": {} }), now);
+        let now = timezone.with_ymd_and_hms(2026, 8, 30, 12, 0, 0).unwrap();
+        let orders = vec![json!({
+            "out_trade_no": "today",
+            "status": 2,
+            "update_time": timezone.with_ymd_and_hms(2026, 8, 30, 9, 0, 0).unwrap().timestamp(),
+            "total_amount": "22.00"
+        })];
+        let dashboard = json!({
+            "data": {
+                "balance_after_tax": "0.00",
+                "summary": { "month_amount": "31.70" }
+            }
+        });
 
-        assert_eq!(overview.current_month.as_deref(), Some("0"));
-        assert_eq!(overview.previous_month, "0");
-        assert_eq!(overview.withdrawable, None);
-        assert_eq!(overview.today, "0");
-        assert_eq!(overview.yesterday, "0");
+        let overview = aggregate_order_income(Some(&orders), &dashboard, now);
+
+        // 官方 month_amount 优先，订单聚合只负责今日/昨日。
+        assert_eq!(overview.current_month.as_deref(), Some("31.70"));
+        assert_eq!(overview.today.as_deref(), Some("22"));
     }
 
     #[test]
-    fn excludes_invalid_and_duplicate_orders() {
+    fn falls_back_to_order_aggregation_when_month_amount_missing() {
+        let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
+        let now = timezone.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let overview = aggregate_order_income(Some(&[]), &json!({ "data": {} }), now);
+
+        assert_eq!(overview.current_month.as_deref(), Some("0"));
+        assert_eq!(overview.withdrawable, None);
+        assert_eq!(overview.unconfirmed_amount, None);
+        assert!(!overview.is_balance_settling);
+        assert_eq!(overview.today.as_deref(), Some("0"));
+        assert_eq!(overview.yesterday.as_deref(), Some("0"));
+    }
+
+    #[test]
+    fn excludes_unsettled_orders_and_duplicates() {
         let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
         let timestamp = timezone
             .with_ymd_and_hms(2026, 8, 30, 10, 0, 0)
             .unwrap()
             .timestamp();
         let orders = vec![
-            json!({ "out_trade_no": "paid", "status": 2, "create_time": timestamp, "total_amount": "22" }),
-            json!({ "out_trade_no": "paid", "status": 2, "create_time": timestamp, "total_amount": "22" }),
-            json!({ "out_trade_no": "pending", "status": 1, "create_time": timestamp, "total_amount": "100" }),
-            json!({ "out_trade_no": "refunded", "status": 3, "create_time": timestamp, "total_amount": "100" }),
-            json!({ "out_trade_no": "invalid", "status": 2, "create_time": timestamp, "total_amount": "invalid" }),
+            json!({ "out_trade_no": "paid", "status": 2, "update_time": timestamp, "total_amount": "22" }),
+            json!({ "out_trade_no": "paid", "status": 2, "update_time": timestamp, "total_amount": "22" }),
+            json!({ "out_trade_no": "pending", "status": 1, "update_time": timestamp, "total_amount": "100" }),
+            json!({ "out_trade_no": "refunded", "status": 3, "update_time": timestamp, "total_amount": "100" }),
+            // 8/9（待发货/已发货）不算已结算收入。
+            json!({ "out_trade_no": "shipping", "status": 8, "update_time": timestamp, "total_amount": "100" }),
+            json!({ "out_trade_no": "shipped", "status": 9, "update_time": timestamp, "total_amount": "100" }),
+            json!({ "out_trade_no": "invalid", "status": 2, "update_time": timestamp, "total_amount": "invalid" }),
         ];
         let now = timezone.with_ymd_and_hms(2026, 8, 30, 20, 0, 0).unwrap();
-        let dashboard = json!({ "data": { "balance_after_tax": 20.68 } });
+        let dashboard = json!({
+            "data": {
+                "balance_after_tax": 20.68,
+                "summary": { "month_amount": "22.00" }
+            }
+        });
 
-        let overview = aggregate_order_income(&orders, &dashboard, now);
+        let overview = aggregate_order_income(Some(&orders), &dashboard, now);
 
-        assert_eq!(overview.today, "22");
-        assert_eq!(overview.current_month.as_deref(), Some("22"));
+        assert_eq!(overview.today.as_deref(), Some("22"));
+        assert_eq!(overview.current_month.as_deref(), Some("22.00"));
         assert_eq!(overview.withdrawable.as_deref(), Some("20.68"));
+    }
+
+    #[test]
+    fn reads_unconfirmed_amount_and_settling_balance() {
+        let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
+        let now = timezone.with_ymd_and_hms(2026, 9, 1, 3, 0, 0).unwrap();
+        let dashboard = json!({
+            "data": {
+                "balance": "结算中，请耐心等待",
+                "balance_after_tax": "结算中，请耐心等待",
+                "summary": { "unconfirmed_amount": "120.00" }
+            }
+        });
+
+        let overview = aggregate_order_income(None, &dashboard, now);
+
+        assert_eq!(overview.unconfirmed_amount.as_deref(), Some("120.00"));
+        assert!(overview.is_balance_settling);
+        // 结算期拿不到数字，不能把文案当成余额。
+        assert_eq!(overview.withdrawable, None);
+        assert_eq!(overview.current_month, None);
+    }
+
+    #[test]
+    fn parses_dashboard_balance_forms() {
+        let numeric = parse_dashboard_balance(Some(&json!(" 88.00 ")));
+        assert_eq!(numeric.amount.as_deref(), Some("88.00"));
+        assert!(!numeric.is_settling);
+
+        let number_value = parse_dashboard_balance(Some(&json!(12.5)));
+        assert_eq!(number_value.amount.as_deref(), Some("12.5"));
+        assert!(!number_value.is_settling);
+
+        let settling = parse_dashboard_balance(Some(&json!("结算中，请耐心等待")));
+        assert_eq!(settling.amount, None);
+        assert!(settling.is_settling);
+
+        let empty = parse_dashboard_balance(Some(&json!("")));
+        assert_eq!(empty.amount, None);
+        assert!(!empty.is_settling);
+
+        // 未知文案不能被误判成结算期。
+        let unknown = parse_dashboard_balance(Some(&json!("余额加载失败")));
+        assert_eq!(unknown.amount, None);
+        assert!(!unknown.is_settling);
+
+        let missing = parse_dashboard_balance(None);
+        assert_eq!(missing.amount, None);
+        assert!(!missing.is_settling);
+    }
+
+    #[test]
+    fn degrades_order_metrics_when_orders_unavailable() {
+        let timezone = FixedOffset::east_opt(8 * 60 * 60).unwrap();
+        let now = timezone.with_ymd_and_hms(2026, 8, 30, 12, 0, 0).unwrap();
+        let dashboard = json!({ "data": { "summary": { "month_amount": "50.00" } } });
+
+        let overview = aggregate_order_income(None, &dashboard, now);
+
+        // 订单接口失败：月收入照常、今日/昨日为未知（UI 显示 "--"，不假报 0）。
+        assert_eq!(overview.current_month.as_deref(), Some("50.00"));
+        assert_eq!(overview.today, None);
+        assert_eq!(overview.yesterday, None);
     }
 
     #[test]

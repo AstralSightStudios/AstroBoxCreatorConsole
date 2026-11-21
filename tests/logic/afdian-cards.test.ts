@@ -112,4 +112,11 @@ describe("爱发电卡片", () => {
       { key: "2026-09", label: "26/9", value: 100 },
     ]);
   });
+
+  test("本月到手按向下取整计算而不是四舍五入", () => {
+    const values = buildAfdianOverviewValues({ ...overview, monthIncome: "3.35" });
+
+    // 3.35 × 0.94 = 3.149：四舍五入会得到 3.15。
+    expect(values.currentMonthNetIncome).toBe(3.14);
+  });
 });

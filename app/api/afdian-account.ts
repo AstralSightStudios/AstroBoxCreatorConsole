@@ -20,11 +20,17 @@ export interface AfdianQuickCodeResult {
 }
 
 export interface AfdianIncomeOverview {
+  /** 「本月收入」= dashboard.summary.month_amount；缺失时才回退订单聚合。 */
   currentMonth?: string | null;
-  previousMonth: string;
+  /** 可提现余额（balance_after_tax）。结算期可能是文案，此时为 null。 */
   withdrawable?: string | null;
-  today: string;
-  yesterday: string;
+  /** 待结算金额（summary.unconfirmed_amount）。结算期用它作为「上月收入」。 */
+  unconfirmedAmount?: string | null;
+  /** dashboard.balance 是否为「结算中」文案（服务端结算期信号）。 */
+  isBalanceSettling?: boolean;
+  /** 今日/昨日收入来自订单聚合；订单接口失败时为 null（UI 显示 "--"）。 */
+  today?: string | null;
+  yesterday?: string | null;
   asOf: string;
 }
 

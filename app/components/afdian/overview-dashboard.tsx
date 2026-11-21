@@ -342,9 +342,10 @@ function renderCard(
       return (
         <AfdianMonthlyIncomeCard
           currentMonth={incomeOverview.currentMonth}
-          previousMonth={incomeOverview.previousMonth}
+          unconfirmedAmount={incomeOverview.unconfirmedAmount}
           withdrawable={incomeOverview.withdrawable}
           asOf={incomeOverview.asOf}
+          isBalanceSettling={incomeOverview.isBalanceSettling}
         />
       );
     case "today-income":
@@ -436,7 +437,10 @@ export default function AfdianOverviewDashboard({
   const resolvedData = useMemo(
     () => ({
       ...data,
-      todayIncome: incomeOverview.today,
+      // 订单接口失败时 overview.today 是 null：用空串占位，parseAfdianAmount("") 返回 null，
+      // 卡片会显示 "--" 而不是把「没加载出来」当成 0 元收入。
+      todayIncome: incomeOverview.today ?? "",
+      // currentMonth 与 dashboard.summary.month_amount 同源，这里的覆盖是幂等的。
       monthIncome: incomeOverview.currentMonth,
       asOf: incomeOverview.asOf,
     }),

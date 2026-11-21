@@ -120,9 +120,10 @@ export default function AfdianIncomeOverview() {
             <div className="col-span-2">
               <AfdianMonthlyIncomeCard
                 currentMonth={incomeQuery.data?.currentMonth}
-                previousMonth={incomeQuery.data?.previousMonth}
+                unconfirmedAmount={incomeQuery.data?.unconfirmedAmount}
                 withdrawable={incomeQuery.data?.withdrawable}
                 asOf={incomeQuery.data?.asOf ?? ""}
+                isBalanceSettling={incomeQuery.data?.isBalanceSettling}
                 loading={loading}
               />
             </div>

@@ -1,7 +1,6 @@
 import AnimatedNumber from "~/components/animated-number";
 import DataCard from "~/components/cards/datacard";
 import {
-  getAfdianIncomeMonthLabel,
   parseAfdianAmount,
   resolveAfdianSettlementDisplay,
 } from "~/logic/afdian/income";
@@ -34,35 +33,33 @@ function renderCurrency(value?: number | string | null, loading?: boolean) {
 
 export default function AfdianMonthlyIncomeCard({
   currentMonth,
-  previousMonth,
+  unconfirmedAmount,
   withdrawable,
   asOf,
+  isBalanceSettling,
   loading,
 }: {
   currentMonth?: string | null;
-  previousMonth?: string | null;
+  unconfirmedAmount?: string | null;
   withdrawable?: string | null;
   asOf: string;
+  isBalanceSettling?: boolean;
   loading?: boolean;
 }) {
   const settlement = resolveAfdianSettlementDisplay({
     currentMonth,
-    previousMonth,
+    unconfirmedAmount,
     withdrawable,
     asOf,
+    isBalanceSettling,
   });
 
   return (
-    <DataCard
-      label={getAfdianIncomeMonthLabel(asOf)}
-      secondaryLabel={
-        settlement.label === "可提现" ? "可提现" : "预计到手 · 扣除 6%"
-      }
-    >
+    <DataCard label={settlement.label} secondaryLabel={settlement.secondaryLabel}>
       <div className="flex items-end justify-between gap-3">
-        <p className="card-num">{renderCurrency(currentMonth, loading)}</p>
+        <p className="card-num">{renderCurrency(settlement.income, loading)}</p>
         <p className="card-num text-right">
-          {renderCurrency(settlement.amount, loading)}
+          {renderCurrency(settlement.afterFee, loading)}
         </p>
       </div>
     </DataCard>
