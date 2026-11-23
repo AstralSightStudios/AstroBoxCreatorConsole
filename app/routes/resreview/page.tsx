@@ -1174,8 +1174,9 @@ export default function ResourceReviewPage() {
     const authorLogin = openPull?.user?.login?.trim().toLowerCase() ?? "";
     const isOwnPull = Boolean(myLogin && authorLogin && myLogin === authorLogin);
 
-    // 插件 PR：先解决 index.txt 冲突，再 approve，最后合入。这样自动解决
-    // 产生的提交不会在 approve 之后触发 “Dismiss stale approvals”。
+    // 插件 PR：prepare 只分析 index.txt 冲突，不修改作者分支；approve 之后
+    // 再在官方仓库侧生成双父合并提交，避免写作者 fork 时 404，也不会触发
+    // “Dismiss stale approvals”。
     if (openSource === "plugin") {
       setMerging(true);
       try {

@@ -1,7 +1,12 @@
 import {
+  createBlob,
+  createCommit,
+  createTree,
+  ensureBase64,
+  getBranchHead,
   githubFetch,
   isGithubStatus,
-  uploadTextFile,
+  updateRefFastForward,
 } from "~/logic/publish/github-actions";
 import { getFileContent } from "~/logic/publish/catalog";
 import {
@@ -15,6 +20,7 @@ import {
   parsePluginIndexText,
   resolvePluginIndexConflict,
   validatePluginIndexLine,
+  type PluginIndexMergeResult,
 } from "~/logic/publish/plugin-index";
 
 function decodeBase64Text(content?: string): string {
@@ -46,51 +52,22 @@ async function readIndexFile(
   };
 }
 
-function headRepoInfo(pull: GithubPullRequest): {
-  owner: string;
-  name: string;
-  branch: string;
-  fullName: string;
-} | null {
+function headRepoLabel(pull: GithubPullRequest): string {
   const headRepo = pull.head.repo;
-  if (!headRepo) return null;
-  const owner = headRepo.owner?.login || headRepo.full_name.split("/")[0];
-  if (!owner || !headRepo.name) return null;
-  return {
-    owner,
-    name: headRepo.name,
-    branch: pull.head.ref,
-    fullName: headRepo.full_name,
-  };
-}
-
-export interface PluginConflictResolution {
-  appendedLines: string[];
-  duplicates: string[];
-  headSha?: string;
+  const owner =
+    headRepo?.owner?.login || headRepo?.full_name?.split("/")[0] || "unknown";
+  return `${owner}/${pull.head.ref}`;
 }
 
 /**
- * 只处理“纯追加 index.txt”的插件 PR：把 PR 新增的行补到最新默认分支的
- * index.txt 末尾，并提交回作者分支。其他情况一律拒绝自动处理。
+ * 检查一个插件 PR 是否属于可以自动处理的“纯追加 index.txt”类型。
+ * 这里只读取 PR 文件列表和 patch，不修改任何分支。
  */
-export async function resolvePluginIndexConflictForPull(params: {
+async function inspectPluginIndexPull(params: {
   pull: GithubPullRequest;
   repo: GithubRepoRef;
-  token: string;
-}): Promise<PluginConflictResolution> {
-  const { pull, repo, token } = params;
-  const head = headRepoInfo(pull);
-  if (!head) {
-    throw new Error("PR 的 head 仓库不可用，无法自动解决冲突。");
-  }
-  const sameRepo = head.fullName.toLowerCase() === `${repo.owner}/${repo.name}`.toLowerCase();
-  if (!sameRepo && pull.maintainer_can_modify === false) {
-    throw new Error(
-      "无法自动解决冲突：作者未允许维护者编辑该分支。请让作者点击 Update branch 或手动解决冲突后重试。",
-    );
-  }
-
+}): Promise<{ addedLines: string[] }> {
+  const { pull, repo } = params;
   const files = await listPullRequestFiles(pull.number, repo);
   const indexFiles = files.filter((file) => file.filename === "index.txt");
   if (indexFiles.length !== 1 || files.length !== 1) {
@@ -110,15 +87,24 @@ export async function resolvePluginIndexConflictForPull(params: {
       "无法自动解决冲突：没有从 index.txt diff 中解析到新增行，请人工处理。",
     );
   }
+  return { addedLines: patch.addedLines };
+}
 
-  const base = await readIndexFile(repo, token, repo.defaultBranch);
-  const merged = resolvePluginIndexConflict(base.text, patch.addedLines);
+/**
+ * 把 PR 新增行解析到给定上游 index.txt 上，并校验新增行格式。
+ * 与仓库 Action 的规则一致：行序无关，只保证新增行存在且合法。
+ */
+function resolveAndValidateIndex(
+  baseText: string,
+  addedLines: readonly string[],
+): PluginIndexMergeResult {
+  const merged = resolvePluginIndexConflict(baseText, addedLines);
   if (merged.appended.length === 0) {
     throw new Error(
       "无法自动解决冲突：PR 新增的条目已经全部存在于上游 index.txt 中。",
     );
   }
-  const baseLines = parsePluginIndexText(base.text);
+  const baseLines = parsePluginIndexText(baseText);
   const invalidLines = merged.appended.filter((line) =>
     validatePluginIndexLine(line, { existingLines: baseLines }).some(
       (issue) => issue.level === "error",
@@ -129,30 +115,7 @@ export async function resolvePluginIndexConflictForPull(params: {
       `无法自动解决冲突：新增行存在格式错误（${invalidLines[0]}），请先让作者修正 index.txt。`,
     );
   }
-
-  const headFile = await readIndexFile(
-    { owner: head.owner, name: head.name, defaultBranch: head.branch },
-    token,
-    head.branch,
-  );
-  const uploaded = await uploadTextFile(
-    {
-      owner: head.owner,
-      name: head.name,
-      branch: head.branch,
-    },
-    "index.txt",
-    merged.content,
-    `chore: resolve index.txt conflict for PR #${pull.number}`,
-    token,
-    { sha: headFile.sha, branch: head.branch },
-  );
-
-  return {
-    appendedLines: merged.appended,
-    duplicates: merged.duplicates,
-    headSha: uploaded?.commit?.sha as string | undefined,
-  };
+  return merged;
 }
 
 async function waitForMergeable(params: {
@@ -173,6 +136,24 @@ async function waitForMergeable(params: {
   return latest;
 }
 
+async function waitForMerged(params: {
+  number: number;
+  repo: GithubRepoRef;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<GithubPullRequest> {
+  const { number, repo } = params;
+  const timeoutMs = params.timeoutMs ?? 20_000;
+  const intervalMs = params.intervalMs ?? 1_000;
+  const deadline = Date.now() + timeoutMs;
+  let latest = await getPullRequest(number, repo);
+  while (!latest.merged_at && Date.now() < deadline) {
+    await sleep(intervalMs);
+    latest = await getPullRequest(number, repo);
+  }
+  return latest;
+}
+
 export interface PluginMergePreparation {
   pull: GithubPullRequest;
   resolved: boolean;
@@ -180,9 +161,9 @@ export interface PluginMergePreparation {
 }
 
 /**
- * 合入前准备：只在 index.txt 冲突时自动解决，并等待 GitHub 重新计算 mergeable。
- * 页面层应在 prepare 完成后再提交 approve，避免“解决冲突的新提交”触发
- * 分支保护里的 “Dismiss stale approvals”。
+ * 合入前准备：只在 index.txt 冲突时做分析，不修改作者分支。
+ * 真正的解决动作在 mergePreparedPluginPullRequest 中通过官方仓库侧的
+ * 双父合并提交完成，这样即使作者没有允许维护者编辑 fork 也能工作。
  */
 export async function preparePluginPullRequestForMerge(params: {
   number: number;
@@ -196,48 +177,178 @@ export async function preparePluginPullRequestForMerge(params: {
     return { pull, resolved: false, appendedLines: [] };
   }
 
-  let appendedLines: string[] = [];
-  let resolved = false;
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (pull.mergeable === null) {
-      pull = await waitForMergeable({
-        number,
-        repo,
-        timeoutMs: params.timeoutMs,
-      });
-    }
-    if (pull.mergeable !== false) break;
-
-    // mergeable=false 只有 dirty 才是 index.txt 冲突；blocked / unstable 等
-    // 通常是分支保护或检查项未满足，改写作者分支没有意义。
-    if (
-      pull.mergeable_state &&
-      pull.mergeable_state !== "dirty" &&
-      pull.mergeable_state !== "unknown"
-    ) {
-      throw new Error(
-        `PR #${number} 当前不可合并（mergeable_state: ${pull.mergeable_state}），请检查分支保护或状态检查。`,
-      );
-    }
-
-    const resolution = await resolvePluginIndexConflictForPull({
-      pull,
+  if (pull.mergeable === null) {
+    pull = await waitForMergeable({
+      number,
       repo,
-      token,
+      timeoutMs: params.timeoutMs,
     });
-    appendedLines = resolution.appendedLines;
-    resolved = true;
-    pull = await waitForMergeable({ number, repo, timeoutMs: params.timeoutMs });
+  }
+  if (pull.mergeable !== false) {
+    return { pull, resolved: false, appendedLines: [] };
   }
 
-  if (pull.mergeable === false) {
+  // mergeable=false 只有 dirty 才是 index.txt 冲突；blocked / unstable 等
+  // 通常是分支保护或检查项未满足，直接合并没有意义。
+  if (
+    pull.mergeable_state &&
+    pull.mergeable_state !== "dirty" &&
+    pull.mergeable_state !== "unknown"
+  ) {
     throw new Error(
-      `PR #${number} 仍有合并冲突（${pull.mergeable_state || "dirty"}），自动解决未成功，请人工处理。`,
+      `PR #${number} 当前不可合并（mergeable_state: ${pull.mergeable_state}），请检查分支保护或状态检查。`,
     );
   }
 
-  return { pull, resolved, appendedLines };
+  const { addedLines } = await inspectPluginIndexPull({ pull, repo });
+  const base = await readIndexFile(repo, token, repo.defaultBranch);
+  const merged = resolveAndValidateIndex(base.text, addedLines);
+  return {
+    pull,
+    resolved: true,
+    appendedLines: merged.appended,
+  };
+}
+
+function buildMergeCommitMessage(
+  pull: GithubPullRequest,
+  appendedLines: readonly string[],
+): string {
+  return [
+    `Merge pull request #${pull.number} from ${headRepoLabel(pull)}`,
+    "",
+    pull.title,
+    "",
+    `chore: auto-resolve index.txt conflict (+${appendedLines.length})`,
+  ].join("\n");
+}
+
+/**
+ * 在官方仓库侧直接生成一个双父合并提交：
+ *   parent[0] = 当前默认分支 HEAD
+ *   parent[1] = PR head
+ * 树基于 parent[0]，只替换 index.txt。这样不需要写作者 fork，
+ * 也不依赖 maintainer_can_modify；更新默认分支后 GitHub 会把 PR 标记为 merged。
+ */
+async function mergePluginIndexConflictOnBase(params: {
+  number: number;
+  repo: GithubRepoRef;
+  token: string;
+  pull: GithubPullRequest;
+  addedLines: readonly string[];
+}): Promise<{ mergeCommitSha: string; appendedLines: string[] }> {
+  const { number, repo, token, pull } = params;
+  const expectedHeadSha = pull.head.sha;
+  const repoInfo = {
+    owner: repo.owner,
+    name: repo.name,
+    branch: repo.defaultBranch,
+  };
+  const maxAttempts = 4;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const latest = await getPullRequest(number, repo);
+    if (latest.merged_at) {
+      return {
+        mergeCommitSha: latest.merge_commit_sha || "",
+        appendedLines: [...params.addedLines],
+      };
+    }
+    if (latest.head.sha !== expectedHeadSha) {
+      throw new Error(
+        `PR #${number} 的作者分支已更新，请重新审核后再合入。`,
+      );
+    }
+
+    const baseHead = await getBranchHead(repoInfo, token);
+    const baseFile = await readIndexFile(repo, token, baseHead.commitSha);
+    const merged = resolveAndValidateIndex(baseFile.text, params.addedLines);
+
+    const blobSha = await createBlob(
+      repoInfo,
+      ensureBase64(merged.content),
+      token,
+    );
+    const treeSha = await createTree(
+      repoInfo,
+      baseHead.treeSha,
+      [
+        {
+          sha: blobSha,
+          path: "index.txt",
+          mode: "100644",
+          type: "blob",
+        },
+      ],
+      token,
+    );
+    const commitSha = await createCommit(
+      repoInfo,
+      buildMergeCommitMessage(latest, merged.appended),
+      treeSha,
+      [baseHead.commitSha, expectedHeadSha],
+      token,
+    );
+
+    try {
+      await updateRefFastForward(repoInfo, commitSha, token);
+    } catch (error) {
+      // 默认分支在读取后被别人推进了：重新读取 HEAD 再试一次，绝不 force。
+      if (isGithubStatus(error, 409, 422) && attempt < maxAttempts) {
+        lastError = error;
+        await sleep(attempt * 500);
+        continue;
+      }
+      throw error;
+    }
+
+    await waitForMerged({ number, repo });
+    return {
+      mergeCommitSha: commitSha,
+      appendedLines: merged.appended,
+    };
+  }
+
+  const detail = lastError instanceof Error ? `：${lastError.message}` : "";
+  throw new Error(
+    `自动合入失败：默认分支在合入过程中持续更新，请重试${detail}`,
+  );
+}
+
+async function mergePullRequestApi(params: {
+  number: number;
+  repo: GithubRepoRef;
+  token: string;
+  sha: string;
+}): Promise<void> {
+  const { number, repo, token, sha } = params;
+  const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/pulls/${number}/merge`;
+  const init: RequestInit = {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      merge_method: "merge",
+      sha,
+    }),
+  };
+
+  try {
+    await githubFetch<unknown>(url, init, { timeoutMs: 60_000 });
+  } catch (error) {
+    // GitHub 偶尔还会短暂返回 405/409，等它重算后重试一次。
+    // 仍使用 prepare 时的 head sha：若作者在此期间推了新提交，应失败并要求重新审核，
+    // 不能拿未审核过的新提交去合入。
+    if (isGithubStatus(error, 405, 409)) {
+      await sleep(2_000);
+      await githubFetch<unknown>(url, init, { timeoutMs: 60_000 });
+    } else {
+      throw error;
+    }
+  }
 }
 
 /** 使用 prepare 得到的 head sha 合入，避免 approve 之后作者又推新提交。 */
@@ -256,52 +367,31 @@ export async function mergePreparedPluginPullRequest(params: {
     };
   }
 
-  try {
-    await githubFetch<unknown>(
-      `https://api.github.com/repos/${repo.owner}/${repo.name}/pulls/${number}/merge`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          merge_method: "merge",
-          sha: prepared.pull.head.sha,
-        }),
-      },
-      { timeoutMs: 60_000 },
-    );
-  } catch (error) {
-    // 自动解决后 GitHub 偶尔还会短暂返回 405/409，等它重算后重试一次。
-    // 仍使用 prepare 时的 head sha：若作者在此期间推了新提交，应失败并要求重新审核，
-    // 不能拿未审核过的新提交去合入。
-    if (isGithubStatus(error, 405, 409)) {
-      await sleep(2_000);
-      await githubFetch<unknown>(
-        `https://api.github.com/repos/${repo.owner}/${repo.name}/pulls/${number}/merge`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            merge_method: "merge",
-            sha: prepared.pull.head.sha,
-          }),
-        },
-        { timeoutMs: 60_000 },
-      );
-    } else {
-      throw error;
-    }
+  if (prepared.resolved) {
+    const result = await mergePluginIndexConflictOnBase({
+      number,
+      repo,
+      token,
+      pull: prepared.pull,
+      addedLines: prepared.appendedLines,
+    });
+    return {
+      merged: true,
+      resolved: true,
+      appendedLines: result.appendedLines,
+    };
   }
 
+  await mergePullRequestApi({
+    number,
+    repo,
+    token,
+    sha: prepared.pull.head.sha,
+  });
   return {
     merged: true,
-    resolved: prepared.resolved,
-    appendedLines: prepared.appendedLines,
+    resolved: false,
+    appendedLines: [],
   };
 }
 

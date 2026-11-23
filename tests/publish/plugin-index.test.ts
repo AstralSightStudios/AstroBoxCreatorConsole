@@ -149,6 +149,35 @@ describe("resolvePluginIndexConflict", () => {
     expect(result.content).toBe("base\nline\n");
   });
 
+  test("resolves concurrent EOF appends when the PR has no trailing newline", () => {
+    const base = [
+      "https://raw.githubusercontent.com/a/one/refs/heads/main/",
+      "https://raw.githubusercontent.com/a/two/refs/heads/main/",
+      "https://raw.githubusercontent.com/a/three/refs/heads/main/",
+      "",
+    ].join("\n");
+    const patch = [
+      "@@ -1,3 +1,4 @@",
+      " https://raw.githubusercontent.com/a/one/refs/heads/main/",
+      " https://raw.githubusercontent.com/a/two/refs/heads/main/",
+      " https://raw.githubusercontent.com/a/three/refs/heads/main/",
+      "+https://raw.githubusercontent.com/a/four/refs/heads/main/",
+      "\\ No newline at end of file",
+    ].join("\n");
+
+    const result = resolvePluginIndexConflict(
+      base,
+      extractPluginIndexPatch(patch).addedLines,
+    );
+
+    expect(result.appended).toEqual([
+      "https://raw.githubusercontent.com/a/four/refs/heads/main/",
+    ]);
+    expect(result.content).toBe(
+      `${base}https://raw.githubusercontent.com/a/four/refs/heads/main/\n`,
+    );
+  });
+
   test("is idempotent", () => {
     const first = resolvePluginIndexConflict(base, [
       "https://raw.githubusercontent.com/a/three/refs/heads/main/",

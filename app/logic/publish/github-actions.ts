@@ -1085,9 +1085,11 @@ export async function createCommit(
     repo: RepoInfo,
     message: string,
     treeSha: string,
-    parentCommitSha: string,
+    parentCommitSha: string | readonly string[],
     token: string,
 ): Promise<string> {
+    const parents =
+        typeof parentCommitSha === "string" ? [parentCommitSha] : [...parentCommitSha];
     try {
         const data = await githubFetch<{ sha: string }>(
             `https://api.github.com/repos/${repo.owner}/${repo.name}/git/commits`,
@@ -1096,7 +1098,7 @@ export async function createCommit(
                 body: JSON.stringify({
                     message,
                     tree: treeSha,
-                    parents: [parentCommitSha],
+                    parents,
                 }),
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -1108,7 +1110,7 @@ export async function createCommit(
     } catch (error) {
         throw withGithubContext(
             error,
-            `创建 Git commit 失败 (tree=${treeSha}, parent=${parentCommitSha})`,
+            `创建 Git commit 失败 (tree=${treeSha}, parents=${parents.join(",")})`,
         );
     }
 }
@@ -1222,6 +1224,36 @@ export async function updateRef(
         throw withGithubContext(
             error,
             `更新分支引用失败 (${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha})`,
+        );
+    }
+}
+
+/**
+ * 只允许 fast-forward 的引用更新，用于直接向默认分支提交合并提交。
+ * 与 updateRef 不同，这里绝不允许 force，避免覆盖别人刚推上来的提交；
+ * 失败时由调用方重新读取分支 HEAD 后重试。
+ */
+export async function updateRefFastForward(
+    repo: RepoInfo,
+    commitSha: string,
+    token: string,
+): Promise<void> {
+    try {
+        await githubFetch<any>(
+            `https://api.github.com/repos/${repo.owner}/${repo.name}/git/refs/heads/${encodeGitRefName(repo.branch)}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({ sha: commitSha, force: false }),
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+    } catch (error) {
+        throw withGithubContext(
+            error,
+            `更新分支引用失败（禁止 force）(${repo.owner}/${repo.name}#${repo.branch}, commit=${commitSha})`,
         );
     }
 }

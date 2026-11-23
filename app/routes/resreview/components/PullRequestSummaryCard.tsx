@@ -229,7 +229,7 @@ export function PullRequestSummaryCard({
           <Dialog.Title>合入 PR #{openPull.number}</Dialog.Title>
           <Dialog.Description size="2" className="text-white/60">
             {isPlugin
-              ? "确认后会先自动解决 index.txt 冲突（如需要），再提交 GitHub Approve（自己的 PR 自动跳过），最后合入。"
+              ? "确认后会先提交 GitHub Approve（自己的 PR 自动跳过），合入时如遇 index.txt 冲突会自动解决。"
               : "确认后将先提交 GitHub Approve，再合入 PR。合入后会触发仓库 Action 自动应用该资源更新/提交请求。"}
           </Dialog.Description>
           <div className="mt-4 flex justify-end gap-2">
