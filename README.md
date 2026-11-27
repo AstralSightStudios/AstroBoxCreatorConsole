@@ -79,6 +79,15 @@ bun run android:debug      # debug 构建（aarch64）
 ```
 
 ### macOS DMG
+GitHub Actions 构建的 macOS DMG 同时支持 Intel（`x86_64`）和 Apple Silicon（`arm64`）。在 macOS 上可用以下命令构建同样的通用安装包：
+
+```shell
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+bun tauri build --target universal-apple-darwin
+```
+
+如需构建带自定义背景的本机架构 DMG：
+
 ```shell
 bash ./scripts/build_dmg.sh
 ```

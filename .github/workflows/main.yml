@@ -18,6 +18,7 @@ jobs:
       ABCC_CI_RUN_NUMBER: ${{ github.run_number }}
       ABCC_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
       ABCC_BUILD_COMMIT: ${{ github.sha }}
+      TAURI_TARGET: ${{ matrix.platform == 'macos-latest' && 'universal-apple-darwin' || '' }}
 
     steps:
       - name: Checkout repository
@@ -85,7 +86,7 @@ jobs:
         with:
           projectPath: .
           tauriScript: bun tauri
-          args: ''
+          args: ${{ env.TAURI_TARGET && format('--target {0}', env.TAURI_TARGET) || '' }}
 
       - name: Repackage Linux packages (astrobox-creator-console)
         if: matrix.platform == 'ubuntu-22.04'
@@ -109,9 +110,17 @@ jobs:
       - name: Stage release artifacts (flat)
         shell: bash
         run: |
+          target_dir="src-tauri/target${TAURI_TARGET:+/$TAURI_TARGET}/release"
           mkdir -p release-artifacts
-          find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
-          cp src-tauri/target/release/astrobox-creator-console release-artifacts/ 2>/dev/null || true
+          find "$target_dir/bundle" -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} release-artifacts/ \;
+          if [[ -n "$TAURI_TARGET" ]]; then
+            lipo "$target_dir/bundle/macos/AstroBox CreatorConsole.app/Contents/MacOS/astrobox-creator-console" -verify_arch arm64 x86_64
+            if ! compgen -G 'release-artifacts/*.dmg' > /dev/null; then
+              echo '::error::Universal macOS DMG was not staged'
+              exit 1
+            fi
+          fi
+          cp "$target_dir/astrobox-creator-console" release-artifacts/ 2>/dev/null || true
           cp dist/linux/* release-artifacts/ 2>/dev/null || true
           ls -la release-artifacts/
 
