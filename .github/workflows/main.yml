@@ -85,7 +85,18 @@ jobs:
         with:
           projectPath: .
           tauriScript: bun tauri
-          args: ''
+          args: ${{ matrix.platform == 'macos-latest' && '--target aarch64-apple-darwin' || '' }}
+
+      - name: Build Tauri app for Intel macOS
+        if: matrix.platform == 'macos-latest'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: "--max-old-space-size=6144"
+        with:
+          projectPath: .
+          tauriScript: bun tauri
+          args: '--target x86_64-apple-darwin'
 
       - name: Repackage Linux packages (astrobox-creator-console)
         if: matrix.platform == 'ubuntu-22.04'
@@ -106,7 +117,35 @@ jobs:
               su builder -c "/work/scripts/archpkg/build.sh prebuilt"
               cp /work/scripts/archpkg/astrobox-creator-console-*.pkg.tar.zst /work/dist/linux/'
 
+      - name: Stage and verify macOS DMGs
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          shopt -s nullglob
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            bundle_dir="src-tauri/target/$target/release/bundle"
+            case "$target" in
+              aarch64-apple-darwin) arch=arm64; suffix=aarch64 ;;
+              x86_64-apple-darwin) arch=x86_64; suffix=x64 ;;
+            esac
+            binary="$bundle_dir/macos/AstroBox CreatorConsole.app/Contents/MacOS/astrobox-creator-console"
+            actual_arch="$(lipo -archs "$binary")"
+            if [[ "$actual_arch" != "$arch" ]]; then
+              echo "::error::Expected only $arch for $target, found $actual_arch"
+              exit 1
+            fi
+            dmgs=("$bundle_dir/dmg/"*_"$suffix".dmg)
+            if [[ "${#dmgs[@]}" != 1 || ! -f "${dmgs[0]}" ]]; then
+              echo "::error::Expected exactly one $suffix DMG for $target"
+              exit 1
+            fi
+            cp "${dmgs[0]}" release-artifacts/
+          done
+          ls -la release-artifacts/
+
       - name: Stage release artifacts (flat)
+        if: matrix.platform != 'macos-latest'
         shell: bash
         run: |
           mkdir -p release-artifacts

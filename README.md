@@ -79,6 +79,16 @@ bun run android:debug      # debug 构建（aarch64）
 ```
 
 ### macOS DMG
+GitHub Actions 的 macOS 产物压缩包内有两个独立的 DMG：Intel Mac 选择 `*_x64.dmg`，Apple Silicon Mac 选择 `*_aarch64.dmg`。在 macOS 上可用以下命令分别构建：
+
+```shell
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+bun tauri build --target x86_64-apple-darwin
+bun tauri build --target aarch64-apple-darwin
+```
+
+如需构建带自定义背景的本机架构 DMG：
+
 ```shell
 bash ./scripts/build_dmg.sh
 ```
